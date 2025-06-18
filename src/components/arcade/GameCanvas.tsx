@@ -7,17 +7,21 @@ import { useGameModule } from '@/hooks/useGameModule';
 import { GameModule } from '@/lib/types';
 import { GAME_CONFIG } from '@/lib/constants';
 import { Button } from '@/components/ui/Button';
+import { CurrencyService } from '@/services/CurrencyService';
+
 
 interface GameCanvasProps {
   game: GameModule | null;
   onGameEnd?: () => void;
+  currencyService: CurrencyService;
 }
 
-export function GameCanvas({ game, onGameEnd }: GameCanvasProps) {
+export function GameCanvas({ game, onGameEnd, currencyService }: GameCanvasProps) {
   const { canvasRef, ctx } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
   const { isInitialized, isRunning, startGame, stopGame, pauseGame, resumeGame } = useGameModule(
     canvasRef.current,
-    game
+    game,
+    currencyService
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');

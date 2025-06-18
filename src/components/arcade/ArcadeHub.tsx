@@ -146,6 +146,7 @@ export function ArcadeHub() {
                 // Could show a game over modal here
                 console.log('Game ended!');
               }}
+              currencyService={currencyService}
             />
           </div>
         )}

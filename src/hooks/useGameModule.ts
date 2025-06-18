@@ -6,7 +6,7 @@ import { AudioManager } from '@/services/AudioManager';
 import { Analytics } from '@/services/Analytics';
 import { CurrencyService } from '@/services/CurrencyService';
 
-export function useGameModule(canvas: HTMLCanvasElement | null, game: GameModule | null) {
+export function useGameModule(canvas: HTMLCanvasElement | null, game: GameModule | null, currencyService: CurrencyService) {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const servicesRef = useRef<Services | null>(null);
@@ -20,7 +20,7 @@ export function useGameModule(canvas: HTMLCanvasElement | null, game: GameModule
     const input = new InputManager();
     const audio = new AudioManager();
     const analytics = new Analytics();
-    const currency = new CurrencyService();
+    const currency = currencyService;
 
     const services: Services = { input, audio, analytics, currency };
     servicesRef.current = services;
@@ -39,7 +39,7 @@ export function useGameModule(canvas: HTMLCanvasElement | null, game: GameModule
       input.destroy();
       game.destroy?.();
     };
-  }, [canvas, game]);
+  }, [canvas, game, currencyService]);
 
   useEffect(() => {
     if (!isInitialized || !game) return;

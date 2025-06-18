@@ -15,8 +15,7 @@ export interface GameModule {
   // Game state
   isGameOver?(): boolean;
   getScore?(): GameScore;
-  restart?: () => void;
-  
+  restart?(): void;
   
   // Metadata
   manifest: GameManifest;
