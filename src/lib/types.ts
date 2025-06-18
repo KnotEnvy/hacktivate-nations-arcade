@@ -1,4 +1,9 @@
 // ===== src/lib/types.ts =====
+import { InputManager } from '@/services/InputManager';
+import { AudioManager } from '@/services/AudioManager';
+import { Analytics } from '@/services/Analytics';
+import { CurrencyService } from '@/services/CurrencyService';
+
 export type InputType = 'keyboard' | 'touch' | 'gamepad';
 
 export interface GameManifest {
@@ -28,6 +33,10 @@ export interface GameModule {
   resume?(): void;
   resize?(width: number, height: number): void;
   destroy?(): void;
+  isGameOver?: () => boolean;
+  getScore?: () => GameScore;
+  restart?: () => void;
+    
   
   // Metadata
   manifest: GameManifest;
