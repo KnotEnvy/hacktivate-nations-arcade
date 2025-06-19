@@ -15,6 +15,7 @@ export class Player {
   private frameTime: number = 0;
   private currentFrame: number = 0;
   private animationSpeed: number = 0.15;
+  private runTime: number = 0;
 
   constructor(x: number, y: number, groundY: number) {
     this.position = new Vector2(x, y);
@@ -50,6 +51,7 @@ export class Player {
       this.currentFrame = (this.currentFrame + 1) % 4;
       this.frameTime = 0;
     }
+    this.runTime += dt * (this.isGrounded ? 10 : 6);
   }
 
   jump(): void {
@@ -60,30 +62,32 @@ export class Player {
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = this.isGrounded ? '#4ADE80' : '#22C55E'; // Green, darker when jumping
-    
-    // Simple character representation
-    ctx.fillRect(
-      this.position.x, 
-      this.position.y, 
-      this.size.x, 
-      this.size.y
-    );
+    const bob = this.isGrounded ? Math.sin(this.runTime) * 1.5 : 0;
+    ctx.save();
+    ctx.translate(this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + bob);
+    ctx.rotate(this.velocity.y * 0.02);
+    ctx.translate(-this.size.x / 2, -this.size.y / 2);
 
-    // Add some character details
+    ctx.fillStyle = this.isGrounded ? '#4ADE80' : '#22C55E';
+    ctx.fillRect(0, 0, this.size.x, this.size.y);
+
     ctx.fillStyle = '#FFFFFF';
-    // Eyes
-    ctx.fillRect(this.position.x + 8, this.position.y + 8, 4, 4);
-    ctx.fillRect(this.position.x + 20, this.position.y + 8, 4, 4);
-    
-    // Running animation - simple leg movement
-    if (this.isGrounded) {
-      const legOffset = Math.sin(this.currentFrame * Math.PI) * 3;
-      ctx.fillStyle = '#22C55E';
-      ctx.fillRect(this.position.x + 6 + legOffset, this.position.y + 28, 6, 8);
-      ctx.fillRect(this.position.x + 20 - legOffset, this.position.y + 28, 6, 8);
-    }
+    ctx.fillRect(8, 8, 4, 4);
+    ctx.fillRect(20, 8, 4, 4);
+
+    const legOffset = Math.sin(this.runTime) * 3;
+    ctx.fillStyle = '#22C55E';
+    ctx.fillRect(6 + legOffset, 28, 6, 8);
+    ctx.fillRect(20 - legOffset, 28, 6, 8);
+
+    const armOffset = Math.sin(this.runTime + Math.PI / 2) * 2;
+    ctx.fillStyle = '#15803D';
+    ctx.fillRect(2 + armOffset, 16, 4, 8);
+    ctx.fillRect(this.size.x - 6 - armOffset, 16, 4, 8);
+
+    ctx.restore();
   }
+  
 
   getBounds(): Rectangle {
     return new Rectangle(this.position.x, this.position.y, this.size.x, this.size.y);

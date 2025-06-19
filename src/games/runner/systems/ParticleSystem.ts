@@ -1,6 +1,5 @@
 // ===== src/games/runner/systems/ParticleSystem.ts =====
 import { Particle } from '../entities/Particle';
-import { Vector2 } from '@/games/shared/utils/Vector2';
 
 export class ParticleSystem {
   private particles: Particle[] = [];
@@ -20,9 +19,9 @@ export class ParticleSystem {
       const vx = Math.cos(angle) * speed;
       const vy = Math.sin(angle) * speed;
       
-      this.particles.push(new Particle(
-        x, y, vx, vy, 0.5, '#FCD34D'
-      ));
+      this.particles.push(
+        new Particle(x, y, vx, vy, 0.5, '#FCD34D', Math.random() * 6 + 4)
+      );
     }
   }
 
@@ -31,9 +30,17 @@ export class ParticleSystem {
       const vx = Math.random() * 60 - 30;
       const vy = Math.random() * -40 - 20;
       
-      this.particles.push(new Particle(
-        x + Math.random() * 32, y + 30, vx, vy, 0.3, '#A3A3A3'
-      ));
+      this.particles.push(
+        new Particle(
+          x + Math.random() * 32,
+          y + 30,
+          vx,
+          vy,
+          0.3,
+          '#A3A3A3',
+          Math.random() * 3 + 2
+        )
+      );
     }
   }
 
@@ -42,9 +49,17 @@ export class ParticleSystem {
       const vx = Math.random() * 80 - 40;
       const vy = Math.random() * -30 - 10;
       
-      this.particles.push(new Particle(
-        x + Math.random() * 32, y + 32, vx, vy, 0.4, '#D4D4D8'
-      ));
+      this.particles.push(
+        new Particle(
+          x + Math.random() * 32,
+          y + 32,
+          vx,
+          vy,
+          0.4,
+          '#D4D4D8',
+          Math.random() * 4 + 2
+        )
+      );
     }
   }
 }
