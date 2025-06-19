@@ -96,7 +96,7 @@ export function ArcadeHub() {
     setCurrentGame(null);
     setSelectedGameId(null);
   };
-    // Reset function for development
+    // Reset tiers, coins, progress for development
   const resetProgress = () => {
     const confirmed = window.confirm(
       '🔄 Reset All Progress?\n\n' +
@@ -138,10 +138,11 @@ export function ArcadeHub() {
           {/* Debug buttons for development */}
           {process.env.NODE_ENV === 'development' && (
             <>
-              
               <button
                 onClick={() => currencyService.addCoins(500, 'debug_test')}
                 className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+                title="Add 500 coins (for testing)"
+
               >
                 +500 Coins
               </button>
