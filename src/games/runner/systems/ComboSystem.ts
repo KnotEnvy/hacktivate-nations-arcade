@@ -1,0 +1,50 @@
+// ===== src/games/runner/systems/ComboSystem.ts =====
+export class ComboSystem {
+  private combo: number = 0;
+  private comboTimer: number = 0;
+  private comboTimeLimit: number = 2; // seconds
+  private multiplier: number = 1;
+  
+  addCoin(): number {
+    this.combo++;
+    this.comboTimer = this.comboTimeLimit;
+    
+    // Calculate multiplier based on combo
+    if (this.combo >= 10) {
+      this.multiplier = 3;
+    } else if (this.combo >= 5) {
+      this.multiplier = 2;
+    } else {
+      this.multiplier = 1;
+    }
+    
+    return this.multiplier;
+  }
+  
+  update(dt: number): void {
+    if (this.comboTimer > 0) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) {
+        this.resetCombo();
+      }
+    }
+  }
+  
+  resetCombo(): void {
+    this.combo = 0;
+    this.multiplier = 1;
+    this.comboTimer = 0;
+  }
+  
+  getCombo(): number {
+    return this.combo;
+  }
+  
+  getMultiplier(): number {
+    return this.multiplier;
+  }
+  
+  getTimeLeft(): number {
+    return this.comboTimer;
+  }
+}
