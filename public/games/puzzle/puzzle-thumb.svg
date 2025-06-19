@@ -1,0 +1,65 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="512" height="512" fill="#1A1A2E"/>
+  
+  <!-- Grid background -->
+  <defs>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#333" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect x="100" y="100" width="320" height="320" fill="url(#grid)" stroke="#555" stroke-width="2"/>
+  
+  <!-- Tetris blocks -->
+  <!-- T-piece -->
+  <g transform="translate(140, 140)">
+    <rect x="0" y="0" width="35" height="35" fill="#8B5CF6" stroke="#A855F7" stroke-width="2"/>
+    <rect x="35" y="0" width="35" height="35" fill="#8B5CF6" stroke="#A855F7" stroke-width="2"/>
+    <rect x="70" y="0" width="35" height="35" fill="#8B5CF6" stroke="#A855F7" stroke-width="2"/>
+    <rect x="35" y="35" width="35" height="35" fill="#8B5CF6" stroke="#A855F7" stroke-width="2"/>
+  </g>
+  
+  <!-- L-piece -->
+  <g transform="translate(280, 180)">
+    <rect x="0" y="0" width="35" height="35" fill="#F59E0B" stroke="#FBBF24" stroke-width="2"/>
+    <rect x="0" y="35" width="35" height="35" fill="#F59E0B" stroke="#FBBF24" stroke-width="2"/>
+    <rect x="0" y="70" width="35" height="35" fill="#F59E0B" stroke="#FBBF24" stroke-width="2"/>
+    <rect x="35" y="70" width="35" height="35" fill="#F59E0B" stroke="#FBBF24" stroke-width="2"/>
+  </g>
+  
+  <!-- Square piece -->
+  <g transform="translate(180, 260)">
+    <rect x="0" y="0" width="35" height="35" fill="#06B6D4" stroke="#22D3EE" stroke-width="2"/>
+    <rect x="35" y="0" width="35" height="35" fill="#06B6D4" stroke="#22D3EE" stroke-width="2"/>
+    <rect x="0" y="35" width="35" height="35" fill="#06B6D4" stroke="#22D3EE" stroke-width="2"/>
+    <rect x="35" y="35" width="35" height="35" fill="#06B6D4" stroke="#22D3EE" stroke-width="2"/>
+  </g>
+  
+  <!-- S-piece -->
+  <g transform="translate(320, 260)">
+    <rect x="35" y="0" width="35" height="35" fill="#10B981" stroke="#34D399" stroke-width="2"/>
+    <rect x="70" y="0" width="35" height="35" fill="#10B981" stroke="#34D399" stroke-width="2"/>
+    <rect x="0" y="35" width="35" height="35" fill="#10B981" stroke="#34D399" stroke-width="2"/>
+    <rect x="35" y="35" width="35" height="35" fill="#10B981" stroke="#34D399" stroke-width="2"/>
+  </g>
+  
+  <!-- Line piece (falling) -->
+  <g transform="translate(200, 120)" opacity="0.7">
+    <rect x="0" y="0" width="35" height="35" fill="#EF4444" stroke="#F87171" stroke-width="2"/>
+    <rect x="0" y="35" width="35" height="35" fill="#EF4444" stroke="#F87171" stroke-width="2"/>
+    <rect x="0" y="70" width="35" height="35" fill="#EF4444" stroke="#F87171" stroke-width="2"/>
+    <rect x="0" y="105" width="35" height="35" fill="#EF4444" stroke="#F87171" stroke-width="2"/>
+  </g>
+  
+  <!-- Sparkle effects -->
+  <g fill="#FCD34D" opacity="0.8">
+    <polygon points="450,80 455,90 465,90 457,97 460,107 450,100 440,107 443,97 435,90 445,90"/>
+    <polygon points="80,200 83,206 89,206 84,210 86,216 80,212 74,216 76,210 71,206 77,206"/>
+    <polygon points="430,350 433,356 439,356 434,360 436,366 430,362 424,366 426,360 421,356 427,356"/>
+  </g>
+  
+  <!-- Coming soon overlay -->
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
+  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#8B5CF6">BLOCK PUZZLE</text>
+  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
+</svg>

@@ -1,5 +1,5 @@
 // ===== src/app/layout.tsx =====
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 
@@ -10,7 +10,12 @@ export const metadata: Metadata = {
   description: 'A retro-inspired arcade hub with modular mini-games',
   keywords: ['arcade', 'games', 'retro', 'web games'],
   authors: [{ name: 'HacktivateNations Team' }],
-  viewport: 'width=device-width, initial-scale=1',
+};
+
+// Separate viewport export (Next.js 15 requirement)
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
   themeColor: '#8B5CF6',
 };
 

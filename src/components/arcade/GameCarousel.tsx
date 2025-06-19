@@ -4,6 +4,8 @@
 import { useState } from 'react';
 import { GameManifest } from '@/lib/types';
 import { UNLOCK_COSTS } from '@/lib/constants';
+import Image from 'next/image';
+
 
 interface GameCarouselProps {
   games: GameManifest[];
@@ -15,6 +17,8 @@ interface GameCarouselProps {
 
 export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect, onGameUnlock }: GameCarouselProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+
 
   const isGameUnlocked = (game: GameManifest) => {
     return unlockedTiers.includes(game.tier);
@@ -28,6 +32,44 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
   const getUnlockCost = (game: GameManifest) => {
     return UNLOCK_COSTS[game.tier as keyof typeof UNLOCK_COSTS] || 0;
   };
+
+    const handleImageError = (gameId: string) => {
+    setImageErrors(prev => new Set([...prev, gameId]));
+  };
+
+  const renderThumbnail = (game: GameManifest, unlocked: boolean) => {
+    const hasError = imageErrors.has(game.id);
+    
+    if (hasError) {
+      // Fallback to emoji if image fails to load
+      return (
+        <div className="text-4xl">
+          {unlocked ? '🎮' : '🔒'}
+        </div>
+      );
+    }
+
+  return (
+      <div className="relative w-full h-full overflow-hidden rounded-t-lg">
+        <Image
+          src={game.thumbnail}
+          alt={game.title}
+          fill
+          className={`object-cover transition-all duration-300 ${
+            unlocked ? 'opacity-100' : 'opacity-50 grayscale'
+          }`}
+          onError={() => handleImageError(game.id)}
+          priority={selectedIndex === 0} // Prioritize first image
+        />
+        {!unlocked && (
+          <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div className="text-4xl opacity-75">🔒</div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
 
   return (
     <div className="w-full">
@@ -48,11 +90,12 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
               onClick={() => setSelectedIndex(index)}
             >
               <div className="aspect-square bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center relative">
-                {unlocked ? (
+                {renderThumbnail(game, unlocked)}
+                {/* {unlocked ? (
                   <div className="text-4xl">🎮</div>
                 ) : (
                   <div className="text-4xl opacity-50">🔒</div>
-                )}
+                )} */}
                 
                 {!unlocked && (
                   <div className="absolute bottom-2 right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full font-bold">

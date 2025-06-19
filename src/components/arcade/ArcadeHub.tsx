@@ -13,7 +13,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'runner',
     title: 'Endless Runner',
-    thumbnail: '/images/runner-thumb.png',
+    thumbnail: '/games/runner/runner-thumb.svg',
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 50,
     tier: 0,
@@ -23,7 +23,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'puzzle',
     title: 'Block Puzzle',
-    thumbnail: '/images/puzzle-thumb.png',
+    thumbnail: '/games/puzzle/puzzle-thumb.svg',
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 75,
     tier: 1,
@@ -32,7 +32,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'space',
     title: 'Space Shooter',
-    thumbnail: '/images/space-thumb.png',
+    thumbnail: '/games/space/space-thumb.svg',
     inputSchema: ['keyboard'],
     assetBudgetKB: 100,
     tier: 2,

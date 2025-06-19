@@ -1,0 +1,94 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Space background -->
+  <rect width="512" height="512" fill="#0F172A"/>
+  
+  <!-- Stars -->
+  <g fill="white">
+    <circle cx="50" cy="50" r="1"/>
+    <circle cx="150" cy="80" r="1.5"/>
+    <circle cx="300" cy="60" r="1"/>
+    <circle cx="450" cy="90" r="1.5"/>
+    <circle cx="100" cy="150" r="1"/>
+    <circle cx="400" cy="180" r="1"/>
+    <circle cx="80" cy="250" r="1.5"/>
+    <circle cx="320" cy="220" r="1"/>
+    <circle cx="180" cy="300" r="1"/>
+    <circle cx="470" cy="280" r="1.5"/>
+    <circle cx="60" cy="380" r="1"/>
+    <circle cx="250" cy="420" r="1"/>
+    <circle cx="380" cy="450" r="1.5"/>
+    <circle cx="120" cy="480" r="1"/>
+  </g>
+  
+  <!-- Distant planet -->
+  <circle cx="400" cy="120" r="40" fill="#6366F1" opacity="0.6"/>
+  <circle cx="390" cy="110" r="8" fill="#4F46E5" opacity="0.8"/>
+  <circle cx="410" cy="130" r="12" fill="#4F46E5" opacity="0.8"/>
+  
+  <!-- Player ship -->
+  <g transform="translate(256, 350)">
+    <!-- Main body -->
+    <polygon points="0,-30 -15,20 15,20" fill="#22D3EE"/>
+    <!-- Cockpit -->
+    <polygon points="0,-20 -8,5 8,5" fill="#06B6D4"/>
+    <!-- Wings -->
+    <polygon points="-15,10 -25,25 -10,20" fill="#0891B2"/>
+    <polygon points="15,10 25,25 10,20" fill="#0891B2"/>
+    <!-- Engines -->
+    <rect x="-20" y="15" width="6" height="15" fill="#1E293B"/>
+    <rect x="14" y="15" width="6" height="15" fill="#1E293B"/>
+    <!-- Engine glow -->
+    <rect x="-18" y="25" width="2" height="8" fill="#06B6D4"/>
+    <rect x="16" y="25" width="2" height="8" fill="#06B6D4"/>
+  </g>
+  
+  <!-- Laser beams -->
+  <g fill="#10B981">
+    <rect x="246" y="280" width="3" height="40"/>
+    <rect x="263" y="280" width="3" height="40"/>
+    <!-- Laser glow -->
+    <rect x="245" y="280" width="5" height="40" fill="#10B981" opacity="0.5"/>
+    <rect x="262" y="280" width="5" height="40" fill="#10B981" opacity="0.5"/>
+  </g>
+  
+  <!-- Enemy ships -->
+  <g transform="translate(150, 150)">
+    <polygon points="0,0 -10,-15 10,-15" fill="#EF4444"/>
+    <polygon points="-8,-10 -15,-5 -8,0" fill="#DC2626"/>
+    <polygon points="8,-10 15,-5 8,0" fill="#DC2626"/>
+  </g>
+  
+  <g transform="translate(350, 120)">
+    <polygon points="0,0 -10,-15 10,-15" fill="#EF4444"/>
+    <polygon points="-8,-10 -15,-5 -8,0" fill="#DC2626"/>
+    <polygon points="8,-10 15,-5 8,0" fill="#DC2626"/>
+  </g>
+  
+  <!-- Explosions -->
+  <g transform="translate(200, 200)" opacity="0.8">
+    <circle cx="0" cy="0" r="15" fill="#F59E0B"/>
+    <circle cx="0" cy="0" r="10" fill="#FBBF24"/>
+    <circle cx="0" cy="0" r="5" fill="#FEF3C7"/>
+  </g>
+  
+  <!-- Asteroid -->
+  <g transform="translate(400, 300)">
+    <polygon points="0,-20 15,-10 20,10 5,25 -10,20 -20,5 -15,-15" fill="#64748B"/>
+    <circle cx="-5" cy="0" r="3" fill="#475569"/>
+    <circle cx="8" cy="-8" r="2" fill="#475569"/>
+    <circle cx="5" cy="12" r="4" fill="#475569"/>
+  </g>
+  
+  <!-- Power-up -->
+  <g transform="translate(100, 300)">
+    <rect x="-8" y="-8" width="16" height="16" fill="#8B5CF6" transform="rotate(45)"/>
+    <rect x="-4" y="-4" width="8" height="8" fill="#A855F7" transform="rotate(45)"/>
+    <!-- Glow effect -->
+    <circle cx="0" cy="0" r="20" fill="#8B5CF6" opacity="0.2"/>
+  </g>
+  
+  <!-- Coming soon overlay -->
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
+  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#06B6D4">SPACE SHOOTER</text>
+  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
+</svg>
