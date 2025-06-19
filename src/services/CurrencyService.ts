@@ -24,6 +24,14 @@ export class CurrencyService {
     return this.currentCoins;
   }
 
+  // Reset method for development
+  resetCoins(): void {
+    this.currentCoins = 0;
+    this.transactions = [];
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
   addCoins(amount: number, source: string): void {
     this.currentCoins += amount;
     this.saveToStorage();

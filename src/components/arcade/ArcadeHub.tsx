@@ -96,7 +96,29 @@ export function ArcadeHub() {
     setCurrentGame(null);
     setSelectedGameId(null);
   };
+    // Reset function for development
+  const resetProgress = () => {
+    const confirmed = window.confirm(
+      '🔄 Reset All Progress?\n\n' +
+      'This will:\n' +
+      '• Reset coins to 0\n' +
+      '• Lock all games except Runner\n' +
+      '• Clear all saved progress\n\n' +
+      'This action cannot be undone!'
+    );
+    
+    if (!confirmed) return;
+    // Reset currency service
+    currencyService.resetCoins();
+    saveUnlockedTiers([0]);
+    // Clear localStorage completely for a fresh start
+    localStorage.removeItem('hacktivate-unlocked-tiers');
+    localStorage.removeItem('hacktivate-user-progress');
+    setCurrentCoins(0);
+    alert('🎮 Progress reset! You\'re back to the beginning.');
+  };
 
+  // main Content
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4">
       {/* Header */}
@@ -112,6 +134,32 @@ export function ArcadeHub() {
             >
               ← Back to Hub
             </button>
+          )}
+          {/* Debug buttons for development */}
+          {process.env.NODE_ENV === 'development' && (
+            <>
+              
+              <button
+                onClick={() => currencyService.addCoins(500, 'debug_test')}
+                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
+              >
+                +500 Coins
+              </button>
+              <button
+                onClick={() => currencyService.addCoins(2000, 'debug_unlock')}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
+                title="Add 2000 coins (enough for tier 1 unlock)"
+              >
+                +2K Coins
+              </button>
+              <button
+                onClick={resetProgress}
+                className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-2 py-1 rounded"
+                title="Reset all progress"
+              >
+                🔄 Reset Everything
+              </button>
+            </>
           )}
         </div>
         <CurrencyDisplay currencyService={currencyService} />
