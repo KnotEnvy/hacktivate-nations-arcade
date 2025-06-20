@@ -230,13 +230,22 @@ export class RunnerGame extends BaseGame {
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
     // Base UI
     // super.onRenderUI(ctx);
+        // Speed indicator
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '16px Arial';
+    ctx.textAlign = 'right';
+    ctx.fillText(`Speed: ${this.gameSpeed.toFixed(1)}x`, this.canvas.width - 20, 40);
     
+    // Distance
+    ctx.fillText(`Distance: ${Math.floor(this.distance)}m`, this.canvas.width - 20, 65);
+
     // Combo display
     if (this.comboSystem.getCombo() > 1) {
       ctx.fillStyle = '#F59E0B';
       ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'right';
       ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, this.canvas.width - 20, 100);
+
       
       // Combo timer bar
       const timeLeft = this.comboSystem.getTimeLeft();
@@ -252,6 +261,7 @@ export class RunnerGame extends BaseGame {
       ctx.fillStyle = '#F59E0B';
       ctx.fillRect(barX, barY, barWidth * (timeLeft / maxTime), barHeight);
     }
+    
     
     // Active power-ups display
     let powerUpY = 140;
