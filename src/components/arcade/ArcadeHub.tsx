@@ -203,13 +203,14 @@ export function ArcadeHub() {
     }
     
     // Update user stats
+    const totalCoinsEarned = stats.coinsEarned + (gameData.coinsEarned || 0);
     const newStats = {
       totalDistance: Math.max(stats.totalDistance, gameData.distance || 0),
       maxSpeed: Math.max(stats.maxSpeed, gameData.speed || 0),
       maxCombo: Math.max(stats.maxCombo, gameData.combo || 0),
       totalJumps: stats.totalJumps + (gameData.jumps || 0),
       powerupsUsed: stats.powerupsUsed + (gameData.powerupsUsed || 0),
-      coinsEarned: stats.coinsEarned + (gameData.coinsEarned || 0)
+      coinsEarned: totalCoinsEarned
     };
     userService.updateStats(newStats);
     const updatedStats = userService.getStats();
@@ -243,7 +244,7 @@ export function ArcadeHub() {
         'total_playtime',
         profile.totalPlayTime + playTimeSeconds
       ),
-      ...achievementService.checkAchievement('total_coins_earned', updatedStats.coinsEarned),
+      ...achievementService.checkAchievement('total_coins_earned', totalCoinsEarned),
       ...achievementService.checkAchievement('jumps', gameData.jumps || 0, selectedGameId),
       ...achievementService.checkAchievement('total_jumps', updatedStats.totalJumps),
       ...achievementService.checkAchievement('powerups_total', updatedStats.powerupsUsed),
