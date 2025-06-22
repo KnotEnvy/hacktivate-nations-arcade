@@ -35,9 +35,21 @@ export class UserService {
 
   init(): void {
     this.loadUserData();
+
+    if (typeof window !== 'undefined') {
+      const savedProfile = localStorage.getItem('hacktivate-user-profile');
+      if (!savedProfile) {
+        this.profile.joinedAt = new Date();
+        this.profile.lastActiveAt = new Date();
+        this.saveUserData();
+      }
+    }
   }
 
   private getDefaultProfile(): UserProfile {
+    const placeholderDate = new Date(0);
+    const currentDate = new Date();
+    const date = typeof window === 'undefined' ? placeholderDate : currentDate;
     return {
       username: 'Player',
       level: 1,
@@ -46,8 +58,8 @@ export class UserService {
       totalCoins: 0,
       totalPlayTime: 0,
       gamesPlayed: 0,
-      joinedAt: new Date(),
-      lastActiveAt: new Date()
+      joinedAt: date,
+      lastActiveAt: date
     };
   }
 
