@@ -187,7 +187,7 @@ npm run type-check   # TypeScript validation
 ## 🚨 **Critical Information**
 
 ### **Currency System Requirements**
-- **MUST use** `globalCurrencyService` singleton
+- **MUST use** `CurrencyService` singleton
 - **MUST pass** service to all components that need currency
 - **BaseGame automatically** awards coins on game end
 - **Formula**: `floor(score/100) + (pickups * 10)`
