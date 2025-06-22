@@ -112,6 +112,7 @@ export abstract class BaseGame implements GameModule {
     if (!this.isRunning) return;
     
     this.isRunning = false;
+    this.gameTime = Date.now() - this.startTime; // <-- Ensure gameTime is correct
     const finalScore = this.getScore();
     
     // Award coins

@@ -19,6 +19,8 @@ export interface UserStats {
   powerupsUsed: number;
   achievementsUnlocked: number;
   challengesCompleted: number;
+  gameplayed: number; // total time played in seconds
+  coinsEarned: number; // total coins earned across all games
 }
 
 export class UserService {
@@ -57,7 +59,9 @@ export class UserService {
       totalJumps: 0,
       powerupsUsed: 0,
       achievementsUnlocked: 0,
-      challengesCompleted: 0
+      challengesCompleted: 0,
+      gameplayed: 0,
+      coinsEarned: 0
     };
   }
 
