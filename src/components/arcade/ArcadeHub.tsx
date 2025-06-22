@@ -269,6 +269,11 @@ export function ArcadeHub() {
       );
     });
 
+    if (newlyUnlocked.length > 0) {
+      const current = userService.getStats().achievementsUnlocked;
+      userService.updateStats({ achievementsUnlocked: current + newlyUnlocked.length });
+    }
+
   };
 
   const resetProgress = () => {
