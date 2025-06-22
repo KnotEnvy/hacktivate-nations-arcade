@@ -142,8 +142,8 @@ export function ArcadeHub() {
         setSelectedGameId(gameId);
         setShowHub(false);
         // Track game start
-        userService.updateStats({ 
-          gameplayed: userService.getStats().gameplayed + 1 
+        userService.updateStats({
+          gamesPlayed: userService.getStats().gamesPlayed + 1
         });
         challengeService.updateProgress(gameId, 'games_played', 1);
 
