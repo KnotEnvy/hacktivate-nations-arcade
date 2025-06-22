@@ -12,6 +12,7 @@ export function UserProfile({ userService }: UserProfileProps) {
   const [profile, setProfile] = useState<UserProfileType>(userService.getProfile());
   const [stats, setStats] = useState<UserStats>(userService.getStats());
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const unsubscribe = userService.onUserDataChanged((newProfile, newStats) => {
@@ -21,6 +22,10 @@ export function UserProfile({ userService }: UserProfileProps) {
 
     return unsubscribe;
   }, [userService]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const experienceToNextLevel = 1000 - (profile.experience % 1000);
   const experienceProgress = (profile.experience % 1000) / 1000;
@@ -112,14 +117,18 @@ export function UserProfile({ userService }: UserProfileProps) {
 
       </div>
 
-      {/* Member since */}
-      <div className="mt-4 text-xs text-gray-400 text-center">
-        Member since {profile.joinedAt.toLocaleDateString()}
-      </div>
-      {/* Last active */}
-      <div className="text-xs text-gray-400 text-center">
-        Last active {profile.lastActiveAt.toLocaleDateString()} at {profile.lastActiveAt.toLocaleTimeString()}    
-      </div>
+      {mounted && (
+        <>
+          {/* Member since */}
+          <div className="mt-4 text-xs text-gray-400 text-center">
+            Member since {profile.joinedAt.toLocaleDateString()}
+          </div>
+          {/* Last active */}
+          <div className="text-xs text-gray-400 text-center">
+            Last active {profile.lastActiveAt.toLocaleDateString()} at {profile.lastActiveAt.toLocaleTimeString()}
+          </div>
+        </>
+      )}
     </div>
   );
 }
