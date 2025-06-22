@@ -19,7 +19,7 @@ export interface UserStats {
   powerupsUsed: number;
   achievementsUnlocked: number;
   challengesCompleted: number;
-  gameplayed: number; // total time played in seconds
+  gamesPlayed: number; // total games played
   coinsEarned: number; // total coins earned across all games
 }
 
@@ -60,7 +60,7 @@ export class UserService {
       powerupsUsed: 0,
       achievementsUnlocked: 0,
       challengesCompleted: 0,
-      gameplayed: 0,
+      gamesPlayed: 0,
       coinsEarned: 0
     };
   }
@@ -85,7 +85,13 @@ export class UserService {
     const savedStats = localStorage.getItem('hacktivate-user-stats');
     if (savedStats) {
       try {
-        this.stats = JSON.parse(savedStats);
+        const data = JSON.parse(savedStats);
+        // Migrate old `gameplayed` field to `gamesPlayed`
+        if ('gameplayed' in data && !('gamesPlayed' in data)) {
+          data.gamesPlayed = data.gameplayed;
+          delete data.gameplayed;
+        }
+        this.stats = { ...this.getDefaultStats(), ...data };
       } catch (error) {
         console.warn('Failed to load user stats:', error);
       }
