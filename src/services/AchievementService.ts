@@ -4,6 +4,7 @@ export interface Achievement {
   title: string;
   description: string;
   icon: string;
+  gameId?: string;
   category: 'gameplay' | 'progression' | 'skill' | 'collection';
   requirement: {
     type: string;
@@ -130,6 +131,78 @@ export class AchievementService {
         requirement: { type: 'total_coins_earned', value: 10000 },
         reward: 1000,
         unlocked: false
+      },
+
+      // Additional achievements
+      {
+        id: 'first_game',
+        title: 'Getting Started',
+        description: 'Play your first game',
+        icon: '🎲',
+        category: 'progression',
+        requirement: { type: 'games_played', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'seasoned_gamer',
+        title: 'Seasoned Gamer',
+        description: 'Play 10 games',
+        icon: '🕹️',
+        category: 'progression',
+        requirement: { type: 'games_played', value: 10 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'jump_fanatic',
+        title: 'Jump Fanatic',
+        description: 'Perform 50 jumps in total',
+        icon: '🐰',
+        category: 'gameplay',
+        requirement: { type: 'total_jumps', value: 50 },
+        reward: 75,
+        unlocked: false
+      },
+      {
+        id: 'powerup_enthusiast',
+        title: 'Power-Up Enthusiast',
+        description: 'Use 20 power-ups in total',
+        icon: '🔋',
+        category: 'skill',
+        requirement: { type: 'powerups_total', value: 20 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'speed_freak',
+        title: 'Speed Freak',
+        description: 'Reach 5x speed',
+        icon: '💨',
+        category: 'skill',
+        requirement: { type: 'max_speed', value: 5 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'combo_legend',
+        title: 'Combo Legend',
+        description: 'Achieve a 25x combo',
+        icon: '⚔️',
+        category: 'skill',
+        requirement: { type: 'max_combo', value: 25 },
+        reward: 500,
+        unlocked: false
+      },
+      {
+        id: 'wealthy_merchant',
+        title: 'Wealthy Merchant',
+        description: 'Earn 50,000 coins in total',
+        icon: '🏅',
+        category: 'collection',
+        requirement: { type: 'total_coins_earned', value: 50000 },
+        reward: 2000,
+        unlocked: false
       }
     ];
   }
@@ -156,13 +229,14 @@ export class AchievementService {
     localStorage.setItem('hacktivate-achievements', JSON.stringify(unlockedIds));
   }
 
-  checkAchievement(type: string, value: number): Achievement[] {
+  checkAchievement(type: string, value: number, gameId?: string): Achievement[] {
     const newlyUnlocked: Achievement[] = [];
 
     this.achievements.forEach(achievement => {
       if (achievement.unlocked) return;
       if (achievement.requirement.type !== type) return;
-      
+      if (achievement.gameId && achievement.gameId !== gameId) return;
+
       if (value >= achievement.requirement.value) {
         achievement.unlocked = true;
         achievement.unlockedAt = new Date();

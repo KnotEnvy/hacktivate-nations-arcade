@@ -77,13 +77,23 @@ export function ArcadeHub() {
 
     setCurrentCoins(currencyService.getCurrentCoins());
 
+    let lastCoins = currencyService.getCurrentCoins();
     const unsubscribe = currencyService.onCoinsChanged((newCoins) => {
+      const delta = newCoins - lastCoins;
+      lastCoins = newCoins;
       setCurrentCoins(newCoins);
-      
+
       // Update user profile
       userService.updateProfile({ totalCoins: newCoins });
-      
-      // Check achievements
+
+      if (delta > 0) {
+        const stats = userService.getStats();
+        const updated = stats.coinsEarned + delta;
+        userService.updateStats({ coinsEarned: updated });
+        achievementService.checkAchievement('total_coins_earned', updated);
+      }
+
+      // Check achievements for total coins on hand
       const newAchievements = achievementService.checkAchievement('total_coins', newCoins);
       newAchievements.forEach(achievement => {
         addNotification('achievement', achievement.title, `+${achievement.reward} coins!`);
@@ -142,10 +152,10 @@ export function ArcadeHub() {
         setSelectedGameId(gameId);
         setShowHub(false);
         // Track game start
-        userService.updateStats({
-          gamesPlayed: userService.getStats().gamesPlayed + 1
-        });
+        const gamesPlayed = userService.getStats().gamesPlayed + 1;
+        userService.updateStats({ gamesPlayed });
         challengeService.updateProgress(gameId, 'games_played', 1);
+        achievementService.checkAchievement('games_played', gamesPlayed);
 
       }
     } catch (error) {
@@ -198,9 +208,11 @@ export function ArcadeHub() {
       maxSpeed: Math.max(stats.maxSpeed, gameData.speed || 0),
       maxCombo: Math.max(stats.maxCombo, gameData.combo || 0),
       totalJumps: stats.totalJumps + (gameData.jumps || 0),
-      powerupsUsed: stats.powerupsUsed + (gameData.powerupsUsed || 0)
+      powerupsUsed: stats.powerupsUsed + (gameData.powerupsUsed || 0),
+      coinsEarned: stats.coinsEarned + (gameData.coinsEarned || 0)
     };
     userService.updateStats(newStats);
+    const updatedStats = userService.getStats();
     
     // Update play time
     const playTimeSeconds = Math.floor((gameData.timePlayedMs || 0) / 1000);
@@ -224,24 +236,25 @@ export function ArcadeHub() {
     
     // Check achievements and handle rewards
     const newlyUnlocked = [
-      ...achievementService.checkAchievement('distance', gameData.distance || 0),
-      ...achievementService.checkAchievement('max_speed', gameData.speed || 0),
-      ...achievementService.checkAchievement('max_combo', gameData.combo || 0),
+      ...achievementService.checkAchievement('distance', gameData.distance || 0, selectedGameId),
+      ...achievementService.checkAchievement('max_speed', gameData.speed || 0, selectedGameId),
+      ...achievementService.checkAchievement('max_combo', gameData.combo || 0, selectedGameId),
       ...achievementService.checkAchievement(
         'total_playtime',
         profile.totalPlayTime + playTimeSeconds
       ),
-      ...achievementService.checkAchievement(
-        'total_coins_earned',
-        profile.totalCoins + gameData.coinsEarned
-      ),
-      ...achievementService.checkAchievement('jumps', gameData.jumps || 0),
+      ...achievementService.checkAchievement('total_coins_earned', updatedStats.coinsEarned),
+      ...achievementService.checkAchievement('jumps', gameData.jumps || 0, selectedGameId),
+      ...achievementService.checkAchievement('total_jumps', updatedStats.totalJumps),
+      ...achievementService.checkAchievement('powerups_total', updatedStats.powerupsUsed),
       ...(gameData.powerupTypesUsed
         ? achievementService.checkAchievement(
             'powerup_types',
-            gameData.powerupTypesUsed.length
+            gameData.powerupTypesUsed.length,
+            selectedGameId
           )
         : []),
+      ...achievementService.checkAchievement('games_played', updatedStats.gamesPlayed)
     ];
 
     newlyUnlocked.forEach((achievement) => {
