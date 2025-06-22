@@ -2,7 +2,7 @@
 export class ComboSystem {
   private combo: number = 0;
   private comboTimer: number = 0;
-  private comboTimeLimit: number = 2; // seconds
+  private comboTimeLimit: number = 3.5; // seconds
   private multiplier: number = 1;
   
   addCoin(): number {

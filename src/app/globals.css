@@ -63,3 +63,31 @@ body {
   outline: 2px solid rgba(139, 92, 246, 0.8);
   outline-offset: 2px;
 }
+.game-card .aspect-square::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+
+.game-card:hover .aspect-square::before {
+  opacity: 1;
+}
+
+/* Shimmer loading effect for images */
+@keyframes shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.thumbnail-loading {
+  background: linear-gradient(90deg, #374151 0px, #4B5563 100px, #374151 200px);
+  background-size: 200px 100%;
+  animation: shimmer 1.5s infinite;
+}

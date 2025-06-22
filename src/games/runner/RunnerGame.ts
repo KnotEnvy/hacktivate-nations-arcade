@@ -43,6 +43,10 @@ export class RunnerGame extends BaseGame {
   private spawnInterval: number = 2;
   private distance: number = 0;
   private groundY: number = 0;
+  private jumps: number = 0;
+  private powerupsUsed: number = 0;
+
+
   
   // Power-up system
   private activePowerUps: ActivePowerUp[] = [];
@@ -60,6 +64,12 @@ export class RunnerGame extends BaseGame {
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
+    this.startTime = Date.now();
+    this.jumps = 0;
+    this.powerupsUsed = 0;
+ 
+
+
     
     // Spawn initial content
     this.spawnObstacle();
@@ -101,9 +111,30 @@ export class RunnerGame extends BaseGame {
     this.score = Math.floor(this.distance / 10);
   }
 
+  getScore() {
+    const baseScore = super.getScore?.() || {
+      score: this.score,
+      pickups: this.pickups,
+      timePlayedMs: Date.now() - this.startTime,
+      coinsEarned: 0,
+    };
+    return {
+      ...baseScore,
+      distance: Math.floor(this.distance),
+      jumps: this.jumps,
+      powerupsUsed: this.powerupsUsed,
+      // maxCombo: this.maxCombo,
+      speed: this.gameSpeed,
+      combo: this.comboSystem?.getCombo?.() ?? 0,
+      // Add more as needed
+    };
+  }
+
+
   private handlePlayerEffects(jumpPressed: boolean): void {
     // Jump particles
     if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded()) {
+      this.jumps++;
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
       this.services.audio.playSound('jump');
     }
@@ -151,7 +182,7 @@ export class RunnerGame extends BaseGame {
     this.particles.update(dt);
     this.screenShake.update(dt);
     this.comboSystem.update(dt);
-    
+
     // Update active power-ups
     this.activePowerUps = this.activePowerUps.filter(powerUp => {
       powerUp.duration -= dt;
@@ -417,6 +448,7 @@ export class RunnerGame extends BaseGame {
       const powerUp = this.powerUps[i];
       if (playerBounds.intersects(powerUp.getBounds())) {
         this.powerUps.splice(i, 1);
+
         this.activatePowerUp(powerUp.type);
         
         this.particles.createPowerUpPickup(
@@ -425,6 +457,7 @@ export class RunnerGame extends BaseGame {
         );
         
         this.screenShake.shake(4, 0.15);
+        this.powerupsUsed++;
         this.services.audio.playSound('powerup');
       }
     }
@@ -432,6 +465,7 @@ export class RunnerGame extends BaseGame {
 
   private activatePowerUp(type: PowerUpType): void {
     const duration = this.getPowerUpDuration(type);
+
     
     // Remove existing power-up of same type
     this.activePowerUps = this.activePowerUps.filter(p => p.type !== type);
@@ -492,6 +526,8 @@ export class RunnerGame extends BaseGame {
     this.spawnTimer = 0;
     this.spawnInterval = 2;
     this.distance = 0;
+    this.jumps = 0;
+    this.powerupsUsed = 0;
     this.player = new Player(100, this.groundY - 32, this.groundY);
   }
 }

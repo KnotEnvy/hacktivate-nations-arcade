@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useCanvas } from '@/hooks/useCanvas';
 import { useGameModule } from '@/hooks/useGameModule';
-import { GameModule } from '@/lib/types';
+import { GameModule, GameScore } from '@/lib/types';
 import { GAME_CONFIG } from '@/lib/constants';
 import { Button } from '@/components/ui/Button';
 import { CurrencyService } from '@/services/CurrencyService';
@@ -12,8 +12,7 @@ import { CurrencyService } from '@/services/CurrencyService';
 
 interface GameCanvasProps {
   game: GameModule | null;
-  onGameEnd?: () => void;
-  currencyService: CurrencyService;
+onGameEnd?: (stats?: GameScore) => void;  currencyService: CurrencyService;
 }
 
 export function GameCanvas({ game, onGameEnd, currencyService }: GameCanvasProps) {
@@ -48,7 +47,7 @@ export function GameCanvas({ game, onGameEnd, currencyService }: GameCanvasProps
       if (game.isGameOver && game.isGameOver()) {
         setGameState('ended');
         stopGame();
-        onGameEnd?.();
+        onGameEnd?.(game.getScore?.());
       }
     };
 
