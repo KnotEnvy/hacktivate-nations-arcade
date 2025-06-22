@@ -12,6 +12,7 @@ export function UserProfile({ userService }: UserProfileProps) {
   const [profile, setProfile] = useState<UserProfileType>(userService.getProfile());
   const [stats, setStats] = useState<UserStats>(userService.getStats());
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const unsubscribe = userService.onUserDataChanged((newProfile, newStats) => {
@@ -21,6 +22,10 @@ export function UserProfile({ userService }: UserProfileProps) {
 
     return unsubscribe;
   }, [userService]);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const experienceToNextLevel = 1000 - (profile.experience % 1000);
   const experienceProgress = (profile.experience % 1000) / 1000;
@@ -111,8 +116,9 @@ export function UserProfile({ userService }: UserProfileProps) {
         </div>
 
       </div>
-
-      {/* Member since */}
+      {mounted && (
+        <>
+          {/* Member since */}
       <div className="mt-4 text-xs text-gray-400 text-center">
         {profile.joinedAt.getTime() === 0
           ? 'Member since N/A'
@@ -124,6 +130,8 @@ export function UserProfile({ userService }: UserProfileProps) {
           ? 'Last active N/A'
           : `Last active ${profile.lastActiveAt.toLocaleDateString()} at ${profile.lastActiveAt.toLocaleTimeString()}`}
       </div>
+        </>
+      )}
     </div>
   );
 }
