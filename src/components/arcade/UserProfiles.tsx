@@ -105,6 +105,10 @@ export function UserProfile({ userService }: UserProfileProps) {
           <div className="text-orange-400 font-bold">{stats.powerupsUsed}</div>
           <div className="text-gray-400">Power-ups Used</div>
         </div>
+        <div className="bg-gray-800 p-3 rounded-lg">
+          <div className="text-yellow-300 font-bold">{stats.achievementsUnlocked}</div>
+          <div className="text-gray-400">Achievements</div>
+        </div>
 
       </div>
 
