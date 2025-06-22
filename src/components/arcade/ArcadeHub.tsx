@@ -222,16 +222,39 @@ export function ArcadeHub() {
     challengeService.updateProgress('', 'coins_earned', gameData.coinsEarned || 0);
     challengeService.updateProgress('', 'time_played', playTimeSeconds);
     
-    // Check achievements
-    achievementService.checkAchievement('distance', gameData.distance || 0);
-    achievementService.checkAchievement('max_speed', gameData.speed || 0);
-    achievementService.checkAchievement('max_combo', gameData.combo || 0);
-    achievementService.checkAchievement('total_playtime', profile.totalPlayTime + playTimeSeconds);
-    achievementService.checkAchievement('total_coins_earned', profile.totalCoins + gameData.coinsEarned);
-    achievementService.checkAchievement('jumps', gameData.jumps || 0);
-    if (gameData.powerupTypesUsed) {
-      achievementService.checkAchievement('powerup_types', gameData.powerupTypesUsed.length);
-    }
+    // Check achievements and handle rewards
+    const newlyUnlocked = [
+      ...achievementService.checkAchievement('distance', gameData.distance || 0),
+      ...achievementService.checkAchievement('max_speed', gameData.speed || 0),
+      ...achievementService.checkAchievement('max_combo', gameData.combo || 0),
+      ...achievementService.checkAchievement(
+        'total_playtime',
+        profile.totalPlayTime + playTimeSeconds
+      ),
+      ...achievementService.checkAchievement(
+        'total_coins_earned',
+        profile.totalCoins + gameData.coinsEarned
+      ),
+      ...achievementService.checkAchievement('jumps', gameData.jumps || 0),
+      ...(gameData.powerupTypesUsed
+        ? achievementService.checkAchievement(
+            'powerup_types',
+            gameData.powerupTypesUsed.length
+          )
+        : []),
+    ];
+
+    newlyUnlocked.forEach((achievement) => {
+      addNotification(
+        'achievement',
+        achievement.title,
+        `+${achievement.reward} coins`
+      );
+      currencyService.addCoins(
+        achievement.reward,
+        `achievement_${achievement.id}`
+      );
+    });
 
   };
 
