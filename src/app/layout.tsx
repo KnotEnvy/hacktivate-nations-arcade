@@ -9,10 +9,16 @@ export const metadata: Metadata = {
   title: 'HacktivateNations Arcade',
   description: 'A retro-inspired arcade hub with modular mini-games',
   keywords: ['arcade', 'games', 'retro', 'web games'],
-  authors: [{ name: 'HacktivateNations Team' }],
+  authors: [{ name: 'KnotNVS' }],
+  icons: {
+    icon: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
+
+  manifest: '/manifest.json', 
 };
 
-// Separate viewport export (Next.js 15 requirement)
+// Separate viewport export is correct
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
@@ -26,11 +32,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <head>
-        <link rel="icon" href="/favicon.ico" />
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-        <link rel="manifest" href="/manifest.json" />
-      </head>
       <body className={`${inter.className} antialiased bg-gray-900 text-white`}>
         <div id="root">{children}</div>
       </body>
