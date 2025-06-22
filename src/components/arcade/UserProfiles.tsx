@@ -114,11 +114,15 @@ export function UserProfile({ userService }: UserProfileProps) {
 
       {/* Member since */}
       <div className="mt-4 text-xs text-gray-400 text-center">
-        Member since {profile.joinedAt.toLocaleDateString()}
+        {profile.joinedAt.getTime() === 0
+          ? 'Member since N/A'
+          : `Member since ${profile.joinedAt.toLocaleDateString()}`}
       </div>
       {/* Last active */}
       <div className="text-xs text-gray-400 text-center">
-        Last active {profile.lastActiveAt.toLocaleDateString()} at {profile.lastActiveAt.toLocaleTimeString()}    
+        {profile.lastActiveAt.getTime() === 0
+          ? 'Last active N/A'
+          : `Last active ${profile.lastActiveAt.toLocaleDateString()} at ${profile.lastActiveAt.toLocaleTimeString()}`}
       </div>
     </div>
   );
