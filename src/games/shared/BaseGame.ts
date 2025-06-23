@@ -112,15 +112,18 @@ export abstract class BaseGame implements GameModule {
     if (!this.isRunning) return;
     
     this.isRunning = false;
-    this.gameTime = Date.now() - this.startTime; // <-- Ensure gameTime is correct
+    this.gameTime = Date.now() - this.startTime; 
     const finalScore = this.getScore();
     
+    //play game over sound
+    this.services.audio.playSound('game_over');
+
     // Award coins
     this.services.currency.addCoins(
       finalScore.coinsEarned, 
       `game_${this.manifest.id}`
     );
-    
+        
     // Track analytics
     this.services.analytics.trackGameEnd(
       this.manifest.id,

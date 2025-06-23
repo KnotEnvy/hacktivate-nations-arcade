@@ -1,0 +1,1 @@
+export { BlockPuzzleGame } from './blockPuzzleGame';

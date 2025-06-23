@@ -1,0 +1,593 @@
+// src/games/puzzle/BlockPuzzleGame.ts
+import { BaseGame } from '@/games/shared/BaseGame';
+import { GameManifest } from '@/lib/types';
+import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
+
+type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
+type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
+
+interface Block {
+  color: BlockColor;
+  locked: boolean;
+}
+
+interface FallingPiece {
+  shape: boolean[][];
+  color: BlockColor;
+  position: Vector2;
+  rotation: number;
+}
+
+// Tetris-like piece shapes
+const PIECE_SHAPES = {
+  I: [[true, true, true, true]],
+  O: [[true, true], [true, true]],
+  T: [[false, true, false], [true, true, true]],
+  S: [[false, true, true], [true, true, false]],
+  Z: [[true, true, false], [false, true, true]],
+  J: [[true, false, false], [true, true, true]],
+  L: [[false, false, true], [true, true, true]]
+};
+
+const COLORS: BlockColor[] = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'cyan'];
+
+export class BlockPuzzleGame extends BaseGame {
+  manifest: GameManifest = {
+    id: 'puzzle',
+    title: 'Block Puzzle',
+    thumbnail: '/games/puzzle/puzzle-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
+    assetBudgetKB: 75,
+    tier: 1, // Unlocked at 2000 coins
+    description: 'Drop and arrange falling blocks to clear lines!'
+  };
+
+  // Game board
+  private boardWidth: number = 10;
+  private boardHeight: number = 20;
+  private board: (Block | null)[][] = [];
+  private blockSize: number = 30;
+  
+  // Game state
+  private currentPiece: FallingPiece | null = null;
+  private nextPiece: FallingPiece | null = null;
+  private gameState: GameState = 'playing';
+  private level: number = 1;
+  private linesCleared: number = 0;
+  private dropTimer: number = 0;
+  private dropInterval: number = 1000; // ms
+  private lastDropTime: number = 0;
+  
+  // Input handling
+  private inputCooldown: { [key: string]: number } = {};
+  private inputDelay: number = 150; // ms
+  
+  // Visual effects
+  private clearingLines: number[] = [];
+  private clearAnimationTime: number = 0;
+  private clearAnimationDuration: number = 500; // ms
+  
+  // Scoring
+  private scoreMultipliers = {
+    single: 100,
+    double: 300,
+    triple: 500,
+    tetris: 800
+  };
+
+  protected onInit(): void {
+    // Initialize empty board
+    this.board = Array(this.boardHeight).fill(null).map(() => 
+      Array(this.boardWidth).fill(null)
+    );
+    
+    // Create first pieces
+    this.currentPiece = this.generateRandomPiece();
+    this.nextPiece = this.generateRandomPiece();
+    
+    // Position current piece at top center
+    if (this.currentPiece) {
+      this.currentPiece.position = new Vector2(
+        Math.floor(this.boardWidth / 2) - 1,
+        0
+      );
+    }
+    
+    this.lastDropTime = Date.now();
+    console.log('🧩 Block Puzzle initialized');
+  }
+
+  protected onUpdate(dt: number): void {
+    if (this.gameState === 'gameOver') return;
+    
+    const currentTime = Date.now();
+    
+    // Handle line clearing animation
+    if (this.gameState === 'lineClearing') {
+      this.clearAnimationTime += dt * 1000;
+      if (this.clearAnimationTime >= this.clearAnimationDuration) {
+        this.completeLineClear();
+      }
+      return;
+    }
+    
+    // Handle input with cooldowns
+    this.handleInput(currentTime);
+    
+    // Handle automatic piece dropping
+    if (currentTime - this.lastDropTime > this.dropInterval) {
+      this.dropPiece();
+      this.lastDropTime = currentTime;
+    }
+  }
+
+  private handleInput(currentTime: number): void {
+    if (!this.currentPiece) return;
+    
+    const input = this.services.input;
+    
+    // Move left
+    if (input.isKeyPressed('ArrowLeft') || input.isKeyPressed('KeyA')) {
+      if (!this.inputCooldown['left'] || currentTime - this.inputCooldown['left'] > this.inputDelay) {
+        this.movePiece(-1, 0);
+        this.inputCooldown['left'] = currentTime;
+      }
+    }
+    
+    // Move right
+    if (input.isKeyPressed('ArrowRight') || input.isKeyPressed('KeyD')) {
+      if (!this.inputCooldown['right'] || currentTime - this.inputCooldown['right'] > this.inputDelay) {
+        this.movePiece(1, 0);
+        this.inputCooldown['right'] = currentTime;
+      }
+    }
+    
+    // Rotate
+    if (input.isKeyPressed('ArrowUp') || input.isKeyPressed('KeyW') || input.isActionPressed()) {
+      if (!this.inputCooldown['rotate'] || currentTime - this.inputCooldown['rotate'] > this.inputDelay) {
+        this.rotatePiece();
+        this.inputCooldown['rotate'] = currentTime;
+      }
+    }
+    
+    // Fast drop
+    if (input.isKeyPressed('ArrowDown') || input.isKeyPressed('KeyS')) {
+      if (!this.inputCooldown['drop'] || currentTime - this.inputCooldown['drop'] > 50) {
+        this.dropPiece();
+        this.inputCooldown['drop'] = currentTime;
+      }
+    }
+    
+    // Hard drop (space)
+    if (input.isKeyPressed('Space')) {
+      if (!this.inputCooldown['hardDrop'] || currentTime - this.inputCooldown['hardDrop'] > this.inputDelay) {
+        this.hardDrop();
+        this.inputCooldown['hardDrop'] = currentTime;
+      }
+    }
+  }
+
+  private generateRandomPiece(): FallingPiece {
+    const shapeKeys = Object.keys(PIECE_SHAPES) as (keyof typeof PIECE_SHAPES)[];
+    const randomShape = shapeKeys[Math.floor(Math.random() * shapeKeys.length)];
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    
+    return {
+      shape: PIECE_SHAPES[randomShape],
+      color,
+      position: new Vector2(0, 0),
+      rotation: 0
+    };
+  }
+
+  private movePiece(dx: number, dy: number): boolean {
+    if (!this.currentPiece) return false;
+    
+    const newPosition = new Vector2(
+      this.currentPiece.position.x + dx,
+      this.currentPiece.position.y + dy
+    );
+    
+    if (this.isValidPosition(this.currentPiece.shape, newPosition)) {
+      this.currentPiece.position = newPosition;
+      this.services.audio.playSound('click', 0.3);
+      return true;
+    }
+    
+    return false;
+  }
+
+  private rotatePiece(): boolean {
+    if (!this.currentPiece) return false;
+    
+    const rotatedShape = this.rotateShape(this.currentPiece.shape);
+    
+    if (this.isValidPosition(rotatedShape, this.currentPiece.position)) {
+      this.currentPiece.shape = rotatedShape;
+      this.currentPiece.rotation = (this.currentPiece.rotation + 1) % 4;
+      this.services.audio.playSound('click', 0.5);
+      return true;
+    }
+    
+    return false;
+  }
+
+  private rotateShape(shape: boolean[][]): boolean[][] {
+    const rows = shape.length;
+    const cols = shape[0].length;
+    const rotated: boolean[][] = Array(cols).fill(null).map(() => Array(rows).fill(false));
+    
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        rotated[c][rows - 1 - r] = shape[r][c];
+      }
+    }
+    
+    return rotated;
+  }
+
+  private isValidPosition(shape: boolean[][], position: Vector2): boolean {
+    for (let r = 0; r < shape.length; r++) {
+      for (let c = 0; c < shape[r].length; c++) {
+        if (shape[r][c]) {
+          const boardX = position.x + c;
+          const boardY = position.y + r;
+          
+          // Check boundaries
+          if (boardX < 0 || boardX >= this.boardWidth || 
+              boardY < 0 || boardY >= this.boardHeight) {
+            return false;
+          }
+          
+          // Check collision with existing blocks
+          if (this.board[boardY][boardX] !== null) {
+            return false;
+          }
+        }
+      }
+    }
+    
+    return true;
+  }
+
+  private dropPiece(): boolean {
+    return this.movePiece(0, 1);
+  }
+
+  private hardDrop(): void {
+    if (!this.currentPiece) return;
+    
+    let dropDistance = 0;
+    while (this.movePiece(0, 1)) {
+      dropDistance++;
+    }
+    
+    this.score += dropDistance * 2; // Bonus points for hard drop
+    this.lockPiece();
+  }
+
+  private lockPiece(): void {
+    if (!this.currentPiece) return;
+    
+    // Place piece on board
+    for (let r = 0; r < this.currentPiece.shape.length; r++) {
+      for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
+        if (this.currentPiece.shape[r][c]) {
+          const boardX = this.currentPiece.position.x + c;
+          const boardY = this.currentPiece.position.y + r;
+          
+          if (boardY >= 0 && boardY < this.boardHeight && 
+              boardX >= 0 && boardX < this.boardWidth) {
+            this.board[boardY][boardX] = {
+              color: this.currentPiece.color,
+              locked: true
+            };
+          }
+        }
+      }
+    }
+    
+    this.services.audio.playSound('click', 0.7);
+    
+    // Check for completed lines
+    const completedLines = this.findCompletedLines();
+    if (completedLines.length > 0) {
+      this.startLineClear(completedLines);
+    } else {
+      this.spawnNextPiece();
+    }
+  }
+
+  private findCompletedLines(): number[] {
+    const completed: number[] = [];
+    
+    for (let row = 0; row < this.boardHeight; row++) {
+      if (this.board[row].every(cell => cell !== null)) {
+        completed.push(row);
+      }
+    }
+    
+    return completed;
+  }
+
+  private startLineClear(lines: number[]): void {
+    this.clearingLines = lines;
+    this.clearAnimationTime = 0;
+    this.gameState = 'lineClearing';
+    
+    // Play sound based on number of lines
+    if (lines.length === 4) {
+      this.services.audio.playSound('powerup'); // Tetris!
+    } else {
+      this.services.audio.playSound('coin');
+    }
+  }
+
+  private completeLineClear(): void {
+    const linesCount = this.clearingLines.length;
+    
+    // Remove cleared lines
+    this.clearingLines.sort((a, b) => b - a); // Sort descending
+    for (const lineIndex of this.clearingLines) {
+      this.board.splice(lineIndex, 1);
+      this.board.unshift(Array(this.boardWidth).fill(null));
+    }
+    
+    // Update score and stats
+    this.linesCleared += linesCount;
+    const scoreKey = linesCount === 1 ? 'single' : 
+                     linesCount === 2 ? 'double' : 
+                     linesCount === 3 ? 'triple' : 'tetris';
+    const lineScore = this.scoreMultipliers[scoreKey] * this.level;
+    this.score += lineScore;
+    this.pickups += linesCount; // Lines cleared count as pickups for currency
+    
+    // Level up every 10 lines
+    this.level = Math.floor(this.linesCleared / 10) + 1;
+    this.dropInterval = Math.max(100, 1000 - (this.level - 1) * 100);
+    
+    // Reset state
+    this.clearingLines = [];
+    this.gameState = 'playing';
+    
+    this.spawnNextPiece();
+  }
+
+  private spawnNextPiece(): void {
+    this.currentPiece = this.nextPiece;
+    this.nextPiece = this.generateRandomPiece();
+    
+    if (this.currentPiece) {
+      this.currentPiece.position = new Vector2(
+        Math.floor(this.boardWidth / 2) - 1,
+        0
+      );
+      
+      // Check game over
+      if (!this.isValidPosition(this.currentPiece.shape, this.currentPiece.position)) {
+        this.gameState = 'gameOver';
+        this.services.audio.playSound('game_over');
+        this.endGame();
+      }
+    }
+  }
+
+  protected onRender(ctx: CanvasRenderingContext2D): void {
+    // Clear background
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    // Draw board background
+    const boardX = 50;
+    const boardY = 50;
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    
+    // Draw grid
+    for (let x = 0; x <= this.boardWidth; x++) {
+      ctx.beginPath();
+      ctx.moveTo(boardX + x * this.blockSize, boardY);
+      ctx.lineTo(boardX + x * this.blockSize, boardY + this.boardHeight * this.blockSize);
+      ctx.stroke();
+    }
+    
+    for (let y = 0; y <= this.boardHeight; y++) {
+      ctx.beginPath();
+      ctx.moveTo(boardX, boardY + y * this.blockSize);
+      ctx.lineTo(boardX + this.boardWidth * this.blockSize, boardY + y * this.blockSize);
+      ctx.stroke();
+    }
+    
+    // Draw locked blocks
+    for (let row = 0; row < this.boardHeight; row++) {
+      for (let col = 0; col < this.boardWidth; col++) {
+        const block = this.board[row][col];
+        if (block) {
+          const x = boardX + col * this.blockSize;
+          const y = boardY + row * this.blockSize;
+          
+          // Flash effect for clearing lines
+          let alpha = 1.0;
+          if (this.clearingLines.includes(row)) {
+            alpha = 0.5 + 0.5 * Math.sin(this.clearAnimationTime * 0.02);
+          }
+          
+          this.drawBlock(ctx, x, y, block.color, alpha);
+        }
+      }
+    }
+    
+    // Draw current falling piece
+    if (this.currentPiece && this.gameState !== 'gameOver') {
+      this.drawPiece(ctx, this.currentPiece, boardX, boardY);
+    }
+    
+    // Draw ghost piece (preview of where piece will land)
+    if (this.currentPiece && this.gameState === 'playing') {
+      this.drawGhostPiece(ctx, boardX, boardY);
+    }
+    
+    // Draw next piece preview
+    this.drawNextPiece(ctx);
+    
+    // Draw UI
+    this.drawUI(ctx);
+  }
+
+  private drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, color: BlockColor, alpha: number = 1.0): void {
+    const colors = {
+      red: '#ff4757',
+      blue: '#3742fa',
+      green: '#2ed573',
+      yellow: '#ffa502',
+      purple: '#a55eea',
+      orange: '#ff6348',
+      cyan: '#26d0ce'
+    };
+    
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    
+    // Main block
+    ctx.fillStyle = colors[color];
+    ctx.fillRect(x + 1, y + 1, this.blockSize - 2, this.blockSize - 2);
+    
+    // Highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillRect(x + 1, y + 1, this.blockSize - 2, 8);
+    
+    // Shadow
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fillRect(x + 1, y + this.blockSize - 9, this.blockSize - 2, 8);
+    
+    ctx.restore();
+  }
+
+  private drawPiece(ctx: CanvasRenderingContext2D, piece: FallingPiece, boardX: number, boardY: number): void {
+    for (let r = 0; r < piece.shape.length; r++) {
+      for (let c = 0; c < piece.shape[r].length; c++) {
+        if (piece.shape[r][c]) {
+          const x = boardX + (piece.position.x + c) * this.blockSize;
+          const y = boardY + (piece.position.y + r) * this.blockSize;
+          this.drawBlock(ctx, x, y, piece.color);
+        }
+      }
+    }
+  }
+
+  private drawGhostPiece(ctx: CanvasRenderingContext2D, boardX: number, boardY: number): void {
+    if (!this.currentPiece) return;
+    
+    // Find where piece would land
+    let ghostY = this.currentPiece.position.y;
+    while (this.isValidPosition(this.currentPiece.shape, new Vector2(this.currentPiece.position.x, ghostY + 1))) {
+      ghostY++;
+    }
+    
+    // Draw ghost piece
+    for (let r = 0; r < this.currentPiece.shape.length; r++) {
+      for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
+        if (this.currentPiece.shape[r][c]) {
+          const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
+          const y = boardY + (ghostY + r) * this.blockSize;
+          this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
+        }
+      }
+    }
+  }
+
+  private drawNextPiece(ctx: CanvasRenderingContext2D): void {
+    if (!this.nextPiece) return;
+    
+    const previewX = 400;
+    const previewY = 80;
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px Arial';
+    ctx.fillText('Next:', previewX, previewY - 10);
+    
+    for (let r = 0; r < this.nextPiece.shape.length; r++) {
+      for (let c = 0; c < this.nextPiece.shape[r].length; c++) {
+        if (this.nextPiece.shape[r][c]) {
+          const x = previewX + c * 20;
+          const y = previewY + r * 20;
+          this.drawBlock(ctx, x, y, this.nextPiece.color);
+        }
+      }
+    }
+  }
+
+  private drawUI(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '18px Arial';
+    
+    const uiX = 400;
+    let uiY = 150;
+    
+    ctx.fillText(`Score: ${this.score}`, uiX, uiY);
+    uiY += 25;
+    ctx.fillText(`Level: ${this.level}`, uiX, uiY);
+    uiY += 25;
+    ctx.fillText(`Lines: ${this.linesCleared}`, uiX, uiY);
+    
+    // Controls
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#aaaaaa';
+    uiY = 300;
+    ctx.fillText('Controls:', uiX, uiY);
+    uiY += 15;
+    ctx.fillText('← → : Move', uiX, uiY);
+    uiY += 15;
+    ctx.fillText('↑ : Rotate', uiX, uiY);
+    uiY += 15;
+    ctx.fillText('↓ : Soft drop', uiX, uiY);
+    uiY += 15;
+    ctx.fillText('Space: Hard drop', uiX, uiY);
+  }
+
+  protected onPause(): void {
+    this.gameState = 'paused';
+  }
+
+  protected onResume(): void {
+    if (this.gameState === 'paused') {
+      this.gameState = 'playing';
+      this.lastDropTime = Date.now(); // Reset drop timer
+    }
+  }
+
+  protected onRestart(): void {
+    this.board = Array(this.boardHeight).fill(null).map(() => 
+      Array(this.boardWidth).fill(null)
+    );
+    this.currentPiece = this.generateRandomPiece();
+    this.nextPiece = this.generateRandomPiece();
+    this.gameState = 'playing';
+    this.level = 1;
+    this.linesCleared = 0;
+    this.dropInterval = 1000;
+    this.clearingLines = [];
+    this.clearAnimationTime = 0;
+    this.lastDropTime = Date.now();
+    
+    if (this.currentPiece) {
+      this.currentPiece.position = new Vector2(
+        Math.floor(this.boardWidth / 2) - 1,
+        0
+      );
+    }
+  }
+
+  getScore() {
+    return {
+      ...super.getScore(),
+      level: this.level,
+      linesCleared: this.linesCleared,
+      gameState: this.gameState
+    };
+  }
+
+  isGameOver(): boolean {
+    return this.gameState === 'gameOver';
+  }
+}

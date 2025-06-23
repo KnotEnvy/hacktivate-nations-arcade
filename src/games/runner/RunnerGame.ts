@@ -78,6 +78,12 @@ export class RunnerGame extends BaseGame {
 
   protected onUpdate(dt: number): void {
     const jumpPressed = this.services.input.isActionPressed();
+
+    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded()) {
+      this.services.audio.playSound('jump');
+      this.jumps++;
+
+    }
     
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
@@ -111,7 +117,7 @@ export class RunnerGame extends BaseGame {
     this.score = Math.floor(this.distance / 10);
   }
 
-  getScore() {
+  protected getScore() {
     const baseScore = super.getScore?.() || {
       score: this.score,
       pickups: this.pickups,
@@ -130,13 +136,10 @@ export class RunnerGame extends BaseGame {
     };
   }
 
-
   private handlePlayerEffects(jumpPressed: boolean): void {
     // Jump particles
-    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded()) {
-      this.jumps++;
+    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded() ) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
-      this.services.audio.playSound('jump');
     }
     
     // Landing particles
@@ -407,6 +410,7 @@ export class RunnerGame extends BaseGame {
     if (!isInvincible) {
       for (const obstacle of this.obstacles) {
         if (playerBounds.intersects(obstacle.getBounds())) {
+          this.services.audio.playSound('collision');
           this.screenShake.shake(10, 0.3);
           this.endGame();
           return;
@@ -416,6 +420,7 @@ export class RunnerGame extends BaseGame {
       // Check flying enemy collisions
       for (const enemy of this.flyingEnemies) {
         if (playerBounds.intersects(enemy.getBounds())) {
+          this.services.audio.playSound('collision');
           this.screenShake.shake(8, 0.25);
           this.endGame();
           return;
