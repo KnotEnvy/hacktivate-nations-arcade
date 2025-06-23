@@ -12,6 +12,7 @@ interface Block {
 }
 
 interface FallingPiece {
+  shapeName: keyof typeof PIECE_SHAPES; // <-- ADD THIS LINE
   shape: boolean[][];
   color: BlockColor;
   position: Vector2;
@@ -76,6 +77,15 @@ export class BlockPuzzleGame extends BaseGame {
     triple: 500,
     tetris: 800
   };
+    private readonly WALL_KICK_TESTS: Vector2[] = [
+    new Vector2(0, 0),   // No kick (initial test)
+    new Vector2(-1, 0),  // Kick left 1
+    new Vector2(1, 0),   // Kick right 1
+    new Vector2(0, 1),   // Kick down 1 (useful for floor kicks)
+    new Vector2(-1, 1),  //
+    new Vector2(1, 1),   //
+    ];
+
 
   protected onInit(): void {
     // Initialize empty board
@@ -168,11 +178,13 @@ export class BlockPuzzleGame extends BaseGame {
 
   private generateRandomPiece(): FallingPiece {
     const shapeKeys = Object.keys(PIECE_SHAPES) as (keyof typeof PIECE_SHAPES)[];
-    const randomShape = shapeKeys[Math.floor(Math.random() * shapeKeys.length)];
+  const randomShapeName = shapeKeys[Math.floor(Math.random() * shapeKeys.length)]; 
     const color = COLORS[Math.floor(Math.random() * COLORS.length)];
     
     return {
-      shape: PIECE_SHAPES[randomShape],
+      shapeName: randomShapeName,
+
+      shape: PIECE_SHAPES[randomShapeName],
       color,
       position: new Vector2(0, 0),
       rotation: 0
@@ -196,20 +208,27 @@ export class BlockPuzzleGame extends BaseGame {
     return false;
   }
 
-  private rotatePiece(): boolean {
-    if (!this.currentPiece) return false;
-    
-    const rotatedShape = this.rotateShape(this.currentPiece.shape);
-    
-    if (this.isValidPosition(rotatedShape, this.currentPiece.position)) {
+private rotatePiece(): boolean {
+  if (!this.currentPiece) return false;
+
+  const rotatedShape = this.rotateShape(this.currentPiece.shape);
+
+  for (const kick of this.WALL_KICK_TESTS) {
+    const newPosition = new Vector2(
+      this.currentPiece.position.x + kick.x,
+      this.currentPiece.position.y + kick.y
+    );
+
+    if (this.isValidPosition(rotatedShape, newPosition)) {
       this.currentPiece.shape = rotatedShape;
+      this.currentPiece.position = newPosition; // Apply the kick!
       this.currentPiece.rotation = (this.currentPiece.rotation + 1) % 4;
       this.services.audio.playSound('click');
-      return true;
+      return true; // Rotation succeeded
     }
-    
-    return false;
   }
+  return false;
+}
 
   private rotateShape(shape: boolean[][]): boolean[][] {
     const rows = shape.length;
@@ -264,17 +283,12 @@ export class BlockPuzzleGame extends BaseGame {
     if (!this.currentPiece) return;
     
     let dropDistance = 0;
-    // Keep calling dropPiece() as long as it succeeds (returns true)
     while (this.dropPiece()) {
         dropDistance++;
     }
-    
-    // The piece is now at its final destination, so lock it.
-    // dropPiece() already called lockPiece() on its last, failing attempt.
-    
-    // Award points for the hard drop distance
+  
     this.score += dropDistance * 2; 
-    this.services.audio.playSound('click', 0.7);
+    this.services.audio.playSound('click');
     }
 
   private lockPiece(): void {
