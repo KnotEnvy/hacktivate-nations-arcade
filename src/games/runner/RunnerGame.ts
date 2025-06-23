@@ -117,7 +117,7 @@ export class RunnerGame extends BaseGame {
     this.score = Math.floor(this.distance / 10);
   }
 
-  protected getScore() {
+  public getScore() {
     const baseScore = super.getScore?.() || {
       score: this.score,
       pickups: this.pickups,
