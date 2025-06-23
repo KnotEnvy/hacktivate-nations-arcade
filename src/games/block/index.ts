@@ -1,1 +1,1 @@
-export { BlockPuzzleGame } from './blockPuzzleGame';
+export { BlockPuzzleGame } from './BlockPuzzleGame';
