@@ -2,6 +2,7 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
+import { EnvironmentSystem } from './EnvironmentSystem';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
 type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
@@ -58,6 +59,8 @@ export class BlockPuzzleGame extends BaseGame {
   private dropTimer: number = 0;
   private dropInterval: number = 1000; // ms
   private lastDropTime: number = 0;
+
+  private environmentSystem: EnvironmentSystem = new EnvironmentSystem();
   
   // Input handling
   private inputCooldown: { [key: string]: number } = {};
@@ -108,6 +111,7 @@ export class BlockPuzzleGame extends BaseGame {
     }
     
     this.lastDropTime = Date.now();
+    this.environmentSystem.updateTheme(this.level);
     console.log('🧩 Block Puzzle initialized');
   }
 
@@ -419,7 +423,8 @@ private rotatePiece(): boolean {
     
     // Level up every 10 lines
     this.level = Math.floor(this.linesCleared / 10) + 1;
-    this.dropInterval = Math.max(100, 1000 - (this.level - 1) * 100);
+    this.dropInterval = Math.max(50, 1000 * Math.pow(0.95, this.level - 1));
+    this.environmentSystem.updateTheme(this.level);
     
     // Reset state
     this.clearingLines = [];
@@ -450,13 +455,15 @@ private rotatePiece(): boolean {
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
     // Clear background
-    ctx.fillStyle = '#1a1a2e';
+    ctx.fillStyle = this.environmentSystem.getBoardColor();
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
     // Draw board background
     const boardX = 50;
     const boardY = 50;
-    ctx.strokeStyle = '#444';
+    ctx.fillStyle = this.environmentSystem.getBoardColor();
+    ctx.fillRect(boardX, boardY, this.boardWidth * this.blockSize, this.boardHeight * this.blockSize);
+    ctx.strokeStyle = this.environmentSystem.getGridColor();
     ctx.lineWidth = 1;
     
     // Draw grid
@@ -511,15 +518,7 @@ private rotatePiece(): boolean {
   }
 
   private drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, color: BlockColor, alpha: number = 1.0): void {
-    const colors = {
-      red: '#ff4757',
-      blue: '#3742fa',
-      green: '#2ed573',
-      yellow: '#ffa502',
-      purple: '#a55eea',
-      orange: '#ff6348',
-      cyan: '#26d0ce'
-    };
+    const colors = this.environmentSystem.getBlockColors();
     
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -611,6 +610,8 @@ private rotatePiece(): boolean {
     ctx.fillText(`Level: ${this.level}`, uiX, uiY);
     uiY += 25;
     ctx.fillText(`Lines: ${this.linesCleared}`, uiX, uiY);
+    uiY += 25;
+    ctx.fillText(`Theme: ${this.environmentSystem.getCurrentTheme()}`, uiX, uiY);
     
     // Controls
     ctx.font = '12px Arial';
@@ -651,6 +652,7 @@ private rotatePiece(): boolean {
     this.clearingLines = [];
     this.clearAnimationTime = 0;
     this.lastDropTime = Date.now();
+    this.environmentSystem.updateTheme(this.level);
     
     if (this.currentPiece) {
       this.currentPiece.position = new Vector2(
