@@ -1,7 +1,7 @@
 // src/games/puzzle/BlockPuzzleGame.ts
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
-import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
+import { Vector2 } from '@/games/shared/utils/Vector2';
 import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
@@ -48,7 +48,7 @@ export class BlockPuzzleGame extends BaseGame {
   private boardWidth: number = 10;
   private boardHeight: number = 20;
   private board: (Block | null)[][] = [];
-  private blockSize: number = 30;
+  private blockSize: number = 27; // scaled down so board fits default canvas
   
   // Game state
   private currentPiece: FallingPiece | null = null;
@@ -466,7 +466,7 @@ private rotatePiece(): boolean {
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
     // Draw board background
-    const boardX = 50;
+    const boardX = 80; // adjust for smaller block size
     const boardY = 50;
     ctx.fillStyle = this.environmentSystem.getBoardColor();
     ctx.fillRect(boardX, boardY, this.boardWidth * this.blockSize, this.boardHeight * this.blockSize);
