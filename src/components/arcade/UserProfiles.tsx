@@ -12,6 +12,7 @@ export function UserProfile({ userService }: UserProfileProps) {
   const [profile, setProfile] = useState<UserProfileType>(userService.getProfile());
   const [stats, setStats] = useState<UserStats>(userService.getStats());
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export function UserProfile({ userService }: UserProfileProps) {
         </div>
       )}
 
-      {/* Stats grid */}
+      {/* Summary Stats */}
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="bg-gray-800 p-3 rounded-lg">
           <div className="text-purple-400 font-bold">{profile.totalCoins}</div>
@@ -98,27 +99,54 @@ export function UserProfile({ userService }: UserProfileProps) {
           <div className="text-gray-400">Play Time</div>
         </div>
         <div className="bg-gray-800 p-3 rounded-lg">
-          <div className="text-green-400 font-bold">{stats.totalDistance}m</div>
-          <div className="text-gray-400">Distance</div>
+          <div className="text-yellow-300 font-bold">{stats.gamesPlayed}</div>
+          <div className="text-gray-400">Games Played</div>
         </div>
         <div className="bg-gray-800 p-3 rounded-lg">
-          <div className="text-yellow-400 font-bold">{stats.maxCombo}x</div>
-          <div className="text-gray-400">Max Combo</div>
-        </div>
-        <div className="bg-gray-800 p-3 rounded-lg">
-          <div className="text-red-400 font-bold">{stats.totalJumps}</div>
-          <div className="text-gray-400">Total Jumps</div>
-        </div>
-        <div className="bg-gray-800 p-3 rounded-lg">
-          <div className="text-orange-400 font-bold">{stats.powerupsUsed}</div>
-          <div className="text-gray-400">Power-ups Used</div>
+          <div className="text-green-300 font-bold">{stats.coinsEarned}</div>
+          <div className="text-gray-400">Coins Earned</div>
         </div>
         <div className="bg-gray-800 p-3 rounded-lg">
           <div className="text-yellow-300 font-bold">{stats.achievementsUnlocked}</div>
           <div className="text-gray-400">Achievements</div>
         </div>
-
+        <div className="bg-gray-800 p-3 rounded-lg">
+          <div className="text-pink-400 font-bold">{stats.challengesCompleted}</div>
+          <div className="text-gray-400">Challenges</div>
+        </div>
       </div>
+
+      <button
+        onClick={() => setShowDetails(!showDetails)}
+        className="text-xs text-purple-300 mt-2 hover:underline"
+      >
+        {showDetails ? 'Hide Details ▲' : 'Show Details ▼'}
+      </button>
+
+      {showDetails && (
+        <div className="grid grid-cols-2 gap-3 text-sm mt-2">
+          <div className="bg-gray-800 p-3 rounded-lg">
+            <div className="text-green-400 font-bold">{stats.totalDistance}m</div>
+            <div className="text-gray-400">Total Distance</div>
+          </div>
+          <div className="bg-gray-800 p-3 rounded-lg">
+            <div className="text-red-300 font-bold">{stats.maxSpeed.toFixed(2)}</div>
+            <div className="text-gray-400">Max Speed</div>
+          </div>
+          <div className="bg-gray-800 p-3 rounded-lg">
+            <div className="text-yellow-400 font-bold">{stats.maxCombo}x</div>
+            <div className="text-gray-400">Max Combo</div>
+          </div>
+          <div className="bg-gray-800 p-3 rounded-lg">
+            <div className="text-red-400 font-bold">{stats.totalJumps}</div>
+            <div className="text-gray-400">Total Jumps</div>
+          </div>
+          <div className="bg-gray-800 p-3 rounded-lg">
+            <div className="text-orange-400 font-bold">{stats.powerupsUsed}</div>
+            <div className="text-gray-400">Power-ups Used</div>
+          </div>
+        </div>
+      )}
       {mounted && (
         <>
           {/* Member since */}
