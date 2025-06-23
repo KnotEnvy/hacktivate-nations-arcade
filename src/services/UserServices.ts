@@ -128,12 +128,18 @@ export class UserService {
     this.notifyListeners();
   }
 
+  public static experienceForLevel(level: number): number {
+    return 500 * level * (level - 1);
+  }
+
   addExperience(amount: number): { leveledUp: boolean; newLevel: number } {
     const oldLevel = this.profile.level;
     this.profile.experience += amount;
-    
-    // Calculate level based on experience
-    const newLevel = Math.floor(this.profile.experience / 1000) + 1;
+
+    // Calculate level based on experience using quadratic scaling
+    const newLevel = Math.floor(
+      (1 + Math.sqrt(1 + (4 * this.profile.experience) / 500)) / 2
+    );
     const leveledUp = newLevel > oldLevel;
     
     if (leveledUp) {
