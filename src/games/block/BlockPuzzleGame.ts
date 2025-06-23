@@ -2,7 +2,7 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
-import { EnvironmentSystem } from './systems/EnvironmentSystem';
+import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
 type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
@@ -61,6 +61,8 @@ export class BlockPuzzleGame extends BaseGame {
   private lastDropTime: number = 0;
 
   private environmentSystem: EnvironmentSystem = new EnvironmentSystem();
+  private tetrisCount: number = 0;
+  private themesEncountered: Set<EnvironmentTheme> = new Set();
   
   // Input handling
   private inputCooldown: { [key: string]: number } = {};
@@ -94,7 +96,7 @@ export class BlockPuzzleGame extends BaseGame {
 
   protected onInit(): void {
     // Initialize empty board
-    this.board = Array(this.boardHeight).fill(null).map(() => 
+    this.board = Array(this.boardHeight).fill(null).map(() =>
       Array(this.boardWidth).fill(null)
     );
     
@@ -112,6 +114,8 @@ export class BlockPuzzleGame extends BaseGame {
     
     this.lastDropTime = Date.now();
     this.environmentSystem.updateTheme(this.level);
+    this.tetrisCount = 0;
+    this.themesEncountered = new Set([this.environmentSystem.getCurrentTheme()]);
   }
 
   protected onUpdate(dt: number): void {
@@ -413,8 +417,11 @@ private rotatePiece(): boolean {
     
     // Update score and stats
     this.linesCleared += linesCount;
-    const scoreKey = linesCount === 1 ? 'single' : 
-                     linesCount === 2 ? 'double' : 
+    if (linesCount === 4) {
+      this.tetrisCount++;
+    }
+    const scoreKey = linesCount === 1 ? 'single' :
+                     linesCount === 2 ? 'double' :
                      linesCount === 3 ? 'triple' : 'tetris';
     const lineScore = this.scoreMultipliers[scoreKey] * this.level;
     this.score += lineScore;
@@ -424,6 +431,7 @@ private rotatePiece(): boolean {
     this.level = Math.floor(this.linesCleared / 10) + 1;
     this.dropInterval = Math.max(50, 1000 * Math.pow(0.95, this.level - 1));
     this.environmentSystem.updateTheme(this.level);
+    this.themesEncountered.add(this.environmentSystem.getCurrentTheme());
     
     // Reset state
     this.clearingLines = [];
@@ -652,6 +660,8 @@ private rotatePiece(): boolean {
     this.clearAnimationTime = 0;
     this.lastDropTime = Date.now();
     this.environmentSystem.updateTheme(this.level);
+    this.tetrisCount = 0;
+    this.themesEncountered = new Set([this.environmentSystem.getCurrentTheme()]);
     
     if (this.currentPiece) {
       this.currentPiece.position = new Vector2(
@@ -666,6 +676,8 @@ private rotatePiece(): boolean {
       ...super.getScore(),
       level: this.level,
       linesCleared: this.linesCleared,
+      tetrisCount: this.tetrisCount,
+      uniqueThemes: this.themesEncountered.size,
       gameState: this.gameState
     };
   }
