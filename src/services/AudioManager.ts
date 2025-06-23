@@ -270,7 +270,9 @@ export class AudioManager {
       gainNode.gain.value = (options.volume || 1.0);
       
       source.connect(gainNode);
-      gainNode.connect(this.sfxGain);
+      if (this.sfxGain) {
+        gainNode.connect(this.sfxGain);
+      }
       
       if (options.loop) {
         this.playing.set(name, source);
