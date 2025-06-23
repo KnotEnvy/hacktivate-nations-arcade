@@ -27,8 +27,11 @@ export function UserProfile({ userService }: UserProfileProps) {
     setMounted(true);
   }, []);
 
-  const experienceToNextLevel = 1000 - (profile.experience % 1000);
-  const experienceProgress = (profile.experience % 1000) / 1000;
+  const currentLevelXp = UserService.experienceForLevel(profile.level);
+  const nextLevelXp = UserService.experienceForLevel(profile.level + 1);
+  const experienceToNextLevel = nextLevelXp - profile.experience;
+  const experienceProgress =
+    (profile.experience - currentLevelXp) / (nextLevelXp - currentLevelXp);
 
   const handleAvatarChange = (newAvatar: string) => {
     userService.updateProfile({ avatar: newAvatar });
