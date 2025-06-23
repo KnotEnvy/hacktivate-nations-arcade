@@ -236,6 +236,72 @@ export class AchievementService {
         requirement: { type: 'puzzle_level', value: 10 },
         reward: 300,
         unlocked: false
+      },
+      {
+        id: 'puzzle_score_beginner',
+        title: 'Puzzle Scorer',
+        description: 'Score 1,000 points in Block Puzzle',
+        icon: '🔢',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'score', value: 1000 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_score_pro',
+        title: 'Puzzle Pro',
+        description: 'Score 5,000 points in Block Puzzle',
+        icon: '🧠',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'score', value: 5000 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_tetris',
+        title: 'Tetris!',
+        description: 'Clear a Tetris in Block Puzzle',
+        icon: '🎯',
+        gameId: 'puzzle',
+        category: 'gameplay',
+        requirement: { type: 'tetris_count', value: 1 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_tetris_king',
+        title: 'Tetris King',
+        description: 'Clear 10 Tetrises in Block Puzzle',
+        icon: '👑',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'tetris_count', value: 10 },
+        reward: 400,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_theme_explorer',
+        title: 'Theme Explorer',
+        description: 'Experience 3 different themes',
+        icon: '🎨',
+        gameId: 'puzzle',
+        category: 'gameplay',
+        requirement: { type: 'unique_themes', value: 3 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_theme_master',
+        title: 'Theme Connoisseur',
+        description: 'Experience all themes in Block Puzzle',
+        icon: '🏅',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'unique_themes', value: 5 },
+        reward: 300,
+        unlocked: false
       }
     ];
   }

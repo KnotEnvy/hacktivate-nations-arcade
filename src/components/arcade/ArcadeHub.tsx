@@ -257,6 +257,9 @@ export function ArcadeHub() {
         : []),
       ...achievementService.checkAchievement('lines_cleared', gameData.linesCleared || 0, selectedGameId),
       ...achievementService.checkAchievement('puzzle_level', gameData.level || 0, selectedGameId),
+      ...achievementService.checkAchievement('score', gameData.score || 0, selectedGameId),
+      ...achievementService.checkAchievement('tetris_count', gameData.tetrisCount || 0, selectedGameId),
+      ...achievementService.checkAchievement('unique_themes', gameData.uniqueThemes || 0, selectedGameId),
       ...achievementService.checkAchievement('games_played', updatedStats.gamesPlayed)
     ];
 
