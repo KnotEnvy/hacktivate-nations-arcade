@@ -5,7 +5,7 @@ export class EnvironmentSystem {
 
   updateTheme(level: number): void {
     const themes: EnvironmentTheme[] = ['classic', 'neon', 'ice', 'retro', 'dusk'];
-    const index = Math.floor((level - 1) / 3);
+    const index = Math.floor((level - 1)); //change theme every level
     this.currentTheme = themes[index % themes.length];
   }
 

@@ -2,7 +2,7 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
-import { EnvironmentSystem } from './EnvironmentSystem';
+import { EnvironmentSystem } from './systems/EnvironmentSystem';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
 type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
@@ -112,7 +112,6 @@ export class BlockPuzzleGame extends BaseGame {
     
     this.lastDropTime = Date.now();
     this.environmentSystem.updateTheme(this.level);
-    console.log('🧩 Block Puzzle initialized');
   }
 
   protected onUpdate(dt: number): void {
