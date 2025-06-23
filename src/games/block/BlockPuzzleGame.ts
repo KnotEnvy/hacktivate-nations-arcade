@@ -61,6 +61,8 @@ export class BlockPuzzleGame extends BaseGame {
   // Input handling
   private inputCooldown: { [key: string]: number } = {};
   private inputDelay: number = 150; // ms
+  private readonly SOFT_DROP_DELAY = 50;
+
   
   // Visual effects
   private clearingLines: number[] = [];
@@ -121,51 +123,48 @@ export class BlockPuzzleGame extends BaseGame {
     }
   }
 
-  private handleInput(currentTime: number): void {
+    private handleInput(currentTime: number): void {
     if (!this.currentPiece) return;
     
     const input = this.services.input;
+
     
-    // Move left
-    if (input.isKeyPressed('ArrowLeft') || input.isKeyPressed('KeyA')) {
-      if (!this.inputCooldown['left'] || currentTime - this.inputCooldown['left'] > this.inputDelay) {
-        this.movePiece(-1, 0);
-        this.inputCooldown['left'] = currentTime;
-      }
-    }
-    
-    // Move right
-    if (input.isKeyPressed('ArrowRight') || input.isKeyPressed('KeyD')) {
-      if (!this.inputCooldown['right'] || currentTime - this.inputCooldown['right'] > this.inputDelay) {
-        this.movePiece(1, 0);
-        this.inputCooldown['right'] = currentTime;
-      }
-    }
-    
+    // Hard drop (space) - HIGHEST PRIORITY
+    if (input.isKeyPressed('Space')) {
+        if (!this.inputCooldown['hardDrop'] || currentTime - this.inputCooldown['hardDrop'] > this.inputDelay) {
+        this.hardDrop(); 
+        this.inputCooldown['hardDrop'] = currentTime;
+        }
+    } 
     // Rotate
-    if (input.isKeyPressed('ArrowUp') || input.isKeyPressed('KeyW') || input.isActionPressed()) {
-      if (!this.inputCooldown['rotate'] || currentTime - this.inputCooldown['rotate'] > this.inputDelay) {
+    else if (input.isKeyPressed('ArrowUp') || input.isKeyPressed('KeyW') || input.isActionPressed()) {
+        if (!this.inputCooldown['rotate'] || currentTime - this.inputCooldown['rotate'] > this.inputDelay) {
         this.rotatePiece();
         this.inputCooldown['rotate'] = currentTime;
-      }
+        }
     }
-    
-    // Fast drop
-    if (input.isKeyPressed('ArrowDown') || input.isKeyPressed('KeyS')) {
-      if (!this.inputCooldown['drop'] || currentTime - this.inputCooldown['drop'] > 50) {
+    // Move left
+    else if (input.isKeyPressed('ArrowLeft') || input.isKeyPressed('KeyA')) {
+        if (!this.inputCooldown['left'] || currentTime - this.inputCooldown['left'] > this.inputDelay) {
+        this.movePiece(-1, 0);
+        this.inputCooldown['left'] = currentTime;
+        }
+    }
+    // Move right
+    else if (input.isKeyPressed('ArrowRight') || input.isKeyPressed('KeyD')) {
+        if (!this.inputCooldown['right'] || currentTime - this.inputCooldown['right'] > this.inputDelay) {
+        this.movePiece(1, 0);
+        this.inputCooldown['right'] = currentTime;
+        }
+    }
+    // Fast drop (soft drop)
+    else if (input.isKeyPressed('ArrowDown') || input.isKeyPressed('KeyS')) {
+        if (!this.inputCooldown['drop'] || currentTime - this.inputCooldown['drop'] > this.SOFT_DROP_DELAY) {
         this.dropPiece();
         this.inputCooldown['drop'] = currentTime;
-      }
+        }
     }
-    
-    // Hard drop (space)
-    if (input.isKeyPressed('Space')) {
-      if (!this.inputCooldown['hardDrop'] || currentTime - this.inputCooldown['hardDrop'] > this.inputDelay) {
-        this.hardDrop();
-        this.inputCooldown['hardDrop'] = currentTime;
-      }
     }
-  }
 
   private generateRandomPiece(): FallingPiece {
     const shapeKeys = Object.keys(PIECE_SHAPES) as (keyof typeof PIECE_SHAPES)[];
@@ -248,37 +247,34 @@ export class BlockPuzzleGame extends BaseGame {
     }
     
     return true;
-  }
+   }
 
-  private dropPiece(): boolean {
-  if (!this.currentPiece) return false;
-  
-  const canDrop = this.movePiece(0, 1);
-  if (!canDrop) {
-    this.lockPiece();
-  }
-  return canDrop;
-  }
-
-
-    private calculateDropDistance(): number {
-    if (!this.currentPiece) return 0;
-
-    let testY = this.currentPiece.position.y;
-    while (this.isValidPosition(this.currentPiece.shape, new Vector2(this.currentPiece.position.x, testY + 1))) {
-        testY++;
+    private dropPiece(): boolean {
+    if (!this.currentPiece) return false;
+    
+    const canDrop = this.movePiece(0, 1);
+    if (!canDrop) {
+        this.lockPiece();
     }
-    return testY - this.currentPiece.position.y;
+    return canDrop;
     }
+
 
     private hardDrop(): void {
     if (!this.currentPiece) return;
-
-    const dropDistance = this.calculateDropDistance();
-    this.currentPiece.position.y += dropDistance;
-    this.score += dropDistance * 2;
+    
+    let dropDistance = 0;
+    // Keep calling dropPiece() as long as it succeeds (returns true)
+    while (this.dropPiece()) {
+        dropDistance++;
+    }
+    
+    // The piece is now at its final destination, so lock it.
+    // dropPiece() already called lockPiece() on its last, failing attempt.
+    
+    // Award points for the hard drop distance
+    this.score += dropDistance * 2; 
     this.services.audio.playSound('click', 0.7);
-    this.lockPiece();
     }
 
   private lockPiece(): void {
@@ -340,13 +336,20 @@ export class BlockPuzzleGame extends BaseGame {
 
   private completeLineClear(): void {
     const linesCount = this.clearingLines.length;
-    
-    // Remove cleared lines
-    this.clearingLines.sort((a, b) => b - a); // Sort descending
-    for (const lineIndex of this.clearingLines) {
-      this.board.splice(lineIndex, 1);
-      this.board.unshift(Array(this.boardWidth).fill(null));
-    }
+    if (linesCount === 0) return; // Safety check
+
+    // Create a new board containing only the rows that were NOT cleared.
+    const newBoard = this.board.filter((_, rowIndex) => {
+        return !this.clearingLines.includes(rowIndex);
+    });
+
+    // Create the new empty rows that will be added to the top.
+    const newEmptyRows: (Block | null)[][] = Array(linesCount).fill(null).map(() => 
+        Array(this.boardWidth).fill(null)
+    );
+
+    // Combine the new empty rows with the remaining rows.
+    this.board = [...newEmptyRows, ...newBoard];
     
     // Update score and stats
     this.linesCleared += linesCount;
@@ -492,10 +495,20 @@ export class BlockPuzzleGame extends BaseGame {
 
     private drawGhostPiece(ctx: CanvasRenderingContext2D, boardX: number, boardY: number): void {
     if (!this.currentPiece) return;
-    
-    const dropDistance = this.calculateDropDistance();
-    const ghostY = this.currentPiece.position.y + dropDistance;
-    
+
+    // Create a temporary clone of the piece to find its landing spot
+    const ghostPiece = {
+        ...this.currentPiece,
+        position: new Vector2(this.currentPiece.position.x, this.currentPiece.position.y)
+    };
+
+    // Drop the ghost piece down until it hits something
+    while (this.isValidPosition(ghostPiece.shape, new Vector2(ghostPiece.position.x, ghostPiece.position.y + 1))) {
+        ghostPiece.position.y++;
+    }
+
+    const ghostY = ghostPiece.position.y; // This is the final Y position
+
     for (let r = 0; r < this.currentPiece.shape.length; r++) {
         for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
         if (this.currentPiece.shape[r][c]) {
@@ -503,9 +516,9 @@ export class BlockPuzzleGame extends BaseGame {
             const y = boardY + (ghostY + r) * this.blockSize;
             this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
         }
-      }
+        }
     }
-  }
+    }
 
   private drawNextPiece(ctx: CanvasRenderingContext2D): void {
     if (!this.nextPiece) return;
