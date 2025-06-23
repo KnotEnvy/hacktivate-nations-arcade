@@ -255,6 +255,8 @@ export function ArcadeHub() {
             selectedGameId
           )
         : []),
+      ...achievementService.checkAchievement('lines_cleared', gameData.linesCleared || 0, selectedGameId),
+      ...achievementService.checkAchievement('puzzle_level', gameData.level || 0, selectedGameId),
       ...achievementService.checkAchievement('games_played', updatedStats.gamesPlayed)
     ];
 

@@ -203,6 +203,39 @@ export class AchievementService {
         requirement: { type: 'total_coins_earned', value: 50000 },
         reward: 2000,
         unlocked: false
+      },
+      {
+        id: 'puzzle_rookie',
+        title: 'Puzzle Rookie',
+        description: 'Clear 10 lines in Block Puzzle',
+        icon: '🧱',
+        gameId: 'puzzle',
+        category: 'gameplay',
+        requirement: { type: 'lines_cleared', value: 10 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_veteran',
+        title: 'Puzzle Veteran',
+        description: 'Clear 100 lines in Block Puzzle',
+        icon: '🏗️',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'lines_cleared', value: 100 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'puzzle_master',
+        title: 'Puzzle Master',
+        description: 'Reach level 10 in Block Puzzle',
+        icon: '🧩',
+        gameId: 'puzzle',
+        category: 'skill',
+        requirement: { type: 'puzzle_level', value: 10 },
+        reward: 300,
+        unlocked: false
       }
     ];
   }
