@@ -190,7 +190,7 @@ export class BlockPuzzleGame extends BaseGame {
     
     if (this.isValidPosition(this.currentPiece.shape, newPosition)) {
       this.currentPiece.position = newPosition;
-      this.services.audio.playSound('click', 0.3);
+      this.services.audio.playSound('click');
       return true;
     }
     
@@ -205,7 +205,7 @@ export class BlockPuzzleGame extends BaseGame {
     if (this.isValidPosition(rotatedShape, this.currentPiece.position)) {
       this.currentPiece.shape = rotatedShape;
       this.currentPiece.rotation = (this.currentPiece.rotation + 1) % 4;
-      this.services.audio.playSound('click', 0.5);
+      this.services.audio.playSound('click');
       return true;
     }
     
@@ -251,20 +251,35 @@ export class BlockPuzzleGame extends BaseGame {
   }
 
   private dropPiece(): boolean {
-    return this.movePiece(0, 1);
-  }
-
-  private hardDrop(): void {
-    if (!this.currentPiece) return;
-    
-    let dropDistance = 0;
-    while (this.movePiece(0, 1)) {
-      dropDistance++;
-    }
-    
-    this.score += dropDistance * 2; // Bonus points for hard drop
+  if (!this.currentPiece) return false;
+  
+  const canDrop = this.movePiece(0, 1);
+  if (!canDrop) {
     this.lockPiece();
   }
+  return canDrop;
+  }
+
+
+    private calculateDropDistance(): number {
+    if (!this.currentPiece) return 0;
+
+    let testY = this.currentPiece.position.y;
+    while (this.isValidPosition(this.currentPiece.shape, new Vector2(this.currentPiece.position.x, testY + 1))) {
+        testY++;
+    }
+    return testY - this.currentPiece.position.y;
+    }
+
+    private hardDrop(): void {
+    if (!this.currentPiece) return;
+
+    const dropDistance = this.calculateDropDistance();
+    this.currentPiece.position.y += dropDistance;
+    this.score += dropDistance * 2;
+    this.services.audio.playSound('click', 0.7);
+    this.lockPiece();
+    }
 
   private lockPiece(): void {
     if (!this.currentPiece) return;
@@ -287,7 +302,7 @@ export class BlockPuzzleGame extends BaseGame {
       }
     }
     
-    this.services.audio.playSound('click', 0.7);
+    this.services.audio.playSound('click');
     
     // Check for completed lines
     const completedLines = this.findCompletedLines();
@@ -475,22 +490,18 @@ export class BlockPuzzleGame extends BaseGame {
     }
   }
 
-  private drawGhostPiece(ctx: CanvasRenderingContext2D, boardX: number, boardY: number): void {
+    private drawGhostPiece(ctx: CanvasRenderingContext2D, boardX: number, boardY: number): void {
     if (!this.currentPiece) return;
     
-    // Find where piece would land
-    let ghostY = this.currentPiece.position.y;
-    while (this.isValidPosition(this.currentPiece.shape, new Vector2(this.currentPiece.position.x, ghostY + 1))) {
-      ghostY++;
-    }
+    const dropDistance = this.calculateDropDistance();
+    const ghostY = this.currentPiece.position.y + dropDistance;
     
-    // Draw ghost piece
     for (let r = 0; r < this.currentPiece.shape.length; r++) {
-      for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
+        for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
         if (this.currentPiece.shape[r][c]) {
-          const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
-          const y = boardY + (ghostY + r) * this.blockSize;
-          this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
+            const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
+            const y = boardY + (ghostY + r) * this.blockSize;
+            this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
         }
       }
     }
