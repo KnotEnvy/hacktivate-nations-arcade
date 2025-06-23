@@ -63,6 +63,8 @@ export class BlockPuzzleGame extends BaseGame {
   private inputCooldown: { [key: string]: number } = {};
   private inputDelay: number = 150; // ms
   private readonly SOFT_DROP_DELAY = 50;
+  private holdPiece: FallingPiece | null = null;
+  private hasSwappedThisTurn: boolean = false;
 
   
   // Visual effects
@@ -153,6 +155,13 @@ export class BlockPuzzleGame extends BaseGame {
         this.inputCooldown['rotate'] = currentTime;
         }
     }
+    else if (input.isKeyPressed('KeyC') || input.isKeyPressed('ShiftLeft')) {
+        if (!this.inputCooldown['hold'] || currentTime - this.inputCooldown['hold'] > this.inputDelay) {
+            this.swapWithHoldPiece();
+            this.inputCooldown['hold'] = currentTime;
+        }
+    }
+
     // Move left
     else if (input.isKeyPressed('ArrowLeft') || input.isKeyPressed('KeyA')) {
         if (!this.inputCooldown['left'] || currentTime - this.inputCooldown['left'] > this.inputDelay) {
@@ -243,6 +252,40 @@ private rotatePiece(): boolean {
     
     return rotated;
   }
+  private swapWithHoldPiece(): void {
+    if (this.hasSwappedThisTurn) {
+        this.services.audio.playSound('error'); // Or some other 'cannot do' sound
+        return;
+    }
+
+    if (this.holdPiece === null) {
+        // First time holding: store current piece and spawn the next one
+        this.holdPiece = this.currentPiece;
+        this.spawnNextPiece();
+    } else {
+        // Subsequent holds: swap the pieces
+        const temp = this.currentPiece;
+        this.currentPiece = this.holdPiece;
+        this.holdPiece = temp;
+
+        // Reset the newly swapped piece to the top
+        if (this.currentPiece) {
+        this.currentPiece.position = new Vector2(
+            Math.floor(this.boardWidth / 2) - 1,
+            0
+        );
+        // If the new piece spawns in an invalid spot (rare), it's game over
+        if (!this.isValidPosition(this.currentPiece.shape, this.currentPiece.position)) {
+            this.gameState = 'gameOver';
+        }
+        }
+    }
+  
+  // Set the flag to prevent another swap until a piece is locked
+  this.hasSwappedThisTurn = true;
+  this.services.audio.playSound('powerup');
+}
+
 
   private isValidPosition(shape: boolean[][], position: Vector2): boolean {
     for (let r = 0; r < shape.length; r++) {
@@ -386,6 +429,7 @@ private rotatePiece(): boolean {
   }
 
   private spawnNextPiece(): void {
+    this.hasSwappedThisTurn = false;
     this.currentPiece = this.nextPiece;
     this.nextPiece = this.generateRandomPiece();
     
