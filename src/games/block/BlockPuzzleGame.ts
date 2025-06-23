@@ -230,10 +230,10 @@ private rotatePiece(): boolean {
 
     if (this.isValidPosition(rotatedShape, newPosition)) {
       this.currentPiece.shape = rotatedShape;
-      this.currentPiece.position = newPosition; // Apply the kick!
+      this.currentPiece.position = newPosition; 
       this.currentPiece.rotation = (this.currentPiece.rotation + 1) % 4;
       this.services.audio.playSound('click');
-      return true; // Rotation succeeded
+      return true; 
     }
   }
   return false;
@@ -254,7 +254,7 @@ private rotatePiece(): boolean {
   }
   private swapWithHoldPiece(): void {
     if (this.hasSwappedThisTurn) {
-        this.services.audio.playSound('error'); // Or some other 'cannot do' sound
+        this.services.audio.playSound('error'); 
         return;
     }
 
