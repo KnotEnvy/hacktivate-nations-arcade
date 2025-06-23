@@ -51,10 +51,10 @@ export class AchievementService {
       {
         id: 'speed_demon',
         title: 'Speed Demon',
-        description: 'Reach 3x speed',
+        description: 'Reach 2x speed',
         icon: '⚡',
         category: 'skill',
-        requirement: { type: 'max_speed', value: 3 },
+        requirement: { type: 'max_speed', value: 2 },
         reward: 200,
         unlocked: false
       },
@@ -177,10 +177,10 @@ export class AchievementService {
       {
         id: 'speed_freak',
         title: 'Speed Freak',
-        description: 'Reach 5x speed',
+        description: 'Reach 3.5x speed',
         icon: '💨',
         category: 'skill',
-        requirement: { type: 'max_speed', value: 5 },
+        requirement: { type: 'max_speed', value: 3.5 },
         reward: 300,
         unlocked: false
       },

@@ -147,7 +147,7 @@ npm run dev
 ### **Achievement Examples:**
 - 🦅 **"Taking Flight"** - Jump for the first time (50 coins)
 - 💰 **"Coin Collector"** - Collect 100 coins total (100 coins)
-- ⚡ **"Speed Demon"** - Reach 3x speed (200 coins)
+- ⚡ **"Speed Demon"** - Reach 2x speed (200 coins)
 - 🏃‍♂️ **"Marathon Runner"** - Run 5000 meters (300 coins)
 - 🏆 **"Completionist"** - Unlock all games (500 coins)
 
