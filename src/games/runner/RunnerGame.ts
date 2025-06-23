@@ -45,6 +45,7 @@ export class RunnerGame extends BaseGame {
   private groundY: number = 0;
   private jumps: number = 0;
   private powerupsUsed: number = 0;
+  private powerupTypesUsed: Set<PowerUpType> = new Set();
 
 
   
@@ -67,6 +68,7 @@ export class RunnerGame extends BaseGame {
     this.startTime = Date.now();
     this.jumps = 0;
     this.powerupsUsed = 0;
+    this.powerupTypesUsed.clear();
  
 
 
@@ -129,6 +131,7 @@ export class RunnerGame extends BaseGame {
       distance: Math.floor(this.distance),
       jumps: this.jumps,
       powerupsUsed: this.powerupsUsed,
+      powerupTypesUsed: Array.from(this.powerupTypesUsed),
       // maxCombo: this.maxCombo,
       speed: this.gameSpeed,
       combo: this.comboSystem?.getCombo?.() ?? 0,
@@ -455,6 +458,7 @@ export class RunnerGame extends BaseGame {
         this.powerUps.splice(i, 1);
 
         this.activatePowerUp(powerUp.type);
+        this.powerupTypesUsed.add(powerUp.type);
         
         this.particles.createPowerUpPickup(
           powerUp.position.x + powerUp.size.x/2,
@@ -533,6 +537,7 @@ export class RunnerGame extends BaseGame {
     this.distance = 0;
     this.jumps = 0;
     this.powerupsUsed = 0;
+    this.powerupTypesUsed.clear();
     this.player = new Player(100, this.groundY - 32, this.groundY);
   }
 }
