@@ -33,7 +33,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 75,
     tier: 1,
-    description: 'Coming Soon! Match blocks to clear lines.'
+    description: 'Match blocks to clear lines.'
   },
   {
     id: 'space',

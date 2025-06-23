@@ -19,8 +19,8 @@ export interface UserStats {
   powerupsUsed: number;
   achievementsUnlocked: number;
   challengesCompleted: number;
-  gamesPlayed: number; // total games played
-  coinsEarned: number; // total coins earned across all games
+  gamesPlayed: number; 
+  coinsEarned: number; 
 }
 
 export class UserService {
@@ -59,7 +59,7 @@ export class UserService {
       totalPlayTime: 0,
       gamesPlayed: 0,
       joinedAt: date,
-      lastActiveAt: date
+      lastActiveAt: date,
     };
   }
 
@@ -73,7 +73,7 @@ export class UserService {
       achievementsUnlocked: 0,
       challengesCompleted: 0,
       gamesPlayed: 0,
-      coinsEarned: 0
+      coinsEarned: 0,
     };
   }
 
@@ -165,6 +165,8 @@ export class UserService {
 
   onUserDataChanged(callback: (profile: UserProfile, stats: UserStats) => void): () => void {
     this.listeners.push(callback);
+    callback(this.getProfile(), this.getStats());
+
     return () => {
       const index = this.listeners.indexOf(callback);
       if (index > -1) this.listeners.splice(index, 1);
