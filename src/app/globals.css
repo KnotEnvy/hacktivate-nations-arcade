@@ -91,3 +91,18 @@ body {
   background-size: 200px 100%;
   animation: shimmer 1.5s infinite;
 }
+
+/* Custom scrollbar styling */
+.custom-scrollbar {
+  scrollbar-color: #8B5CF6 #1F2937; /* thumb color track color */
+}
+.custom-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: #1F2937;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: #8B5CF6;
+  border-radius: 4px;
+}

@@ -1,0 +1,8 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" fill="#051B11"/>
+  <path d="M100 260 h80 v-40 h80 v80 h80 v40 h80" stroke="#34D399" stroke-width="20" fill="none" stroke-linecap="round"/>
+  <circle cx="420" cy="340" r="12" fill="#F59E0B"/>
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
+  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#34D399">SNAKE</text>
+  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
+</svg>
