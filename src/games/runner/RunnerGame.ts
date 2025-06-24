@@ -57,7 +57,6 @@ export class RunnerGame extends BaseGame {
   
   // Animation state
   private wasGrounded: boolean = true;
-  private wasJumpPressed: boolean = false;
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   //paralax system
@@ -90,18 +89,20 @@ export class RunnerGame extends BaseGame {
   protected onUpdate(dt: number): void {
     const jumpPressed = this.services.input.isActionPressed();
 
-    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded()) {
-      this.services.audio.playSound('jump');
-      this.jumps++;
+    const prevJumpsRemaining = this.player.getJumpsRemaining();
 
-    }
-    
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
     this.player.update(dt, jumpPressed, hasDoubleJump);
-    
+
+    const jumpStarted = this.player.getJumpsRemaining() < prevJumpsRemaining;
+    if (jumpStarted) {
+      this.services.audio.playSound('jump');
+      this.jumps++;
+    }
+
     // Handle particle effects
-    this.handlePlayerEffects(jumpPressed);
+    this.handlePlayerEffects(jumpStarted);
     
     // Update game speed and distance
     this.distance += this.gameSpeed * dt * 100;
@@ -150,19 +151,18 @@ export class RunnerGame extends BaseGame {
     };
   }
 
-  private handlePlayerEffects(jumpPressed: boolean): void {
+  private handlePlayerEffects(jumpStarted: boolean): void {
     // Jump particles
-    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded() ) {
+    if (jumpStarted) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
     }
-    
+
     // Landing particles
     if (!this.wasGrounded && this.player.getIsGrounded()) {
       this.particles.createLandingDust(this.player.position.x, this.player.position.y);
       this.screenShake.shake(3, 0.1);
     }
-    
-    this.wasJumpPressed = jumpPressed;
+
     this.wasGrounded = this.player.getIsGrounded();
   }
 
