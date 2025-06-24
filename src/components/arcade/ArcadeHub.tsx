@@ -25,24 +25,41 @@ const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     description: 'Jump and collect coins in this fast-paced endless runner!'
   },
-  // Placeholder for future games
   {
-    id: 'puzzle',
-    title: 'Block Puzzle',
-    thumbnail: '/games/puzzle/puzzle-thumb.svg',
-    inputSchema: ['keyboard', 'touch'],
+    id: "puzzle",
+    title: "Block Puzzle",
+    thumbnail: "/games/puzzle/puzzle-thumb.svg",
+    inputSchema: ["keyboard", "touch"],
     assetBudgetKB: 75,
     tier: 1,
-    description: 'Match blocks to clear lines.'
+    description: "Match blocks to clear lines."
   },
   {
-    id: 'space',
-    title: 'Space Shooter',
-    thumbnail: '/games/space/space-thumb.svg',
-    inputSchema: ['keyboard'],
+    id: "snake",
+    title: "Snake",
+    thumbnail: "/games/snake/snake-thumb.svg",
+    inputSchema: ["keyboard", "touch"],
+    assetBudgetKB: 60,
+    tier: 1,
+    description: "Classic snake action. Coming soon!"
+  },
+  {
+    id: "space",
+    title: "Space Shooter",
+    thumbnail: "/games/space/space-thumb.svg",
+    inputSchema: ["keyboard"],
     assetBudgetKB: 100,
     tier: 2,
-    description: 'Coming Soon! Defend Earth from alien invaders!'
+    description: "Coming Soon! Defend Earth from alien invaders!"
+  },
+  {
+    id: "asteroids",
+    title: "Asteroids",
+    thumbnail: "/games/asteroids/asteroids-thumb.svg",
+    inputSchema: ["keyboard"],
+    assetBudgetKB: 120,
+    tier: 2,
+    description: "Blast space rocks in this retro shooter. Coming soon!"
   }
 ];
 
