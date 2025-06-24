@@ -10,6 +10,8 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
 import { EnvironmentSystem } from './systems/EnvironmentSystem';
+import { ParallaxSystem } from './systems/ParallaxSystem';
+
 
 interface ActivePowerUp {
   type: PowerUpType;
@@ -58,6 +60,10 @@ export class RunnerGame extends BaseGame {
   private wasJumpPressed: boolean = false;
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
 
+  //paralax system
+  private parallaxSystem!: ParallaxSystem;
+
+
   protected onInit(): void {
     this.groundY = this.canvas.height - 50;
     this.player = new Player(100, this.groundY - 32, this.groundY);
@@ -65,14 +71,17 @@ export class RunnerGame extends BaseGame {
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
+    // Initialize the new parallax system
+    this.parallaxSystem = new ParallaxSystem(
+      this.canvas.width,
+      this.canvas.height,
+      this.groundY
+    );
     this.startTime = Date.now();
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
  
-
-
-    
     // Spawn initial content
     this.spawnObstacle();
     this.spawnCoin();
@@ -117,6 +126,8 @@ export class RunnerGame extends BaseGame {
     
     // Update score
     this.score = Math.floor(this.distance / 10);
+    // Update parallax system with current distance
+    this.parallaxSystem.update(this.distance);
   }
 
   public getScore() {
@@ -236,7 +247,7 @@ export class RunnerGame extends BaseGame {
     // Apply camera shake
     ctx.translate(this.cameraOffset.x, this.cameraOffset.y);
     
-    this.renderBackground(ctx);
+    this.renderEnhancedBackground(ctx);
     this.renderGround(ctx);
     
     // Render all entities
@@ -282,8 +293,7 @@ export class RunnerGame extends BaseGame {
       ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'right';
       ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, this.canvas.width - 20, 100);
-
-      
+     
       // Combo timer bar
       const timeLeft = this.comboSystem.getTimeLeft();
       const maxTime = 2;
@@ -331,10 +341,10 @@ export class RunnerGame extends BaseGame {
     ctx.fillText(`Theme: ${this.environmentSystem.getCurrentTheme()}`, 20, this.canvas.height - 20);
   }
 
-  private renderBackground(ctx: CanvasRenderingContext2D): void {
+  private renderEnhancedBackground(ctx: CanvasRenderingContext2D): void {
     const colors = this.environmentSystem.getSkyColors();
     
-    // Gradient sky
+    // Still render the gradient sky as base layer
     const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
     gradient.addColorStop(0, colors.top);
     gradient.addColorStop(1, colors.bottom);
@@ -342,14 +352,8 @@ export class RunnerGame extends BaseGame {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, this.canvas.width, this.groundY);
     
-    // Moving clouds
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    const cloudOffset = (this.distance * 0.3) % (this.canvas.width + 200);
-    for (let i = 0; i < 4; i++) {
-      const x = (i * 250) - cloudOffset;
-      const y = 50 + i * 25;
-      this.renderCloud(ctx, x, y);
-    }
+    // Render all parallax layers
+    this.parallaxSystem.render(ctx, this.environmentSystem.getCurrentTheme());
   }
 
   private renderCloud(ctx: CanvasRenderingContext2D, x: number, y: number): void {
@@ -362,20 +366,27 @@ export class RunnerGame extends BaseGame {
     const groundColor = this.environmentSystem.getGroundColor();
     const grassColor = this.environmentSystem.getGrassColor();
     
-    // Ground
+    // Main ground
     ctx.fillStyle = groundColor;
     ctx.fillRect(0, this.groundY, this.canvas.width, this.canvas.height - this.groundY);
     
-    // Grass line
-    ctx.fillStyle = grassColor;
-    ctx.fillRect(0, this.groundY - 4, this.canvas.width, 4);
+    // Enhanced grass line with gradient
+    const grassGradient = ctx.createLinearGradient(0, this.groundY - 8, 0, this.groundY);
+    grassGradient.addColorStop(0, grassColor);
+    grassGradient.addColorStop(1, groundColor);
     
-    // Ground details
-    ctx.fillStyle = '#6B5B47';
-    const grassOffset = (this.distance * 2) % 40;
-    for (let x = -grassOffset; x < this.canvas.width; x += 40) {
-      ctx.fillRect(x, this.groundY + 10, 2, 8);
-      ctx.fillRect(x + 20, this.groundY + 15, 3, 6);
+    ctx.fillStyle = grassGradient;
+    ctx.fillRect(0, this.groundY - 8, this.canvas.width, 8);
+    
+    // Add subtle ground texture
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    const textureOffset = (this.distance * 1.5) % 20;
+    for (let x = -textureOffset; x < this.canvas.width; x += 20) {
+      for (let y = this.groundY + 10; y < this.canvas.height; y += 15) {
+        if (Math.random() > 0.7) {
+          ctx.fillRect(x + Math.random() * 3, y, 1, 1);
+        }
+      }
     }
   }
 
