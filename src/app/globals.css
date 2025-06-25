@@ -98,6 +98,8 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar {
   height: 8px;
+  width: 8px;
+
 }
 .custom-scrollbar::-webkit-scrollbar-track {
   background: #1F2937;
