@@ -3,6 +3,7 @@ import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { Vector2 } from '@/games/shared/utils/Vector2';
 import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
+import { ComboSystem } from './systems/ComboSystem';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
 type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
@@ -60,7 +61,13 @@ export class BlockPuzzleGame extends BaseGame {
   private dropInterval: number = 1000; // ms
   private lastDropTime: number = 0;
 
+  // Timed mode
+  private timeLimit: number = 120; // seconds
+  private timeRemaining: number = 120;
+
   private environmentSystem: EnvironmentSystem = new EnvironmentSystem();
+  private comboSystem: ComboSystem = new ComboSystem();
+  private maxCombo: number = 0;
   private tetrisCount: number = 0;
   private themesEncountered: Set<EnvironmentTheme> = new Set();
   
@@ -113,6 +120,8 @@ export class BlockPuzzleGame extends BaseGame {
     }
     
     this.lastDropTime = Date.now();
+    this.timeRemaining = this.timeLimit;
+    this.comboSystem.reset();
     this.environmentSystem.updateTheme(this.level);
     this.tetrisCount = 0;
     this.themesEncountered = new Set([this.environmentSystem.getCurrentTheme()]);
@@ -120,8 +129,19 @@ export class BlockPuzzleGame extends BaseGame {
 
   protected onUpdate(dt: number): void {
     if (this.gameState === 'gameOver') return;
-    
+
     const currentTime = Date.now();
+
+    // Update timer for challenge mode
+    this.timeRemaining -= dt;
+    if (this.timeRemaining <= 0) {
+      this.gameState = 'gameOver';
+      this.endGame();
+      return;
+    }
+
+    // Update combo timer
+    this.comboSystem.update(dt);
     
     // Handle line clearing animation
     if (this.gameState === 'lineClearing') {
@@ -369,6 +389,7 @@ private rotatePiece(): boolean {
     if (completedLines.length > 0) {
       this.startLineClear(completedLines);
     } else {
+      this.comboSystem.reset();
       this.spawnNextPiece();
     }
   }
@@ -423,8 +444,13 @@ private rotatePiece(): boolean {
     const scoreKey = linesCount === 1 ? 'single' :
                      linesCount === 2 ? 'double' :
                      linesCount === 3 ? 'triple' : 'tetris';
-    const lineScore = this.scoreMultipliers[scoreKey] * this.level;
+    const baseScore = this.scoreMultipliers[scoreKey] * this.level;
+    const multiplier = this.comboSystem.addClear(linesCount);
+    const lineScore = baseScore * multiplier;
     this.score += lineScore;
+    if (this.comboSystem.getCombo() > this.maxCombo) {
+      this.maxCombo = this.comboSystem.getCombo();
+    }
     this.pickups += linesCount; // Lines cleared count as pickups for currency
     
     // Level up every 10 lines
@@ -461,9 +487,12 @@ private rotatePiece(): boolean {
   }
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
-    // Clear background
-    ctx.fillStyle = this.environmentSystem.getBoardColor();
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // Clear background with theme gradient
+    this.environmentSystem.drawBackground(
+      ctx,
+      this.canvas.width,
+      this.canvas.height
+    );
     
     // Draw board background
     const boardX = 80; // adjust for smaller block size
@@ -573,16 +602,21 @@ private rotatePiece(): boolean {
 
     const ghostY = ghostPiece.position.y; // This is the final Y position
 
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.shadowColor = 'rgba(0,0,0,0.5)';
+    ctx.shadowBlur = 10;
     for (let r = 0; r < this.currentPiece.shape.length; r++) {
-        for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
+      for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
         if (this.currentPiece.shape[r][c]) {
-            const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
-            const y = boardY + (ghostY + r) * this.blockSize;
-            this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
+          const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
+          const y = boardY + (ghostY + r) * this.blockSize;
+          this.drawBlock(ctx, x, y, this.currentPiece.color, 1);
         }
-        }
+      }
     }
-    }
+    ctx.restore();
+  }
 
   private drawNextPiece(ctx: CanvasRenderingContext2D): void {
     if (!this.nextPiece) return;
@@ -619,6 +653,12 @@ private rotatePiece(): boolean {
     ctx.fillText(`Lines: ${this.linesCleared}`, uiX, uiY);
     uiY += 25;
     ctx.fillText(`Theme: ${this.environmentSystem.getCurrentTheme()}`, uiX, uiY);
+    uiY += 25;
+    ctx.fillText(`Time: ${Math.ceil(this.timeRemaining)}s`, uiX, uiY);
+    uiY += 25;
+    if (this.comboSystem.getCombo() > 1) {
+      ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, uiX, uiY);
+    }
     
     // Controls
     ctx.font = '12px Arial';
@@ -659,6 +699,9 @@ private rotatePiece(): boolean {
     this.clearingLines = [];
     this.clearAnimationTime = 0;
     this.lastDropTime = Date.now();
+    this.timeRemaining = this.timeLimit;
+    this.comboSystem.reset();
+    this.maxCombo = 0;
     this.environmentSystem.updateTheme(this.level);
     this.tetrisCount = 0;
     this.themesEncountered = new Set([this.environmentSystem.getCurrentTheme()]);
@@ -678,7 +721,8 @@ private rotatePiece(): boolean {
       linesCleared: this.linesCleared,
       tetrisCount: this.tetrisCount,
       uniqueThemes: this.themesEncountered.size,
-      gameState: this.gameState
+      gameState: this.gameState,
+      maxCombo: this.maxCombo
     };
   }
 
