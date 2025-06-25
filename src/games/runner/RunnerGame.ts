@@ -6,6 +6,7 @@ import { Obstacle } from './entities/Obstacle';
 import { Coin } from './entities/Coin';
 import { PowerUp, PowerUpType } from './entities/PowerUp';
 import { FlyingEnemy } from './entities/FlyingEnemy';
+import { HoverEnemy } from './entities/HoverEnemy';
 import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
@@ -35,14 +36,17 @@ export class RunnerGame extends BaseGame {
   private coins: Coin[] = [];
   private powerUps: PowerUp[] = [];
   private flyingEnemies: FlyingEnemy[] = [];
+  private hoverEnemies: HoverEnemy[] = [];
   private particles!: ParticleSystem;
   private screenShake!: ScreenShake;
   private comboSystem!: ComboSystem;
   private environmentSystem!: EnvironmentSystem;
   
   private gameSpeed: number = 1;
-  private spawnTimer: number = 0;
-  private spawnInterval: number = 2;
+  private obstacleSpawnTimer: number = 0;
+  private obstacleSpawnInterval: number = 1.5;
+  private aerialSpawnTimer: number = 0;
+  private aerialSpawnInterval: number = 2.5;
   private distance: number = 0;
   private groundY: number = 0;
   private jumps: number = 0;
@@ -193,6 +197,10 @@ export class RunnerGame extends BaseGame {
     // Update flying enemies
     this.flyingEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
     this.flyingEnemies = this.flyingEnemies.filter(enemy => !enemy.isOffScreen());
+
+    // Update hover enemies
+    this.hoverEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
+    this.hoverEnemies = this.hoverEnemies.filter(enemy => !enemy.isOffScreen());
   }
 
   private updateSystems(dt: number): void {
@@ -211,33 +219,41 @@ export class RunnerGame extends BaseGame {
   }
 
   private handleSpawning(): void {
-    this.spawnTimer += this.gameSpeed * 0.016; // Approximate dt
-    
-    if (this.spawnTimer >= this.spawnInterval) {
-      this.spawnTimer = 0;
-      
-      // Spawn obstacles
-      if (Math.random() < 0.6) {
+    const dt = this.gameSpeed * 0.016; // Approximate frame time scaled by speed
+
+    this.obstacleSpawnTimer += dt;
+    this.aerialSpawnTimer += dt;
+
+    if (this.obstacleSpawnTimer >= this.obstacleSpawnInterval) {
+      this.obstacleSpawnTimer = 0;
+
+      if (Math.random() < 0.8) {
         this.spawnObstacle();
       }
-      
-      // Spawn flying enemies (less frequent)
-      if (Math.random() < 0.2 && this.distance > 500) {
-        this.spawnFlyingEnemy();
-      }
-      
-      // Spawn coins
-      if (Math.random() < 0.7) {
+
+      if (Math.random() < 0.6) {
         this.spawnCoin();
       }
-      
-      // Spawn power-ups (rare)
+
       if (Math.random() < 0.15 && this.distance > 300) {
         this.spawnPowerUp();
       }
-      
-      // Adjust spawn rate
-      this.spawnInterval = Math.max(0.8, 2 - (this.gameSpeed - 1) * 0.2);
+
+      this.obstacleSpawnInterval = Math.max(0.8, 1.5 - (this.gameSpeed - 1) * 0.1);
+    }
+
+    if (this.aerialSpawnTimer >= this.aerialSpawnInterval) {
+      this.aerialSpawnTimer = 0;
+
+      if (Math.random() < 0.5 && this.distance > 500) {
+        this.spawnFlyingEnemy();
+      }
+
+      if (Math.random() < 0.4 && this.distance > 800) {
+        this.spawnHoverEnemy();
+      }
+
+      this.aerialSpawnInterval = Math.max(1.2, 2.5 - (this.gameSpeed - 1) * 0.1);
     }
   }
 
@@ -253,6 +269,7 @@ export class RunnerGame extends BaseGame {
     // Render all entities
     this.obstacles.forEach(obstacle => obstacle.render(ctx));
     this.flyingEnemies.forEach(enemy => enemy.render(ctx));
+    this.hoverEnemies.forEach(enemy => enemy.render(ctx));
     this.coins.forEach(coin => coin.render(ctx));
     this.powerUps.forEach(powerUp => powerUp.render(ctx));
     
@@ -404,6 +421,12 @@ export class RunnerGame extends BaseGame {
     this.flyingEnemies.push(new FlyingEnemy(x, y));
   }
 
+  private spawnHoverEnemy(): void {
+    const x = this.canvas.width + 50;
+    const y = this.groundY - 80;
+    this.hoverEnemies.push(new HoverEnemy(x, y));
+  }
+
   private spawnObstacle(): void {
     const x = this.canvas.width + 50;
     const y = this.groundY - 48;
@@ -433,6 +456,16 @@ export class RunnerGame extends BaseGame {
       
       // Check flying enemy collisions
       for (const enemy of this.flyingEnemies) {
+        if (playerBounds.intersects(enemy.getBounds())) {
+          this.services.audio.playSound('collision');
+          this.screenShake.shake(8, 0.25);
+          this.endGame();
+          return;
+        }
+      }
+
+      // Check hover enemy collisions
+      for (const enemy of this.hoverEnemies) {
         if (playerBounds.intersects(enemy.getBounds())) {
           this.services.audio.playSound('collision');
           this.screenShake.shake(8, 0.25);
@@ -537,14 +570,17 @@ export class RunnerGame extends BaseGame {
     this.coins = [];
     this.powerUps = [];
     this.flyingEnemies = [];
+    this.hoverEnemies = [];
     this.activePowerUps = [];
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
     this.gameSpeed = 1;
-    this.spawnTimer = 0;
-    this.spawnInterval = 2;
+    this.obstacleSpawnTimer = 0;
+    this.obstacleSpawnInterval = 1.5;
+    this.aerialSpawnTimer = 0;
+    this.aerialSpawnInterval = 2.5;
     this.distance = 0;
     this.jumps = 0;
     this.powerupsUsed = 0;
