@@ -1,7 +1,7 @@
 // ===== src/components/arcade/GameCarousel.tsx =====
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { GameManifest } from '@/lib/types';
 import { UNLOCK_COSTS } from '@/lib/constants';
 import Image from 'next/image';
@@ -18,6 +18,8 @@ interface GameCarouselProps {
 export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect, onGameUnlock }: GameCarouselProps) {
   const [selectedGameId, setSelectedGameId] = useState<string>(games[0]?.id || '');
   const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
+  const [loadedImages, setLoadedImages] = useState<Set<string>>(new Set());
+  const listRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
 
   const isGameUnlocked = (game: GameManifest) => {
@@ -37,8 +39,13 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
     setImageErrors(prev => new Set([...prev, gameId]));
   };
 
+  const handleImageLoad = (gameId: string) => {
+    setLoadedImages(prev => new Set(prev).add(gameId));
+  };
+
   const renderThumbnail = (game: GameManifest, unlocked: boolean) => {
     const hasError = imageErrors.has(game.id);
+    const loaded = loadedImages.has(game.id);
     
     if (hasError) {
       // Fallback to emoji if image fails to load
@@ -59,8 +66,12 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
             unlocked ? 'opacity-100' : 'opacity-50 grayscale'
           }`}
           onError={() => handleImageError(game.id)}
+          onLoad={() => handleImageLoad(game.id)}
           priority={game.id === games[0]?.id}
         />
+        {!loaded && (
+          <div className="absolute inset-0 thumbnail-loading" />
+        )}
         {!unlocked && (
           <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
             <div className="text-4xl opacity-75">🔒</div>
@@ -80,7 +91,29 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
       {tiers.map(tier => (
         <div key={tier} className="space-y-4">
           <h3 className="text-lg font-semibold text-white">Tier {tier}</h3>
-          <div className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
+          <div className="relative">
+            <button
+              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-gray-700 bg-opacity-70 hover:bg-opacity-90 text-white p-1 rounded-full"
+              onClick={() =>
+                listRefs.current[tier]?.scrollBy({ left: -300, behavior: 'smooth' })
+              }
+            >
+              ◀
+            </button>
+            <button
+              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-gray-700 bg-opacity-70 hover:bg-opacity-90 text-white p-1 rounded-full"
+              onClick={() =>
+                listRefs.current[tier]?.scrollBy({ left: 300, behavior: 'smooth' })
+              }
+            >
+              ▶
+            </button>
+            <div
+              ref={el => {
+                listRefs.current[tier] = el;
+              }}
+              className="flex gap-4 overflow-x-auto pb-4 custom-scrollbar scroll-smooth"
+            >
             {games.filter(g => g.tier === tier).map((game) => {
               const unlocked = isGameUnlocked(game);
               const canUnlock = canUnlockGame(game);
@@ -89,7 +122,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
               return (
                 <div
                   key={game.id}
-                  className={`game-card w-64 flex-shrink-0 ${
+                  className={`game-card w-72 flex-shrink-0 ${
                     selectedGameId === game.id ? 'ring-2 ring-primary-400' : ''
                   }`}
                   onClick={() => setSelectedGameId(game.id)}
@@ -142,6 +175,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       ))}
