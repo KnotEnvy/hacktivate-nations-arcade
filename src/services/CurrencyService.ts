@@ -11,6 +11,7 @@ export class CurrencyService {
   private currentCoins: number = 0;
   private transactions: CurrencyTransaction[] = [];
   private listeners: Array<(coins: number) => void> = [];
+  private bonusMultiplier: number = 1;
 
   init(): void {
     // Load from localStorage for now
@@ -22,6 +23,14 @@ export class CurrencyService {
 
   getCurrentCoins(): number {
     return this.currentCoins;
+  }
+
+  getBonusMultiplier(): number {
+    return this.bonusMultiplier;
+  }
+
+  setBonusMultiplier(multiplier: number): void {
+    this.bonusMultiplier = multiplier;
   }
 
   // Reset method for development
@@ -65,9 +74,10 @@ export class CurrencyService {
     return true;
   }
 
-  calculateGameReward(score: number, pickups: number, bonusMultiplier: number = 1): number {
-    const baseReward = Math.floor(score / ECONOMY.SCORE_TO_COINS_RATIO) + 
-                      (pickups * ECONOMY.PICKUP_COIN_VALUE);
+  calculateGameReward(score: number, pickups: number, bonusMultiplier: number = this.bonusMultiplier): number {
+    const baseReward =
+      Math.floor(score / ECONOMY.SCORE_TO_COINS_RATIO) +
+      pickups * ECONOMY.PICKUP_COIN_VALUE;
     return Math.floor(baseReward * bonusMultiplier);
   }
 

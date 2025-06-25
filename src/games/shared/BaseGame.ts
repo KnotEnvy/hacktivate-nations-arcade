@@ -83,9 +83,11 @@ export abstract class BaseGame implements GameModule {
 
   getScore(): GameScore {
     const timePlayedMs = this.isRunning ? Date.now() - this.startTime : this.gameTime;
+    const multiplier = this.services.currency.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services.currency.calculateGameReward(
-      this.score, 
-      this.pickups
+      this.score,
+      this.pickups,
+      multiplier
     );
 
     return {

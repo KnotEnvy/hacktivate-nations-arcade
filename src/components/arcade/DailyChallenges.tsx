@@ -14,18 +14,17 @@ export function DailyChallenges({ challengeService, onChallengeComplete }: Daily
 
   useEffect(() => {
     setChallenges(challengeService.getChallenges());
-    
     const unsubscribe = challengeService.onChallengesChanged((newChallenges) => {
       setChallenges(newChallenges);
-      
-      // Check for newly completed challenges
-      const completedChallenges = newChallenges.filter(c => c.completed);
-      completedChallenges.forEach(challenge => {
-        onChallengeComplete?.(challenge);
-      });
+    });
+    const unsubscribeComplete = challengeService.onChallengeCompleted((challenge) => {
+      onChallengeComplete?.(challenge);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeComplete();
+    };
   }, [challengeService, onChallengeComplete]);
 
   const dailyChallenges = challenges.filter(c => c.type === 'daily');

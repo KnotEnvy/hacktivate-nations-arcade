@@ -8,6 +8,7 @@ import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService } from '@/services/ChallengeService';
 import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
+import { ECONOMY } from '@/lib/constants';
 import { GameCanvas } from './GameCanvas';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
@@ -452,11 +453,28 @@ export function ArcadeHub() {
               {activeTab === 'challenges' && (
                 <>
                   <div className="lg:col-span-2">
-                    <DailyChallenges 
+                    <DailyChallenges
                       challengeService={challengeService}
                       onChallengeComplete={(challenge) => {
-                        addNotification('challenge', 'Challenge Complete!', `${challenge.title} - +${challenge.reward} coins`);
-                        currencyService.addCoins(challenge.reward, `challenge_${challenge.id}`);
+                        addNotification(
+                          'challenge',
+                          'Challenge Complete!',
+                          `${challenge.title} - +${challenge.reward} coins`
+                        );
+                        currencyService.addCoins(
+                          challenge.reward,
+                          `challenge_${challenge.id}`
+                        );
+                        const current = userService.getStats().challengesCompleted;
+                        userService.updateStats({ challengesCompleted: current + 1 });
+                        if (challengeService.areAllDailyChallengesCompleted()) {
+                          currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
+                          addNotification(
+                            'challenge',
+                            'All Daily Challenges Complete!',
+                            `Coins are now multiplied by ${ECONOMY.DAILY_CHALLENGE_MULTIPLIER}x`
+                          );
+                        }
                       }}
                     />
                   </div>
@@ -481,11 +499,28 @@ export function ArcadeHub() {
                 <>
                   <div className="lg:col-span-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <DailyChallenges 
+                      <DailyChallenges
                         challengeService={challengeService}
                         onChallengeComplete={(challenge) => {
-                          addNotification('challenge', 'Challenge Complete!', `${challenge.title} - +${challenge.reward} coins`);
-                          currencyService.addCoins(challenge.reward, `challenge_${challenge.id}`);
+                          addNotification(
+                            'challenge',
+                            'Challenge Complete!',
+                            `${challenge.title} - +${challenge.reward} coins`
+                          );
+                          currencyService.addCoins(
+                            challenge.reward,
+                            `challenge_${challenge.id}`
+                          );
+                          const current = userService.getStats().challengesCompleted;
+                          userService.updateStats({ challengesCompleted: current + 1 });
+                          if (challengeService.areAllDailyChallengesCompleted()) {
+                            currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
+                            addNotification(
+                              'challenge',
+                              'All Daily Challenges Complete!',
+                              `Coins are now multiplied by ${ECONOMY.DAILY_CHALLENGE_MULTIPLIER}x`
+                            );
+                          }
                         }}
                       />
                       <AchievementPanel achievementService={achievementService} />

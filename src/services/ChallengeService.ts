@@ -15,6 +15,7 @@ export interface Challenge {
 export class ChallengeService {
   private challenges: Challenge[] = [];
   private listeners: Array<(challenges: Challenge[]) => void> = [];
+  private completionListeners: Array<(challenge: Challenge) => void> = [];
 
   init(): void {
     this.loadChallenges();
@@ -177,6 +178,7 @@ export class ChallengeService {
         if (challenge.progress >= challenge.target && !challenge.completed) {
           challenge.completed = true;
           this.completeChallengeReward(challenge);
+          this.notifyCompletion(challenge);
         }
         updated = true;
       }
@@ -201,12 +203,29 @@ export class ChallengeService {
     return this.challenges.filter(c => c.completed);
   }
 
+  areAllDailyChallengesCompleted(): boolean {
+    const daily = this.challenges.filter(c => c.type === 'daily');
+    return daily.length > 0 && daily.every(c => c.completed);
+  }
+
+  onChallengeCompleted(callback: (challenge: Challenge) => void): () => void {
+    this.completionListeners.push(callback);
+    return () => {
+      const index = this.completionListeners.indexOf(callback);
+      if (index > -1) this.completionListeners.splice(index, 1);
+    };
+  }
+
   onChallengesChanged(callback: (challenges: Challenge[]) => void): () => void {
     this.listeners.push(callback);
     return () => {
       const index = this.listeners.indexOf(callback);
       if (index > -1) this.listeners.splice(index, 1);
     };
+  }
+
+  private notifyCompletion(challenge: Challenge): void {
+    this.completionListeners.forEach(cb => cb(challenge));
   }
 
   private notifyListeners(): void {
