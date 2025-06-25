@@ -40,7 +40,7 @@ export default function Error({
             <summary className="cursor-pointer text-sm text-gray-400">
               Error Details (Development)
             </summary>
-            <pre className="mt-2 text-xs text-red-400 bg-black bg-opacity-50 p-3 rounded overflow-auto">
+            <pre className="mt-2 text-xs text-red-400 bg-black bg-opacity-50 p-3 rounded overflow-auto custom-scrollbar">
               {error.message}
             </pre>
           </details>
