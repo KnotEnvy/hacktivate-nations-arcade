@@ -32,7 +32,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} antialiased bg-gray-900 text-white`}>
+      <body className={`${inter.className} antialiased bg-gray-900 text-white custom-scrollbar`}>
         <div id="root">{children}</div>
       </body>
     </html>

@@ -43,7 +43,7 @@ export function AchievementPanel({ achievementService }: AchievementPanelProps) 
       </div>
 
       {/* Category filters */}
-      <div className="flex gap-2 mb-4 overflow-x-auto">
+      <div className="flex gap-2 mb-4 overflow-x-auto custom-scrollbar">
         {categories.map(category => (
           <button
             key={category.id}
@@ -60,7 +60,7 @@ export function AchievementPanel({ achievementService }: AchievementPanelProps) 
       </div>
 
       {/* Achievement grid */}
-      <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto">
+      <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto custom-scrollbar">
         {filteredAchievements.map(achievement => (
           <div
             key={achievement.id}
