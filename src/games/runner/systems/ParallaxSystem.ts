@@ -64,8 +64,18 @@ export class ParallaxSystem {
     });
   }
   
-  update(distance: number): void {
-    this.distance = distance;
+  /**
+   * Advance the parallax layers by the given distance delta.
+   * Using a delta keeps the internal distance small and avoids
+   * precision issues when the game runs for a long time.
+   */
+  update(delta: number): void {
+    this.distance += delta;
+  }
+
+  /** Reset parallax scroll distance. */
+  reset(): void {
+    this.distance = 0;
   }
   
   render(ctx: CanvasRenderingContext2D, theme: EnvironmentTheme): void {

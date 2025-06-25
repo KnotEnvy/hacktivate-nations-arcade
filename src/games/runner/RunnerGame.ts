@@ -13,6 +13,10 @@ import { ComboSystem } from './systems/ComboSystem';
 import { EnvironmentSystem } from './systems/EnvironmentSystem';
 import { ParallaxSystem } from './systems/ParallaxSystem';
 
+// Deterministic noise function for ground textures
+const pseudoNoise = (x: number, y: number): number => {
+  return Math.abs(Math.sin(x * 12.9898 + y * 78.233)) % 1;
+};
 
 interface ActivePowerUp {
   type: PowerUpType;
@@ -80,6 +84,7 @@ export class RunnerGame extends BaseGame {
       this.canvas.height,
       this.groundY
     );
+    this.parallaxSystem.reset();
     this.startTime = Date.now();
     this.jumps = 0;
     this.powerupsUsed = 0;
@@ -109,12 +114,14 @@ export class RunnerGame extends BaseGame {
     this.handlePlayerEffects(jumpStarted);
     
     // Update game speed and distance
-    this.distance += this.gameSpeed * dt * 100;
+    const baseIncrement = this.gameSpeed * dt * 100;
+    this.distance += baseIncrement;
     this.gameSpeed = 1 + Math.floor(this.distance / 1000) * 0.2;
-    
+
     // Apply speed boost power-up
     const speedMultiplier = this.hasPowerUp('speed-boost') ? 1.5 : 1;
     const effectiveSpeed = this.gameSpeed * speedMultiplier;
+    const distanceIncrement = effectiveSpeed * dt * 100;
     
     // Update all entities
     this.updateEntities(dt, effectiveSpeed);
@@ -131,8 +138,8 @@ export class RunnerGame extends BaseGame {
     
     // Update score
     this.score = Math.floor(this.distance / 10);
-    // Update parallax system with current distance
-    this.parallaxSystem.update(this.distance);
+    // Scroll parallax layers by the distance moved this frame
+    this.parallaxSystem.update(distanceIncrement);
   }
 
   public getScore() {
@@ -395,13 +402,14 @@ export class RunnerGame extends BaseGame {
     ctx.fillStyle = grassGradient;
     ctx.fillRect(0, this.groundY - 8, this.canvas.width, 8);
     
-    // Add subtle ground texture
+    // Add subtle deterministic ground texture
     ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
     const textureOffset = (this.distance * 1.5) % 20;
     for (let x = -textureOffset; x < this.canvas.width; x += 20) {
       for (let y = this.groundY + 10; y < this.canvas.height; y += 15) {
-        if (Math.random() > 0.7) {
-          ctx.fillRect(x + Math.random() * 3, y, 1, 1);
+        const noise = pseudoNoise(x, y);
+        if (noise > 0.7) {
+          ctx.fillRect(x + (noise * 3) % 3, y, 1, 1);
         }
       }
     }
@@ -586,5 +594,6 @@ export class RunnerGame extends BaseGame {
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
     this.player = new Player(100, this.groundY - 32, this.groundY);
+    this.parallaxSystem.reset();
   }
 }
