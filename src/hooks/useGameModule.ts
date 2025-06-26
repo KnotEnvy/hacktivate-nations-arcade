@@ -31,7 +31,7 @@ export function useGameModule(
 
     // Initialize all services
     audio.init();
-    analytics.init();
+    void analytics.init();
     currency.init();
 
     // Initialize game
