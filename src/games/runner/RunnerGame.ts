@@ -63,8 +63,10 @@ export class RunnerGame extends BaseGame {
   private activePowerUps: ActivePowerUp[] = [];
   private coinMagnetRange: number = 80;
   
-  // Animation state
-  private wasGrounded: boolean = true;
+
+  // Jump tracking
+  private jumpInProgress: boolean = false;
+
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   //paralax system
@@ -98,20 +100,36 @@ export class RunnerGame extends BaseGame {
   protected onUpdate(dt: number): void {
     const jumpPressed = this.services.input.isActionPressed();
 
-    const prevJumpsRemaining = this.player.getJumpsRemaining();
+    // Check state before update
+    const wasGrounded = this.player.getIsGrounded();
+    const jumpsBefore = this.player.getJumpsRemaining();
+
 
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
     this.player.update(dt, jumpPressed, hasDoubleJump);
 
-    const jumpStarted = this.player.getJumpsRemaining() < prevJumpsRemaining;
+
+    // Detect jump start by comparing jumps remaining
+    const jumpsAfter = this.player.getJumpsRemaining();
+    const jumpStarted = jumpsAfter < jumpsBefore;
+
+    const isGrounded = this.player.getIsGrounded();
+    const landing = wasGrounded === false && isGrounded === true;
+
     if (jumpStarted) {
       this.services.audio.playSound('jump');
+      this.jumpInProgress = true;
+    }
+
+    if (landing && this.jumpInProgress) {
       this.jumps++;
+      this.jumpInProgress = false;
     }
 
     // Handle particle effects
-    this.handlePlayerEffects(jumpStarted);
+    this.handlePlayerEffects(jumpStarted, landing);
+
     
     // Update game speed and distance
     const baseIncrement = this.gameSpeed * dt * 100;
@@ -162,19 +180,20 @@ export class RunnerGame extends BaseGame {
     };
   }
 
-  private handlePlayerEffects(jumpStarted: boolean): void {
-    // Jump particles
+
+  private handlePlayerEffects(jumpStarted: boolean, landing: boolean): void {
+
+
     if (jumpStarted) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
     }
 
-    // Landing particles
-    if (!this.wasGrounded && this.player.getIsGrounded()) {
+
+    if (landing) {
       this.particles.createLandingDust(this.player.position.x, this.player.position.y);
       this.screenShake.shake(3, 0.1);
     }
 
-    this.wasGrounded = this.player.getIsGrounded();
   }
 
   private updateEntities(dt: number, gameSpeed: number): void {

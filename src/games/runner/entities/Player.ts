@@ -7,7 +7,11 @@ export class Player {
   size: Vector2;
   
   private isGrounded: boolean = true;
-  private jumpPower: number = -15;
+  private jumpPower: number = -9;
+  private maxJumpHoldTime: number = 0.2;
+  private jumpHoldTime: number = 0;
+  private jumpHoldBoost: number = -0.6;
+  private isJumping: boolean = false;
   private gravity: number = 0.8;
   private groundY: number;
   private jumpsRemaining: number = 1;
@@ -42,6 +46,21 @@ export class Player {
     // Handle jumping (only on button press, not hold)
     if (inputPressed && !this.lastJumpPressed && this.jumpsRemaining > 0) {
       this.jump();
+      this.isJumping = true;
+      this.jumpHoldTime = 0;
+    }
+
+    // Variable jump height while holding the button
+    if (
+      this.isJumping &&
+      inputPressed &&
+      !this.isGrounded &&
+      this.jumpHoldTime < this.maxJumpHoldTime
+    ) {
+      this.velocity.y += this.jumpHoldBoost;
+      this.jumpHoldTime += dt;
+    } else if (!inputPressed || this.jumpHoldTime >= this.maxJumpHoldTime) {
+      this.isJumping = false;
     }
 
     if (inputPressed && this.isJumping && this.jumpHoldTime < this.maxJumpHold) {
@@ -69,6 +88,9 @@ export class Player {
       this.isGrounded = true;
       this.isJumping = false;
       this.jumpsRemaining = this.maxJumps;
+
+      this.isJumping = false;
+      this.jumpHoldTime = this.maxJumpHoldTime;
       
       // Squash effect on landing (only if we were in the air)
       if (wasAirborne) {
