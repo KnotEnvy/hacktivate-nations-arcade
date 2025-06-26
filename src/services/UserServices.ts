@@ -44,6 +44,8 @@ export class UserService {
         this.saveUserData();
       }
     }
+    this.notifyListeners();
+
   }
 
   private getDefaultProfile(): UserProfile {

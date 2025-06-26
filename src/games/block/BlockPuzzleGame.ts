@@ -611,7 +611,7 @@ private rotatePiece(): boolean {
         if (this.currentPiece.shape[r][c]) {
           const x = boardX + (this.currentPiece.position.x + c) * this.blockSize;
           const y = boardY + (ghostY + r) * this.blockSize;
-          this.drawBlock(ctx, x, y, this.currentPiece.color, 1);
+          this.drawBlock(ctx, x, y, this.currentPiece.color, 0.3);
         }
       }
     }
