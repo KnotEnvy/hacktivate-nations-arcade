@@ -75,7 +75,7 @@ export class RunnerGame extends BaseGame {
 
   protected onInit(): void {
     this.groundY = this.canvas.height - 50;
-    this.player = new Player(100, this.groundY - 32, this.groundY);
+    this.player = new Player(100, this.groundY - 32, this.groundY, this.canvas.width);
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
@@ -99,6 +99,8 @@ export class RunnerGame extends BaseGame {
 
   protected onUpdate(dt: number): void {
     const jumpPressed = this.services.input.isActionPressed();
+    const leftPressed = this.services.input.isLeftPressed();
+    const rightPressed = this.services.input.isRightPressed();
 
     // Check state before update
     const wasGrounded = this.player.getIsGrounded();
@@ -107,7 +109,7 @@ export class RunnerGame extends BaseGame {
 
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
-    this.player.update(dt, jumpPressed, hasDoubleJump);
+    this.player.update(dt, jumpPressed, hasDoubleJump, leftPressed, rightPressed);
 
 
     // Detect jump start by comparing jumps remaining
@@ -612,7 +614,7 @@ export class RunnerGame extends BaseGame {
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
-    this.player = new Player(100, this.groundY - 32, this.groundY);
+    this.player = new Player(100, this.groundY - 32, this.groundY, this.canvas.width);
     this.parallaxSystem.reset();
   }
 }

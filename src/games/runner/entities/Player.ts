@@ -5,21 +5,23 @@ export class Player {
   position: Vector2;
   velocity: Vector2;
   size: Vector2;
-  
-  private isGrounded: boolean = true;
-  private jumpPower: number = -9;
-  private maxJumpHoldTime: number = 0.2;
-  private jumpHoldTime: number = 0;
-  private jumpHoldBoost: number = -0.6;
-  private isJumping: boolean = false;
-  private gravity: number = 0.8;
+
+  private isGrounded = true;
+  private isJumping = false;
   private groundY: number;
-  private jumpsRemaining: number = 1;
-  private maxJumps: number = 1;
-  private lastJumpPressed: boolean = false;
-  private isJumping: boolean = false;
-  private jumpHoldTime: number = 0;
-  private maxJumpHold: number = 0.25;
+  private worldWidth: number;
+
+  private jumpsRemaining = 1;
+  private maxJumps = 1;
+  private lastJumpPressed = false;
+
+  private jumpPower = -9;
+  private jumpHoldBoost = -0.6;
+  private maxJumpHoldTime = 0.25;
+  private jumpHoldTime = 0;
+
+  private gravity = 0.8;
+  private moveSpeed = 200;
 
   // Animation
   private frameTime: number = 0;
@@ -30,45 +32,41 @@ export class Player {
 
   // Trail effect
   private trailPositions: Vector2[] = [];
-  private maxTrailLength: number = 8;
+  private maxTrailLength = 8;
 
-  constructor(x: number, y: number, groundY: number) {
+  constructor(x: number, y: number, groundY: number, worldWidth: number) {
     this.position = new Vector2(x, y);
     this.velocity = new Vector2(0, 0);
     this.size = new Vector2(32, 32);
     this.groundY = groundY;
+    this.worldWidth = worldWidth;
   }
 
-  update(dt: number, inputPressed: boolean, hasDoubleJump: boolean = false): void {
+  update(
+    dt: number,
+    inputPressed: boolean,
+    hasDoubleJump: boolean = false,
+    leftPressed: boolean = false,
+    rightPressed: boolean = false
+  ): void {
     // Update max jumps based on power-up
     this.maxJumps = hasDoubleJump ? 2 : 1;
-    
-    // Handle jumping (only on button press, not hold)
+
+    // Horizontal movement
+    this.velocity.x = 0;
+    if (leftPressed) this.velocity.x -= this.moveSpeed;
+    if (rightPressed) this.velocity.x += this.moveSpeed;
+
+    // Handle jump start
     if (inputPressed && !this.lastJumpPressed && this.jumpsRemaining > 0) {
       this.jump();
-      this.isJumping = true;
-      this.jumpHoldTime = 0;
     }
 
     // Variable jump height while holding the button
-    if (
-      this.isJumping &&
-      inputPressed &&
-      !this.isGrounded &&
-      this.jumpHoldTime < this.maxJumpHoldTime
-    ) {
+    if (this.isJumping && inputPressed && this.jumpHoldTime < this.maxJumpHoldTime) {
       this.velocity.y += this.jumpHoldBoost;
       this.jumpHoldTime += dt;
-    } else if (!inputPressed || this.jumpHoldTime >= this.maxJumpHoldTime) {
-      this.isJumping = false;
-    }
-
-    if (inputPressed && this.isJumping && this.jumpHoldTime < this.maxJumpHold) {
-      this.velocity.y += this.jumpPower * 0.02;
-      this.jumpHoldTime += dt;
-    }
-
-    if (!inputPressed) {
+    } else if (!inputPressed) {
       this.isJumping = false;
     }
 
@@ -80,6 +78,9 @@ export class Player {
     // Update position
     this.position = this.position.add(this.velocity.multiply(dt * 60));
 
+    // Clamp horizontal position
+    this.position.x = Math.max(0, Math.min(this.worldWidth - this.size.x, this.position.x));
+
     // Ground collision
     if (this.position.y >= this.groundY - this.size.y) {
       const wasAirborne = !this.isGrounded;
@@ -88,9 +89,7 @@ export class Player {
       this.isGrounded = true;
       this.isJumping = false;
       this.jumpsRemaining = this.maxJumps;
-
-      this.isJumping = false;
-      this.jumpHoldTime = this.maxJumpHoldTime;
+      this.jumpHoldTime = 0;
       
       // Squash effect on landing (only if we were in the air)
       if (wasAirborne) {
@@ -147,12 +146,9 @@ export class Player {
       if (!this.isGrounded) {
         // Double jump effect - slightly weaker but still good
         this.velocity.y = this.jumpPower * 0.85;
-        console.log('🦅 Double jump activated!'); // Debug log
       } else {
         this.isGrounded = false;
       }
-      
-      console.log(`🎮 Jump! Jumps remaining: ${this.jumpsRemaining}`); // Debug log
     }
   }
 
