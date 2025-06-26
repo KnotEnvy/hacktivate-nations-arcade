@@ -17,6 +17,9 @@ export class Player {
   private jumpsRemaining: number = 1;
   private maxJumps: number = 1;
   private lastJumpPressed: boolean = false;
+  private isJumping: boolean = false;
+  private jumpHoldTime: number = 0;
+  private maxJumpHold: number = 0.25;
 
   // Animation
   private frameTime: number = 0;
@@ -59,6 +62,16 @@ export class Player {
     } else if (!inputPressed || this.jumpHoldTime >= this.maxJumpHoldTime) {
       this.isJumping = false;
     }
+
+    if (inputPressed && this.isJumping && this.jumpHoldTime < this.maxJumpHold) {
+      this.velocity.y += this.jumpPower * 0.02;
+      this.jumpHoldTime += dt;
+    }
+
+    if (!inputPressed) {
+      this.isJumping = false;
+    }
+
     this.lastJumpPressed = inputPressed;
 
     // Apply gravity
@@ -73,6 +86,7 @@ export class Player {
       this.position.y = this.groundY - this.size.y;
       this.velocity.y = 0;
       this.isGrounded = true;
+      this.isJumping = false;
       this.jumpsRemaining = this.maxJumps;
 
       this.isJumping = false;
@@ -124,6 +138,8 @@ export class Player {
     if (this.jumpsRemaining > 0) {
       this.velocity.y = this.jumpPower;
       this.jumpsRemaining--;
+      this.isJumping = true;
+      this.jumpHoldTime = 0;
       
       // Stretch effect on jump
       this.squashStretch = 0.6; // More pronounced stretch

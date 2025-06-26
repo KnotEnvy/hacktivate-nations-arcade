@@ -8,12 +8,14 @@ import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService } from '@/services/ChallengeService';
 import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
+import { ECONOMY } from '@/lib/constants';
 import { GameCanvas } from './GameCanvas';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
 import { DailyChallenges } from './DailyChallenges';
 import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
+import { OnboardingOverlay } from './OnboardingOverlay';
 
 const AVAILABLE_GAMES: GameManifest[] = [
   {
@@ -26,6 +28,15 @@ const AVAILABLE_GAMES: GameManifest[] = [
     description: 'Jump and collect coins in this fast-paced endless runner!'
   },
   {
+    id: "snake",
+    title: "Snake",
+    thumbnail: "/games/snake/snake-thumb.svg",
+    inputSchema: ["keyboard", "touch"],
+    assetBudgetKB: 60,
+    tier: 0,
+    description: "Classic snake action. Coming soon!"
+  },
+  {
     id: "puzzle",
     title: "Block Puzzle",
     thumbnail: "/games/puzzle/puzzle-thumb.svg",
@@ -33,15 +44,6 @@ const AVAILABLE_GAMES: GameManifest[] = [
     assetBudgetKB: 75,
     tier: 1,
     description: "Match blocks to clear lines."
-  },
-  {
-    id: "snake",
-    title: "Snake",
-    thumbnail: "/games/snake/snake-thumb.svg",
-    inputSchema: ["keyboard", "touch"],
-    assetBudgetKB: 60,
-    tier: 1,
-    description: "Classic snake action. Coming soon!"
   },
   {
     id: "space",
@@ -85,6 +87,7 @@ export function ArcadeHub() {
     message: string;
     timestamp: Date;
   }>>([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
     currencyService.init();
@@ -120,6 +123,14 @@ export function ArcadeHub() {
 
     return unsubscribe;
   }, [challengeService, achievementService, userService]);
+
+  useEffect(() => {
+    const seen = localStorage.getItem('hacktivate-onboarding-shown');
+    if (!seen) {
+      setShowOnboarding(true);
+      localStorage.setItem('hacktivate-onboarding-shown', 'true');
+    }
+  }, []);
 
   useEffect(() => {
     // Load unlocked tiers from localStorage
@@ -345,7 +356,7 @@ export function ArcadeHub() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4">
       {/* Header */}
-      <header className="flex justify-between items-center mb-8">
+      <header className="relative flex justify-between items-center mb-8 bg-gradient-to-r from-purple-800 to-purple-900 rounded-lg px-4 py-3 shadow-lg">
         <div className="flex items-center gap-4">
           <h1 className="text-3xl font-bold text-white font-arcade">
             🕹️ HacktivateNations Arcade
@@ -358,6 +369,12 @@ export function ArcadeHub() {
               ← Back to Hub
             </button>
           )}
+          <button
+            onClick={() => setShowOnboarding(true)}
+            className="ml-2 text-sm text-white underline hover:text-purple-200"
+          >
+            Help
+          </button>
           {/* Debug buttons for development */}
           {process.env.NODE_ENV === 'development' && (
             <div className="flex gap-1">
@@ -452,11 +469,28 @@ export function ArcadeHub() {
               {activeTab === 'challenges' && (
                 <>
                   <div className="lg:col-span-2">
-                    <DailyChallenges 
+                    <DailyChallenges
                       challengeService={challengeService}
                       onChallengeComplete={(challenge) => {
-                        addNotification('challenge', 'Challenge Complete!', `${challenge.title} - +${challenge.reward} coins`);
-                        currencyService.addCoins(challenge.reward, `challenge_${challenge.id}`);
+                        addNotification(
+                          'challenge',
+                          'Challenge Complete!',
+                          `${challenge.title} - +${challenge.reward} coins`
+                        );
+                        currencyService.addCoins(
+                          challenge.reward,
+                          `challenge_${challenge.id}`
+                        );
+                        const current = userService.getStats().challengesCompleted;
+                        userService.updateStats({ challengesCompleted: current + 1 });
+                        if (challengeService.areAllDailyChallengesCompleted()) {
+                          currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
+                          addNotification(
+                            'challenge',
+                            'All Daily Challenges Complete!',
+                            `Coins are now multiplied by ${ECONOMY.DAILY_CHALLENGE_MULTIPLIER}x`
+                          );
+                        }
                       }}
                     />
                   </div>
@@ -481,11 +515,28 @@ export function ArcadeHub() {
                 <>
                   <div className="lg:col-span-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <DailyChallenges 
+                      <DailyChallenges
                         challengeService={challengeService}
                         onChallengeComplete={(challenge) => {
-                          addNotification('challenge', 'Challenge Complete!', `${challenge.title} - +${challenge.reward} coins`);
-                          currencyService.addCoins(challenge.reward, `challenge_${challenge.id}`);
+                          addNotification(
+                            'challenge',
+                            'Challenge Complete!',
+                            `${challenge.title} - +${challenge.reward} coins`
+                          );
+                          currencyService.addCoins(
+                            challenge.reward,
+                            `challenge_${challenge.id}`
+                          );
+                          const current = userService.getStats().challengesCompleted;
+                          userService.updateStats({ challengesCompleted: current + 1 });
+                          if (challengeService.areAllDailyChallengesCompleted()) {
+                            currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
+                            addNotification(
+                              'challenge',
+                              'All Daily Challenges Complete!',
+                              `Coins are now multiplied by ${ECONOMY.DAILY_CHALLENGE_MULTIPLIER}x`
+                            );
+                          }
                         }}
                       />
                       <AchievementPanel achievementService={achievementService} />
@@ -522,6 +573,9 @@ export function ArcadeHub() {
           </div>
         )}
       </main>
+      {showOnboarding && (
+        <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
+      )}
     </div>
   );
 }

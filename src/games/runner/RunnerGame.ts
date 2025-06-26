@@ -6,10 +6,17 @@ import { Obstacle } from './entities/Obstacle';
 import { Coin } from './entities/Coin';
 import { PowerUp, PowerUpType } from './entities/PowerUp';
 import { FlyingEnemy } from './entities/FlyingEnemy';
+import { HoverEnemy } from './entities/HoverEnemy';
 import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
 import { EnvironmentSystem } from './systems/EnvironmentSystem';
+import { ParallaxSystem } from './systems/ParallaxSystem';
+
+// Deterministic noise function for ground textures
+const pseudoNoise = (x: number, y: number): number => {
+  return Math.abs(Math.sin(x * 12.9898 + y * 78.233)) % 1;
+};
 
 interface ActivePowerUp {
   type: PowerUpType;
@@ -33,14 +40,17 @@ export class RunnerGame extends BaseGame {
   private coins: Coin[] = [];
   private powerUps: PowerUp[] = [];
   private flyingEnemies: FlyingEnemy[] = [];
+  private hoverEnemies: HoverEnemy[] = [];
   private particles!: ParticleSystem;
   private screenShake!: ScreenShake;
   private comboSystem!: ComboSystem;
   private environmentSystem!: EnvironmentSystem;
   
   private gameSpeed: number = 1;
-  private spawnTimer: number = 0;
-  private spawnInterval: number = 2;
+  private obstacleSpawnTimer: number = 0;
+  private obstacleSpawnInterval: number = 1.5;
+  private aerialSpawnTimer: number = 0;
+  private aerialSpawnInterval: number = 2.5;
   private distance: number = 0;
   private groundY: number = 0;
   private jumps: number = 0;
@@ -53,9 +63,15 @@ export class RunnerGame extends BaseGame {
   private activePowerUps: ActivePowerUp[] = [];
   private coinMagnetRange: number = 80;
   
+
   // Jump tracking
   private jumpInProgress: boolean = false;
+
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
+
+  //paralax system
+  private parallaxSystem!: ParallaxSystem;
+
 
   protected onInit(): void {
     this.groundY = this.canvas.height - 50;
@@ -64,14 +80,18 @@ export class RunnerGame extends BaseGame {
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
+    // Initialize the new parallax system
+    this.parallaxSystem = new ParallaxSystem(
+      this.canvas.width,
+      this.canvas.height,
+      this.groundY
+    );
+    this.parallaxSystem.reset();
     this.startTime = Date.now();
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
  
-
-
-    
     // Spawn initial content
     this.spawnObstacle();
     this.spawnCoin();
@@ -84,9 +104,11 @@ export class RunnerGame extends BaseGame {
     const wasGrounded = this.player.getIsGrounded();
     const jumpsBefore = this.player.getJumpsRemaining();
 
+
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
     this.player.update(dt, jumpPressed, hasDoubleJump);
+
 
     // Detect jump start by comparing jumps remaining
     const jumpsAfter = this.player.getJumpsRemaining();
@@ -107,14 +129,17 @@ export class RunnerGame extends BaseGame {
 
     // Handle particle effects
     this.handlePlayerEffects(jumpStarted, landing);
+
     
     // Update game speed and distance
-    this.distance += this.gameSpeed * dt * 100;
+    const baseIncrement = this.gameSpeed * dt * 100;
+    this.distance += baseIncrement;
     this.gameSpeed = 1 + Math.floor(this.distance / 1000) * 0.2;
-    
+
     // Apply speed boost power-up
     const speedMultiplier = this.hasPowerUp('speed-boost') ? 1.5 : 1;
     const effectiveSpeed = this.gameSpeed * speedMultiplier;
+    const distanceIncrement = effectiveSpeed * dt * 100;
     
     // Update all entities
     this.updateEntities(dt, effectiveSpeed);
@@ -131,6 +156,8 @@ export class RunnerGame extends BaseGame {
     
     // Update score
     this.score = Math.floor(this.distance / 10);
+    // Scroll parallax layers by the distance moved this frame
+    this.parallaxSystem.update(distanceIncrement);
   }
 
   public getScore() {
@@ -153,15 +180,20 @@ export class RunnerGame extends BaseGame {
     };
   }
 
+
   private handlePlayerEffects(jumpStarted: boolean, landing: boolean): void {
+
+
     if (jumpStarted) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
     }
+
 
     if (landing) {
       this.particles.createLandingDust(this.player.position.x, this.player.position.y);
       this.screenShake.shake(3, 0.1);
     }
+
   }
 
   private updateEntities(dt: number, gameSpeed: number): void {
@@ -191,6 +223,10 @@ export class RunnerGame extends BaseGame {
     // Update flying enemies
     this.flyingEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
     this.flyingEnemies = this.flyingEnemies.filter(enemy => !enemy.isOffScreen());
+
+    // Update hover enemies
+    this.hoverEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
+    this.hoverEnemies = this.hoverEnemies.filter(enemy => !enemy.isOffScreen());
   }
 
   private updateSystems(dt: number): void {
@@ -209,33 +245,41 @@ export class RunnerGame extends BaseGame {
   }
 
   private handleSpawning(): void {
-    this.spawnTimer += this.gameSpeed * 0.016; // Approximate dt
-    
-    if (this.spawnTimer >= this.spawnInterval) {
-      this.spawnTimer = 0;
-      
-      // Spawn obstacles
-      if (Math.random() < 0.6) {
+    const dt = this.gameSpeed * 0.016; // Approximate frame time scaled by speed
+
+    this.obstacleSpawnTimer += dt;
+    this.aerialSpawnTimer += dt;
+
+    if (this.obstacleSpawnTimer >= this.obstacleSpawnInterval) {
+      this.obstacleSpawnTimer = 0;
+
+      if (Math.random() < 0.8) {
         this.spawnObstacle();
       }
-      
-      // Spawn flying enemies (less frequent)
-      if (Math.random() < 0.2 && this.distance > 500) {
-        this.spawnFlyingEnemy();
-      }
-      
-      // Spawn coins
-      if (Math.random() < 0.7) {
+
+      if (Math.random() < 0.6) {
         this.spawnCoin();
       }
-      
-      // Spawn power-ups (rare)
+
       if (Math.random() < 0.15 && this.distance > 300) {
         this.spawnPowerUp();
       }
-      
-      // Adjust spawn rate
-      this.spawnInterval = Math.max(0.8, 2 - (this.gameSpeed - 1) * 0.2);
+
+      this.obstacleSpawnInterval = Math.max(0.8, 1.5 - (this.gameSpeed - 1) * 0.1);
+    }
+
+    if (this.aerialSpawnTimer >= this.aerialSpawnInterval) {
+      this.aerialSpawnTimer = 0;
+
+      if (Math.random() < 0.5 && this.distance > 500) {
+        this.spawnFlyingEnemy();
+      }
+
+      if (Math.random() < 0.4 && this.distance > 800) {
+        this.spawnHoverEnemy();
+      }
+
+      this.aerialSpawnInterval = Math.max(1.2, 2.5 - (this.gameSpeed - 1) * 0.1);
     }
   }
 
@@ -245,12 +289,13 @@ export class RunnerGame extends BaseGame {
     // Apply camera shake
     ctx.translate(this.cameraOffset.x, this.cameraOffset.y);
     
-    this.renderBackground(ctx);
+    this.renderEnhancedBackground(ctx);
     this.renderGround(ctx);
     
     // Render all entities
     this.obstacles.forEach(obstacle => obstacle.render(ctx));
     this.flyingEnemies.forEach(enemy => enemy.render(ctx));
+    this.hoverEnemies.forEach(enemy => enemy.render(ctx));
     this.coins.forEach(coin => coin.render(ctx));
     this.powerUps.forEach(powerUp => powerUp.render(ctx));
     
@@ -291,8 +336,7 @@ export class RunnerGame extends BaseGame {
       ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'right';
       ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, this.canvas.width - 20, 100);
-
-      
+     
       // Combo timer bar
       const timeLeft = this.comboSystem.getTimeLeft();
       const maxTime = 2;
@@ -340,10 +384,10 @@ export class RunnerGame extends BaseGame {
     ctx.fillText(`Theme: ${this.environmentSystem.getCurrentTheme()}`, 20, this.canvas.height - 20);
   }
 
-  private renderBackground(ctx: CanvasRenderingContext2D): void {
+  private renderEnhancedBackground(ctx: CanvasRenderingContext2D): void {
     const colors = this.environmentSystem.getSkyColors();
     
-    // Gradient sky
+    // Still render the gradient sky as base layer
     const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
     gradient.addColorStop(0, colors.top);
     gradient.addColorStop(1, colors.bottom);
@@ -351,14 +395,8 @@ export class RunnerGame extends BaseGame {
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, this.canvas.width, this.groundY);
     
-    // Moving clouds
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-    const cloudOffset = (this.distance * 0.3) % (this.canvas.width + 200);
-    for (let i = 0; i < 4; i++) {
-      const x = (i * 250) - cloudOffset;
-      const y = 50 + i * 25;
-      this.renderCloud(ctx, x, y);
-    }
+    // Render all parallax layers
+    this.parallaxSystem.render(ctx, this.environmentSystem.getCurrentTheme());
   }
 
   private renderCloud(ctx: CanvasRenderingContext2D, x: number, y: number): void {
@@ -371,20 +409,28 @@ export class RunnerGame extends BaseGame {
     const groundColor = this.environmentSystem.getGroundColor();
     const grassColor = this.environmentSystem.getGrassColor();
     
-    // Ground
+    // Main ground
     ctx.fillStyle = groundColor;
     ctx.fillRect(0, this.groundY, this.canvas.width, this.canvas.height - this.groundY);
     
-    // Grass line
-    ctx.fillStyle = grassColor;
-    ctx.fillRect(0, this.groundY - 4, this.canvas.width, 4);
+    // Enhanced grass line with gradient
+    const grassGradient = ctx.createLinearGradient(0, this.groundY - 8, 0, this.groundY);
+    grassGradient.addColorStop(0, grassColor);
+    grassGradient.addColorStop(1, groundColor);
     
-    // Ground details
-    ctx.fillStyle = '#6B5B47';
-    const grassOffset = (this.distance * 2) % 40;
-    for (let x = -grassOffset; x < this.canvas.width; x += 40) {
-      ctx.fillRect(x, this.groundY + 10, 2, 8);
-      ctx.fillRect(x + 20, this.groundY + 15, 3, 6);
+    ctx.fillStyle = grassGradient;
+    ctx.fillRect(0, this.groundY - 8, this.canvas.width, 8);
+    
+    // Add subtle deterministic ground texture
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    const textureOffset = (this.distance * 1.5) % 20;
+    for (let x = -textureOffset; x < this.canvas.width; x += 20) {
+      for (let y = this.groundY + 10; y < this.canvas.height; y += 15) {
+        const noise = pseudoNoise(x, y);
+        if (noise > 0.7) {
+          ctx.fillRect(x + (noise * 3) % 3, y, 1, 1);
+        }
+      }
     }
   }
 
@@ -400,6 +446,12 @@ export class RunnerGame extends BaseGame {
     const x = this.canvas.width + 50;
     const y = this.groundY - 150 - Math.random() * 100;
     this.flyingEnemies.push(new FlyingEnemy(x, y));
+  }
+
+  private spawnHoverEnemy(): void {
+    const x = this.canvas.width + 50;
+    const y = this.groundY - 80;
+    this.hoverEnemies.push(new HoverEnemy(x, y));
   }
 
   private spawnObstacle(): void {
@@ -431,6 +483,16 @@ export class RunnerGame extends BaseGame {
       
       // Check flying enemy collisions
       for (const enemy of this.flyingEnemies) {
+        if (playerBounds.intersects(enemy.getBounds())) {
+          this.services.audio.playSound('collision');
+          this.screenShake.shake(8, 0.25);
+          this.endGame();
+          return;
+        }
+      }
+
+      // Check hover enemy collisions
+      for (const enemy of this.hoverEnemies) {
         if (playerBounds.intersects(enemy.getBounds())) {
           this.services.audio.playSound('collision');
           this.screenShake.shake(8, 0.25);
@@ -535,18 +597,22 @@ export class RunnerGame extends BaseGame {
     this.coins = [];
     this.powerUps = [];
     this.flyingEnemies = [];
+    this.hoverEnemies = [];
     this.activePowerUps = [];
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
     this.gameSpeed = 1;
-    this.spawnTimer = 0;
-    this.spawnInterval = 2;
+    this.obstacleSpawnTimer = 0;
+    this.obstacleSpawnInterval = 1.5;
+    this.aerialSpawnTimer = 0;
+    this.aerialSpawnInterval = 2.5;
     this.distance = 0;
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
     this.player = new Player(100, this.groundY - 32, this.groundY);
+    this.parallaxSystem.reset();
   }
 }

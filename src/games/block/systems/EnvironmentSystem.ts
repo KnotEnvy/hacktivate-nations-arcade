@@ -93,8 +93,40 @@ export class EnvironmentSystem {
           yellow: '#ffa502',
           purple: '#a55eea',
           orange: '#ff6348',
-          cyan: '#26d0ce',
-        };
+        cyan: '#26d0ce',
+      };
     }
+  }
+
+  drawBackground(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    height: number
+  ): void {
+    const gradient = ctx.createLinearGradient(0, 0, 0, height);
+    switch (this.currentTheme) {
+      case 'neon':
+        gradient.addColorStop(0, '#141414');
+        gradient.addColorStop(1, '#000000');
+        break;
+      case 'ice':
+        gradient.addColorStop(0, '#e0f7fa');
+        gradient.addColorStop(1, '#b3e5fc');
+        break;
+      case 'retro':
+        gradient.addColorStop(0, '#3a3a3a');
+        gradient.addColorStop(1, '#2d2d2d');
+        break;
+      case 'dusk':
+        gradient.addColorStop(0, '#1e293b');
+        gradient.addColorStop(1, '#0f172a');
+        break;
+      default:
+        gradient.addColorStop(0, '#1a1a2e');
+        gradient.addColorStop(1, '#111111');
+        break;
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, width, height);
   }
 }

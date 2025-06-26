@@ -83,9 +83,11 @@ export abstract class BaseGame implements GameModule {
 
   getScore(): GameScore {
     const timePlayedMs = this.isRunning ? Date.now() - this.startTime : this.gameTime;
+    const multiplier = this.services.currency.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services.currency.calculateGameReward(
-      this.score, 
-      this.pickups
+      this.score,
+      this.pickups,
+      multiplier
     );
 
     return {
@@ -128,12 +130,14 @@ export abstract class BaseGame implements GameModule {
     this.services.analytics.trackGameEnd(
       this.manifest.id,
       finalScore.score,
-      finalScore.timePlayedMs
-    );
-    
-    this.services.analytics.trackCurrencyEarned(
       finalScore.coinsEarned,
-      `game_${this.manifest.id}`
+      'died'
+    );
+
+    this.services.analytics.trackCurrencyTransaction(
+      finalScore.coinsEarned,
+      `game_${this.manifest.id}`,
+      this.services.currency.getCurrentCoins()
     );
 
     this.onGameEnd?.(finalScore);
