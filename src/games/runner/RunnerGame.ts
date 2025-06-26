@@ -55,7 +55,7 @@ export class RunnerGame extends BaseGame {
   
   // Animation state
   private wasGrounded: boolean = true;
-  private wasJumpPressed: boolean = false;
+  private jumpInProgress: boolean = false;
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
 
   protected onInit(): void {
@@ -81,18 +81,27 @@ export class RunnerGame extends BaseGame {
   protected onUpdate(dt: number): void {
     const jumpPressed = this.services.input.isActionPressed();
 
-    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded()) {
-      this.services.audio.playSound('jump');
-      this.jumps++;
+    const wasGrounded = this.player.getIsGrounded();
 
-    }
-    
     // Update player with power-ups
     const hasDoubleJump = this.hasPowerUp('double-jump');
     this.player.update(dt, jumpPressed, hasDoubleJump);
-    
+
+    const isGrounded = this.player.getIsGrounded();
+    const takeOff = !isGrounded && wasGrounded;
+    const landing = isGrounded && !wasGrounded;
+
+    if (takeOff) {
+      this.services.audio.playSound('jump');
+      this.jumpInProgress = true;
+    }
+    if (landing && this.jumpInProgress) {
+      this.jumps++;
+      this.jumpInProgress = false;
+    }
+
     // Handle particle effects
-    this.handlePlayerEffects(jumpPressed);
+    this.handlePlayerEffects(takeOff);
     
     // Update game speed and distance
     this.distance += this.gameSpeed * dt * 100;
@@ -139,19 +148,18 @@ export class RunnerGame extends BaseGame {
     };
   }
 
-  private handlePlayerEffects(jumpPressed: boolean): void {
+  private handlePlayerEffects(takeOff: boolean): void {
     // Jump particles
-    if (jumpPressed && !this.wasJumpPressed && this.player.getIsGrounded() ) {
+    if (takeOff) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
     }
-    
+
     // Landing particles
     if (!this.wasGrounded && this.player.getIsGrounded()) {
       this.particles.createLandingDust(this.player.position.x, this.player.position.y);
       this.screenShake.shake(3, 0.1);
     }
-    
-    this.wasJumpPressed = jumpPressed;
+
     this.wasGrounded = this.player.getIsGrounded();
   }
 
