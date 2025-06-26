@@ -130,12 +130,14 @@ export abstract class BaseGame implements GameModule {
     this.services.analytics.trackGameEnd(
       this.manifest.id,
       finalScore.score,
-      finalScore.timePlayedMs
-    );
-    
-    this.services.analytics.trackCurrencyEarned(
       finalScore.coinsEarned,
-      `game_${this.manifest.id}`
+      'died'
+    );
+
+    this.services.analytics.trackCurrencyTransaction(
+      finalScore.coinsEarned,
+      `game_${this.manifest.id}`,
+      this.services.currency.getCurrentCoins()
     );
 
     this.onGameEnd?.(finalScore);
