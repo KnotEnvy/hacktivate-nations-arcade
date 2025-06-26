@@ -28,6 +28,15 @@ const AVAILABLE_GAMES: GameManifest[] = [
     description: 'Jump and collect coins in this fast-paced endless runner!'
   },
   {
+    id: "snake",
+    title: "Snake",
+    thumbnail: "/games/snake/snake-thumb.svg",
+    inputSchema: ["keyboard", "touch"],
+    assetBudgetKB: 60,
+    tier: 0,
+    description: "Classic snake action. Coming soon!"
+  },
+  {
     id: "puzzle",
     title: "Block Puzzle",
     thumbnail: "/games/puzzle/puzzle-thumb.svg",
@@ -35,15 +44,6 @@ const AVAILABLE_GAMES: GameManifest[] = [
     assetBudgetKB: 75,
     tier: 1,
     description: "Match blocks to clear lines."
-  },
-  {
-    id: "snake",
-    title: "Snake",
-    thumbnail: "/games/snake/snake-thumb.svg",
-    inputSchema: ["keyboard", "touch"],
-    assetBudgetKB: 60,
-    tier: 1,
-    description: "Classic snake action. Coming soon!"
   },
   {
     id: "space",
