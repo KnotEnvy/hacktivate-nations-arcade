@@ -15,13 +15,13 @@ export class Player {
   private maxJumps = 1;
   private lastJumpPressed = false;
 
-  private jumpPower = -9;
+  private jumpPower = -11;
   private jumpHoldBoost = -0.6;
   private maxJumpHoldTime = 0.25;
   private jumpHoldTime = 0;
 
   private gravity = 0.8;
-  private moveSpeed = 200;
+  private moveSpeed = 5;
 
   // Animation
   private frameTime: number = 0;
