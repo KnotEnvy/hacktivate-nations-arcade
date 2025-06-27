@@ -19,6 +19,12 @@ gameLoader.registerGame('puzzle', async () => {
   return new BlockPuzzleGame();
 });
 
+// Register Space Shooter game
+gameLoader.registerGame('space', async () => {
+  const { SpaceShooterGame } = await import('./space/SpaceShooterGame');
+  return new SpaceShooterGame();
+});
+
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {
 //   const { PuzzleGame } = await import('./puzzle/PuzzleGame');

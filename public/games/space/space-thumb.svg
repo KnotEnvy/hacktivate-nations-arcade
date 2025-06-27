@@ -87,8 +87,6 @@
     <circle cx="0" cy="0" r="20" fill="#8B5CF6" opacity="0.2"/>
   </g>
   
-  <!-- Coming soon overlay -->
-  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
+  <!-- Title -->
   <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#06B6D4">SPACE SHOOTER</text>
-  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
 </svg>
