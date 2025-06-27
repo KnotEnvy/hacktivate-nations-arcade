@@ -8,6 +8,11 @@ gameLoader.registerGame('runner', async () => {
   const { RunnerGame } = await import('./runner/RunnerGame');
   return new RunnerGame();
 });
+// Register Snake game
+gameLoader.registerGame('snake', async () => {
+  const { SnakeGame } = await import('./snake/SnakeGame');
+  return new SnakeGame();
+});
 // Register Block Puzzle game
 gameLoader.registerGame('puzzle', async () => {
   const { BlockPuzzleGame } = await import('./block/BlockPuzzleGame');

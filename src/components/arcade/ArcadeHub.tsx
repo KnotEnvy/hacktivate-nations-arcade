@@ -15,6 +15,7 @@ import { CurrencyDisplay } from './CurrencyDisplay';
 import { DailyChallenges } from './DailyChallenges';
 import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
+import { AnalyticsOverview } from './AnalyticsOverview';
 import { OnboardingOverlay } from './OnboardingOverlay';
 
 const AVAILABLE_GAMES: GameManifest[] = [
@@ -72,6 +73,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
     assetBudgetKB: 60,
     tier: 0,
     description: 'Clear the board without hitting mines. Coming soon!'
+
   },
 
   // Tier 1
@@ -738,6 +740,7 @@ export function ArcadeHub() {
                         }}
                       />
                       <AchievementPanel achievementService={achievementService} />
+                      <AnalyticsOverview />
                     </div>
                   </div>
                   <div>
