@@ -1,8 +1,30 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#051B11"/>
-  <path d="M100 260 h80 v-40 h80 v80 h80 v40 h80" stroke="#34D399" stroke-width="20" fill="none" stroke-linecap="round"/>
-  <circle cx="420" cy="340" r="12" fill="#F59E0B"/>
-  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
-  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#34D399">SNAKE</text>
-  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#083344"/>
+      <stop offset="100%" stop-color="#065f46"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- Snake body -->
+  <g fill="#22c55e" stroke="#16a34a" stroke-width="4">
+    <rect x="120" y="256" width="40" height="40" rx="8"/>
+    <rect x="160" y="256" width="40" height="40" rx="8"/>
+    <rect x="200" y="256" width="40" height="40" rx="8"/>
+    <rect x="240" y="256" width="40" height="40" rx="8"/>
+    <rect x="240" y="216" width="40" height="40" rx="8"/>
+    <rect x="280" y="216" width="40" height="40" rx="8"/>
+  </g>
+  <!-- Snake head -->
+  <g fill="#4ade80" stroke="#16a34a" stroke-width="4">
+    <rect x="320" y="216" width="40" height="40" rx="8"/>
+    <rect x="328" y="224" width="8" height="8" fill="#ffffff"/>
+    <rect x="344" y="224" width="8" height="8" fill="#ffffff"/>
+  </g>
+  <!-- Food -->
+  <circle cx="80" cy="160" r="12" fill="#e11d48" stroke="#9f1239" stroke-width="4"/>
+  <!-- Coin -->
+  <circle cx="420" cy="340" r="14" fill="#facc15" stroke="#ca8a04" stroke-width="4"/>
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.8)"/>
+  <text x="256" y="465" text-anchor="middle" font-size="32" font-weight="bold" fill="#4ade80">SNAKE</text>
 </svg>
