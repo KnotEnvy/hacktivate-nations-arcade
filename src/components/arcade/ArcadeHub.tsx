@@ -15,6 +15,7 @@ import { CurrencyDisplay } from './CurrencyDisplay';
 import { DailyChallenges } from './DailyChallenges';
 import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
+import { AnalyticsOverview } from './AnalyticsOverview';
 import { OnboardingOverlay } from './OnboardingOverlay';
 
 const AVAILABLE_GAMES: GameManifest[] = [
@@ -540,6 +541,7 @@ export function ArcadeHub() {
                         }}
                       />
                       <AchievementPanel achievementService={achievementService} />
+                      <AnalyticsOverview />
                     </div>
                   </div>
                   <div>

@@ -316,6 +316,10 @@ export class Analytics {
     };
   }
 
+  getPlayerMetrics(): PlayerMetrics {
+    return { ...this.playerMetrics };
+  }
+
   // === PERSONALIZATION HELPERS ===
 
   getRecommendedGames(): string[] {
