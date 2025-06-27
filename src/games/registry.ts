@@ -24,6 +24,7 @@ gameLoader.registerGame('puzzle', async () => {
 gameLoader.registerGame('space', async () => {
   const { SpaceShooterGame } = await import('./space/SpaceShooterGame');
   return new SpaceShooterGame();
+});
 
 // Tier 0 games
 gameLoader.registerGame('snake', async () => {
