@@ -2,7 +2,6 @@
 import { GameLoader } from '@/services/GameLoader';
 
 export const gameLoader = new GameLoader();
-
 // Register games here
 gameLoader.registerGame('runner', async () => {
   const { RunnerGame } = await import('./runner/RunnerGame');
@@ -19,13 +18,11 @@ gameLoader.registerGame('puzzle', async () => {
   return new BlockPuzzleGame();
 });
 
-
 // Register Space Shooter game
 gameLoader.registerGame('space', async () => {
   const { SpaceShooterGame } = await import('./space/SpaceShooterGame');
   return new SpaceShooterGame();
 });
-
 // Tier 0 games
 gameLoader.registerGame('snake', async () => {
   const { SnakeGame } = await import('./snake/SnakeGame');
