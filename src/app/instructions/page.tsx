@@ -14,7 +14,7 @@ export default function InstructionsPage() {
           <h2 className="text-xl font-bold text-purple-300">Getting Started</h2>
           <p>
             Play games to earn <span className="text-yellow-400 font-bold">coins</span>. Use coins to
-            unlock additional game tiers and customise your profile.
+            unlock additional game tiers and customize your profile.
           </p>
         </section>
 
@@ -25,6 +25,8 @@ export default function InstructionsPage() {
             <li>Tier 0 – Runner game is available for free.</li>
             <li>Tier 1 – Unlocks one extra game for 2,000 coins.</li>
             <li>Tier 2 – Unlocks two more games for 5,000 coins.</li>
+            <li>Tier 3 – Unlocks two more games for 10,000 coins.</li>
+            <li>Tier 4 – Unlocks two more games for 20,000 coins.</li>
           </ul>
         </section>
 
@@ -45,7 +47,7 @@ export default function InstructionsPage() {
 
         <section className="space-y-2">
           <h2 className="text-xl font-bold text-purple-300">Player Profile</h2>
-          <p>Your profile tracks level, play time, coins earned and more. Customise your avatar and view detailed stats in the Profile tab.</p>
+          <p>Your profile tracks level, play time, coins earned and more. Customize your avatar and view detailed stats in the Profile tab.</p>
         </section>
 
         <div className="text-center pt-4">
