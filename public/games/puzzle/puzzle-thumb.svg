@@ -58,8 +58,7 @@
     <polygon points="430,350 433,356 439,356 434,360 436,366 430,362 424,366 426,360 421,356 427,356"/>
   </g>
   
-  <!-- Coming soon overlay -->
-  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.9)"/>
-  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#8B5CF6">BLOCK PUZZLE</text>
-  <text x="256" y="485" text-anchor="middle" font-size="18" font-weight="bold" fill="#94A3B8">COMING SOON</text>
+  <!-- Title banner -->
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.8)"/>
+  <text x="256" y="465" text-anchor="middle" font-size="24" font-weight="bold" fill="#8B5CF6">BLOCK PUZZLE</text>
 </svg>

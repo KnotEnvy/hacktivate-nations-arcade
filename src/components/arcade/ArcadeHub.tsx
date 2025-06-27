@@ -34,7 +34,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ["keyboard", "touch"],
     assetBudgetKB: 60,
     tier: 0,
-    description: "Classic snake action. Coming soon!"
+    description: "Classic snake action. Eat food and coins!"
   },
   {
     id: "puzzle",
