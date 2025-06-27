@@ -10,6 +10,8 @@ export const UNLOCK_COSTS = {
   0: 0,     // Runner (default)
   1: 2000,  // +1 game
   2: 5000,  // +2 games
+  3: 10000, // tier 3
+  4: 20000, // tier 4
 } as const;
 
 export const ECONOMY = {
