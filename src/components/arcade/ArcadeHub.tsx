@@ -131,7 +131,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 100,
     tier: 2,
-    description: 'Coming Soon! Defend Earth from alien invaders!'
+    description: "Defend Earth from waves of alien ships in this fast-paced shooter!"
   },
   {
     id: 'asteroids',

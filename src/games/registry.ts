@@ -19,7 +19,13 @@ gameLoader.registerGame('puzzle', async () => {
   return new BlockPuzzleGame();
 });
 
-// Tier 0 placeholder games
+
+// Register Space Shooter game
+gameLoader.registerGame('space', async () => {
+  const { SpaceShooterGame } = await import('./space/SpaceShooterGame');
+  return new SpaceShooterGame();
+
+// Tier 0 games
 gameLoader.registerGame('snake', async () => {
   const { SnakeGame } = await import('./snake/SnakeGame');
   return new SnakeGame();
@@ -39,6 +45,7 @@ gameLoader.registerGame('tapdodge', async () => {
 gameLoader.registerGame('minesweeper', async () => {
   const { MinesweeperGame } = await import('./minesweeper/MinesweeperGame');
   return new MinesweeperGame();
+
 });
 
 // Future games will be registered here
