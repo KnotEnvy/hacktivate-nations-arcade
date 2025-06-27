@@ -1,0 +1,1 @@
+export { MemoryMatchGame } from './MemoryMatchGame';
