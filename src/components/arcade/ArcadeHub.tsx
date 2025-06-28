@@ -55,6 +55,7 @@ const AVAILABLE_GAMES: GameManifest[] = [
     assetBudgetKB: 60,
     tier: 0,
     description: 'Flip cards to find pairs. Coming soon!'
+
   },
   {
     id: 'tapdodge',

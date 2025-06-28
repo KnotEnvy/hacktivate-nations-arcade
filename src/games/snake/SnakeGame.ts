@@ -17,9 +17,21 @@ export class SnakeGame extends BaseGame {
     description: 'Classic snake action. Eat food and coins to grow!',
   };
 
-  private gridSize = 20;
+
+  // Scale up the game board so the action fills more of the canvas
+  private gridSize = 26;
   private gridWidth = 30;
   private gridHeight = 22;
+
+  // Calculated offsets so the board is centered
+  private get offsetX(): number {
+    return (this.canvas.width - this.gridWidth * this.gridSize) / 2;
+  }
+
+  private get offsetY(): number {
+    return (this.canvas.height - this.gridHeight * this.gridSize) / 2;
+  }
+
 
   private snake: Vector2[] = [];
   private direction: Vector2 = new Vector2(1, 0);
@@ -57,39 +69,84 @@ export class SnakeGame extends BaseGame {
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
     const tile = this.gridSize;
+    const boardW = this.gridWidth * tile;
+    const boardH = this.gridHeight * tile;
+    const x0 = this.offsetX;
+    const y0 = this.offsetY;
 
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, this.gridWidth * tile, this.gridHeight * tile);
+    // background similar to RunnerGame
+    const gradient = ctx.createLinearGradient(0, y0, 0, y0 + boardH);
+    gradient.addColorStop(0, '#083344');
+    gradient.addColorStop(1, '#065f46');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x0, y0, boardW, boardH);
+
+    // light grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    for (let gx = 0; gx <= this.gridWidth; gx++) {
+      const gxPos = x0 + gx * tile;
+      ctx.beginPath();
+      ctx.moveTo(gxPos, y0);
+      ctx.lineTo(gxPos, y0 + boardH);
+      ctx.stroke();
+    }
+    for (let gy = 0; gy <= this.gridHeight; gy++) {
+      const gyPos = y0 + gy * tile;
+      ctx.beginPath();
+      ctx.moveTo(x0, gyPos);
+      ctx.lineTo(x0 + boardW, gyPos);
+      ctx.stroke();
+    }
 
     // draw food
     ctx.fillStyle = '#e11d48';
-    ctx.fillRect(
-      this.food.position.x * tile + 2,
-      this.food.position.y * tile + 2,
-      tile - 4,
-      tile - 4
+    ctx.beginPath();
+    ctx.arc(
+      x0 + this.food.position.x * tile + tile / 2,
+      y0 + this.food.position.y * tile + tile / 2,
+      tile / 2 - 3,
+      0,
+      Math.PI * 2
     );
+    ctx.fill();
+
 
     // draw coin
     if (this.coin) {
       ctx.fillStyle = '#fbbf24';
       ctx.beginPath();
       ctx.arc(
-        this.coin.position.x * tile + tile / 2,
-        this.coin.position.y * tile + tile / 2,
-        tile / 2 - 2,
+        x0 + this.coin.position.x * tile + tile / 2,
+        y0 + this.coin.position.y * tile + tile / 2,
+        tile / 2 - 3,
         0,
         Math.PI * 2
       );
       ctx.fill();
     }
 
-    // draw snake
     const time = Date.now() * 0.002;
     this.snake.forEach((seg, i) => {
-      const hue = (time * 40 + i * 10) % 360;
-      ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
-      ctx.fillRect(seg.x * tile + 1, seg.y * tile + 1, tile - 2, tile - 2);
+      const drawX = x0 + seg.x * tile;
+      const drawY = y0 + seg.y * tile;
+      if (i === 0) {
+        // head with eyes
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
+        ctx.fillStyle = '#ffffff';
+        const eye = tile / 6;
+        ctx.fillRect(drawX + tile * 0.25 - eye / 2, drawY + tile * 0.3, eye, eye);
+        ctx.fillRect(drawX + tile * 0.75 - eye / 2 - eye, drawY + tile * 0.3, eye, eye);
+      } else if (i === this.snake.length - 1) {
+        ctx.fillStyle = '#059669';
+        ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
+      } else {
+        const hue = (time * 40 + i * 10) % 360;
+        ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+        ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
+      }
+
     });
   }
 
@@ -102,8 +159,17 @@ export class SnakeGame extends BaseGame {
   }
 
   private reset(): void {
-    const center = new Vector2(Math.floor(this.gridWidth / 2), Math.floor(this.gridHeight / 2));
-    this.snake = [center];
+    const center = new Vector2(
+      Math.floor(this.gridWidth / 2),
+      Math.floor(this.gridHeight / 2)
+    );
+    // Start with a head, body and tail so the snake feels alive from the start
+    this.snake = [
+      center.clone(),
+      center.clone().add(new Vector2(-1, 0)),
+      center.clone().add(new Vector2(-2, 0)),
+    ];
+
     this.direction = new Vector2(1, 0);
     this.nextDirection = this.direction;
     this.spawnFood();
