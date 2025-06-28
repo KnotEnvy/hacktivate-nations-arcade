@@ -47,10 +47,9 @@ export class RunnerGame extends BaseGame {
   private environmentSystem!: EnvironmentSystem;
   
   private gameSpeed: number = 1;
-  private obstacleSpawnTimer: number = 0;
-  private obstacleSpawnInterval: number = 1.5;
-  private aerialSpawnTimer: number = 0;
-  private aerialSpawnInterval: number = 2.5;
+  // Distance based spawning
+  private nextObstacleDistance: number = 0;
+  private nextAerialDistance: number = 0;
   private distance: number = 0;
   private groundY: number = 0;
   private jumps: number = 0;
@@ -91,7 +90,11 @@ export class RunnerGame extends BaseGame {
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
- 
+
+    // Schedule first spawns
+    this.scheduleNextObstacle();
+    this.scheduleNextAerial();
+
     // Spawn initial content
     this.spawnObstacle();
     this.spawnCoin();
@@ -247,15 +250,12 @@ export class RunnerGame extends BaseGame {
   }
 
   private handleSpawning(): void {
-    const dt = this.gameSpeed * 0.016; // Approximate frame time scaled by speed
-
-    this.obstacleSpawnTimer += dt;
-    this.aerialSpawnTimer += dt;
-
-    if (this.obstacleSpawnTimer >= this.obstacleSpawnInterval) {
-      this.obstacleSpawnTimer = 0;
-
-      if (Math.random() < 0.8) {
+    if (this.distance >= this.nextObstacleDistance) {
+      // Occasionally spawn a short pattern of two obstacles
+      if (Math.random() < 0.25) {
+        this.spawnObstacle();
+        this.spawnObstacle(100);
+      } else {
         this.spawnObstacle();
       }
 
@@ -267,12 +267,10 @@ export class RunnerGame extends BaseGame {
         this.spawnPowerUp();
       }
 
-      this.obstacleSpawnInterval = Math.max(0.8, 1.5 - (this.gameSpeed - 1) * 0.1);
+      this.scheduleNextObstacle();
     }
 
-    if (this.aerialSpawnTimer >= this.aerialSpawnInterval) {
-      this.aerialSpawnTimer = 0;
-
+    if (this.distance >= this.nextAerialDistance) {
       if (Math.random() < 0.5 && this.distance > 500) {
         this.spawnFlyingEnemy();
       }
@@ -281,7 +279,7 @@ export class RunnerGame extends BaseGame {
         this.spawnHoverEnemy();
       }
 
-      this.aerialSpawnInterval = Math.max(1.2, 2.5 - (this.gameSpeed - 1) * 0.1);
+      this.scheduleNextAerial();
     }
   }
 
@@ -456,16 +454,41 @@ export class RunnerGame extends BaseGame {
     this.hoverEnemies.push(new HoverEnemy(x, y));
   }
 
-  private spawnObstacle(): void {
-    const x = this.canvas.width + 50;
+  private spawnObstacle(offset: number = 50): void {
+    const x = this.canvas.width + offset;
     const y = this.groundY - 48;
     this.obstacles.push(new Obstacle(x, y));
   }
 
-  private spawnCoin(): void {
-    const x = this.canvas.width + 50;
-    const y = this.groundY - 16 - Math.random() * 120;
+  private spawnCoin(offset: number = 50): void {
+    let x = this.canvas.width + offset;
+    // Ensure coins are not too close to existing obstacles
+    let attempts = 0;
+    while (
+      this.obstacles.some(o => Math.abs(o.position.x - x) < o.size.x + 30) &&
+      attempts < 5
+    ) {
+      x += 30;
+      attempts++;
+    }
+
+    const minY = this.groundY - 80;
+    const y = minY - Math.random() * 80;
     this.coins.push(new Coin(x, y));
+  }
+
+  private scheduleNextObstacle(): void {
+    const base = 120;
+    const variation = Math.random() * 80;
+    const speedFactor = Math.max(0, (this.gameSpeed - 1) * 10);
+    this.nextObstacleDistance = this.distance + base + variation - speedFactor;
+  }
+
+  private scheduleNextAerial(): void {
+    const base = 220;
+    const variation = Math.random() * 120;
+    const speedFactor = Math.max(0, (this.gameSpeed - 1) * 15);
+    this.nextAerialDistance = this.distance + base + variation - speedFactor;
   }
 
   private checkCollisions(): void {
@@ -548,16 +571,17 @@ export class RunnerGame extends BaseGame {
   private activatePowerUp(type: PowerUpType): void {
     const duration = this.getPowerUpDuration(type);
 
-    
-    // Remove existing power-up of same type
-    this.activePowerUps = this.activePowerUps.filter(p => p.type !== type);
-    
-    // Add new power-up
-    this.activePowerUps.push({
-      type,
-      duration,
-      maxDuration: duration
-    });
+    const existing = this.activePowerUps.find(p => p.type === type);
+    if (existing) {
+      existing.duration += duration;
+      existing.maxDuration += duration;
+    } else {
+      this.activePowerUps.push({
+        type,
+        duration,
+        maxDuration: duration,
+      });
+    }
   }
 
   private hasPowerUp(type: PowerUpType): boolean {
@@ -606,11 +630,9 @@ export class RunnerGame extends BaseGame {
     this.comboSystem = new ComboSystem();
     this.environmentSystem = new EnvironmentSystem();
     this.gameSpeed = 1;
-    this.obstacleSpawnTimer = 0;
-    this.obstacleSpawnInterval = 1.5;
-    this.aerialSpawnTimer = 0;
-    this.aerialSpawnInterval = 2.5;
     this.distance = 0;
+    this.scheduleNextObstacle();
+    this.scheduleNextAerial();
     this.jumps = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
