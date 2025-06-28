@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { UserProfile as UserProfileType, UserStats, UserService } from '@/services/UserServices';
+import { Analytics } from '@/services/Analytics';
 
 interface UserProfileProps {
   userService: UserService;
@@ -14,6 +15,8 @@ export function UserProfile({ userService }: UserProfileProps) {
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [insights, setInsights] = useState<ReturnType<Analytics['getPlayerInsights']> | null>(null);
+  const [metrics, setMetrics] = useState<ReturnType<Analytics['getPlayerMetrics']> | null>(null);
 
   useEffect(() => {
     const unsubscribe = userService.onUserDataChanged((newProfile, newStats) => {
@@ -26,6 +29,14 @@ export function UserProfile({ userService }: UserProfileProps) {
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const analytics = new Analytics();
+    void analytics.init().then(() => {
+      setInsights(analytics.getPlayerInsights());
+      setMetrics(analytics.getPlayerMetrics());
+    });
   }, []);
 
   const currentLevelXp = UserService.experienceForLevel(profile.level);
@@ -150,17 +161,54 @@ export function UserProfile({ userService }: UserProfileProps) {
       {mounted && (
         <>
           {/* Member since */}
-      <div className="mt-4 text-xs text-gray-400 text-center">
-        {profile.joinedAt.getTime() === 0
-          ? 'Member since N/A'
-          : `Member since ${profile.joinedAt.toLocaleDateString()}`}
-      </div>
-      {/* Last active */}
-      <div className="text-xs text-gray-400 text-center">
-        {profile.lastActiveAt.getTime() === 0
-          ? 'Last active N/A'
-          : `Last active ${profile.lastActiveAt.toLocaleDateString()} at ${profile.lastActiveAt.toLocaleTimeString()}`}
-      </div>
+          <div className="mt-4 text-xs text-gray-400 text-center">
+            {profile.joinedAt.getTime() === 0
+              ? 'Member since N/A'
+              : `Member since ${profile.joinedAt.toLocaleDateString()}`}
+          </div>
+          {/* Last active */}
+          <div className="text-xs text-gray-400 text-center">
+            {profile.lastActiveAt.getTime() === 0
+              ? 'Last active N/A'
+              : `Last active ${profile.lastActiveAt.toLocaleDateString()} at ${profile.lastActiveAt.toLocaleTimeString()}`}
+          </div>
+          {insights && metrics && (
+            <div className="mt-4 space-y-2 text-sm">
+              <h4 className="text-purple-400 font-semibold text-center">Analytics</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300">{insights.skillLevel}</div>
+                  <div className="text-gray-400 text-xs">Skill</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300 capitalize">{insights.preferredGameLength}</div>
+                  <div className="text-gray-400 text-xs">Pref Length</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded-lg col-span-2">
+                  <div className="font-bold text-purple-300">{insights.mostPlayedGame}</div>
+                  <div className="text-gray-400 text-xs">Top Game</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300">{metrics.gamesPlayed}</div>
+                  <div className="text-gray-400 text-xs">Games Played</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300">{Math.floor(metrics.totalPlayTime / 60000)}m</div>
+                  <div className="text-gray-400 text-xs">Play Time</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300">{Math.round(metrics.averageSessionLength / 60000)}m</div>
+                  <div className="text-gray-400 text-xs">Avg Session</div>
+                </div>
+                <div className="bg-gray-800 p-2 rounded-lg">
+                  <div className="font-bold text-purple-300">{metrics.favoriteGame}</div>
+                  <div className="text-gray-400 text-xs">Favorite Game</div>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

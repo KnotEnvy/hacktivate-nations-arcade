@@ -17,6 +17,7 @@ export class SnakeGame extends BaseGame {
     description: 'Classic snake action. Eat food and coins to grow!',
   };
 
+
   // Scale up the game board so the action fills more of the canvas
   private gridSize = 26;
   private gridWidth = 30;
@@ -30,6 +31,7 @@ export class SnakeGame extends BaseGame {
   private get offsetY(): number {
     return (this.canvas.height - this.gridHeight * this.gridSize) / 2;
   }
+
 
   private snake: Vector2[] = [];
   private direction: Vector2 = new Vector2(1, 0);
@@ -109,6 +111,7 @@ export class SnakeGame extends BaseGame {
     );
     ctx.fill();
 
+
     // draw coin
     if (this.coin) {
       ctx.fillStyle = '#fbbf24';
@@ -143,6 +146,7 @@ export class SnakeGame extends BaseGame {
         ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
         ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
       }
+
     });
   }
 
@@ -165,6 +169,7 @@ export class SnakeGame extends BaseGame {
       center.clone().add(new Vector2(-1, 0)),
       center.clone().add(new Vector2(-2, 0)),
     ];
+
     this.direction = new Vector2(1, 0);
     this.nextDirection = this.direction;
     this.spawnFood();
