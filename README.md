@@ -22,6 +22,16 @@ npm run dev
 
 The application runs on [http://localhost:3000](http://localhost:3000) by default. Use `npm run build` and `npm start` to create and serve a production build.
 
+## Available Games
+
+HacktivateNations Arcade ships with a growing collection of mini games. The current lineup includes:
+
+- **Endless Runner** – dodge obstacles and grab coins while sprinting forward.
+- **Snake** – classic snake action with collectible coins and food.
+- **Block Puzzle** – a falling-block puzzler (in progress).
+
+Each game implements the same `GameModule` interface and relies on shared services such as `useInput` for controls and `AudioManager` for sounds.
+
 ## Game Development
 
 1. Create a folder inside `src/games` for your game module.
