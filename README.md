@@ -16,6 +16,9 @@ cd hacktivate-nations-arcade
 # install dependencies
 npm install
 
+# verify TypeScript setup
+npm run type-check
+
 # start the dev server
 npm run dev
 ```
@@ -37,6 +40,7 @@ The application runs on [http://localhost:3000](http://localhost:3000) by defaul
 - `npm run build` – create an optimized production build.
 - `npm start` – run the production build locally.
 - `npm run lint` – check code style with ESLint.
+- `npm run type-check` – verify the project compiles with TypeScript.
 - `npm test` – run Jest tests (if installed).
 
 ## Contributing
