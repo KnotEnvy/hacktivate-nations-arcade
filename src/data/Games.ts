@@ -22,6 +22,15 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     description: 'Classic snake action. Coming soon!'
   },
   {
+    id: 'minesweeper',
+    title: 'Minesweeper',
+    thumbnail: '/games/minesweeper/minesweeper-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
+    assetBudgetKB: 60,
+    tier: 0,
+    description: 'Clear the board without hitting mines. Coming soon!'
+  },
+  {
     id: 'breakout',
     title: 'Mini Breakout',
     thumbnail: '/games/breakout/breakout-thumb.svg',
@@ -47,15 +56,6 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     assetBudgetKB: 60,
     tier: 0,
     description: 'Tap to dodge obstacles. Coming soon!'
-  },
-  {
-    id: 'minesweeper',
-    title: 'Minesweeper',
-    thumbnail: '/games/minesweeper/minesweeper-thumb.svg',
-    inputSchema: ['keyboard', 'touch'],
-    assetBudgetKB: 60,
-    tier: 0,
-    description: 'Clear the board without hitting mines. Coming soon!'
   },
 
   // Tier 1
