@@ -17,7 +17,6 @@ export class SnakeGame extends BaseGame {
     description: 'Classic snake action. Eat food and coins to grow!',
   };
 
-
   // Scale up the game board so the action fills more of the canvas
   private gridSize = 26;
   private gridWidth = 30;
@@ -32,7 +31,6 @@ export class SnakeGame extends BaseGame {
     return (this.canvas.height - this.gridHeight * this.gridSize) / 2;
   }
 
-
   private snake: Vector2[] = [];
   private direction: Vector2 = new Vector2(1, 0);
   private nextDirection: Vector2 = new Vector2(1, 0);
@@ -41,6 +39,12 @@ export class SnakeGame extends BaseGame {
   private coin: Spawnable | null = null;
   private coinTimer = 0;
   private coinInterval = 5; // seconds
+  private coinAge = 0;
+  private coinLifetime = 6; // seconds before disappearing
+  private coinBlinkTime = 1; // blink for the last second
+
+  private colorTimer = 0;
+  private readonly colorDuration = 1.25; // seconds
 
   private moveTimer = 0;
   private speed = 8; // cells per second
@@ -56,6 +60,19 @@ export class SnakeGame extends BaseGame {
     if (this.moveTimer >= 1 / this.speed) {
       this.moveTimer = 0;
       this.step();
+    }
+
+    if (this.coin) {
+      this.coinAge += dt;
+      if (this.coinAge >= this.coinLifetime) {
+        this.coin = null;
+        this.coinAge = 0;
+        this.coinTimer = 0;
+      }
+    }
+
+    if (this.colorTimer > 0) {
+      this.colorTimer = Math.max(0, this.colorTimer - dt);
     }
 
     this.coinTimer += dt;
@@ -111,19 +128,26 @@ export class SnakeGame extends BaseGame {
     );
     ctx.fill();
 
-
     // draw coin
     if (this.coin) {
-      ctx.fillStyle = '#fbbf24';
-      ctx.beginPath();
-      ctx.arc(
-        x0 + this.coin.position.x * tile + tile / 2,
-        y0 + this.coin.position.y * tile + tile / 2,
-        tile / 2 - 3,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
+      const cx = x0 + this.coin.position.x * tile + tile / 2;
+      const cy = y0 + this.coin.position.y * tile + tile / 2;
+      const blinkStart = this.coinLifetime - this.coinBlinkTime;
+      const showCoin =
+        this.coinAge < blinkStart ||
+        Math.floor((this.coinAge - blinkStart) * 8) % 2 === 0;
+
+      if (showCoin) {
+        ctx.fillStyle = '#FCD34D';
+        ctx.beginPath();
+        ctx.arc(cx, cy, tile / 2 - 3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#92400E';
+        ctx.font = `bold ${tile * 0.6}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('$', cx, cy + 1);
+      }
     }
 
     const time = Date.now() * 0.002;
@@ -136,17 +160,30 @@ export class SnakeGame extends BaseGame {
         ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
         ctx.fillStyle = '#ffffff';
         const eye = tile / 6;
-        ctx.fillRect(drawX + tile * 0.25 - eye / 2, drawY + tile * 0.3, eye, eye);
-        ctx.fillRect(drawX + tile * 0.75 - eye / 2 - eye, drawY + tile * 0.3, eye, eye);
+        ctx.fillRect(
+          drawX + tile * 0.25 - eye / 2,
+          drawY + tile * 0.3,
+          eye,
+          eye
+        );
+        ctx.fillRect(
+          drawX + tile * 0.75 - eye / 2 - eye,
+          drawY + tile * 0.3,
+          eye,
+          eye
+        );
       } else if (i === this.snake.length - 1) {
         ctx.fillStyle = '#059669';
         ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
       } else {
-        const hue = (time * 40 + i * 10) % 360;
-        ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+        if (this.colorTimer > 0) {
+          const hue = (time * 40 + i * 10) % 360;
+          ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
+        } else {
+          ctx.fillStyle = '#10b981';
+        }
         ctx.fillRect(drawX + 1, drawY + 1, tile - 2, tile - 2);
       }
-
     });
   }
 
@@ -175,6 +212,8 @@ export class SnakeGame extends BaseGame {
     this.spawnFood();
     this.coin = null;
     this.coinTimer = 0;
+    this.coinAge = 0;
+    this.colorTimer = 0;
     this.speed = 8;
     this.score = 0;
     this.pickups = 0;
@@ -184,32 +223,52 @@ export class SnakeGame extends BaseGame {
     const newHead = this.snake[0].clone().add(this.nextDirection);
 
     // check collisions
-    if (this.hitWall(newHead) || this.snake.some(s => s.x === newHead.x && s.y === newHead.y)) {
+    if (
+      this.hitWall(newHead) ||
+      this.snake.some(s => s.x === newHead.x && s.y === newHead.y)
+    ) {
       this.endGame();
       return;
     }
 
     this.snake.unshift(newHead);
 
-    if (newHead.x === this.food.position.x && newHead.y === this.food.position.y) {
+    if (
+      newHead.x === this.food.position.x &&
+      newHead.y === this.food.position.y
+    ) {
       this.score += 10;
       this.spawnFood();
       this.speed += 0.05;
       this.services.audio.playSound('success');
-    } else if (this.coin && newHead.x === this.coin.position.x && newHead.y === this.coin.position.y) {
+    } else if (
+      this.coin &&
+      newHead.x === this.coin.position.x &&
+      newHead.y === this.coin.position.y
+    ) {
       this.score += 20;
       this.pickups += 1;
       this.coin = null;
+      this.coinAge = 0;
+      this.coinTimer = 0;
+      this.colorTimer = this.colorDuration;
       this.services.audio.playSound('coin');
+      this.snake.pop();
     } else {
       this.snake.pop();
     }
 
     this.direction = this.nextDirection;
+    this.speed += 0.002; // gradual difficulty increase
   }
 
   private hitWall(pos: Vector2): boolean {
-    return pos.x < 0 || pos.x >= this.gridWidth || pos.y < 0 || pos.y >= this.gridHeight;
+    return (
+      pos.x < 0 ||
+      pos.x >= this.gridWidth ||
+      pos.y < 0 ||
+      pos.y >= this.gridHeight
+    );
   }
 
   private spawnFood(): void {
@@ -218,6 +277,7 @@ export class SnakeGame extends BaseGame {
 
   private spawnCoin(): void {
     this.coin = { position: this.randomEmptyCell() };
+    this.coinAge = 0;
   }
 
   private randomEmptyCell(): Vector2 {
@@ -227,14 +287,22 @@ export class SnakeGame extends BaseGame {
         Math.floor(Math.random() * this.gridWidth),
         Math.floor(Math.random() * this.gridHeight)
       );
-    } while (this.snake.some(s => s.x === pos.x && s.y === pos.y) || (this.food && pos.x === this.food.position.x && pos.y === this.food.position.y));
+    } while (
+      this.snake.some(s => s.x === pos.x && s.y === pos.y) ||
+      (this.food &&
+        pos.x === this.food.position.x &&
+        pos.y === this.food.position.y)
+    );
     return pos;
   }
 
   private handleInput(): void {
     if (this.services.input.isLeftPressed() && this.direction.x !== 1) {
       this.nextDirection = new Vector2(-1, 0);
-    } else if (this.services.input.isRightPressed() && this.direction.x !== -1) {
+    } else if (
+      this.services.input.isRightPressed() &&
+      this.direction.x !== -1
+    ) {
       this.nextDirection = new Vector2(1, 0);
     } else if (this.services.input.isUpPressed() && this.direction.y !== 1) {
       this.nextDirection = new Vector2(0, -1);
