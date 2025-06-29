@@ -52,7 +52,7 @@ export function ArcadeHub() {
     setCurrentCoins(currencyService.getCurrentCoins());
 
     let lastCoins = currencyService.getCurrentCoins();
-    const unsubscribeCoins = currencyService.onCoinsChanged((newCoins) => {
+    const unsubscribe = currencyService.onCoinsChanged((newCoins) => {
       const delta = newCoins - lastCoins;
       lastCoins = newCoins;
       setCurrentCoins(newCoins);
@@ -75,12 +75,7 @@ export function ArcadeHub() {
       });
     });
 
-    const unsubscribeChallenges = challengeService.onChallengeCompleted(handleChallengeComplete);
-
-    return () => {
-      unsubscribeCoins();
-      unsubscribeChallenges();
-    };
+    return unsubscribe;
   }, [challengeService, achievementService, userService]);
 
   useEffect(() => {
