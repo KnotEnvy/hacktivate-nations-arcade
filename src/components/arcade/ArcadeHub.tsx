@@ -78,6 +78,7 @@ export function ArcadeHub() {
     return unsubscribe;
   }, [challengeService, achievementService, userService]);
 
+
   useEffect(() => {
     const seen = localStorage.getItem('hacktivate-onboarding-shown');
     if (!seen) {
@@ -191,6 +192,15 @@ export function ArcadeHub() {
     },
     [addNotification, currencyService, userService, challengeService]
   );
+
+  // Track completed challenges even when the DailyChallenges
+  // component isn't mounted by subscribing at the hub level.
+  useEffect(() => {
+    const unsubscribe = challengeService.onChallengeCompleted(
+      handleChallengeComplete
+    );
+    return unsubscribe;
+  }, [challengeService, handleChallengeComplete]);
 
   const handleGameEnd = (gameData?: any) => {
     if (!gameData || !selectedGameId) return;
