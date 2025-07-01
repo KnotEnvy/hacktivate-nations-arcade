@@ -28,7 +28,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Clear the board without hitting mines. Coming soon!'
+    description: 'Clear the board without hitting mines!'
   },
   {
     id: 'breakout',
