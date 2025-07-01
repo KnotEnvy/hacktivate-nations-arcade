@@ -16,7 +16,7 @@ export class MinesweeperGame extends BaseGame {
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Clear the board without hitting mines!'
+    description: 'Clear the board without hitting mines!',
   };
 
   private cols = 10;
@@ -48,7 +48,9 @@ export class MinesweeperGame extends BaseGame {
     this.gameState = 'playing';
   }
 
-  protected onUpdate(): void {
+  protected onUpdate(_dt: number): void {
+    // dt currently unused but included for future animations
+    void _dt;
     if (this.gameState !== 'playing') return;
     this.handleInput();
   }
@@ -125,12 +127,7 @@ export class MinesweeperGame extends BaseGame {
   private pointToCell(x: number, y: number): { row: number; col: number } {
     const col = Math.floor((x - this.offsetX) / this.cellSize);
     const row = Math.floor((y - this.offsetY) / this.cellSize);
-    if (
-      row < 0 ||
-      row >= this.rows ||
-      col < 0 ||
-      col >= this.cols
-    ) {
+    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
       return { row: -1, col: -1 };
     }
     return { row, col };
@@ -218,7 +215,12 @@ export class MinesweeperGame extends BaseGame {
     for (let r = 0; r < this.rows; r++) {
       const row: Cell[] = [];
       for (let c = 0; c < this.cols; c++) {
-        row.push({ mine: false, revealed: false, flagged: false, neighbors: 0 });
+        row.push({
+          mine: false,
+          revealed: false,
+          flagged: false,
+          neighbors: 0,
+        });
       }
       this.board.push(row);
     }
