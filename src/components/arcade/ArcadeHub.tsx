@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { GameModule } from '@/lib/types';
 import { gameLoader } from '@/games/registry';
 import { CurrencyService } from '@/services/CurrencyService';
@@ -402,8 +403,16 @@ export function ArcadeHub() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto">
-        {showHub ? (
-          <div className="space-y-6">
+        <AnimatePresence mode="wait">
+          {showHub ? (
+            <motion.div
+              key="hub"
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 30 }}
+              transition={{ duration: 0.3 }}
+              className="space-y-6"
+            >
             {/* Tab Navigation */}
             <div className="flex justify-center">
               <div className="bg-gray-800 p-1 rounded-lg">
@@ -491,7 +500,7 @@ export function ArcadeHub() {
               <div className="text-center text-gray-300 mt-8">
                 <h3 className="text-xl mb-4">Welcome to the Arcade!</h3>
                 <p className="max-w-2xl mx-auto">
-                  Play games to earn coins and experience, unlock new games, complete daily challenges, 
+                  Play games to earn coins and experience, unlock new games, complete daily challenges,
                   and collect achievements. Each game offers unique challenges and rewards!
                 </p>
                 <p className="text-sm mt-4 opacity-75">
@@ -499,16 +508,24 @@ export function ArcadeHub() {
                 </p>
               </div>
             )}
-          </div>
-        ) : (
-          <div className="flex justify-center">
-            <GameCanvas 
-              game={currentGame} 
-              currencyService={currencyService}
-              onGameEnd={handleGameEnd}
-            />
-          </div>
-        )}
+            </motion.div>
+          ) : (
+            <motion.div
+              key="game"
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -30 }}
+              transition={{ duration: 0.3 }}
+              className="flex justify-center"
+            >
+              <GameCanvas
+                game={currentGame}
+                currencyService={currencyService}
+                onGameEnd={handleGameEnd}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
       {showOnboarding && (
         <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
