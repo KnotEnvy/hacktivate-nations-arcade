@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { GlslCanvas } from 'glsl-canvas-js';
+import { Canvas } from 'glsl-canvas-js/dist/esm/glsl';
 
 const fragShader = `
 #ifdef GL_ES
@@ -22,7 +22,7 @@ export function ShaderBackground() {
   useEffect(() => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const glsl = new GlslCanvas(canvas);
+    const glsl = new Canvas(canvas);
     glsl.load(fragShader);
 
     const handleResize = () => {
