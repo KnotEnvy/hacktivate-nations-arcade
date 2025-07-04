@@ -276,6 +276,39 @@ export const ACHIEVEMENTS: Achievement[] = [
         requirement: { type: 'unique_themes', value: 5 },
         reward: 300,
         unlocked: false
+      },
+      {
+        id: 'snake_rookie',
+        title: 'Snake Rookie',
+        description: 'Score 100 points in Snake',
+        icon: '🐍',
+        gameId: 'snake',
+        category: 'gameplay',
+        requirement: { type: 'score', value: 100 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'snake_veteran',
+        title: 'Snake Veteran',
+        description: 'Score 300 points in Snake',
+        icon: '🐍',
+        gameId: 'snake',
+        category: 'skill',
+        requirement: { type: 'score', value: 300 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'snake_master',
+        title: 'Snake Master',
+        description: 'Score 600 points in Snake',
+        icon: '👑',
+        gameId: 'snake',
+        category: 'skill',
+        requirement: { type: 'score', value: 600 },
+        reward: 300,
+        unlocked: false
       }
     ];
 
