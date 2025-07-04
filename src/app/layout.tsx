@@ -2,7 +2,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import { ShaderBackground } from '@/components/visuals/ShaderBackground';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -34,7 +33,6 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${inter.className} antialiased bg-gray-900 text-white custom-scrollbar`}>
-        <ShaderBackground />
         <div id="root">{children}</div>
       </body>
     </html>
