@@ -74,7 +74,7 @@ export class ParallaxSystem {
   }
 
   /** Reset parallax scroll distance. */
-  reset(): void {
+    reset(): void {
     this.distance = 0;
   }
   
@@ -94,7 +94,7 @@ export class ParallaxSystem {
     const layerWidth = this.canvasWidth * 2;
     const colors = this.getBackgroundColors(theme);
     
-    ctx.globalAlpha = 0.4;
+    ctx.globalAlpha = 0.8; // Much more visible (was 0.4)
     
     // Render the background twice for seamless tiling (SAME AS BEFORE)
     for (let tile = 0; tile < 2; tile++) {
@@ -123,16 +123,16 @@ export class ParallaxSystem {
   }
   
   private renderDayMountains(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
-    // Multiple overlapping mountain ranges (SAME AS BEFORE)
+    // Multiple overlapping mountain ranges - MUCH LARGER SCALE
     const ranges = [
-      { peaks: 4, height: 60, color: colors.far },
-      { peaks: 5, height: 80, color: colors.mid },
-      { peaks: 3, height: 100, color: colors.near }
+      { peaks: 4, height: 180, color: colors.far },      // Was 60, now 180
+      { peaks: 5, height: 240, color: colors.mid },      // Was 80, now 240  
+      { peaks: 3, height: 300, color: colors.near }      // Was 100, now 300
     ];
     
     ranges.forEach((range, rangeIndex) => {
       ctx.fillStyle = range.color;
-      ctx.globalAlpha = 0.2 + rangeIndex * 0.1;
+      ctx.globalAlpha = 0.5 + rangeIndex * 0.15; // Much more visible (was 0.2 + rangeIndex * 0.1)
       
       ctx.beginPath();
       ctx.moveTo(x, this.groundY);
@@ -171,11 +171,11 @@ export class ParallaxSystem {
     ctx.arc(sunX, sunY, 50, 0, Math.PI * 2);
     ctx.fill();
     
-    // Layered mountain silhouettes
+    // Layered mountain silhouettes - MUCH TALLER
     const layers = [
-      { height: 120, opacity: 0.6 },
-      { height: 90, opacity: 0.4 },
-      { height: 60, opacity: 0.2 }
+      { height: 360, opacity: 0.8 },  // Was 120, now 360
+      { height: 270, opacity: 0.6 },  // Was 90, now 270
+      { height: 180, opacity: 0.4 }   // Was 60, now 180
     ];
     
     layers.forEach((layer, i) => {
@@ -205,9 +205,9 @@ export class ParallaxSystem {
     
     // Create building silhouettes
     for (let bx = 0; bx < this.canvasWidth * 2; bx += 40) {
-      // FIXED: Deterministic building heights
+      // FIXED: Deterministic building heights - MUCH TALLER
       const buildingIndex = Math.floor((x + bx) / 40);
-      const buildingHeight = 60 + (buildingIndex % 7) * 15; // Deterministic
+      const buildingHeight = 180 + (buildingIndex % 7) * 45; // Was 60 + % 7 * 15, now much taller
       const buildingWidth = 30 + (buildingIndex % 3) * 8; // Deterministic
       
       // Building outline
@@ -244,9 +244,9 @@ export class ParallaxSystem {
     const duneCount = 6;
     for (let d = 0; d < duneCount; d++) {
       const duneWidth = this.canvasWidth / duneCount * 2;
-      // FIXED: Deterministic dune height
+      // FIXED: Deterministic dune height - MUCH LARGER
       const seedValue = Math.floor((x + d * duneWidth) / 200) * 0.7;
-      const duneHeight = 40 + Math.sin(seedValue) * 30;
+      const duneHeight = 120 + Math.sin(seedValue) * 90; // Was 40 + sin * 30, now much larger
       
       ctx.globalAlpha = 0.3 + d * 0.05;
       ctx.beginPath();
@@ -267,16 +267,16 @@ export class ParallaxSystem {
   }
   
   private renderForestRidges(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
-    // Forested ridges with dense tree line (SAME AS BEFORE)
+    // Forested ridges with dense tree line - MUCH TALLER
     const ridges = [
-      { height: 100, density: 0.8 },
-      { height: 70, density: 0.6 },
-      { height: 50, density: 0.4 }
+      { height: 300, density: 0.8 }, // Was 100, now 300
+      { height: 210, density: 0.6 }, // Was 70, now 210
+      { height: 150, density: 0.4 }  // Was 50, now 150
     ];
     
     ridges.forEach((ridge, ridgeIndex) => {
       ctx.fillStyle = colors.ridges[ridgeIndex];
-      ctx.globalAlpha = 0.4 - ridgeIndex * 0.1;
+      ctx.globalAlpha = 0.7 - ridgeIndex * 0.15; // More visible (was 0.4 - ridgeIndex * 0.1)
       
       // Base ridge shape
       ctx.beginPath();
@@ -301,7 +301,7 @@ export class ParallaxSystem {
         if ((treeIndex % 10) < ridge.density * 10) { // Deterministic density
           const seedValue = Math.floor((x + tx) / 100) * 0.02;
           const baseY = this.groundY - ridge.height - Math.sin(seedValue) * 20;
-          const treeHeight = 15 + (treeIndex % 3) * 5; // Deterministic height
+          const treeHeight = 45 + (treeIndex % 3) * 15; // Deterministic height - MUCH TALLER (was 15 + % 3 * 5)
           ctx.fillRect(x + tx, baseY - treeHeight, 2, treeHeight);
         }
       }
@@ -311,7 +311,7 @@ export class ParallaxSystem {
   // LAYER 2: Mid-ground detailed landscape (ALL ORIGINAL DETAIL PRESERVED)
   private renderMidgroundLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
     const layerWidth = this.canvasWidth * 2;
-    ctx.globalAlpha = 0.7;
+    ctx.globalAlpha = 0.85; // More visible (was 0.7)
     
     for (let tile = 0; tile < 2; tile++) {
       const tileX = -offset + (tile * layerWidth);
@@ -330,8 +330,8 @@ export class ParallaxSystem {
       const elementType = elementIndex % 4;
       
       switch (elementType) {
-        case 0: // Large trees
-          const treeSize = 25 + (elementIndex % 3) * 5; // FIXED: Deterministic size
+        case 0: // Large trees - BIGGER TREES
+          const treeSize = 45 + (elementIndex % 3) * 15; // FIXED: Much larger (was 25 + % 3 * 5)
           this.renderDetailedTree(ctx, x + mx, colors, treeSize);
           break;
         case 1: // Rock formations
@@ -415,7 +415,7 @@ export class ParallaxSystem {
         // Cactus (SAME AS BEFORE)
         ctx.fillStyle = colors.cactus;
         const cactusIndex = Math.floor(x / 60); // FIXED: Deterministic height
-        const cactusHeight = 30 + (cactusIndex % 3) * 10;
+        const cactusHeight = 60 + (cactusIndex % 3) * 20; // MUCH TALLER (was 30 + % 3 * 10)
         ctx.fillRect(x, this.groundY - cactusHeight, 6, cactusHeight);
         // Cactus arms
         ctx.fillRect(x - 8, this.groundY - cactusHeight * 0.7, 8, 4);
@@ -424,11 +424,11 @@ export class ParallaxSystem {
       case 'night':
         // Lamp post (SAME AS BEFORE)
         ctx.fillStyle = colors.post;
-        ctx.fillRect(x, this.groundY - 40, 3, 40);
+        ctx.fillRect(x, this.groundY - 60, 3, 60); // TALLER lamp post (was 40)
         // Light
         ctx.fillStyle = 'rgba(255, 255, 200, 0.8)';
         ctx.beginPath();
-        ctx.arc(x + 1.5, this.groundY - 35, 8, 0, Math.PI * 2);
+        ctx.arc(x + 1.5, this.groundY - 55, 8, 0, Math.PI * 2); // Adjusted light position
         ctx.fill();
         break;
     }
@@ -439,7 +439,7 @@ export class ParallaxSystem {
     const layerWidth = this.canvasWidth * 2;
     const cloudColors = this.getCloudColors(theme);
     
-    ctx.globalAlpha = theme === 'night' ? 0.3 : 0.6;
+    ctx.globalAlpha = theme === 'night' ? 0.5 : 0.8; // More visible (was 0.3 : 0.6)
     
     for (let tile = 0; tile < 2; tile++) {
       const tileX = -offset + (tile * layerWidth);
