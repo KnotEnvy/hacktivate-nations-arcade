@@ -9,7 +9,8 @@ import { CurrencyService } from '@/services/CurrencyService';
 export function useGameModule(
   canvas: HTMLCanvasElement | null,
   game: GameModule | null,
-  currencyService: CurrencyService
+  currencyService: CurrencyService,
+  audioManager: AudioManager
 ) {
   const { input } = useInput(canvas);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -22,15 +23,14 @@ export function useGameModule(
     if (!canvas || !game) return;
 
     // Initialize services
-    const audio = new AudioManager();
+    const audio = audioManager; // Use the passed AudioManager instance
     const analytics = new Analytics();
     const currency = currencyService;
 
     const services: Services = { input, audio, analytics, currency };
     servicesRef.current = services;
 
-    // Initialize all services
-    audio.init();
+    // AudioManager is already initialized in the ArcadeHub, no need to init again
     void analytics.init();
     currency.init();
 
@@ -41,7 +41,7 @@ export function useGameModule(
     return () => {
       game.destroy?.();
     };
-  }, [canvas, game, currencyService, input]);
+  }, [canvas, game, currencyService, audioManager, input]);
 
   useEffect(() => {
     if (!isInitialized || !game) return;

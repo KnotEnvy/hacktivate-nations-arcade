@@ -8,6 +8,7 @@ import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService, Challenge } from '@/services/ChallengeService';
 import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
+import { AudioManager } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
 import { GameCanvas } from './GameCanvas';
 import { GameCarousel } from './GameCarousel';
@@ -17,6 +18,7 @@ import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
 import { AnalyticsOverview } from './AnalyticsOverview';
 import { OnboardingOverlay } from './OnboardingOverlay';
+import { AudioSettings } from './AudioSettings';
 import { AVAILABLE_GAMES } from '@/data/Games';
 
 export function ArcadeHub() {
@@ -32,6 +34,7 @@ export function ArcadeHub() {
   const [challengeService] = useState(new ChallengeService());
   const [achievementService] = useState(new AchievementService());
   const [userService] = useState(new UserService());
+  const [audioManager] = useState(new AudioManager());
   
   // Notifications
   const [notifications, setNotifications] = useState<Array<{
@@ -42,12 +45,21 @@ export function ArcadeHub() {
     timestamp: Date;
   }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showAudioSettings, setShowAudioSettings] = useState(false);
 
   useEffect(() => {
     currencyService.init();
     challengeService.init();
     achievementService.init();
     userService.init();
+    
+    // Initialize audio manager
+    audioManager.init().then(() => {
+      // Start hub music after a brief delay
+      setTimeout(() => {
+        audioManager.playMusic('hub_music', 3.0);
+      }, 1000);
+    });
 
     setCurrentCoins(currencyService.getCurrentCoins());
 
@@ -70,13 +82,14 @@ export function ArcadeHub() {
       // Check achievements for total coins on hand
       const newAchievements = achievementService.checkAchievement('total_coins', newCoins);
       newAchievements.forEach(achievement => {
+        audioManager.playSound('success');
         addNotification('achievement', achievement.title, `+${achievement.reward} coins!`);
         currencyService.addCoins(achievement.reward, `achievement_${achievement.id}`);
       });
     });
 
     return unsubscribe;
-  }, [challengeService, achievementService, userService]);
+  }, [challengeService, achievementService, userService, audioManager]);
 
 
   useEffect(() => {
@@ -129,17 +142,21 @@ export function ArcadeHub() {
 
   const handleGameSelect = async (gameId: string) => {
     try {
+      audioManager.playSound('click');
       const game = await gameLoader.loadGame(gameId);
       if (game) {
         setCurrentGame(game);
         setSelectedGameId(gameId);
         setShowHub(false);
+        
+        // Transition to game music
+        audioManager.playMusic('game_music', 2.0);
+        
         // Track game start
         const gamesPlayed = userService.getStats().gamesPlayed + 1;
         userService.updateStats({ gamesPlayed });
         challengeService.updateProgress(gameId, 'games_played', 1);
         achievementService.checkAchievement('games_played', gamesPlayed);
-
       }
     } catch (error) {
       console.error('Failed to load game:', error);
@@ -150,6 +167,7 @@ export function ArcadeHub() {
     if (currencyService.spendCoins(cost, `unlock_${gameId}`)) {
       const game = AVAILABLE_GAMES.find(g => g.id === gameId);
       if (game && !unlockedTiers.includes(game.tier)) {
+        audioManager.playSound('unlock');
         const newTiers = [...unlockedTiers, game.tier];
         saveUnlockedTiers(newTiers);
         
@@ -165,14 +183,19 @@ export function ArcadeHub() {
   };
 
   const handleBackToHub = () => {
+    audioManager.playSound('click');
     setShowHub(true);
     setCurrentGame(null);
     setSelectedGameId(null);
     setActiveTab('games');
+    
+    // Return to hub music
+    audioManager.playMusic('hub_music', 2.0);
   };
 
   const handleChallengeComplete = useCallback(
     (challenge: Challenge) => {
+      audioManager.playSound('success');
       addNotification(
         'challenge',
         'Challenge Complete!',
@@ -182,6 +205,7 @@ export function ArcadeHub() {
       const current = userService.getStats().challengesCompleted;
       userService.updateStats({ challengesCompleted: current + 1 });
       if (challengeService.areAllDailyChallengesCompleted()) {
+        audioManager.playSound('powerup');
         currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
         addNotification(
           'challenge',
@@ -190,7 +214,7 @@ export function ArcadeHub() {
         );
       }
     },
-    [addNotification, currencyService, userService, challengeService]
+    [addNotification, currencyService, userService, challengeService, audioManager]
   );
 
   // Track completed challenges even when the DailyChallenges
@@ -213,6 +237,7 @@ export function ArcadeHub() {
     const levelResult = userService.addExperience(experienceGained);
     
     if (levelResult.leveledUp) {
+      audioManager.playSound('powerup');
       addNotification('levelup', 'Level Up!', `You reached level ${levelResult.newLevel}!`);
     }
     
@@ -278,6 +303,7 @@ export function ArcadeHub() {
     ];
 
     newlyUnlocked.forEach((achievement) => {
+      audioManager.playSound('success');
       addNotification(
         'achievement',
         achievement.title,
@@ -361,6 +387,15 @@ export function ArcadeHub() {
           >
             Help
           </button>
+          <button
+            onClick={() => {
+              audioManager.playSound('click');
+              setShowAudioSettings(true);
+            }}
+            className="ml-2 px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+          >
+            🔊 Audio
+          </button>
           {/* Debug buttons for development */}
           {process.env.NODE_ENV === 'development' && (
             <div className="flex gap-1">
@@ -420,7 +455,12 @@ export function ArcadeHub() {
                 {tabButtons.map(tab => (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
+                    onClick={() => {
+                      if (activeTab !== tab.id) {
+                        audioManager.playSound('click');
+                        setActiveTab(tab.id as any);
+                      }
+                    }}
                     className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                       activeTab === tab.id
                         ? 'bg-purple-600 text-white'
@@ -515,6 +555,7 @@ export function ArcadeHub() {
             <GameCanvas 
               game={currentGame} 
               currencyService={currencyService}
+              audioManager={audioManager}
               onGameEnd={handleGameEnd}
             />
           </div>
@@ -522,6 +563,13 @@ export function ArcadeHub() {
       </main>
       {showOnboarding && (
         <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
+      )}
+      {showAudioSettings && (
+        <AudioSettings
+          audioManager={audioManager}
+          isOpen={showAudioSettings}
+          onClose={() => setShowAudioSettings(false)}
+        />
       )}
     </div>
   );
