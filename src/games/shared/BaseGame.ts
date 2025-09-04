@@ -26,7 +26,7 @@ export abstract class BaseGame implements GameModule {
     this.resize(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
     
     // Track game start
-    this.services.analytics.trackGameStart(this.manifest.id);
+    this.services?.analytics?.trackGameStart?.(this.manifest.id);
     this.startTime = Date.now();
     this.isRunning = true;
     
@@ -83,12 +83,12 @@ export abstract class BaseGame implements GameModule {
 
   getScore(): GameScore {
     const timePlayedMs = this.isRunning ? Date.now() - this.startTime : this.gameTime;
-    const multiplier = this.services.currency.getBonusMultiplier?.() ?? 1;
-    const coinsEarned = this.services.currency.calculateGameReward(
+    const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
+    const coinsEarned = this.services?.currency?.calculateGameReward?.(
       this.score,
       this.pickups,
       multiplier
-    );
+    ) ?? 0;
 
     return {
       score: this.score,
@@ -118,26 +118,26 @@ export abstract class BaseGame implements GameModule {
     const finalScore = this.getScore();
     
     //play game over sound
-    this.services.audio.playSound('game_over');
+    this.services?.audio?.playSound?.('game_over');
 
     // Award coins
-    this.services.currency.addCoins(
+    this.services?.currency?.addCoins?.(
       finalScore.coinsEarned, 
       `game_${this.manifest.id}`
     );
         
     // Track analytics
-    this.services.analytics.trackGameEnd(
+    this.services?.analytics?.trackGameEnd?.(
       this.manifest.id,
       finalScore.score,
       finalScore.coinsEarned,
       'died'
     );
 
-    this.services.analytics.trackCurrencyTransaction(
+    this.services?.analytics?.trackCurrencyTransaction?.(
       finalScore.coinsEarned,
       `game_${this.manifest.id}`,
-      this.services.currency.getCurrentCoins()
+      this.services?.currency?.getCurrentCoins?.() ?? 0
     );
 
     this.onGameEnd?.(finalScore);

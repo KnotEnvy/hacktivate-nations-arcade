@@ -10,7 +10,7 @@ import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
 import { AudioManager } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
-import { GameCanvas } from './GameCanvas';
+import { ThemedGameCanvas } from './ThemedGameCanvas';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
 import { DailyChallenges } from './DailyChallenges';
@@ -552,7 +552,7 @@ export function ArcadeHub() {
           </div>
         ) : (
           <div className="flex justify-center">
-            <GameCanvas 
+            <ThemedGameCanvas 
               game={currentGame} 
               currencyService={currencyService}
               audioManager={audioManager}

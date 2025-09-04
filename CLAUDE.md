@@ -47,9 +47,11 @@ New games are registered in `src/games/registry.ts` using the `GameLoader` servi
 
 ### Shared Services Architecture
 - **InputManager** (`src/services/InputManager.ts`) - Unified keyboard, touch, gamepad input
-- **AudioManager** (`src/services/AudioManager.ts`) - WebAudio-based sound system
+- **AudioManager** (`src/services/AudioManager.ts`) - Symphonic orchestral audio system with procedural music generation
 - **CurrencyService** - Universal coin economy across games
 - **AchievementService** - Cross-game achievement system
+- **ChallengeService** - Daily and weekly challenge system
+- **UserService** - User profiles, leveling, and statistics
 - **Analytics** - Game metrics and user behavior tracking
 
 ### State Management
@@ -88,3 +90,75 @@ Uses Zustand for lightweight state management:
 - Use `useInput` hook for consistent input across games
 - Supports keyboard, mouse, touch, and gamepad
 - Input schema defined per game for auto-configuration
+
+## Audio System
+
+### Symphonic Audio Architecture
+The AudioManager implements a professional-grade orchestral audio system using classical music theory:
+
+#### Background Music System
+- **Hub Music**: 48-second symphonic piece in C major with full orchestration
+  - Classical I-vi-IV-V-I-iii-vi-V7-I progression with proper voice leading
+  - Bass section (Cellos & Double Basses), Viola section, Violin section with ornamentation
+  - French Horn harmonies, Woodwind doubling (Flutes/Oboes), Timpani punctuation
+  - Natural breathing, dynamic swells, and concert hall stereo imaging
+
+- **Game Music**: 36-second epic battle theme in D minor
+  - Heroic orchestral arrangement with driving timpani and bass drums
+  - Trumpet fanfares, French horn harmonies, soaring violin melodies
+  - Brass stabs, snare rolls, cymbal crashes, and reverb simulation
+  - Perfect for action gameplay with dramatic intensity curves
+
+#### Orchestral Sound Effects
+All sound effects use classical orchestration principles:
+- **Unlock Sound**: Majestic brass fanfare with trumpets, horns, timpani, and chimes
+- **Success Sound**: Warm string section with brass pad and high violin sparkle
+- **Powerup Sound**: Magical orchestral ascension with harp, celesta, and ethereal flutes
+- **Other Effects**: Jump, coin, collision sounds with orchestral character
+
+#### Volume Controls & Settings
+- **AudioSettings Component**: (`src/components/arcade/AudioSettings.tsx`)
+- **Separate Volume Controls**: Master, SFX, and Music with real-time sliders
+- **Mute Functionality**: Global mute toggle with state persistence
+- **Test Sounds**: Interactive preview buttons for all sound effects
+- **Persistent Preferences**: All settings saved to localStorage
+
+#### Audio Integration
+- **Automatic Initialization**: Audio context starts after user interaction
+- **Music Transitions**: Smooth crossfading between hub and game music (2-second fades)
+- **Sound Effect Integration**: All UI interactions have appropriate orchestral sounds
+- **Performance Optimized**: Efficient procedural generation with minimal memory footprint
+
+### Audio Usage in Games
+Games access the AudioManager through the services parameter in their `init()` method:
+```typescript
+// Play sound effects
+services.audio.playSound('coin', { volume: 0.8 });
+services.audio.playSound('jump');
+
+// Background music is handled automatically by the ArcadeHub
+// Hub music plays in menu, game music plays during gameplay
+```
+
+## Hub System
+
+### Enhanced Arcade Experience
+The arcade hub provides a complete gaming platform experience:
+
+#### Multi-Tab Interface
+- **Games Tab**: Game selection carousel with unlock system
+- **Challenges Tab**: Daily/weekly challenges with progress tracking
+- **Achievements Tab**: Achievement showcase with category filtering
+- **Profile Tab**: User statistics, avatar selection, and progression
+
+#### User Progression System
+- **Experience Points**: Gained from gameplay performance
+- **Level System**: Character progression with level-up celebrations
+- **Avatar Selection**: Multiple avatar options with persistence
+- **Statistics Tracking**: Comprehensive gameplay metrics
+
+#### Engagement Systems
+- **Daily Challenges**: Cross-game objectives that refresh every 24 hours
+- **Achievement System**: 15+ achievements across multiple categories
+- **Currency Economy**: Unified coin system for unlocking games
+- **Real-time Notifications**: Achievement unlocks, level-ups, and challenge completions

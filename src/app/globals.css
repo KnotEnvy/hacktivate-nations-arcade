@@ -3,6 +3,24 @@
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
+  
+  /* Game theme fonts */
+  --font-orbitron: 'Orbitron', monospace;
+  --font-exo: 'Exo', sans-serif;
+  --font-source-code-pro: 'Source Code Pro', monospace;
+  --font-space-mono: 'Space Mono', monospace;
+  --font-tomorrow: 'Tomorrow', sans-serif;
+  --font-fira-code: 'Fira Code', monospace;
+  --font-vt323: 'VT323', monospace;
+  --font-courier-prime: 'Courier Prime', monospace;
+  --font-anonymous-pro: 'Anonymous Pro', monospace;
+  --font-rajdhani: 'Rajdhani', sans-serif;
+  --font-audiowide: 'Audiowide', cursive;
+  --font-share-tech-mono: 'Share Tech Mono', monospace;
+  --font-playfair-display: 'Playfair Display', serif;
+  --font-crimson-text: 'Crimson Text', serif;
+  --font-inconsolata: 'Inconsolata', monospace;
+  --font-jetbrains-mono: 'JetBrains Mono', monospace;
 }
 
 body {
