@@ -14,6 +14,8 @@ module.exports = {
     'src/**/*.{ts,tsx}',
     '!src/**/index.ts',
     '!src/**/*.d.ts',
+    '!src/app/**/*', // Exclude Next.js app directory 
+    '!src/components/**/*', // Exclude React components for now
   ],
 };
 
