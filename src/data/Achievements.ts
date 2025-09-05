@@ -309,6 +309,268 @@ export const ACHIEVEMENTS: Achievement[] = [
         requirement: { type: 'score', value: 600 },
         reward: 300,
         unlocked: false
+      },
+
+      // Space Shooter Achievements
+      {
+        id: 'space_first_wave',
+        title: 'Space Cadet',
+        description: 'Complete your first wave in Space Shooter',
+        icon: '🚀',
+        gameId: 'space',
+        category: 'progression',
+        requirement: { type: 'waves_completed', value: 1 },
+        reward: 75,
+        unlocked: false
+      },
+      {
+        id: 'space_boss_slayer',
+        title: 'Boss Slayer',
+        description: 'Defeat your first boss in Space Shooter',
+        icon: '⚔️',
+        gameId: 'space',
+        category: 'skill',
+        requirement: { type: 'bosses_defeated', value: 1 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'space_ace_pilot',
+        title: 'Ace Pilot',
+        description: 'Reach Stage 3 in Space Shooter',
+        icon: '🛸',
+        gameId: 'space',
+        category: 'skill',
+        requirement: { type: 'max_stage', value: 3 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'space_sharpshooter',
+        title: 'Sharpshooter',
+        description: 'Destroy 100 enemies in Space Shooter',
+        icon: '🎯',
+        gameId: 'space',
+        category: 'skill',
+        requirement: { type: 'enemies_destroyed', value: 100 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'space_power_collector',
+        title: 'Power Collector',
+        description: 'Collect 10 power-ups in Space Shooter',
+        icon: '⚡',
+        gameId: 'space',
+        category: 'collection',
+        requirement: { type: 'powerups_collected', value: 10 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'space_survivor',
+        title: 'Space Survivor',
+        description: 'Survive 5 minutes in Space Shooter',
+        icon: '🕰️',
+        gameId: 'space',
+        category: 'skill',
+        requirement: { type: 'survival_time', value: 300 },
+        reward: 250,
+        unlocked: false
+      },
+
+      // Memory Match Achievements
+      {
+        id: 'memory_first_match',
+        title: 'Memory Starter',
+        description: 'Make your first match in Memory Match',
+        icon: '🧠',
+        gameId: 'memory',
+        category: 'progression',
+        requirement: { type: 'matches_made', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'memory_perfect_level',
+        title: 'Perfect Memory',
+        description: 'Complete a level without mistakes',
+        icon: '💫',
+        gameId: 'memory',
+        category: 'skill',
+        requirement: { type: 'perfect_levels', value: 1 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'memory_speed_demon',
+        title: 'Memory Speed Demon',
+        description: 'Complete a level in under 30 seconds',
+        icon: '⚡',
+        gameId: 'memory',
+        category: 'skill',
+        requirement: { type: 'fast_completion', value: 30 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'memory_master',
+        title: 'Memory Master',
+        description: 'Complete 10 levels in Memory Match',
+        icon: '🏆',
+        gameId: 'memory',
+        category: 'progression',
+        requirement: { type: 'levels_completed', value: 10 },
+        reward: 300,
+        unlocked: false
+      },
+
+      // Breakout Achievements
+      {
+        id: 'breakout_first_brick',
+        title: 'Brick Breaker',
+        description: 'Break your first brick in Breakout',
+        icon: '🧱',
+        gameId: 'breakout',
+        category: 'progression',
+        requirement: { type: 'bricks_broken', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'breakout_level_clear',
+        title: 'Level Clearer',
+        description: 'Clear your first level in Breakout',
+        icon: '✨',
+        gameId: 'breakout',
+        category: 'progression',
+        requirement: { type: 'levels_cleared', value: 1 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'breakout_power_user',
+        title: 'Power User',
+        description: 'Collect 5 power-ups in Breakout',
+        icon: '🔋',
+        gameId: 'breakout',
+        category: 'collection',
+        requirement: { type: 'powerups_collected', value: 5 },
+        reward: 125,
+        unlocked: false
+      },
+      {
+        id: 'breakout_demolisher',
+        title: 'Demolisher',
+        description: 'Break 100 bricks total in Breakout',
+        icon: '💥',
+        gameId: 'breakout',
+        category: 'skill',
+        requirement: { type: 'total_bricks_broken', value: 100 },
+        reward: 200,
+        unlocked: false
+      },
+
+      // Minesweeper Achievements
+      {
+        id: 'minesweeper_first_clear',
+        title: 'Minesweeper Rookie',
+        description: 'Clear your first cell in Minesweeper',
+        icon: '💣',
+        gameId: 'minesweeper',
+        category: 'progression',
+        requirement: { type: 'cells_cleared', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'minesweeper_first_win',
+        title: 'Mine Detector',
+        description: 'Win your first Minesweeper game',
+        icon: '🏁',
+        gameId: 'minesweeper',
+        category: 'skill',
+        requirement: { type: 'games_won', value: 1 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'minesweeper_speed_clearer',
+        title: 'Speed Clearer',
+        description: 'Win a game in under 60 seconds',
+        icon: '⏱️',
+        gameId: 'minesweeper',
+        category: 'skill',
+        requirement: { type: 'fast_win', value: 60 },
+        reward: 250,
+        unlocked: false
+      },
+
+      // Tap Dodge Achievements
+      {
+        id: 'tapdodge_survivor',
+        title: 'Dodge Master',
+        description: 'Survive 30 seconds in Tap Dodge',
+        icon: '🤹',
+        gameId: 'tapdodge',
+        category: 'skill',
+        requirement: { type: 'survival_time', value: 30 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'tapdodge_veteran',
+        title: 'Dodge Veteran',
+        description: 'Survive 60 seconds in Tap Dodge',
+        icon: '🥋',
+        gameId: 'tapdodge',
+        category: 'skill',
+        requirement: { type: 'survival_time', value: 60 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'tapdodge_master',
+        title: 'Dodge Legend',
+        description: 'Survive 120 seconds in Tap Dodge',
+        icon: '🏅',
+        gameId: 'tapdodge',
+        category: 'skill',
+        requirement: { type: 'survival_time', value: 120 },
+        reward: 400,
+        unlocked: false
+      },
+
+      // Cross-Game Meta Achievements
+      {
+        id: 'game_explorer',
+        title: 'Game Explorer',
+        description: 'Try 5 different games',
+        icon: '🗺️',
+        category: 'progression',
+        requirement: { type: 'unique_games_played', value: 5 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'arcade_master',
+        title: 'Arcade Master',
+        description: 'Score 1000+ in 3 different games',
+        icon: '👑',
+        category: 'skill',
+        requirement: { type: 'high_scores_across_games', value: 3 },
+        reward: 500,
+        unlocked: false
+      },
+      {
+        id: 'daily_player',
+        title: 'Daily Player',
+        description: 'Play games for 7 consecutive days',
+        icon: '📅',
+        category: 'progression',
+        requirement: { type: 'consecutive_days', value: 7 },
+        reward: 300,
+        unlocked: false
       }
     ];
 

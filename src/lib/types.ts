@@ -3,6 +3,7 @@ import { InputManager } from '@/services/InputManager';
 import { AudioManager } from '@/services/AudioManager';
 import { Analytics } from '@/services/Analytics';
 import { CurrencyService } from '@/services/CurrencyService';
+import { AchievementService } from '@/services/AchievementService';
 
 export type InputType = 'keyboard' | 'touch' | 'gamepad';
 
@@ -21,6 +22,7 @@ export interface Services {
   audio: AudioManager;
   analytics: Analytics;
   currency: CurrencyService;
+  achievements: AchievementService;
 }
 
 export interface GameModule {

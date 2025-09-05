@@ -77,6 +77,30 @@ export class AchievementService {
     return newlyUnlocked;
   }
 
+  // Enhanced stat tracking methods
+  trackGameSpecificStat(gameId: string, statType: string, value: number): Achievement[] {
+    return this.checkAchievement(statType, value, gameId);
+  }
+
+  trackCrossGameStat(statType: string, value: number): Achievement[] {
+    return this.checkAchievement(statType, value);
+  }
+
+  // Helper methods for complex achievement types
+  checkHighScoreAcrossGames(gameScores: Record<string, number>): Achievement[] {
+    const gamesWithHighScores = Object.values(gameScores).filter(score => score >= 1000).length;
+    return this.checkAchievement('high_scores_across_games', gamesWithHighScores);
+  }
+
+  checkUniqueGamesPlayed(gameIds: string[]): Achievement[] {
+    const uniqueGames = [...new Set(gameIds)].length;
+    return this.checkAchievement('unique_games_played', uniqueGames);
+  }
+
+  checkConsecutiveDays(days: number): Achievement[] {
+    return this.checkAchievement('consecutive_days', days);
+  }
+
   getAchievements(): Achievement[] {
     return [...this.achievements];
   }

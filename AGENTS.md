@@ -59,3 +59,67 @@
 ## Security & Configuration Tips
 - Environment vars: Prefix client-safe keys with `NEXT_PUBLIC_…`; never commit secrets.
 - Budgets: Enforce `PERFORMANCE.MAX_ASSET_SIZE_KB` and economy rules in reviews.
+
+## Game: Space Shooter (Tier 2)
+
+Location
+- Core: `src/games/space/SpaceShooterGame.ts`
+- Registry: `src/games/registry.ts` (id: `space`)
+- Catalog: `src/data/Games.ts` (thumbnail `/games/space/space-thumb.svg`)
+
+Architecture
+- Extends `BaseGame` (init/update/render + overlay UI handled via hook methods)
+- Uses shared services: `InputManager`, `AudioManager`, `Analytics`, `CurrencyService`
+- Canvas-only rendering; no assets required besides thumbnail
+
+Gameplay Systems
+- Stage flow: 5 waves → boss → unlock new enemy/pattern → next stage
+- Enemies (color-coded, simple shapes):
+  - `basic` (red): straight descent
+  - `sine` (orange): sinusoidal drift
+  - `shooter` (amber): slow descent, periodic aimed shots
+  - `diver` (green): accelerates toward player
+  - `spinner` (bright green): orbits a pivot, radial bursts (dt-based)
+  - `tanker` (light blue): slow, high HP, occasional straight shots
+- Formations: `line`, `v`, `wedge`; anchor oscillation, side-entry, split-and-swoop
+- Boss: 3 phases (targeted shots → spreads → “laser walls”), HP scales by stage, cadence scales by stage
+- Power-ups: `shield`, `spread` (weapon level up to 3), `heal`, `score`
+- Drops: Dynamic chance with player HP + stage bonus (capped), globally used in `getDropChance()`
+- Invulnerability: 1s i-frames with player blink after damage
+
+Polish & FX
+- Parallax starfield (3 layers, varying speeds/colors)
+- Particles (explosions), screen shake, hit flash, score popups
+- Banners: “Stage N” at start; “Boss Approaching” before boss
+
+Controls
+- Keyboard: arrows/A-D to move, Space/Enter/Click/Touch to fire
+- Touch: horizontal follow with lerped smoothing to first touch point
+
+Services Integration
+- Currency: Uses `BaseGame.getScore()` pickups and score to compute reward
+- Audio: clicks for shots; `powerup`, `collision`, `success`, `game_over`
+- Analytics: `trackGameStart/End`, feature usage (`space_wave_spawn`, `space_boss_start`, `space_boss_defeated`), power-up actions
+
+Tuning Knobs (inside `SpaceShooterGame.ts`)
+- Drop rate function `getDropChance()`
+- Boss base HP per stage; attack cadence `rate`
+- Enemy speeds; spinner radial frequency; tanker fire cadence
+- Formation descent/oscillation speeds; side-entry timings
+- Weapon cooldowns by weapon level
+
+Extending the Shooter
+- Add a new enemy: extend `Enemy['type']`, implement in `updateEnemies()`, and wire into wave builder unlock order
+- New formation: add offsets in `spawnFormationWave()` and behavior in `updateFormations()`
+- New boss: factor current boss into a class or add phase handlers; keep HP bar + telegraphs
+
+QA Checklist
+- 60fps on desktop and mid-tier mobile; keep entity counts reasonable
+- Stage 1 should be forgiving: verify i-frames, fair bullet density, readable telegraphs
+- Verify currency earnings feel proportional to time and risk
+- Confirm no runtime errors: helpers (`showBanner`, `addShake`, `spawnExplosion`, `addPopup`, `updateParticles`) are present
+
+Known Follow-ups
+- Add boss laser telegraphs (warning lines) for Phase 3 fairness
+- Optionally cap dynamic drop chance to 25% if balance requires
+- Space-specific achievements/challenges (e.g., no-hit stage, defeat boss N)

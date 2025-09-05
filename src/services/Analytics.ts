@@ -210,6 +210,112 @@ export class Analytics {
     }
   }
 
+  // === GAME-SPECIFIC STAT TRACKING ===
+
+  trackGameSpecificStat(gameId: string, statType: string, value: number, metadata?: Record<string, any>): void {
+    if (!this.isInitialized) return;
+
+    this.trackEvent('game_stat', {
+      game_id: gameId,
+      stat_type: statType,
+      value,
+      session_id: this.currentSession?.sessionId,
+      ...metadata,
+    });
+
+    // Note: Achievement checking should be handled by the game service layer
+    // that has access to the AchievementService
+  }
+
+  // Helper methods for common game stats
+  trackWaveCompleted(gameId: string, waveNumber: number): void {
+    this.trackGameSpecificStat(gameId, 'waves_completed', waveNumber, { wave_number: waveNumber });
+  }
+
+  trackBossDefeated(gameId: string, bossNumber: number, timeTaken?: number): void {
+    this.trackGameSpecificStat(gameId, 'bosses_defeated', bossNumber, { 
+      boss_number: bossNumber,
+      time_taken: timeTaken 
+    });
+  }
+
+  trackEnemyDestroyed(gameId: string, enemyType?: string): void {
+    const currentCount = this.getGameStatTotal(gameId, 'enemies_destroyed') + 1;
+    this.trackGameSpecificStat(gameId, 'enemies_destroyed', currentCount, { enemy_type: enemyType });
+  }
+
+  trackPowerupCollected(gameId: string, powerupType?: string): void {
+    const currentCount = this.getGameStatTotal(gameId, 'powerups_collected') + 1;
+    this.trackGameSpecificStat(gameId, 'powerups_collected', currentCount, { powerup_type: powerupType });
+  }
+
+  trackSurvivalTime(gameId: string, seconds: number): void {
+    this.trackGameSpecificStat(gameId, 'survival_time', seconds);
+  }
+
+  trackLevelCompleted(gameId: string, level: number, timeTaken?: number, perfect?: boolean): void {
+    this.trackGameSpecificStat(gameId, 'levels_completed', level, { 
+      time_taken: timeTaken,
+      perfect: perfect 
+    });
+
+    if (perfect) {
+      this.trackGameSpecificStat(gameId, 'perfect_levels', 1);
+    }
+
+    if (timeTaken && timeTaken < 30) {
+      this.trackGameSpecificStat(gameId, 'fast_completion', timeTaken);
+    }
+  }
+
+  trackMatchMade(gameId: string): void {
+    const currentCount = this.getGameStatTotal(gameId, 'matches_made') + 1;
+    this.trackGameSpecificStat(gameId, 'matches_made', currentCount);
+  }
+
+  trackBricksBroken(gameId: string, count: number = 1): void {
+    const currentCount = this.getGameStatTotal(gameId, 'bricks_broken') + count;
+    this.trackGameSpecificStat(gameId, 'bricks_broken', currentCount);
+    
+    // Also track total bricks for cross-session achievements
+    const totalBricks = this.getGameStatTotal(gameId, 'total_bricks_broken') + count;
+    this.trackGameSpecificStat(gameId, 'total_bricks_broken', totalBricks);
+  }
+
+  trackCellsCleared(gameId: string, count: number = 1): void {
+    const currentCount = this.getGameStatTotal(gameId, 'cells_cleared') + count;
+    this.trackGameSpecificStat(gameId, 'cells_cleared', currentCount);
+  }
+
+  trackGameWon(gameId: string, timeTaken?: number): void {
+    const currentCount = this.getGameStatTotal(gameId, 'games_won') + 1;
+    this.trackGameSpecificStat(gameId, 'games_won', currentCount, { time_taken: timeTaken });
+
+    if (timeTaken && timeTaken < 60) {
+      this.trackGameSpecificStat(gameId, 'fast_win', timeTaken);
+    }
+  }
+
+  // Helper to get current stat totals for a game
+  private getGameStatTotal(gameId: string, statType: string): number {
+    const events = this.getStoredEvents();
+    return events
+      .filter(event => 
+        event.event === 'game_stat' && 
+        event.game_id === gameId && 
+        event.stat_type === statType
+      )
+      .reduce((max, event) => Math.max(max, event.value || 0), 0);
+  }
+
+  private getStoredEvents(): any[] {
+    try {
+      return JSON.parse(localStorage.getItem('analytics_events') || '[]');
+    } catch {
+      return [];
+    }
+  }
+
   // === ENGAGEMENT TRACKING ===
 
   trackPageView(page: string): void {
