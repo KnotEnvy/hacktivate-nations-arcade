@@ -1,7 +1,17 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 
-interface Card { id: number; x: number; y: number; w: number; h: number; value: number; flipped: boolean; matched: boolean; }
+interface Card {
+  id: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  value: number;
+  flipped: boolean;
+  matched: boolean;
+  anim: number; // 0..1 flip animation progress (0=back, 1=front)
+}
 
 export class MemoryMatchGame extends BaseGame {
   manifest: GameManifest = {
@@ -54,7 +64,7 @@ export class MemoryMatchGame extends BaseGame {
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const idx = r * cols + c;
-        this.cards.push({ id: idx, x: margin + c * (w + 10), y: margin + r * (h + 10), w, h, value: values[idx], flipped: false, matched: false });
+        this.cards.push({ id: idx, x: margin + c * (w + 10), y: margin + r * (h + 10), w, h, value: values[idx], flipped: false, matched: false, anim: 0 });
       }
     }
   }
@@ -119,21 +129,39 @@ export class MemoryMatchGame extends BaseGame {
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+    // Animate flips towards target state
+    const speed = 6; // higher is faster
     for (const c of this.cards) {
-      // Card background
-      ctx.fillStyle = c.matched ? '#10B981' : c.flipped ? '#2563EB' : '#374151';
-      ctx.fillRect(c.x, c.y, c.w, c.h);
-      // Border
+      const target = c.flipped || c.matched ? 1 : 0;
+      c.anim += Math.sign(target - c.anim) * Math.min(Math.abs(target - c.anim), speed * (1 / 60));
+    }
+
+    const ICONS = ['★','♥','◆','♣','♠','☀','☂','♫','✿','☯','✦','☾','♘','⚑','✈','⚙'];
+    for (const c of this.cards) {
+      const t = c.anim;
+      // back to front flip via horizontal scale
+      const cx = c.x + c.w / 2;
+      const cy = c.y + c.h / 2;
+      ctx.save();
+      ctx.translate(cx, cy);
+      const scaleX = Math.cos(Math.PI * (1 - t));
+      ctx.scale(scaleX, 1);
+      // Card face/back color
+      const face = c.matched ? '#10B981' : '#2563EB';
+      const back = '#374151';
+      ctx.fillStyle = t > 0.5 ? face : back;
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h);
       ctx.strokeStyle = '#1F2937';
-      ctx.strokeRect(c.x, c.y, c.w, c.h);
-      // Value
-      if (c.flipped || c.matched) {
+      ctx.strokeRect(-c.w / 2, -c.h / 2, c.w, c.h);
+      if (t > 0.5) {
         ctx.fillStyle = '#FFFFFF';
         ctx.font = `${Math.floor(c.h * 0.5)}px Arial`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(String.fromCharCode(65 + c.value), c.x + c.w / 2, c.y + c.h / 2);
+        const icon = ICONS[c.value % ICONS.length];
+        ctx.fillText(icon, 0, 0);
       }
+      ctx.restore();
     }
   }
 
