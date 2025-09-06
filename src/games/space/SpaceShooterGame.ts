@@ -139,7 +139,12 @@ export class SpaceShooterGame extends BaseGame {
   private shakeMag = 0;
   private bannerText = '';
   private bannerTime = 0;
-  private bannerTime = 0;
+  private invulnTime = 0; // seconds of i-frames after hit
+  
+  // Achievement tracking
+  private bossesDefeated = 0;
+  private enemiesDestroyed = 0;
+  private powerupsCollected = 0;
 
   protected onInit(): void {
     this.player = new Vector2(this.canvas.width / 2, this.canvas.height - 60);
@@ -476,6 +481,7 @@ export class SpaceShooterGame extends BaseGame {
           bullet.pos.y = -20; // remove
           if (enemy.hp <= 0) {
             this.score += 20;
+            this.enemiesDestroyed++;
             // Dynamic drop chance
             if (Math.random() < this.getDropChance()) this.spawnPowerUp(enemy.pos.clone());
             enemy.pos.y = this.canvas.height + 100; // mark for removal
@@ -681,6 +687,7 @@ export class SpaceShooterGame extends BaseGame {
 
   private applyPowerUp(kind: PowerUp['kind']): void {
     this.pickups += 1; // counts towards currency reward
+    this.powerupsCollected++; // track for achievements
     this.services.audio.playSound('powerup');
     this.services.analytics.trackGameAction({ type: 'powerup', timestamp: new Date(), metadata: { game: 'space', kind } });
     switch (kind) {
@@ -688,7 +695,7 @@ export class SpaceShooterGame extends BaseGame {
         this.playerShield = Math.min(3, this.playerShield + 2);
         break;
       case 'spread':
-        this.weaponLevel = Math.min(3, (this.weaponLevel + 1) as 2 | 3);
+        this.weaponLevel = Math.min(3, this.weaponLevel + 1) as 1 | 2 | 3;
         break;
       case 'heal':
         this.playerHp = Math.min(3, this.playerHp + 1);
@@ -839,6 +846,7 @@ export class SpaceShooterGame extends BaseGame {
   private onBossDefeated(): void {
     if (!this.boss) return;
     this.score += 500;
+    this.bossesDefeated++;
     this.services.audio.playSound('success');
     this.services.analytics.trackFeatureUsage('space_boss_defeated', { level: 1 });
     this.boss = null;
@@ -1032,5 +1040,30 @@ export class SpaceShooterGame extends BaseGame {
       s.life -= dt;
     }
     this.popups = this.popups.filter((s) => s.life > 0);
+  }
+
+  protected onGameEnd(finalScore: any): void {
+    const survivalTimeSeconds = Math.floor((Date.now() - this.startTime) / 1000);
+    
+    // Store extended achievement data that will be picked up by getScore()
+    this.extendedGameData = {
+      waves_completed: this.waveIndex,
+      bosses_defeated: this.bossesDefeated || 0,
+      max_stage: this.stage,
+      enemies_destroyed: this.enemiesDestroyed || 0,
+      powerups_collected: this.powerupsCollected || 0,
+      survival_time: survivalTimeSeconds
+    };
+
+    // Track analytics for game-specific achievements
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'waves_completed', this.waveIndex);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'bosses_defeated', this.bossesDefeated || 0);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'max_stage', this.stage);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'enemies_destroyed', this.enemiesDestroyed || 0);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerups_collected', this.powerupsCollected || 0);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'survival_time', survivalTimeSeconds);
+
+    // Call parent which will handle the final scoring and Hub callback
+    super.onGameEnd?.(finalScore);
   }
 }

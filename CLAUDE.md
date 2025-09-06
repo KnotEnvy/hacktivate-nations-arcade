@@ -159,6 +159,74 @@ The arcade hub provides a complete gaming platform experience:
 
 #### Engagement Systems
 - **Daily Challenges**: Cross-game objectives that refresh every 24 hours
-- **Achievement System**: 15+ achievements across multiple categories
+- **Achievement System**: 70+ achievements across multiple categories with cross-game meta achievements
 - **Currency Economy**: Unified coin system for unlocking games
 - **Real-time Notifications**: Achievement unlocks, level-ups, and challenge completions
+
+## Achievement System
+
+### Comprehensive Achievement Integration
+The achievement system is fully integrated across all 7+ active games with proper data flow and analytics tracking:
+
+#### Achievement Categories
+- **Gameplay**: Basic game interactions (first jump, first match, etc.)
+- **Skill**: Performance-based achievements (high scores, speed runs, combos)
+- **Collection**: Accumulative achievements (total coins, powerups collected)
+- **Progression**: Meta achievements (games unlocked, playtime milestones)
+
+#### Cross-Game Meta Achievements
+- **Game Explorer**: Try 5 different games
+- **Arcade Master**: Score 1000+ in 3 different games  
+- **Daily Player**: Play games for 7 consecutive days
+
+#### Achievement Data Flow
+1. **Games Track Stats**: Each game implements `onGameEnd()` method to report achievement-relevant data
+2. **Extended Game Data**: Games use `extendedGameData` property to pass rich achievement data beyond basic score
+3. **Analytics Integration**: Games call `services.analytics.trackGameSpecificStat()` for achievement triggering
+4. **Hub Integration**: ArcadeHub receives extended data via `getScore()` and triggers achievement checks
+5. **Real-time Notifications**: Achievement unlocks display immediately with proper UI feedback
+
+#### Game-Specific Achievement Tracking
+
+**Runner Game** (`runner`):
+- Distance traveled, speed reached, jumps performed, powerup usage, combo chains
+
+**Space Shooter** (`space`):
+- Waves completed, bosses defeated, enemies destroyed, powerups collected, survival time, max stage
+
+**Block Puzzle** (`puzzle`):
+- Lines cleared, level reached, tetris count, unique themes experienced, max combo
+
+**Snake Game** (`snake`):
+- Snake length, final speed, food eaten, basic score milestones
+
+**Breakout Game** (`breakout`):
+- Bricks broken, levels cleared, powerups collected, total bricks destroyed
+
+**Memory Match** (`memory`):
+- Matches made, levels completed, perfect levels, fast completion time
+
+**Tap Dodge** (`tapdodge`):
+- Survival time, near misses, coins collected, max combo
+
+### Adding Achievement Support to New Games
+When creating new games, ensure proper achievement integration:
+
+1. **Extend BaseGame**: Use `src/games/shared/BaseGame.ts` which provides `extendedGameData` property
+2. **Implement onGameEnd()**: Override the `onGameEnd()` method to set achievement data:
+   ```typescript
+   protected onGameEnd(finalScore: any): void {
+     this.extendedGameData = {
+       // Game-specific achievement data
+       custom_stat: this.customStatValue,
+       // ... other stats
+     };
+     
+     // Track analytics for achievement triggering
+     this.services?.analytics?.trackGameSpecificStat?.('game-id', 'custom_stat', this.customStatValue);
+     
+     super.onGameEnd?.(finalScore);
+   }
+   ```
+3. **Define Achievements**: Add game-specific achievements to `src/data/achievements.ts` with proper `gameId` and `requirement` properties
+4. **Test Integration**: Verify achievements trigger correctly through gameplay testing

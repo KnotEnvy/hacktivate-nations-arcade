@@ -729,4 +729,22 @@ private rotatePiece(): boolean {
   isGameOver(): boolean {
     return this.gameState === 'gameOver';
   }
+
+  protected onGameEnd(finalScore: any): void {
+    this.extendedGameData = {
+      lines_cleared: this.linesCleared,
+      puzzle_level: this.level,
+      tetris_count: this.tetrisCount,
+      unique_themes: this.themesEncountered.size,
+      max_combo: this.maxCombo
+    };
+
+    this.services?.analytics?.trackGameSpecificStat?.('puzzle', 'lines_cleared', this.linesCleared);
+    this.services?.analytics?.trackGameSpecificStat?.('puzzle', 'puzzle_level', this.level);
+    this.services?.analytics?.trackGameSpecificStat?.('puzzle', 'tetris_count', this.tetrisCount);
+    this.services?.analytics?.trackGameSpecificStat?.('puzzle', 'unique_themes', this.themesEncountered.size);
+    this.services?.analytics?.trackGameSpecificStat?.('puzzle', 'max_combo', this.maxCombo);
+
+    super.onGameEnd?.(finalScore);
+  }
 }

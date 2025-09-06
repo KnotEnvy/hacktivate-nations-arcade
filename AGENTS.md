@@ -39,6 +39,93 @@
 - Register in `src/games/registry.ts`:
   `gameLoader.registerGame('<id>', async () => new NameGame())`.
 - Add catalog entry in `src/data/Games.ts` and place thumbnail under `public/games/<id>/`.
+- Implement achievement integration (see Achievement System section below).
+
+## Achievement System Integration
+
+### Complete Achievement Data Flow
+All games now implement comprehensive achievement tracking through this architecture:
+
+1. **BaseGame Enhanced**: `src/games/shared/BaseGame.ts` provides `extendedGameData` property
+2. **Game Implementation**: Each game implements `onGameEnd()` method to set achievement data
+3. **Analytics Integration**: Games call `services.analytics.trackGameSpecificStat()` 
+4. **Achievement Service**: Analytics service passes data to AchievementService for processing
+5. **Real-time UI**: Achievement unlocks trigger immediate notifications
+
+### Achievement Categories & Cross-Game Meta
+- **70+ total achievements** across all games
+- **Individual game achievements**: Game-specific milestones and performance targets
+- **Cross-game meta achievements**: 
+  - Game Explorer (try 5 different games)
+  - Arcade Master (score 1000+ in 3 different games)
+  - Daily Player (play for 7 consecutive days)
+
+### Per-Game Achievement Tracking Status
+All games fully integrated with achievement system:
+
+**✅ Runner Game** (`runner`):
+- Distance, speed, jumps, powerup usage, combo chains
+- 6 analytics tracking calls in `onGameEnd()`
+
+**✅ Space Shooter** (`space`):
+- Waves, bosses defeated, enemies destroyed, powerups, survival time, max stage
+- Achievement counters integrated throughout gameplay
+
+**✅ Block Puzzle** (`puzzle`):
+- Lines cleared, level reached, tetris count, unique themes, max combo
+- 5 analytics tracking calls in `onGameEnd()`
+
+**✅ Snake Game** (`snake`):
+- Snake length, final speed, food eaten
+- Basic achievement data with 3 analytics calls
+
+**✅ Breakout Game** (`breakout`):
+- Bricks broken, levels cleared, powerups collected
+- Real-time counters with 5 analytics tracking calls
+
+**✅ Memory Match** (`memory`):
+- Matches made, levels completed, perfect levels, fast completion
+- Time-based and precision achievements with 4 analytics calls
+
+**✅ Tap Dodge** (`tapdodge`):
+- Survival time, near misses, coins collected, max combo
+- 4 analytics tracking calls with survival time precision
+
+### Adding Achievement Support to New Games
+When creating new games, follow this pattern:
+
+```typescript
+// 1. Add achievement tracking variables
+private gameSpecificStat = 0;
+
+// 2. Implement onGameEnd() method
+protected onGameEnd(finalScore: any): void {
+  // Set extended data for Hub
+  this.extendedGameData = {
+    game_specific_stat: this.gameSpecificStat,
+    // ... other achievement-relevant data
+  };
+
+  // Track analytics for achievement triggering
+  this.services?.analytics?.trackGameSpecificStat?.('game-id', 'game_specific_stat', this.gameSpecificStat);
+  
+  // Call parent method
+  super.onGameEnd?.(finalScore);
+}
+
+// 3. Add achievements to src/data/achievements.ts
+{
+  id: 'game_achievement',
+  title: 'Achievement Title',
+  description: 'Achievement description',
+  icon: '🎯',
+  gameId: 'game-id',
+  category: 'skill',
+  requirement: { type: 'game_specific_stat', value: 10 },
+  reward: 100,
+  unlocked: false
+}
+```
 
 ## Project Goals & Roadmap Snapshot
 - Goal: Modular arcade hub with shared currency, daily challenges, achievements, and tier-based game unlocks; offline-friendly PWA; fast loads (FCP < 2s, game load < 500ms, 60fps, <300KB/game).
@@ -46,15 +133,15 @@
 - Roadmap focus: Audio polish, backend persistence (Supabase), PWA & accessibility.
 
 ## Current Status (from DOCS)
-- Foundation complete: Game SDK, loader, hub UI, currency service, analytics hooks, achievements/challenges, runner and block puzzle playable.
-- Audio: Procedural SFX via `AudioManager`; background music and volume UI pending.
+- Foundation complete: Game SDK, loader, hub UI, currency service, analytics hooks, achievements/challenges system fully integrated across all 7+ games.
+- Audio: Complete symphonic orchestral audio system with procedural SFX, hub/game background music, and full volume controls.
+- Achievement System: Fully operational with 70+ achievements across individual games and cross-game meta achievements.
 - Backend/PWA: Supabase, service worker, and A11y polish not yet integrated.
 
 ## Next Build Priorities
-- Audio polish: Add looped BGM under `public/sounds/bgm.mp3`, then:
-  `audio.loadSound('bgm', '/sounds/bgm.mp3'); audio.playSound('bgm', { loop: true, volume: 0.5 });` Ensure `AudioManager.init()` runs after a user gesture; expose `setMasterVolume`/`setSfxVolume` in a small settings UI (e.g., `components/layout/Header.tsx`).
 - Backend: Add Supabase client (`src/lib/supabase.ts`), persist currency/achievements, and prepare leaderboards. Env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 - PWA & A11y: Service worker caching for shell and game bundles; keyboard navigation and color contrast checks.
+- Game Polish: Additional games, visual effects improvements, performance optimizations.
 
 ## Security & Configuration Tips
 - Environment vars: Prefix client-safe keys with `NEXT_PUBLIC_…`; never commit secrets.
@@ -122,4 +209,4 @@ QA Checklist
 Known Follow-ups
 - Add boss laser telegraphs (warning lines) for Phase 3 fairness
 - Optionally cap dynamic drop chance to 25% if balance requires
-- Space-specific achievements/challenges (e.g., no-hit stage, defeat boss N)
+- ✅ Space-specific achievements/challenges (COMPLETED: fully integrated with achievement system)

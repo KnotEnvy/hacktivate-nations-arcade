@@ -8,22 +8,25 @@ import { GameModule, GameScore } from '@/lib/types';
 import { GAME_CONFIG } from '@/lib/constants';
 import { CurrencyService } from '@/services/CurrencyService';
 import { AudioManager } from '@/services/AudioManager';
+import { AchievementService } from '@/services/AchievementService';
 import { getGameTheme, GameTheme } from '@/lib/gameThemes';
 
 interface ThemedGameCanvasProps {
   game: GameModule | null;
   currencyService: CurrencyService;
   audioManager: AudioManager;
+  achievementService: AchievementService;
   onGameEnd?: (stats?: GameScore) => void;
 }
 
-export function ThemedGameCanvas({ game, onGameEnd, currencyService, audioManager }: ThemedGameCanvasProps) {
+export function ThemedGameCanvas({ game, onGameEnd, currencyService, audioManager, achievementService }: ThemedGameCanvasProps) {
   const { canvasRef } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
   const { isInitialized, isRunning, startGame, stopGame, pauseGame, resumeGame } = useGameModule(
     canvasRef.current,
     game,
     currencyService,
-    audioManager
+    audioManager,
+    achievementService
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');

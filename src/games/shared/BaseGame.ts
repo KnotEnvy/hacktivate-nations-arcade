@@ -14,6 +14,13 @@ export abstract class BaseGame implements GameModule {
   protected score: number = 0;
   protected pickups: number = 0;
   protected startTime: number = 0;
+  
+  // Extended game data for achievements
+  protected extendedGameData: any = null;
+  
+  // HUD controls and helpers
+  protected renderBaseHud: boolean = true; // allow games to disable base HUD if desired
+  protected getHudStartY(): number { return 100; } // where game-specific HUD should start drawing
 
   abstract manifest: GameManifest;
 
@@ -90,12 +97,15 @@ export abstract class BaseGame implements GameModule {
       multiplier
     ) ?? 0;
 
-    return {
+    const baseScore = {
       score: this.score,
       pickups: this.pickups,
       timePlayedMs,
       coinsEarned,
     };
+
+    // Return extended data if available (for achievements), otherwise base score
+    return this.extendedGameData ? { ...baseScore, ...this.extendedGameData } : baseScore;
   }
 
   restart(): void {
@@ -144,14 +154,15 @@ export abstract class BaseGame implements GameModule {
   }
 
   protected renderUI(ctx: CanvasRenderingContext2D): void {
-    // Score display
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 24px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Score: ${this.score}`, 20, 40);
-    
-    // Pickups display
-    ctx.fillText(`Coins: ${this.pickups}`, 20, 70);
+    if (this.renderBaseHud) {
+      // Score display
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 24px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText(`Score: ${this.score}`, 20, 40);
+      // Pickups display
+      ctx.fillText(`Coins: ${this.pickups}`, 20, 70);
+    }
     
     // Game-specific UI
     this.onRenderUI?.(ctx);

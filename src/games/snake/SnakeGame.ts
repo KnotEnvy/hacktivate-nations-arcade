@@ -195,6 +195,20 @@ export class SnakeGame extends BaseGame {
     return !this.isRunning;
   }
 
+  protected onGameEnd(finalScore: any): void {
+    this.extendedGameData = {
+      snake_length: this.snake.length,
+      final_speed: this.speed,
+      food_eaten: Math.floor(this.score / 10) // Each food gives 10 points
+    };
+
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'snake_length', this.snake.length);
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'final_speed', this.speed);
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'food_eaten', Math.floor(this.score / 10));
+
+    super.onGameEnd?.(finalScore);
+  }
+
   private reset(): void {
     const center = new Vector2(
       Math.floor(this.gridWidth / 2),

@@ -556,6 +556,7 @@ export function ArcadeHub() {
               game={currentGame} 
               currencyService={currencyService}
               audioManager={audioManager}
+              achievementService={achievementService}
               onGameEnd={handleGameEnd}
             />
           </div>

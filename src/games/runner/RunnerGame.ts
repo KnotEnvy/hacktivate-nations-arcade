@@ -618,6 +618,29 @@ export class RunnerGame extends BaseGame {
     }
   }
 
+  protected onGameEnd(finalScore: any): void {
+    // Store extended achievement data that will be picked up by getScore()
+    this.extendedGameData = {
+      distance: Math.floor(this.distance),
+      speed: this.gameSpeed,
+      jumps: this.jumps,
+      combo: this.comboSystem.getMaxCombo(),
+      powerupsUsed: this.powerupsUsed,
+      powerupTypesUsed: this.powerupTypesUsed.size
+    };
+
+    // Track analytics for game-specific achievements
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'distance', Math.floor(this.distance));
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'max_speed', this.gameSpeed);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'jumps', this.jumps);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'max_combo', this.comboSystem.getMaxCombo());
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerups_total', this.powerupsUsed);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerup_types', this.powerupTypesUsed.size);
+
+    // Call parent which will handle the final scoring and Hub callback
+    super.onGameEnd?.(finalScore);
+  }
+
   protected onRestart(): void {
     this.obstacles = [];
     this.coins = [];
@@ -627,7 +650,7 @@ export class RunnerGame extends BaseGame {
     this.activePowerUps = [];
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
-    this.comboSystem = new ComboSystem();
+    this.comboSystem?.resetAll?.();
     this.environmentSystem = new EnvironmentSystem();
     this.gameSpeed = 1;
     this.distance = 0;

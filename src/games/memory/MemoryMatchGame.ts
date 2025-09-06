@@ -30,8 +30,18 @@ export class MemoryMatchGame extends BaseGame {
   private flipCooldown = 0; // time to wait before flipping back
   private moves = 0;
   private grid = { rows: 4, cols: 4 };
+  
+  // Achievement tracking
+  private levelStartTime = 0;
+  private matchesMadeThisGame = 0;
+  private levelsCompletedThisGame = 0;
+  private perfectLevelsThisGame = 0;
 
   protected onInit(): void {
+    this.levelStartTime = Date.now();
+    this.matchesMadeThisGame = 0;
+    this.levelsCompletedThisGame = 0;
+    this.perfectLevelsThisGame = 0;
     this.setupBoard();
   }
 
@@ -42,6 +52,10 @@ export class MemoryMatchGame extends BaseGame {
     this.firstPick = null;
     this.secondPick = null;
     this.flipCooldown = 0;
+    this.levelStartTime = Date.now();
+    this.matchesMadeThisGame = 0;
+    this.levelsCompletedThisGame = 0;
+    this.perfectLevelsThisGame = 0;
     this.setupBoard();
   }
 
@@ -79,6 +93,7 @@ export class MemoryMatchGame extends BaseGame {
           this.secondPick.matched = true;
           this.score += 100;
           this.pickups += 1;
+          this.matchesMadeThisGame += 1;
           this.services.audio.playSound('success');
         } else {
           this.firstPick.flipped = false;
@@ -94,6 +109,16 @@ export class MemoryMatchGame extends BaseGame {
       // Award small bonus based on efficiency
       const efficiency = Math.max(0.2, (this.grid.rows * this.grid.cols) / (this.moves * 2));
       this.score += Math.floor(200 * efficiency);
+      
+      // Track achievements
+      this.levelsCompletedThisGame += 1;
+      const levelTime = (Date.now() - this.levelStartTime) / 1000; // seconds
+      const perfectMoves = (this.grid.rows * this.grid.cols) / 2; // minimum possible moves
+      const isPerfect = this.moves === perfectMoves;
+      if (isPerfect) {
+        this.perfectLevelsThisGame += 1;
+      }
+      
       this.endGame();
     }
 
@@ -169,7 +194,32 @@ export class MemoryMatchGame extends BaseGame {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'left';
-    ctx.fillText(`Score: ${this.score}`, 16, 24);
-    ctx.fillText(`Moves: ${this.moves}`, 16, 44);
+    // BaseGame renders Score and Coins; show game-specific info below
+    ctx.fillText(`Moves: ${this.moves}`, 16, this.getHudStartY());
+  }
+
+  protected onGameEnd(finalScore: any): void {
+    const totalLevelTime = (Date.now() - this.levelStartTime) / 1000; // seconds
+    const perfectMoves = (this.grid.rows * this.grid.cols) / 2; // minimum possible moves
+    const isPerfect = this.moves === perfectMoves;
+    const fastCompletion = totalLevelTime <= 30 ? totalLevelTime : 0; // Track if under 30 seconds
+
+    this.extendedGameData = {
+      matches_made: this.matchesMadeThisGame,
+      levels_completed: this.levelsCompletedThisGame,
+      perfect_levels: this.perfectLevelsThisGame + (isPerfect ? 1 : 0), // Include current level if perfect
+      fast_completion: fastCompletion,
+      total_moves: this.moves,
+      completion_time: totalLevelTime
+    };
+
+    this.services?.analytics?.trackGameSpecificStat?.('memory', 'matches_made', this.matchesMadeThisGame);
+    this.services?.analytics?.trackGameSpecificStat?.('memory', 'levels_completed', this.levelsCompletedThisGame + 1);
+    this.services?.analytics?.trackGameSpecificStat?.('memory', 'perfect_levels', this.perfectLevelsThisGame + (isPerfect ? 1 : 0));
+    if (fastCompletion > 0) {
+      this.services?.analytics?.trackGameSpecificStat?.('memory', 'fast_completion', fastCompletion);
+    }
+
+    super.onGameEnd?.(finalScore);
   }
 }

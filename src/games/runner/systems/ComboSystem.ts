@@ -4,10 +4,12 @@ export class ComboSystem {
   private comboTimer: number = 0;
   private comboTimeLimit: number = 3.5; // seconds
   private multiplier: number = 1;
+  private maxCombo: number = 0;
   
   addCoin(): number {
     this.combo++;
     this.comboTimer = this.comboTimeLimit;
+    if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     
     // Calculate multiplier based on combo
     if (this.combo >= 10) {
@@ -46,5 +48,16 @@ export class ComboSystem {
   
   getTimeLeft(): number {
     return this.comboTimer;
+  }
+
+  getMaxCombo(): number {
+    return this.maxCombo;
+  }
+
+  resetAll(): void {
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.multiplier = 1;
+    this.maxCombo = 0;
   }
 }

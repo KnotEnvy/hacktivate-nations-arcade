@@ -5,12 +5,14 @@ import { useInput } from '@/hooks/useInput';
 import { AudioManager } from '@/services/AudioManager';
 import { Analytics } from '@/services/Analytics';
 import { CurrencyService } from '@/services/CurrencyService';
+import { AchievementService } from '@/services/AchievementService';
 
 export function useGameModule(
   canvas: HTMLCanvasElement | null,
   game: GameModule | null,
   currencyService: CurrencyService,
-  audioManager: AudioManager
+  audioManager: AudioManager,
+  achievementService: AchievementService
 ) {
   const { input } = useInput(canvas);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -26,8 +28,9 @@ export function useGameModule(
     const audio = audioManager; // Use the passed AudioManager instance
     const analytics = new Analytics();
     const currency = currencyService;
+    const achievements = achievementService;
 
-    const services: Services = { input, audio, analytics, currency };
+    const services: Services = { input, audio, analytics, currency, achievements };
     servicesRef.current = services;
 
     // AudioManager is already initialized in the ArcadeHub, no need to init again
@@ -41,7 +44,7 @@ export function useGameModule(
     return () => {
       game.destroy?.();
     };
-  }, [canvas, game, currencyService, audioManager, input]);
+  }, [canvas, game, currencyService, audioManager, achievementService, input]);
 
   useEffect(() => {
     if (!isInitialized || !game) return;

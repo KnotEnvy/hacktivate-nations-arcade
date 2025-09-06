@@ -43,6 +43,7 @@ export class Analytics {
   private conversionFunnel: ConversionFunnel;
   private sessionEvents: GameAction[] = [];
   private isInitialized = false;
+  private achievementService: any = null;
 
   // PostHog integration (when available)
   private posthog: any = null;
@@ -52,8 +53,13 @@ export class Analytics {
     this.conversionFunnel = this.loadConversionFunnel();
   }
 
-  async init(): Promise<void> {
+  async init(achievementService?: any): Promise<void> {
     try {
+      // Store reference to achievement service for triggering checks
+      if (achievementService) {
+        this.achievementService = achievementService;
+      }
+
       // Initialize PostHog if available (for production)
       if (typeof window !== 'undefined' && (window as any).posthog) {
         this.posthog = (window as any).posthog;
@@ -223,8 +229,10 @@ export class Analytics {
       ...metadata,
     });
 
-    // Note: Achievement checking should be handled by the game service layer
-    // that has access to the AchievementService
+    // Trigger achievement checks if service is available
+    if (this.achievementService) {
+      this.achievementService.trackGameSpecificStat(gameId, statType, value);
+    }
   }
 
   // Helper methods for common game stats

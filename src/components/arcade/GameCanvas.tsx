@@ -9,21 +9,24 @@ import { GAME_CONFIG } from '@/lib/constants';
 import { Button } from '@/components/ui/Button';
 import { CurrencyService } from '@/services/CurrencyService';
 import { AudioManager } from '@/services/AudioManager';
+import { AchievementService } from '@/services/AchievementService';
 
 interface GameCanvasProps {
   game: GameModule | null;
   currencyService: CurrencyService;
   audioManager: AudioManager;
+  achievementService: AchievementService;
   onGameEnd?: (stats?: GameScore) => void;
 }
 
-export function GameCanvas({ game, onGameEnd, currencyService, audioManager }: GameCanvasProps) {
+export function GameCanvas({ game, onGameEnd, currencyService, audioManager, achievementService }: GameCanvasProps) {
   const { canvasRef, ctx } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
   const { isInitialized, isRunning, startGame, stopGame, pauseGame, resumeGame } = useGameModule(
     canvasRef.current,
     game,
     currencyService,
-    audioManager
+    audioManager,
+    achievementService
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');
