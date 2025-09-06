@@ -1,5 +1,46 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <rect width="512" height="512" fill="#1F2937" />
-  <text x="256" y="256" text-anchor="middle" font-size="48" font-weight="bold" fill="#E5E7EB" dy="-16">COMING</text>
-  <text x="256" y="296" text-anchor="middle" font-size="48" font-weight="bold" fill="#E5E7EB">SOON</text>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0B1020"/>
+      <stop offset="100%" stop-color="#1F2937"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Bricks -->
+  <g>
+    <rect x="60" y="80" width="70" height="20" rx="3" fill="#60A5FA"/>
+    <rect x="140" y="80" width="70" height="20" rx="3" fill="#60A5FA"/>
+    <rect x="220" y="80" width="70" height="20" rx="3" fill="#60A5FA"/>
+    <rect x="300" y="80" width="70" height="20" rx="3" fill="#60A5FA"/>
+    <rect x="380" y="80" width="70" height="20" rx="3" fill="#60A5FA"/>
+
+    <rect x="60" y="110" width="70" height="20" rx="3" fill="#F59E0B"/>
+    <rect x="140" y="110" width="70" height="20" rx="3" fill="#F59E0B"/>
+    <rect x="220" y="110" width="70" height="20" rx="3" fill="#F59E0B"/>
+    <rect x="300" y="110" width="70" height="20" rx="3" fill="#F59E0B"/>
+    <rect x="380" y="110" width="70" height="20" rx="3" fill="#F59E0B"/>
+
+    <rect x="60" y="140" width="70" height="20" rx="3" fill="#EF4444"/>
+    <rect x="140" y="140" width="70" height="20" rx="3" fill="#EF4444"/>
+    <rect x="220" y="140" width="70" height="20" rx="3" fill="#EF4444"/>
+    <rect x="300" y="140" width="70" height="20" rx="3" fill="#EF4444"/>
+    <rect x="380" y="140" width="70" height="20" rx="3" fill="#EF4444"/>
+  </g>
+
+  <!-- Ball -->
+  <circle cx="260" cy="230" r="10" fill="#FBBF24"/>
+
+  <!-- Paddle -->
+  <rect x="206" y="360" width="140" height="16" rx="8" fill="#22D3EE"/>
+
+  <!-- Motion lines -->
+  <g stroke="#FFFFFF" opacity="0.3" stroke-width="3">
+    <path d="M240 320 Q 250 300 260 280" fill="none"/>
+    <path d="M260 280 Q 270 260 260 240" fill="none"/>
+  </g>
+
+  <!-- Title strip -->
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.6)"/>
+  <text x="256" y="470" text-anchor="middle" font-size="28" font-weight="bold" fill="#60A5FA">MINI BREAKOUT</text>
 </svg>

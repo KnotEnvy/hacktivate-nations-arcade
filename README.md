@@ -40,9 +40,10 @@ Each game implements the same `GameModule` interface and relies on shared servic
 1. Create a folder inside `src/games` for your game module.
 2. Implement the `GameModule` interface defined in `src/games/shared/GameModule.ts` or extend `BaseGame` from `src/games/shared/BaseGame.ts`.
 3. Register the game in `src/games/registry.ts` so the loader can discover it.
-4. Use services from `src/services` for input, audio, analytics and currency rewards.
-5. Run `npm run dev` and select your game from the arcade hub to test it locally.
-6. Submit a pull request with your game and any assets under `public/`.
+4. Add a thumbnail under `public/games/<id>/<id>-thumb.svg` (512x512). Keep the house style (simple shapes, bold colors) for visual consistency in the hub.
+5. Use services from `src/services` for input, audio, analytics and currency rewards.
+6. Run `npm run dev` and select your game from the arcade hub to test it locally.
+7. Submit a pull request with your game and any assets under `public/`.
 
 ## Scripts
 
