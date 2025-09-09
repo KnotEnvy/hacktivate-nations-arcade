@@ -366,7 +366,7 @@ export function ArcadeHub() {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4" data-testid="arcade-root">
       {/* Header */}
       <header className="relative flex justify-between items-center mb-8 bg-gradient-to-r from-purple-800 to-purple-900 rounded-lg px-4 py-3 shadow-lg">
         <div className="flex items-center gap-4">
@@ -446,7 +446,7 @@ export function ArcadeHub() {
       )}
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto">
+      <main className="max-w-7xl mx-auto" data-testid="arcade-hub">
         {showHub ? (
           <div className="space-y-6">
             {/* Tab Navigation */}

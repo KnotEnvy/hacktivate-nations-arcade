@@ -1,34 +1,45 @@
 # Test 101 - HacktivateNations Arcade Testing Suite
 
-## 🎯 Current Testing Status
+## ðŸŽ¯ Current Testing Status
 
-### **Coverage Summary**
-- **Overall**: 30.47% services, 27.27% lib coverage (significantly improved!)
-- **Unit Tests**: 7 test suites, 77 total tests (49 passing, 28 need fixes)
-- **Integration/E2E**: Comprehensive plan created, ready for implementation
+### **Coverage Summary (unit)**
+- Fresh run snapshot (global): ~6â€“7% lines (services/lib only; app/components excluded). See `coverage/coverage-summary.json` for details.
+- Note: Prior figures (30% services/27% lib) reflected a narrower include set; weâ€™ll lift coverage and re-align thresholds as we stabilize.
 
-This repo uses Jest + ts-jest to test TypeScript modules with comprehensive mocking for Web Audio API, Canvas API, and localStorage. The test suite now covers critical services and foundational systems.
+### **Unit Tests**
+- 7 test suites, 77 total tests (49 passing, 28 need fixes)
+
+### **E2E (Playwright) â€” Implemented**
+- Framework added with webServer auto-boot and HTML report.
+- Passing suites (Chromium): 5/5
+  - Smoke: land + hub visible
+  - Smoke: start Runner and see canvas
+  - Tabs navigation: Games â‡„ Challenges â‡„ Achievements
+  - Audio settings: open, adjust sliders, mute, close
+  - Theme presence: title + ready overlay in game view
+
+This repo uses Jest + ts-jest for unit tests and Playwright for E2E. Jest includes mocks for Web Audio API, Canvas API, and localStorage.
 
 ---
 
-## 📋 What's Currently Tested
+## ðŸ“‹ What's Currently Tested
 
-### **✅ Core Services (Well Covered)**
+### **âœ… Core Services (Well Covered)**
 - **CurrencyService** (85% coverage): Reward calculation, add/spend behavior, storage, change listeners
 - **AchievementService** (66% coverage): Unlocking logic by requirement and `gameId` filtering  
 - **GameLoader** (84% coverage): Registration, discovery, graceful handling of unknown IDs
 - **UserServices** (87% coverage): Profile management, experience/leveling, stats tracking
 - **Analytics** (59% coverage): Session tracking, player insights, metrics calculation
 
-### **✅ New Systems (100% Covered)**
+### **âœ… New Systems (100% Covered)**
 - **GameThemes** (100% coverage): All 5 themes validated (colors, fonts, effects, animations)
 - **Constants** (100% coverage): Economy settings, configuration values
 
-### **⚠️ Partially Tested**
+### **âš ï¸ Partially Tested**
 - **AudioManager** (10% coverage): Basic mocking setup, needs implementation alignment
 - **BaseGame** (0% coverage): Complex game engine logic (intentionally deferred)
 
-### **❌ Not Yet Tested**
+### **âŒ Not Yet Tested**
 - **React Components**: Excluded from unit tests (will be covered by E2E)
 - **Hooks**: useCanvas, useGameModule, useInput (complex DOM integration)
 - **Game Engines**: Individual games (RunnerGame, SnakeGame, etc.)
@@ -37,7 +48,7 @@ This repo uses Jest + ts-jest to test TypeScript modules with comprehensive mock
 
 ---
 
-## 🧪 Test Infrastructure
+## ðŸ§ª Test Infrastructure
 
 ### **Current Setup**
 ```bash
@@ -50,26 +61,26 @@ jest-environment-jsdom@30.1.2
 ```
 
 ### **Key Configuration Files**
-- `jest.config.js` – ts-jest preset, jsdom env, `@/*` alias mapping, coverage exclusions
-- `jest.setup.ts` – Enhanced with Web Audio API mocks, Canvas API mocks, localStorage cleanup
+- `jest.config.js` â€“ ts-jest preset, jsdom env, `@/*` alias mapping, coverage exclusions
+- `jest.setup.ts` â€“ Enhanced with Web Audio API mocks, Canvas API mocks, localStorage cleanup
 
 ### **Current Test Files**
 ```
 src/services/__tests__/
-├── CurrencyService.test.ts      ✅ 85% coverage
-├── AchievementService.test.ts   ✅ 66% coverage  
-├── GameLoader.test.ts           ✅ 84% coverage
-├── UserServices.test.ts         ⚠️ 87% coverage (some fixes needed)
-├── Analytics.test.ts            ✅ 59% coverage
-└── AudioManager.test.ts         ⚠️ 10% coverage (mock alignment needed)
+â”œâ”€â”€ CurrencyService.test.ts      âœ… 85% coverage
+â”œâ”€â”€ AchievementService.test.ts   âœ… 66% coverage  
+â”œâ”€â”€ GameLoader.test.ts           âœ… 84% coverage
+â”œâ”€â”€ UserServices.test.ts         âš ï¸ 87% coverage (some fixes needed)
+â”œâ”€â”€ Analytics.test.ts            âœ… 59% coverage
+â””â”€â”€ AudioManager.test.ts         âš ï¸ 10% coverage (mock alignment needed)
 
 src/lib/__tests__/
-└── gameThemes.test.ts           ✅ 100% coverage
+â””â”€â”€ gameThemes.test.ts           âœ… 100% coverage
 ```
 
 ---
 
-## 🚀 How to Run Tests
+## ðŸš€ How to Run Tests
 
 ### **Basic Commands**
 ```bash
@@ -99,34 +110,41 @@ npm test -- --silent
 ```
 
 ---
+## dYZr E2E Testing (Playwright)
 
-## 🎮 E2E Testing Strategy (Ready to Implement)
+### **Installed Packages**
+ ```bash 
+@playwright/test
+ ``` 
 
-### **Framework Choice: Playwright**
-```bash
-# Installation commands ready:
-npm install --save-dev @playwright/test
-npm install --save-dev @axe-core/playwright
-npm install --save-dev lighthouse-ci
-```
+### **Suites Added (Passing)**
+-  `tests/e2e/first-time-user.spec.ts` 
+-  `tests/e2e/tabs-navigation.spec.ts` 
+-  `tests/e2e/audio-settings.spec.ts` 
+-  `tests/e2e/theme-presence.spec.ts` 
 
-### **Critical E2E Test Suites Planned**
-1. **Theme System Testing**: Verify all 5 games load correct themes (Neon Sprint, Retro Arcade, etc.)
-2. **Game Play Flows**: Complete user journeys from game selection → play → coin earning
-3. **Mobile Responsive**: Tab navigation, touch controls, viewport adaptations
-4. **Audio Integration**: Settings modal, volume controls, mute functionality
-5. **Achievement/Challenge**: Notification system, progression tracking
-6. **Performance**: Lighthouse audits, accessibility compliance
+### **data-testid Conventions (added)**
+- Hub:  `arcade-root`, `arcade-hub` 
+- Carousel:  `game-carousel`, `game-card-<id>`, `game-play-<id>`, `game-unlock-<id>` 
+- Onboarding:  `onboarding-overlay`, `onboarding-finish` 
+- Audio:  `audio-settings-modal`, `master-volume-slider`, `sfx-volume-slider`, `music-volume-slider`, `mute-toggle`, `audio-settings-close` 
+- Panels:  `daily-challenges`, `achievements-panel` 
 
-### **Test Data Strategy**
-- data-testid attributes following convention: `<component>-<element>-<identifier>`
-- Isolated test environments with clean localStorage per test
-- Cross-browser testing: Chrome, Firefox, Safari
-- Mobile testing: iOS Safari, Android Chrome
+### **Running E2E**
+ ```bash 
+npm run e2e:install   # first time only (browser binaries)
+npm run e2e           # headless run with HTML report
+npm run e2e:ui        # interactive UI runner
+npm run e2e:headed    # visible browser
+npm run e2e:report    # open last HTML report
+ ``` 
 
+### **Notes**
+- Onboarding overlay is suppressed in tests via  `page.addInitScript(() => localStorage.setItem( 'hacktivate-onboarding-shown','true')) ` and defensive dismissal if present. 
+- Dev server auto-starts from  `playwright.config.ts` (`webServer`). 
 ---
 
-## 🛠️ Development Guidelines
+## ðŸ› ï¸ Development Guidelines
 
 ### **Adding Unit Tests**
 - **Target**: Services, utilities, pure logic functions
@@ -163,24 +181,24 @@ describe('ServiceName', () => {
 
 ---
 
-## 📊 Known Issues & Next Steps
+## ðŸ“Š Known Issues & Next Steps
 
-### **Immediate Fixes Needed**
-1. **AudioManager Tests**: Align mocks with actual implementation
-2. **UserServices**: Fix onLevelUp method or adjust test expectations  
-3. **Analytics**: Some async behavior timing issues
+### **Immediate Fixes Needed (Unit)**
+1. **UserServices**: Add/align level-up listener API or update tests
+2. **Analytics**: Add missing methods and stabilize time-based tests with fake timers
+3. **AudioManager**: Ensure mocks match implementation
 
 ### **Phase 1 Priorities**
-- [ ] Fix failing unit tests (AudioManager, UserServices)
-- [ ] Add ChallengeService and InputManager tests
-- [ ] Set up Playwright E2E framework
-- [ ] Implement core game play journey tests
+- [ ] Fix failing unit tests (UserServices, Analytics, AudioManager)
+- [ ] Add ChallengeService and InputManager unit tests
+- [x] Set up Playwright E2E framework
+- [x] Implement core smoke suites (hub, game start, tabs, audio, theme)
 
 ### **Phase 2 Expansion**
-- [ ] Component testing with React Testing Library
+- [ ] Component tests for key widgets (optional)
 - [ ] Visual regression testing
-- [ ] Performance benchmarking
-- [ ] Cross-browser E2E test matrix
+- [ ] Performance benchmarking & Lighthouse CI
+- [ ] Cross-browser E2E matrix (Firefox/WebKit)
 
 ### **Phase 3 Advanced**
 - [ ] Load testing for concurrent users
@@ -190,14 +208,14 @@ describe('ServiceName', () => {
 
 ---
 
-## 🏆 Success Metrics
+## ðŸ† Success Metrics
 
 ### **Current Achievement**
-- ✅ **13x Coverage Improvement**: From 2.25% to 30.47% in services
-- ✅ **7 Test Suites**: Covering all critical business logic
-- ✅ **Comprehensive Mocking**: Web Audio, Canvas, localStorage
-- ✅ **Theme System**: 100% coverage of visual theming system
-- ✅ **E2E Strategy**: Complete implementation roadmap
+- âœ… **13x Coverage Improvement**: From 2.25% to 30.47% in services
+- âœ… **7 Test Suites**: Covering all critical business logic
+- âœ… **Comprehensive Mocking**: Web Audio, Canvas, localStorage
+- âœ… **Theme System**: 100% coverage of visual theming system
+- âœ… **E2E Strategy**: Complete implementation roadmap
 
 ### **Quality Gates**
 - **Unit Tests**: Must pass before deployment
@@ -206,4 +224,4 @@ describe('ServiceName', () => {
 - **Performance**: LCP < 2.5s, FID < 100ms
 - **Accessibility**: WCAG 2.1 AA compliance
 
-The testing foundation is now solid and ready for both immediate bug fixes and comprehensive E2E test implementation! 🎮✨
+The testing foundation is now solid and ready for both immediate bug fixes and comprehensive E2E test implementation! ðŸŽ®âœ¨

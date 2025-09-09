@@ -85,7 +85,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
   const tiers = Array.from(new Set(games.map(g => g.tier))).sort((a, b) => a - b);
 
   return (
-    <div className="w-full space-y-8">
+    <div className="w-full space-y-8" data-testid="game-carousel">
       <h2 className="text-2xl font-bold text-white mb-6 text-center">Game Arcade</h2>
 
       {tiers.map(tier => (
@@ -122,6 +122,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
               return (
                 <div
                   key={game.id}
+                  data-testid={`game-card-${game.id}`}
                   className={`game-card w-72 flex-shrink-0 ${
                     selectedGameId === game.id ? 'ring-2 ring-primary-400' : ''
                   }`}
@@ -148,6 +149,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
 
                     {unlocked ? (
                       <button
+                        data-testid={`game-play-${game.id}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           onGameSelect(game.id);
@@ -158,6 +160,7 @@ export function GameCarousel({ games, unlockedTiers, currentCoins, onGameSelect,
                       </button>
                     ) : canUnlock ? (
                       <button
+                        data-testid={`game-unlock-${game.id}`}
                         onClick={(e) => {
                           e.stopPropagation();
                           onGameUnlock(game.id, cost);

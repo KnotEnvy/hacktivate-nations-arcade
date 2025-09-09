@@ -50,7 +50,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" data-testid="audio-settings-modal">
       <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 border border-purple-600">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-bold text-white">🔊 Audio Settings</h3>
@@ -70,6 +70,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
               <span className="text-purple-400">{Math.round(masterVolume * 100)}%</span>
             </div>
             <input
+              data-testid="master-volume-slider"
               type="range"
               min="0"
               max="1"
@@ -87,6 +88,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
               <span className="text-purple-400">{Math.round(sfxVolume * 100)}%</span>
             </div>
             <input
+              data-testid="sfx-volume-slider"
               type="range"
               min="0"
               max="1"
@@ -104,6 +106,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
               <span className="text-purple-400">{Math.round(musicVolume * 100)}%</span>
             </div>
             <input
+              data-testid="music-volume-slider"
               type="range"
               min="0"
               max="1"
@@ -118,6 +121,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
           <div className="flex items-center justify-between py-2">
             <span className="text-white font-medium">Mute All Audio</span>
             <button
+              data-testid="mute-toggle"
               onClick={handleMuteToggle}
               className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
                 isMuted ? 'bg-gray-600' : 'bg-purple-600'
@@ -166,6 +170,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
         <div className="flex gap-3 mt-6">
           <button
             onClick={onClose}
+            data-testid="audio-settings-close"
             className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
           >
             Close

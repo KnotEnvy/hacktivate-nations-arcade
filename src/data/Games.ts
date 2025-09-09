@@ -37,7 +37,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Break bricks with a paddle. Coming soon!'
+    description: 'Break bricks with a paddle.'
   },
   {
     id: 'memory',
@@ -46,7 +46,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['touch'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Flip cards to find pairs. Coming soon!'
+    description: 'Flip cards to find pairs!'
   },
   {
     id: 'tapdodge',
@@ -55,7 +55,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['touch'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Tap to dodge obstacles. Coming soon!'
+    description: 'Tap to dodge obstacles.'
   },
 
   // Tier 1

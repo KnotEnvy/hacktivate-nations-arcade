@@ -39,7 +39,7 @@ export function DailyChallenges({ challengeService, onChallengeComplete }: Daily
   }
 
   return (
-    <div className="arcade-panel">
+    <div className="arcade-panel" data-testid="daily-challenges">
       <h3 className="text-lg font-bold text-white mb-4">🎯 Daily Challenges</h3>
       
       <div className="space-y-3">

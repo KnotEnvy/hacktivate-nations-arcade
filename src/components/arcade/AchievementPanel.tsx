@@ -34,7 +34,7 @@ export function AchievementPanel({ achievementService }: AchievementPanelProps) 
   const unlockedCount = achievements.filter(a => a.unlocked).length;
 
   return (
-    <div className="arcade-panel">
+    <div className="arcade-panel" data-testid="achievements-panel">
       <div className="flex justify-between items-center mb-4">
         <h3 className="text-lg font-bold text-white">🏆 Achievements</h3>
         <div className="text-sm text-gray-300">
