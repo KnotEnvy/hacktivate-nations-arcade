@@ -139,7 +139,7 @@
 - ✅ **Community contributions**: Clear game module system
 
 ### **What Developers Can Start Building**
-1. **Second game** (Puzzle or Space Shooter)
+1. **Second game** (Asteroids or Color Drop)
 2. **Audio effects** (jump, coin, game over sounds)
 3. **Daily challenge system** (cross-game objectives)
 4. **Achievement system** (using existing analytics)
