@@ -124,7 +124,7 @@ We'll build this iteratively, starting with core infrastructure and progressivel
 #### 7.1 Supabase Integration - **ARCHITECTURE READY**
 - [ ] User authentication flow
 - [ ] Database schema for users, games, progress
-- [ ] Real-time currency sync across devices
+- [ ] Real-time sync across devices
 - [ ] Cloud save/load functionality
 - [ ] Leaderboards and social features
 
