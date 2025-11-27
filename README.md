@@ -58,3 +58,15 @@ Each game implements the same `GameModule` interface and relies on shared servic
 
 Contributions are welcome! Check out the docs in `DOCS/` for the development plan and product requirements. Feel free to open issues or pull requests with ideas, bug fixes or new games.
 
+## Supabase Setup (persistence)
+
+Add environment variables to `.env.local` (or your deployment provider):
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=... # server-only, never ship to the client
+```
+
+Use `getSupabaseBrowserClient` or `createSupabaseServerClient` from `src/lib/supabase.ts` to talk to Supabase. Database typings live in `src/lib/supabase.types.ts`, and `SupabaseArcadeService` (in `src/services`) centralizes calls for profiles, wallets, sessions, achievements, and leaderboards. Sign-in uses a magic-link modal in the hub header, with the callback handled at `/auth/callback`.
+

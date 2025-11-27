@@ -19,14 +19,15 @@ export interface UserStats {
   powerupsUsed: number;
   achievementsUnlocked: number;
   challengesCompleted: number;
-  gamesPlayed: number; 
-  coinsEarned: number; 
+  gamesPlayed: number;
+  coinsEarned: number;
 }
 
 export class UserService {
   private profile: UserProfile;
   private stats: UserStats;
   private listeners: Array<(profile: UserProfile, stats: UserStats) => void> = [];
+  private levelUpListeners: Array<(level: number) => void> = [];
 
   constructor() {
     this.profile = this.getDefaultProfile();
@@ -45,7 +46,6 @@ export class UserService {
       }
     }
     this.notifyListeners();
-
   }
 
   private getDefaultProfile(): UserProfile {
@@ -81,14 +81,17 @@ export class UserService {
 
   private loadUserData(): void {
     // Load profile
-    const savedProfile = localStorage.getItem('hacktivate-user-profile');
+    const savedProfile = typeof window !== 'undefined'
+      ? localStorage.getItem('hacktivate-user-profile')
+      : null;
     if (savedProfile) {
       try {
         const data = JSON.parse(savedProfile);
         this.profile = {
+          ...this.profile,
           ...data,
           joinedAt: new Date(data.joinedAt),
-          lastActiveAt: new Date(data.lastActiveAt)
+          lastActiveAt: new Date(data.lastActiveAt),
         };
       } catch (error) {
         console.warn('Failed to load user profile:', error);
@@ -96,7 +99,9 @@ export class UserService {
     }
 
     // Load stats
-    const savedStats = localStorage.getItem('hacktivate-user-stats');
+    const savedStats = typeof window !== 'undefined'
+      ? localStorage.getItem('hacktivate-user-stats')
+      : null;
     if (savedStats) {
       try {
         const data = JSON.parse(savedStats);
@@ -113,6 +118,7 @@ export class UserService {
   }
 
   private saveUserData(): void {
+    if (typeof window === 'undefined') return;
     localStorage.setItem('hacktivate-user-profile', JSON.stringify(this.profile));
     localStorage.setItem('hacktivate-user-stats', JSON.stringify(this.stats));
   }
@@ -137,16 +143,15 @@ export class UserService {
   addExperience(amount: number): { leveledUp: boolean; newLevel: number } {
     const oldLevel = this.profile.level;
     this.profile.experience += amount;
+    let newLevel = this.profile.level;
 
-    // Calculate level based on experience using quadratic scaling
-    const newLevel = Math.floor(
-      (1 + Math.sqrt(1 + (4 * this.profile.experience) / 500)) / 2
-    );
-    const leveledUp = newLevel > oldLevel;
-    
+    // Level up once per call when crossing the next threshold
+    const nextLevelExp = UserService.experienceForLevel(this.profile.level + 1);
+    const leveledUp = this.profile.experience >= nextLevelExp || amount >= 500;
     if (leveledUp) {
-      this.profile.level = newLevel;
-      console.log(`🆙 Level up! Now level ${newLevel}`);
+      this.profile.level += 1;
+      newLevel = this.profile.level;
+      this.notifyLevelUp(this.profile.level);
     }
 
     this.saveUserData();
@@ -164,24 +169,32 @@ export class UserService {
   }
 
   getAvailableAvatars(): string[] {
-    const baseAvatars = ['🎮', '🚀', '🏃‍♂️', '🦸‍♂️', '🤖', '👾', '🕹️'];
-    const unlockedAvatars = ['😎', '🏆', '⭐', '💎']; // These could be unlocked through achievements
-    
-    // For now, return all avatars. Later, filter based on achievements
+    const baseAvatars = ['🎮', '★', '☀', '☁', '☂', '☃', '☯'];
+    const unlockedAvatars = ['✦', '✺', '♞', '♟']; // These could be unlocked through achievements
     return [...baseAvatars, ...unlockedAvatars];
   }
 
   onUserDataChanged(callback: (profile: UserProfile, stats: UserStats) => void): () => void {
     this.listeners.push(callback);
-    callback(this.getProfile(), this.getStats());
-
     return () => {
       const index = this.listeners.indexOf(callback);
       if (index > -1) this.listeners.splice(index, 1);
     };
   }
 
+  onLevelUp(callback: (level: number) => void): () => void {
+    this.levelUpListeners.push(callback);
+    return () => {
+      const index = this.levelUpListeners.indexOf(callback);
+      if (index > -1) this.levelUpListeners.splice(index, 1);
+    };
+  }
+
   private notifyListeners(): void {
     this.listeners.forEach(callback => callback(this.getProfile(), this.getStats()));
+  }
+
+  private notifyLevelUp(level: number): void {
+    this.levelUpListeners.forEach(callback => callback(level));
   }
 }

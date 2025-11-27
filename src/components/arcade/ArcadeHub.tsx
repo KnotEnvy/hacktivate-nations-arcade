@@ -19,7 +19,30 @@ import { UserProfile } from './UserProfiles';
 import { AnalyticsOverview } from './AnalyticsOverview';
 import { OnboardingOverlay } from './OnboardingOverlay';
 import { AudioSettings } from './AudioSettings';
+import { AuthModal } from '@/components/auth/AuthModal';
+import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
+import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { LeaderboardPanel } from './LeaderboardPanel';
+import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
+import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { AVAILABLE_GAMES } from '@/data/Games';
+
+interface GameEndData {
+  score?: number;
+  coinsEarned?: number;
+  distance?: number;
+  speed?: number;
+  combo?: number;
+  jumps?: number;
+  powerupsUsed?: number;
+  powerupTypesUsed?: string[];
+  linesCleared?: number;
+  level?: number;
+  tetrisCount?: number;
+  uniqueThemes?: number;
+  timePlayedMs?: number;
+  pickups?: number;
+}
 
 export function ArcadeHub() {
   const [currentGame, setCurrentGame] = useState<GameModule | null>(null);
@@ -46,6 +69,36 @@ export function ArcadeHub() {
   }>>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAudioSettings, setShowAudioSettings] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [supabaseService, setSupabaseService] = useState<SupabaseArcadeService | null>(null);
+  const addNotification = useCallback((type: 'achievement' | 'challenge' | 'levelup', title: string, message: string) => {
+    const notification = {
+      id: `${Date.now()}-${Math.random()}`,
+      type,
+      title,
+      message,
+      timestamp: new Date()
+    };
+    
+    setNotifications(prev => [notification, ...prev.slice(0, 4)]); // Keep only 5 notifications
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+    }, 5000);
+  }, []);
+  const {
+    session,
+    profile,
+    loading: authLoading,
+    error: authError,
+    emailSent,
+    authDisabled,
+    signInWithEmail,
+    signInWithPassword,
+    signUpWithPassword,
+    signOut,
+  } = useSupabaseAuth();
 
   useEffect(() => {
     currencyService.init();
@@ -89,7 +142,63 @@ export function ArcadeHub() {
     });
 
     return unsubscribe;
-  }, [challengeService, achievementService, userService, audioManager]);
+  }, [challengeService, achievementService, userService, audioManager, currencyService, addNotification]);
+
+  // Create Supabase service on the client when signed in.
+  useEffect(() => {
+    let mounted = true;
+    if (!session) {
+      setSupabaseService(null);
+      return () => {
+        mounted = false;
+      };
+    }
+
+    const init = async () => {
+      try {
+        const client = getSupabaseBrowserClient();
+        if (!mounted) return;
+        setSupabaseService(new SupabaseArcadeService(client));
+      } catch (error) {
+        console.warn('Supabase unavailable; staying offline:', error);
+        setSupabaseService(null);
+      }
+    };
+
+    void init();
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
+
+  // Keep Supabase profile in sync with the local profile.
+  useEffect(() => {
+    if (!supabaseService || !session) return;
+    const profileData = userService.getProfile();
+    void supabaseService
+      .upsertProfile({
+        id: session.user.id,
+        username: profileData.username,
+        avatarUrl: profileData.avatar,
+      })
+      .catch(error => console.warn('Supabase profile sync failed:', error));
+  }, [session, supabaseService, userService]);
+
+  // Push wallet updates when coins change.
+  useEffect(() => {
+    if (!supabaseService || !session) return;
+    const unsubscribe = currencyService.onCoinsChanged(balance => {
+      const stats = userService.getStats();
+      void supabaseService
+        .upsertWallet({
+          userId: session.user.id,
+          balance,
+          lifetimeEarned: stats.coinsEarned,
+        })
+        .catch(error => console.warn('Supabase wallet sync failed:', error));
+    });
+    return unsubscribe;
+  }, [currencyService, session, supabaseService, userService]);
 
 
   useEffect(() => {
@@ -116,23 +225,6 @@ export function ArcadeHub() {
       }
     }
   }, [achievementService]);
-
-    const addNotification = (type: string, title: string, message: string) => {
-    const notification = {
-      id: `${Date.now()}-${Math.random()}`,
-      type: type as any,
-      title,
-      message,
-      timestamp: new Date()
-    };
-    
-    setNotifications(prev => [notification, ...prev.slice(0, 4)]); // Keep only 5 notifications
-    
-    // Auto-remove after 5 seconds
-    setTimeout(() => {
-      setNotifications(prev => prev.filter(n => n.id !== notification.id));
-    }, 5000);
-  };
 
   const saveUnlockedTiers = (tiers: number[]) => {
     setUnlockedTiers(tiers);
@@ -226,7 +318,7 @@ export function ArcadeHub() {
     return unsubscribe;
   }, [challengeService, handleChallengeComplete]);
 
-  const handleGameEnd = (gameData?: any) => {
+  const handleGameEnd = (gameData?: GameEndData) => {
     if (!gameData || !selectedGameId) return;
     
     const stats = userService.getStats();
@@ -313,11 +405,48 @@ export function ArcadeHub() {
         achievement.reward,
         `achievement_${achievement.id}`
       );
+
+      if (supabaseService && session) {
+        void supabaseService
+          .upsertAchievement({
+            userId: session.user.id,
+            achievementId: achievement.id,
+            progress: achievement.requirement.value,
+            unlockedAt: achievement.unlockedAt?.toISOString() ?? new Date().toISOString(),
+          })
+          .catch(error => console.warn('Supabase achievement sync failed:', error));
+      }
     });
 
     if (newlyUnlocked.length > 0) {
       const current = userService.getStats().achievementsUnlocked;
       userService.updateStats({ achievementsUnlocked: current + newlyUnlocked.length });
+    }
+
+    // Persist session + wallet to Supabase when available (non-blocking).
+    if (supabaseService && session) {
+      void supabaseService
+        .recordGameSession({
+          userId: session.user.id,
+          gameId: selectedGameId,
+          score: gameData.score || 0,
+          durationMs: gameData.timePlayedMs || 0,
+          metadata: {
+            coinsEarned: gameData.coinsEarned || 0,
+            distance: gameData.distance || 0,
+            speed: gameData.speed || 0,
+            combo: gameData.combo || 0,
+          },
+        })
+        .catch(error => console.warn('Supabase session record failed:', error));
+
+      void supabaseService
+        .upsertWallet({
+          userId: session.user.id,
+          balance: currencyService.getCurrentCoins(),
+          lifetimeEarned: newStats.coinsEarned,
+        })
+        .catch(error => console.warn('Supabase wallet sync failed:', error));
     }
 
   };
@@ -364,6 +493,17 @@ export function ArcadeHub() {
     { id: 'achievements', label: 'Achievements', icon: '🏆' },
     { id: 'profile', label: 'Profile', icon: '👤' }
   ];
+
+  const welcomeName =
+    profile?.username ||
+    session?.user.email?.split('@')[0] ||
+    session?.user.user_metadata?.preferred_username ||
+    'Guest';
+
+  const handleEmailSignIn = async (email: string) => {
+    await signInWithEmail(email);
+  };
+
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4" data-testid="arcade-root">
@@ -423,7 +563,42 @@ export function ArcadeHub() {
             </div>
           )}
         </div>
-        <CurrencyDisplay currencyService={currencyService} />
+        <div className="flex items-center gap-4">
+          {!authDisabled ? (
+            <div className="text-right">
+              <div className="text-sm text-white font-semibold">
+                {session ? `Signed in as ${welcomeName}` : 'Guest mode'}
+              </div>
+              <div className="flex justify-end gap-2">
+                {session ? (
+                  <button
+                    onClick={() => signOut()}
+                    className="text-xs text-purple-200 underline hover:text-white"
+                  >
+                    Sign out
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setShowAuthModal(true)}
+                    className="text-xs text-purple-200 underline hover:text-white"
+                  >
+                    Sign in
+                  </button>
+                )}
+              </div>
+              {authError && (
+                <div className="text-[11px] text-red-200 mt-1 max-w-[220px]">
+                  {authError}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-right text-xs text-orange-200 max-w-[200px]">
+              Supabase not configured; running in offline mode.
+            </div>
+          )}
+          <CurrencyDisplay currencyService={currencyService} />
+        </div>
       </header>
 
       {/* Notifications */}
@@ -449,6 +624,12 @@ export function ArcadeHub() {
       <main className="max-w-7xl mx-auto" data-testid="arcade-hub">
         {showHub ? (
           <div className="space-y-6">
+            <WelcomeBanner
+              name={welcomeName}
+              authenticated={!!session}
+              onSignIn={() => !authDisabled && setShowAuthModal(true)}
+              onSignOut={() => void signOut()}
+            />
             {/* Tab Navigation */}
             <div className="flex justify-center">
               <div className="bg-gray-800 p-1 rounded-lg">
@@ -477,7 +658,7 @@ export function ArcadeHub() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {activeTab === 'games' && (
                 <>
-                  <div className="lg:col-span-2">
+                  <div className="lg:col-span-2 space-y-4">
                     <GameCarousel
                       games={AVAILABLE_GAMES}
                       unlockedTiers={unlockedTiers}
@@ -485,6 +666,7 @@ export function ArcadeHub() {
                       onGameSelect={handleGameSelect}
                       onGameUnlock={handleGameUnlock}
                     />
+                    <LeaderboardPanel supabaseService={supabaseService} signedIn={!!session} />
                   </div>
                   <div>
                     <UserProfile userService={userService} />
@@ -572,6 +754,18 @@ export function ArcadeHub() {
           onClose={() => setShowAudioSettings(false)}
         />
       )}
+      <AuthModal
+        open={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onMagicLink={handleEmailSignIn}
+        onPasswordSignIn={(email, password) => signInWithPassword(email, password)}
+        onPasswordSignUp={(email, password, username) =>
+          signUpWithPassword(email, password, username)
+        }
+        loading={authLoading}
+        error={authError}
+        emailSent={emailSent}
+      />
     </div>
   );
 }
