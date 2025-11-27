@@ -30,11 +30,13 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const [emailSent, setEmailSent] = useState(false);
   const [authDisabled, setAuthDisabled] = useState(false);
   const supabaseRef = useRef<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
+  const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
   const [arcadeService, setArcadeService] = useState<SupabaseArcadeService | null>(null);
 
   const loadProfile = useCallback(
-    async (userId: string) => {
-      if (!supabaseRef.current || !arcadeService) return;
+    async (userId: string, fallbackName?: string) => {
+      const service = arcadeServiceRef.current;
+      if (!supabaseRef.current || !service) return;
       setError(null);
 
       const { data, error: fetchError } = await supabaseRef.current
@@ -54,13 +56,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         return;
       }
 
-      const username =
-        session?.user.user_metadata?.preferred_username ||
-        session?.user.email?.split('@')[0] ||
-        'Player';
+      const username = fallbackName || 'Player';
 
       try {
-        const created = await arcadeService.upsertProfile({
+        const created = await service.upsertProfile({
           id: userId,
           username,
         });
@@ -69,7 +68,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setError(err instanceof Error ? err.message : 'Failed to create profile');
       }
     },
-    [arcadeService, session?.user.email, session?.user.user_metadata?.preferred_username]
+    []
   );
 
   useEffect(() => {
@@ -79,8 +78,18 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       try {
         const supabase = getSupabaseBrowserClient();
         supabaseRef.current = supabase;
-        setArcadeService(new SupabaseArcadeService(supabase));
+        const service = new SupabaseArcadeService(supabase);
+        arcadeServiceRef.current = service;
+        setArcadeService(service);
         setAuthDisabled(false);
+
+        const syncProfile = (user: Session['user']) => {
+          const fallback =
+            user.user_metadata?.preferred_username ||
+            user.email?.split('@')[0] ||
+            'Player';
+          void loadProfile(user.id, fallback);
+        };
 
         const { data, error: sessionError } = await supabase.auth.getSession();
         if (!mounted) return;
@@ -88,7 +97,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setSession(data.session);
         setLoading(false);
         if (data.session?.user) {
-          void loadProfile(data.session.user.id);
+          syncProfile(data.session.user);
         }
 
         const {
@@ -98,7 +107,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           setSession(nextSession);
           setEmailSent(false);
           if (nextSession?.user) {
-            void loadProfile(nextSession.user.id);
+            syncProfile(nextSession.user);
           } else {
             setProfile(null);
           }
@@ -114,10 +123,9 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       }
     };
 
-    const cleanup = initClient();
+    void initClient();
     return () => {
       mounted = false;
-      void cleanup?.then(fn => fn?.());
     };
   }, [loadProfile]);
 
@@ -167,7 +175,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       } else {
         setSession(data.session);
         if (data.session?.user) {
-          await loadProfile(data.session.user.id);
+          const fallback =
+            data.session.user.user_metadata?.preferred_username ||
+            data.session.user.email?.split('@')[0];
+          await loadProfile(data.session.user.id, fallback);
         }
       }
       setLoading(false);
@@ -199,7 +210,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       } else {
         setEmailSent(true);
         if (data.session?.user) {
-          await loadProfile(data.session.user.id);
+          const fallback =
+            data.session.user.user_metadata?.preferred_username ||
+            data.session.user.email?.split('@')[0];
+          await loadProfile(data.session.user.id, fallback);
         }
       }
       setLoading(false);
