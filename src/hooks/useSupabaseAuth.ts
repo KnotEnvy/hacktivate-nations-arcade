@@ -31,7 +31,6 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const [authDisabled, setAuthDisabled] = useState(false);
   const supabaseRef = useRef<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
   const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
-  const [arcadeService, setArcadeService] = useState<SupabaseArcadeService | null>(null);
 
   const loadProfile = useCallback(
     async (userId: string, fallbackName?: string) => {
@@ -80,7 +79,6 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         supabaseRef.current = supabase;
         const service = new SupabaseArcadeService(supabase);
         arcadeServiceRef.current = service;
-        setArcadeService(service);
         setAuthDisabled(false);
 
         const syncProfile = (user: Session['user']) => {
