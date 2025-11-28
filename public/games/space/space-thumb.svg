@@ -1,92 +1,222 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <!-- Space background -->
-  <rect width="512" height="512" fill="#0F172A"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Deep space gradient -->
+    <linearGradient id="spaceGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0a0a1a"/>
+      <stop offset="50%" style="stop-color:#1a1035"/>
+      <stop offset="100%" style="stop-color:#0f0f25"/>
+    </linearGradient>
+    
+    <!-- Nebula gradients -->
+    <radialGradient id="nebula1" cx="30%" cy="20%" r="40%">
+      <stop offset="0%" style="stop-color:#6644aa;stop-opacity:0.4"/>
+      <stop offset="100%" style="stop-color:#6644aa;stop-opacity:0"/>
+    </radialGradient>
+    <radialGradient id="nebula2" cx="70%" cy="60%" r="35%">
+      <stop offset="0%" style="stop-color:#aa4466;stop-opacity:0.3"/>
+      <stop offset="100%" style="stop-color:#aa4466;stop-opacity:0"/>
+    </radialGradient>
+    
+    <!-- Ship gradient -->
+    <linearGradient id="shipGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#66aaff"/>
+      <stop offset="50%" style="stop-color:#3388ff"/>
+      <stop offset="100%" style="stop-color:#2266cc"/>
+    </linearGradient>
+    
+    <!-- Engine glow -->
+    <radialGradient id="engineGlow" cx="50%" cy="0%" r="100%">
+      <stop offset="0%" style="stop-color:#ffaa00"/>
+      <stop offset="50%" style="stop-color:#ff6600"/>
+      <stop offset="100%" style="stop-color:#ff3300;stop-opacity:0"/>
+    </radialGradient>
+    
+    <!-- Bullet glow -->
+    <filter id="bulletGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Enemy gradient -->
+    <linearGradient id="enemyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#66cc66"/>
+      <stop offset="100%" style="stop-color:#338833"/>
+    </linearGradient>
+    
+    <!-- Boss gradient -->
+    <linearGradient id="bossGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#8866aa"/>
+      <stop offset="50%" style="stop-color:#664488"/>
+      <stop offset="100%" style="stop-color:#443366"/>
+    </linearGradient>
+    
+    <!-- Explosion gradient -->
+    <radialGradient id="explosion" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="30%" style="stop-color:#ffff66"/>
+      <stop offset="60%" style="stop-color:#ff6600"/>
+      <stop offset="100%" style="stop-color:#ff3300;stop-opacity:0"/>
+    </radialGradient>
+    
+    <!-- Shield gradient -->
+    <radialGradient id="shield" cx="50%" cy="50%" r="50%">
+      <stop offset="70%" style="stop-color:#4488ff;stop-opacity:0"/>
+      <stop offset="85%" style="stop-color:#4488ff;stop-opacity:0.5"/>
+      <stop offset="100%" style="stop-color:#88ccff;stop-opacity:0.2"/>
+    </radialGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#spaceGrad)"/>
+  
+  <!-- Nebulae -->
+  <circle cx="150" cy="100" r="200" fill="url(#nebula1)"/>
+  <circle cx="380" cy="320" r="180" fill="url(#nebula2)"/>
   
   <!-- Stars -->
-  <g fill="white">
-    <circle cx="50" cy="50" r="1"/>
-    <circle cx="150" cy="80" r="1.5"/>
-    <circle cx="300" cy="60" r="1"/>
-    <circle cx="450" cy="90" r="1.5"/>
-    <circle cx="100" cy="150" r="1"/>
-    <circle cx="400" cy="180" r="1"/>
-    <circle cx="80" cy="250" r="1.5"/>
-    <circle cx="320" cy="220" r="1"/>
-    <circle cx="180" cy="300" r="1"/>
-    <circle cx="470" cy="280" r="1.5"/>
-    <circle cx="60" cy="380" r="1"/>
-    <circle cx="250" cy="420" r="1"/>
-    <circle cx="380" cy="450" r="1.5"/>
-    <circle cx="120" cy="480" r="1"/>
+  <g fill="#ffffff">
+    <circle cx="45" cy="78" r="1.5" opacity="0.9"/>
+    <circle cx="120" cy="45" r="1" opacity="0.7"/>
+    <circle cx="200" cy="92" r="1.2" opacity="0.8"/>
+    <circle cx="280" cy="35" r="1.5" opacity="0.9"/>
+    <circle cx="350" cy="88" r="1" opacity="0.6"/>
+    <circle cx="420" cy="52" r="1.3" opacity="0.8"/>
+    <circle cx="480" cy="120" r="1" opacity="0.7"/>
+    <circle cx="68" cy="180" r="1" opacity="0.6"/>
+    <circle cx="450" cy="200" r="1.5" opacity="0.9"/>
+    <circle cx="30" cy="280" r="1.2" opacity="0.7"/>
+    <circle cx="490" cy="350" r="1" opacity="0.6"/>
+    <circle cx="100" cy="420" r="1.3" opacity="0.8"/>
+    <circle cx="400" cy="450" r="1" opacity="0.7"/>
+    <circle cx="180" cy="480" r="1.5" opacity="0.9"/>
+    <circle cx="320" cy="150" r="1" opacity="0.5"/>
+    <circle cx="250" cy="250" r="0.8" opacity="0.4"/>
   </g>
   
-  <!-- Distant planet -->
-  <circle cx="400" cy="120" r="40" fill="#6366F1" opacity="0.6"/>
-  <circle cx="390" cy="110" r="8" fill="#4F46E5" opacity="0.8"/>
-  <circle cx="410" cy="130" r="12" fill="#4F46E5" opacity="0.8"/>
-  
-  <!-- Player ship -->
-  <g transform="translate(256, 350)">
-    <!-- Main body -->
-    <polygon points="0,-30 -15,20 15,20" fill="#22D3EE"/>
-    <!-- Cockpit -->
-    <polygon points="0,-20 -8,5 8,5" fill="#06B6D4"/>
-    <!-- Wings -->
-    <polygon points="-15,10 -25,25 -10,20" fill="#0891B2"/>
-    <polygon points="15,10 25,25 10,20" fill="#0891B2"/>
-    <!-- Engines -->
-    <rect x="-20" y="15" width="6" height="15" fill="#1E293B"/>
-    <rect x="14" y="15" width="6" height="15" fill="#1E293B"/>
-    <!-- Engine glow -->
-    <rect x="-18" y="25" width="2" height="8" fill="#06B6D4"/>
-    <rect x="16" y="25" width="2" height="8" fill="#06B6D4"/>
+  <!-- Boss (top area) -->
+  <g transform="translate(256, 85)">
+    <!-- Boss body -->
+    <path d="M0,-50 L-75,0 L-50,40 L50,40 L75,0 Z" fill="url(#bossGrad)" stroke="#aa88cc" stroke-width="2"/>
+    <!-- Boss core -->
+    <ellipse cx="0" cy="0" rx="30" ry="20" fill="#aa88ff" opacity="0.8"/>
+    <!-- Boss eye -->
+    <circle cx="0" cy="0" r="15" fill="#ff4444"/>
+    <circle cx="0" cy="0" r="8" fill="#ffffff"/>
+    <!-- Wing cannons -->
+    <rect x="-85" y="-10" width="20" height="35" fill="#555555"/>
+    <rect x="65" y="-10" width="20" height="35" fill="#555555"/>
+    <!-- HP bar -->
+    <rect x="-60" y="-65" width="120" height="8" fill="#333333"/>
+    <rect x="-60" y="-65" width="90" height="8" fill="#ff6644"/>
   </g>
   
-  <!-- Laser beams -->
-  <g fill="#10B981">
-    <rect x="246" y="280" width="3" height="40"/>
-    <rect x="263" y="280" width="3" height="40"/>
-    <!-- Laser glow -->
-    <rect x="245" y="280" width="5" height="40" fill="#10B981" opacity="0.5"/>
-    <rect x="262" y="280" width="5" height="40" fill="#10B981" opacity="0.5"/>
+  <!-- Enemy bullets from boss -->
+  <g filter="url(#bulletGlow)">
+    <circle cx="180" cy="150" r="5" fill="#ff4488"/>
+    <circle cx="256" cy="170" r="5" fill="#ff4488"/>
+    <circle cx="332" cy="150" r="5" fill="#ff4488"/>
+    <circle cx="210" cy="200" r="4" fill="#ff4488"/>
+    <circle cx="302" cy="200" r="4" fill="#ff4488"/>
   </g>
   
-  <!-- Enemy ships -->
-  <g transform="translate(150, 150)">
-    <polygon points="0,0 -10,-15 10,-15" fill="#EF4444"/>
-    <polygon points="-8,-10 -15,-5 -8,0" fill="#DC2626"/>
-    <polygon points="8,-10 15,-5 8,0" fill="#DC2626"/>
+  <!-- Enemy formation (middle area) -->
+  <g>
+    <!-- Basic enemies -->
+    <g transform="translate(120, 220)">
+      <path d="M0,20 L-15,-15 L15,-15 Z" fill="url(#enemyGrad)"/>
+      <circle cx="0" cy="0" r="4" fill="#ff4444"/>
+    </g>
+    <g transform="translate(200, 200)">
+      <path d="M0,20 L-15,-15 L15,-15 Z" fill="url(#enemyGrad)"/>
+      <circle cx="0" cy="0" r="4" fill="#ff4444"/>
+    </g>
+    <g transform="translate(312, 200)">
+      <path d="M0,20 L-15,-15 L15,-15 Z" fill="url(#enemyGrad)"/>
+      <circle cx="0" cy="0" r="4" fill="#ff4444"/>
+    </g>
+    <g transform="translate(392, 220)">
+      <path d="M0,20 L-15,-15 L15,-15 Z" fill="url(#enemyGrad)"/>
+      <circle cx="0" cy="0" r="4" fill="#ff4444"/>
+    </g>
+    
+    <!-- Sine enemy -->
+    <g transform="translate(80, 280)">
+      <ellipse cx="0" cy="0" rx="18" ry="12" fill="#4488ff"/>
+      <path d="M-10,-12 L0,-20 L10,-12" fill="#4488ff"/>
+      <circle cx="8" cy="-3" r="4" fill="#ffffff"/>
+    </g>
+    
+    <!-- Shooter enemy -->
+    <g transform="translate(432, 280)">
+      <rect x="-20" y="-14" width="40" height="28" fill="#ff8844"/>
+      <circle cx="0" cy="14" r="10" fill="#666666"/>
+      <rect x="-3" y="14" width="6" height="12" fill="#666666"/>
+      <rect x="-14" y="-7" width="6" height="6" fill="#ffaa44"/>
+      <rect x="8" y="-7" width="6" height="6" fill="#ffaa44"/>
+    </g>
   </g>
   
-  <g transform="translate(350, 120)">
-    <polygon points="0,0 -10,-15 10,-15" fill="#EF4444"/>
-    <polygon points="-8,-10 -15,-5 -8,0" fill="#DC2626"/>
-    <polygon points="8,-10 15,-5 8,0" fill="#DC2626"/>
-  </g>
-  
-  <!-- Explosions -->
-  <g transform="translate(200, 200)" opacity="0.8">
-    <circle cx="0" cy="0" r="15" fill="#F59E0B"/>
-    <circle cx="0" cy="0" r="10" fill="#FBBF24"/>
-    <circle cx="0" cy="0" r="5" fill="#FEF3C7"/>
-  </g>
-  
-  <!-- Asteroid -->
-  <g transform="translate(400, 300)">
-    <polygon points="0,-20 15,-10 20,10 5,25 -10,20 -20,5 -15,-15" fill="#64748B"/>
-    <circle cx="-5" cy="0" r="3" fill="#475569"/>
-    <circle cx="8" cy="-8" r="2" fill="#475569"/>
-    <circle cx="5" cy="12" r="4" fill="#475569"/>
-  </g>
+  <!-- Explosion effect -->
+  <circle cx="360" cy="250" r="35" fill="url(#explosion)" opacity="0.9"/>
   
   <!-- Power-up -->
-  <g transform="translate(100, 300)">
-    <rect x="-8" y="-8" width="16" height="16" fill="#8B5CF6" transform="rotate(45)"/>
-    <rect x="-4" y="-4" width="8" height="8" fill="#A855F7" transform="rotate(45)"/>
-    <!-- Glow effect -->
-    <circle cx="0" cy="0" r="20" fill="#8B5CF6" opacity="0.2"/>
+  <g transform="translate(150, 340)">
+    <circle cx="0" cy="0" r="16" fill="none" stroke="#ff8844" stroke-width="2"/>
+    <text x="0" y="5" font-family="Arial" font-weight="bold" font-size="16" fill="#ff8844" text-anchor="middle">P</text>
   </g>
   
+  <!-- Player Ship (bottom center) -->
+  <g transform="translate(256, 400)">
+    <!-- Shield effect -->
+    <circle cx="0" cy="0" r="45" fill="url(#shield)"/>
+    
+    <!-- Engine flames -->
+    <path d="M-12,35 L0,55 L12,35" fill="url(#engineGlow)"/>
+    
+    <!-- Ship body -->
+    <path d="M0,-40 L-30,30 L-15,15 L0,22 L15,15 L30,30 Z" fill="url(#shipGrad)" stroke="#88ccff" stroke-width="2"/>
+    
+    <!-- Cockpit -->
+    <ellipse cx="0" cy="-10" rx="10" ry="14" fill="#88ddff"/>
+    
+    <!-- Wing stripes -->
+    <line x1="-18" y1="5" x2="-28" y2="20" stroke="#ffffff" stroke-width="2"/>
+    <line x1="18" y1="5" x2="28" y2="20" stroke="#ffffff" stroke-width="2"/>
+  </g>
+  
+  <!-- Player bullets -->
+  <g filter="url(#bulletGlow)">
+    <ellipse cx="256" cy="320" rx="3" ry="8" fill="#44ff44"/>
+    <ellipse cx="244" cy="340" rx="2" ry="6" fill="#44ff44"/>
+    <ellipse cx="268" cy="340" rx="2" ry="6" fill="#44ff44"/>
+    <ellipse cx="236" cy="300" rx="2" ry="6" fill="#44ff44"/>
+    <ellipse cx="276" cy="300" rx="2" ry="6" fill="#44ff44"/>
+  </g>
+  
+  <!-- HUD Elements -->
+  <!-- Score -->
+  <text x="20" y="35" font-family="Arial" font-weight="bold" font-size="20" fill="#ffffff">SCORE: 42,850</text>
+  <text x="20" y="55" font-family="Arial" font-size="12" fill="#aaaaaa">LEVEL 2 - WAVE 5/5</text>
+  
+  <!-- Combo -->
+  <text x="20" y="80" font-family="Arial" font-weight="bold" font-size="16" fill="#ff8844">8x COMBO</text>
+  
+  <!-- HP bar -->
+  <rect x="20" y="470" width="100" height="15" fill="#333333" rx="3"/>
+  <rect x="20" y="470" width="80" height="15" fill="#44ff44" rx="3"/>
+  <rect x="20" y="470" width="100" height="15" fill="none" stroke="#ffffff" stroke-width="2" rx="3"/>
+  
+  <!-- Bombs -->
+  <text x="140" y="483" font-family="Arial" font-size="12" fill="#ffffff">BOMBS:</text>
+  <circle cx="200" cy="478" r="6" fill="#ff4444"/>
+  <circle cx="218" cy="478" r="6" fill="#ff4444"/>
+  
+  <!-- Coins -->
+  <text x="492" y="35" font-family="Arial" font-weight="bold" font-size="18" fill="#ffcc00" text-anchor="end">💰 148</text>
+  
   <!-- Title -->
-  <text x="256" y="455" text-anchor="middle" font-size="24" font-weight="bold" fill="#06B6D4">SPACE SHOOTER</text>
+  <text x="256" y="505" font-family="Arial" font-weight="bold" font-size="14" fill="#66aaff" text-anchor="middle" letter-spacing="3">SPACE SHOOTER</text>
 </svg>
