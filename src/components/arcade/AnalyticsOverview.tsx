@@ -1,33 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Analytics } from '@/services/Analytics';
-
-interface PlayerInsights {
-  skillLevel: string;
-  preferredGameLength: 'short' | 'medium' | 'long';
-  mostPlayedGame: string;
-  averageScore: number;
-  improvementAreas: string[];
-  achievements: string[];
-}
-
-interface ConversionMetrics {
-  gameStartRate: number;
-  completionRate: number;
-  retentionRate: number;
-  monetizationRate: number;
-}
-
-interface PlayerMetrics {
-  totalPlayTime: number;
-  gamesPlayed: number;
-  averageSessionLength: number;
-  favoriteGame: string;
-  skillLevel: string;
-  retentionDays: number;
-  lastActiveDate: Date;
-}
+import {
+  Analytics,
+  type PlayerInsights,
+  type PlayerMetrics,
+  type ConversionMetrics,
+} from '@/services/Analytics';
 
 export function AnalyticsOverview() {
   const [insights, setInsights] = useState<PlayerInsights | null>(null);
