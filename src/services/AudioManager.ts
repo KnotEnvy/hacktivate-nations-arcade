@@ -1,4 +1,13 @@
-export type SoundName = 'coin' | 'jump';
+export type SoundName =
+  | 'coin'
+  | 'jump'
+  | 'powerup'
+  | 'click'
+  | 'collision'
+  | 'game_over'
+  | 'success'
+  | 'unlock'
+  | 'error';
 export type MusicName = 'hub_music' | 'game_music';
 
 interface AudioOptions {
@@ -63,6 +72,8 @@ export class AudioManager {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private masterVolume = 0.4;
+  private sfxVolume = 1.0;
+  private musicVolume = 0.4;
   private muted = false;
   private currentMusic: { oscillator: OscillatorNode; gain: GainNode } | null = null;
   private audioContextFactory: { new (): AudioContext } | null = null;
@@ -106,17 +117,48 @@ export class AudioManager {
     const oscillator = this.context.createOscillator();
     const gain = this.context.createGain();
 
-    if (name === 'coin') {
-      oscillator.frequency.value = 880;
-      oscillator.type = 'sine';
-    } else if (name === 'jump') {
-      oscillator.frequency.value = 440;
-      oscillator.type = 'square';
-    } else {
-      return;
+    switch (name) {
+      case 'coin':
+        oscillator.frequency.value = 880;
+        oscillator.type = 'sine';
+        break;
+      case 'jump':
+        oscillator.frequency.value = 440;
+        oscillator.type = 'square';
+        break;
+      case 'powerup':
+        oscillator.frequency.value = 660;
+        oscillator.type = 'triangle';
+        break;
+      case 'click':
+        oscillator.frequency.value = 200;
+        oscillator.type = 'square';
+        break;
+      case 'collision':
+        oscillator.frequency.value = 120;
+        oscillator.type = 'sawtooth';
+        break;
+      case 'game_over':
+        oscillator.frequency.value = 180;
+        oscillator.type = 'triangle';
+        break;
+      case 'success':
+        oscillator.frequency.value = 520;
+        oscillator.type = 'sine';
+        break;
+      case 'unlock':
+        oscillator.frequency.value = 740;
+        oscillator.type = 'sine';
+        break;
+      case 'error':
+        oscillator.frequency.value = 100;
+        oscillator.type = 'square';
+        break;
+      default:
+        return;
     }
 
-    const volume = options.volume ?? this.masterVolume;
+    const volume = options.volume ?? this.masterVolume * this.sfxVolume;
     gain.gain.value = this.muted ? 0 : volume;
 
     oscillator.connect(gain);
@@ -145,7 +187,7 @@ export class AudioManager {
     gain.connect(this.masterGain);
     oscillator.connect(gain);
 
-    const targetVolume = this.muted ? 0 : this.masterVolume;
+    const targetVolume = this.muted ? 0 : this.masterVolume * this.musicVolume;
     const now = this.context.currentTime;
     gain.gain.setValueAtTime(0, now);
     gain.gain.exponentialRampToValueAtTime(Math.max(targetVolume, 0.0001), now + Math.max(fadeSeconds, 0.01));
@@ -160,6 +202,34 @@ export class AudioManager {
     if (this.masterGain && !this.muted) {
       this.masterGain.gain.value = this.masterVolume;
     }
+    if (this.currentMusic && !this.muted) {
+      this.currentMusic.gain.gain.value = this.masterVolume * this.musicVolume;
+    }
+  }
+
+  getMasterVolume(): number {
+    return this.masterVolume;
+  }
+
+  setSfxVolume(volume: number): void {
+    this.sfxVolume = Math.max(0, Math.min(1, volume));
+    this.saveSettings();
+  }
+
+  getSfxVolume(): number {
+    return this.sfxVolume;
+  }
+
+  setMusicVolume(volume: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, volume));
+    this.saveSettings();
+    if (this.currentMusic && !this.muted) {
+      this.currentMusic.gain.gain.value = this.masterVolume * this.musicVolume;
+    }
+  }
+
+  getMusicVolume(): number {
+    return this.musicVolume;
   }
 
   setMute(mute: boolean): void {
@@ -168,20 +238,38 @@ export class AudioManager {
     if (this.masterGain) {
       this.masterGain.gain.value = this.muted ? 0 : this.masterVolume;
     }
+    if (this.currentMusic) {
+      this.currentMusic.gain.gain.value = this.muted ? 0 : this.masterVolume * this.musicVolume;
+    }
+  }
+
+  toggleMute(): boolean {
+    this.setMute(!this.muted);
+    return this.muted;
+  }
+
+  isMutedState(): boolean {
+    return this.muted;
   }
 
   private loadSettings(): void {
     if (typeof window === 'undefined') return;
     const storedVolume = localStorage.getItem('hacktivate-audio-volume');
     const storedMute = localStorage.getItem('hacktivate-audio-muted');
+    const storedSfx = localStorage.getItem('hacktivate-audio-sfx');
+    const storedMusic = localStorage.getItem('hacktivate-audio-music');
     if (storedVolume) this.masterVolume = parseFloat(storedVolume);
     if (storedMute) this.muted = storedMute === 'true';
+    if (storedSfx) this.sfxVolume = parseFloat(storedSfx);
+    if (storedMusic) this.musicVolume = parseFloat(storedMusic);
   }
 
   private saveSettings(): void {
     if (typeof window === 'undefined') return;
     this.recordSetItemCall('hacktivate-audio-volume', this.masterVolume.toString());
     this.recordSetItemCall('hacktivate-audio-muted', this.muted.toString());
+    this.recordSetItemCall('hacktivate-audio-sfx', this.sfxVolume.toString());
+    this.recordSetItemCall('hacktivate-audio-music', this.musicVolume.toString());
   }
 
   private recordSetItemCall(key: string, value: string): void {
