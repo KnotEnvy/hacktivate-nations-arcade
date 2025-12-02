@@ -34,6 +34,28 @@ interface Nebula {
   alpha: number;
 }
 
+// Permanent ship upgrades purchased between levels
+interface ShipUpgrades {
+  maxHp: number;           // +1 max HP per level (max 5)
+  fireRate: number;        // +10% fire rate per level (max 5)
+  moveSpeed: number;       // +10% move speed per level (max 5)
+  startingBombs: number;   // +1 starting bomb per level (max 3)
+  coinMagnet: number;      // +20 pickup range per level (max 5)
+  critChance: number;      // +5% crit chance per level (max 5)
+  shieldDuration: number;  // +2s shield duration per level (max 3)
+  startingWeapon: number;  // +1 starting weapon level (max 2)
+}
+
+interface UpgradeDefinition {
+  id: keyof ShipUpgrades;
+  name: string;
+  description: string;
+  maxLevel: number;
+  baseCost: number;
+  costMultiplier: number;
+  icon: string;
+}
+
 interface Ship {
   pos: Vector2;
   vel: Vector2;
@@ -44,8 +66,9 @@ interface Ship {
   invincibleTime: number;
   shieldTime: number;
   weaponLevel: number;
-  weaponType: 'normal' | 'spread' | 'rapid';
+  weaponType: 'normal' | 'rapid';
   rapidFireTime: number;
+  speedBoostTime: number;
   bombs: number;
 }
 
@@ -82,6 +105,12 @@ interface Enemy {
   spinCenter: Vector2;
   value: number;
   hitFlash: number;
+  groupId: number; // Track which spawn group this enemy belongs to
+  // Elite enemy properties
+  isElite: boolean;
+  eliteShield: number;      // For elite tanker's regenerating shield
+  eliteAbilityTimer: number; // Cooldown for elite abilities
+  homingTarget: Vector2 | null; // For elite shooter's homing missiles
 }
 
 interface Boss {
@@ -102,7 +131,7 @@ interface Boss {
 interface PowerUp {
   pos: Vector2;
   vel: Vector2;
-  type: 'weapon' | 'shield' | 'bomb' | 'heal' | 'rapid' | 'spread';
+  type: 'weapon' | 'shield' | 'bomb' | 'heal' | 'rapid' | 'speed';
   size: number;
   pulsePhase: number;
 }
@@ -141,28 +170,51 @@ interface LevelStats {
   powerUpsCollected: number;
   maxComboThisLevel: number;
   bossTime: number;
+  groupClears: number;
 }
 
 // ============= GAME CONSTANTS =============
 
 const SHIP_ACCELERATION = 2000;
 const SHIP_MAX_SPEED = 400;
+const SHIP_BOOSTED_MAX_SPEED = 600;
 const SHIP_DRAG = 4;
 const BULLET_SPEED = 700;
 const FIRE_RATE = 0.12;
 const RAPID_FIRE_RATE = 0.06;
 const INVINCIBLE_DURATION = 2;
-const SHIELD_DURATION = 8;
-const RAPID_FIRE_DURATION = 10;
+const SHIELD_DURATION = 7;
+const RAPID_FIRE_DURATION = 8;
+const SPEED_BOOST_DURATION = 10;
 const COMBO_TIMEOUT = 2;
+const GROUP_CLEAR_BONUS_SCORE = 500;
+const GROUP_CLEAR_BONUS_PICKUPS = 3;
+
+// Elite enemy constants
+const ELITE_SPAWN_CHANCE = 0.12; // 12% chance for elite variant
+const ELITE_HP_MULTIPLIER = 2.5;
+const ELITE_VALUE_MULTIPLIER = 3;
+const ELITE_SIZE_MULTIPLIER = 1.2;
+
+// Upgrade shop definitions
+const UPGRADE_DEFINITIONS: UpgradeDefinition[] = [
+  { id: 'maxHp', name: 'Hull Plating', description: '+1 Max HP', maxLevel: 5, baseCost: 30, costMultiplier: 1.5, icon: '❤️' },
+  { id: 'fireRate', name: 'Rapid Cycling', description: '+10% Fire Rate', maxLevel: 5, baseCost: 40, costMultiplier: 1.6, icon: '🔥' },
+  { id: 'moveSpeed', name: 'Thruster Boost', description: '+10% Move Speed', maxLevel: 5, baseCost: 35, costMultiplier: 1.5, icon: '⚡' },
+  { id: 'startingBombs', name: 'Bomb Bay', description: '+1 Starting Bomb', maxLevel: 3, baseCost: 50, costMultiplier: 2.0, icon: '💣' },
+  { id: 'coinMagnet', name: 'Tractor Beam', description: '+20 Pickup Range', maxLevel: 5, baseCost: 25, costMultiplier: 1.4, icon: '🧲' },
+  { id: 'critChance', name: 'Targeting CPU', description: '+5% Crit Chance', maxLevel: 5, baseCost: 45, costMultiplier: 1.7, icon: '🎯' },
+  { id: 'shieldDuration', name: 'Shield Capacitor', description: '+2s Shield Duration', maxLevel: 3, baseCost: 55, costMultiplier: 1.8, icon: '🛡️' },
+  { id: 'startingWeapon', name: 'Weapons Bay', description: '+1 Starting Weapon Lvl', maxLevel: 2, baseCost: 80, costMultiplier: 2.5, icon: '🚀' },
+];
 
 const ENEMY_CONFIGS = {
-  basic: { hp: 1, speed: 100, value: 100, width: 30, height: 30 },
-  sine: { hp: 2, speed: 80, value: 150, width: 35, height: 35 },
-  shooter: { hp: 3, speed: 60, value: 200, width: 40, height: 40 },
-  diver: { hp: 2, speed: 250, value: 175, width: 28, height: 35 },
-  spinner: { hp: 4, speed: 120, value: 250, width: 45, height: 45 },
-  tanker: { hp: 8, speed: 40, value: 400, width: 60, height: 50 },
+  basic: { hp: 1, speed: 100, value: 100, width: 30, height: 30 },     // Dies in 1 hit - fodder
+  sine: { hp: 3, speed: 80, value: 150, width: 35, height: 35 },       // Takes a few hits
+  shooter: { hp: 6, speed: 60, value: 250, width: 40, height: 40 },    // Armed & dangerous, needs focus
+  diver: { hp: 2, speed: 250, value: 175, width: 28, height: 35 },     // Fast but fragile
+  spinner: { hp: 8, speed: 120, value: 300, width: 45, height: 45 },   // Annoying, takes sustained fire
+  tanker: { hp: 20, speed: 40, value: 500, width: 60, height: 50 },    // TANK - requires real effort
 };
 
 const WAVE_DEFINITIONS = [
@@ -266,6 +318,33 @@ export class SpaceShooterGame extends BaseGame {
   private levelStats: LevelStats | null = null;
   private showingStats: boolean = false;
   private statsTimer: number = 0;
+  
+  // Group tracking for group clear bonuses
+  private currentGroupId: number = 0;
+  private groupSizes: Map<number, number> = new Map(); // groupId -> total count
+  private groupKills: Map<number, number> = new Map(); // groupId -> kills so far
+  private groupClearsThisLevel: number = 0;
+  
+  // Ship upgrades (persistent across games in session)
+  private shipUpgrades: ShipUpgrades = {
+    maxHp: 0,
+    fireRate: 0,
+    moveSpeed: 0,
+    startingBombs: 0,
+    coinMagnet: 0,
+    critChance: 0,
+    shieldDuration: 0,
+    startingWeapon: 0,
+  };
+  
+  // Upgrade shop state
+  private showingShop: boolean = false;
+  private shopSelectedIndex: number = 0;
+  private totalCoinsEarned: number = 0; // Persistent coin balance for upgrades
+  
+  // Elite enemy tracking
+  private elitesKilledThisLevel: number = 0;
+  private homingBullets: { pos: Vector2; vel: Vector2; target: Vector2; life: number }[] = [];
 
   // ============= INITIALIZATION =============
 
@@ -282,19 +361,26 @@ export class SpaceShooterGame extends BaseGame {
   }
 
   private initShip(): void {
+    // Calculate upgraded stats
+    const baseMaxHp = 5 + this.shipUpgrades.maxHp;
+    const startingHp = 3 + Math.floor(this.shipUpgrades.maxHp / 2); // Start with more HP too
+    const startingBombs = 2 + this.shipUpgrades.startingBombs;
+    const startingWeapon = 1 + this.shipUpgrades.startingWeapon;
+    
     this.ship = {
       pos: { x: this.canvas.width / 2, y: this.canvas.height - 100 },
       vel: { x: 0, y: 0 },
       width: 50,
       height: 60,
-      hp: 3,
-      maxHp: 5,
+      hp: Math.min(startingHp, baseMaxHp),
+      maxHp: baseMaxHp,
       invincibleTime: 0,
       shieldTime: 0,
-      weaponLevel: 1,
+      weaponLevel: startingWeapon,
       weaponType: 'normal',
       rapidFireTime: 0,
-      bombs: 2,
+      speedBoostTime: 0,
+      bombs: startingBombs,
     };
   }
 
@@ -334,8 +420,28 @@ export class SpaceShooterGame extends BaseGame {
     const handleKeyDown = (e: KeyboardEvent) => {
       this.keys.add(e.code);
       
+      // Shop navigation
+      if (this.showingShop) {
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+          this.shopSelectedIndex = Math.max(0, this.shopSelectedIndex - 1);
+          this.services?.audio?.playSound?.('click');
+        }
+        if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+          this.shopSelectedIndex = Math.min(UPGRADE_DEFINITIONS.length - 1, this.shopSelectedIndex + 1);
+          this.services?.audio?.playSound?.('click');
+        }
+        if (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyZ') {
+          this.purchaseUpgrade(this.shopSelectedIndex);
+        }
+        if (e.code === 'Escape' || e.code === 'KeyX') {
+          this.showingShop = false;
+          this.proceedToNextLevel();
+        }
+        return;
+      }
+      
       // Bomb with B key only (Space is now for firing)
-      if (e.code === 'KeyB' && !this.gameOver) {
+      if (e.code === 'KeyB' && !this.gameOver && !this.showingStats && !this.showingShop) {
         this.useBomb();
       }
       
@@ -352,11 +458,51 @@ export class SpaceShooterGame extends BaseGame {
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
   }
+  
+  private purchaseUpgrade(index: number): void {
+    const upgrade = UPGRADE_DEFINITIONS[index];
+    const currentLevel = this.shipUpgrades[upgrade.id];
+    
+    if (currentLevel >= upgrade.maxLevel) {
+      // Already maxed
+      this.services?.audio?.playSound?.('click');
+      return;
+    }
+    
+    const cost = Math.floor(upgrade.baseCost * Math.pow(upgrade.costMultiplier, currentLevel));
+    
+    if (this.totalCoinsEarned >= cost) {
+      this.totalCoinsEarned -= cost;
+      this.shipUpgrades[upgrade.id]++;
+      
+      this.services?.audio?.playSound?.('powerup');
+      
+      // Show purchase confirmation
+      this.scorePopups.push({
+        pos: { x: this.canvas.width / 2, y: this.canvas.height / 2 },
+        text: `${upgrade.name} UPGRADED!`,
+        life: 1.5,
+        color: '#44ff44',
+        scale: 0,
+      });
+    } else {
+      // Not enough coins
+      this.services?.audio?.playSound?.('game_over');
+    }
+  }
 
   // ============= GAME UPDATE =============
 
   protected onUpdate(dt: number): void {
     if (this.gameOver) return;
+    
+    // Upgrade shop handling
+    if (this.showingShop) {
+      this.updateBackground(dt);
+      this.updateParticles(dt);
+      // Shop input handled in key handlers
+      return;
+    }
     
     // Stats screen handling - pause gameplay and wait for input
     if (this.showingStats) {
@@ -365,7 +511,7 @@ export class SpaceShooterGame extends BaseGame {
       this.updateScorePopups(dt);
       this.updateBackground(dt);
       
-      // Check for any key press to dismiss stats screen early
+      // Check for any key press to dismiss stats screen and show shop
       const anyKeyPressed = this.keys.size > 0 && 
         !this.keys.has('ArrowLeft') && !this.keys.has('ArrowRight') &&
         !this.keys.has('ArrowUp') && !this.keys.has('ArrowDown') &&
@@ -375,7 +521,11 @@ export class SpaceShooterGame extends BaseGame {
       if (this.statsTimer <= 0 || anyKeyPressed) {
         this.showingStats = false;
         this.levelStats = null;
-        this.proceedToNextLevel();
+        // Transfer pickups to persistent coins for the shop
+        this.totalCoinsEarned += this.pickups;
+        // Show upgrade shop
+        this.showingShop = true;
+        this.shopSelectedIndex = 0;
       }
       return;
     }
@@ -403,6 +553,7 @@ export class SpaceShooterGame extends BaseGame {
     if (this.ship.invincibleTime > 0) this.ship.invincibleTime -= dt;
     if (this.ship.shieldTime > 0) this.ship.shieldTime -= dt;
     if (this.ship.rapidFireTime > 0) this.ship.rapidFireTime -= dt;
+    if (this.ship.speedBoostTime > 0) this.ship.speedBoostTime -= dt;
     
     // Movement with acceleration physics
     let ax = 0, ay = 0;
@@ -419,19 +570,24 @@ export class SpaceShooterGame extends BaseGame {
       ay /= len;
     }
     
-    // Apply acceleration
-    this.ship.vel.x += ax * SHIP_ACCELERATION * dt;
-    this.ship.vel.y += ay * SHIP_ACCELERATION * dt;
+    // Apply acceleration (boosted when speed power-up active)
+    const speedUpgradeBonus = 1 + (this.shipUpgrades.moveSpeed * 0.1); // +10% per level
+    const accelMultiplier = (this.ship.speedBoostTime > 0 ? 1.5 : 1) * speedUpgradeBonus;
+    this.ship.vel.x += ax * SHIP_ACCELERATION * accelMultiplier * dt;
+    this.ship.vel.y += ay * SHIP_ACCELERATION * accelMultiplier * dt;
     
-    // Apply drag
-    this.ship.vel.x *= Math.pow(1 - SHIP_DRAG * dt, 1);
-    this.ship.vel.y *= Math.pow(1 - SHIP_DRAG * dt, 1);
+    // Apply drag (less drag when boosted for smoother fast movement)
+    const dragMultiplier = this.ship.speedBoostTime > 0 ? 0.7 : 1;
+    this.ship.vel.x *= Math.pow(1 - SHIP_DRAG * dragMultiplier * dt, 1);
+    this.ship.vel.y *= Math.pow(1 - SHIP_DRAG * dragMultiplier * dt, 1);
     
-    // Clamp velocity
+    // Clamp velocity (higher max when speed boosted, plus upgrade bonus)
+    const baseMaxSpeed = this.ship.speedBoostTime > 0 ? SHIP_BOOSTED_MAX_SPEED : SHIP_MAX_SPEED;
+    const maxSpeed = baseMaxSpeed * speedUpgradeBonus;
     const speed = Math.sqrt(this.ship.vel.x ** 2 + this.ship.vel.y ** 2);
-    if (speed > SHIP_MAX_SPEED) {
-      this.ship.vel.x = (this.ship.vel.x / speed) * SHIP_MAX_SPEED;
-      this.ship.vel.y = (this.ship.vel.y / speed) * SHIP_MAX_SPEED;
+    if (speed > maxSpeed) {
+      this.ship.vel.x = (this.ship.vel.x / speed) * maxSpeed;
+      this.ship.vel.y = (this.ship.vel.y / speed) * maxSpeed;
     }
     
     // Update position
@@ -446,7 +602,9 @@ export class SpaceShooterGame extends BaseGame {
     
     // Firing - manual with Space/J, or auto-fire during Rapid Fire power-up
     this.fireTimer -= dt;
-    const fireRate = this.ship.rapidFireTime > 0 ? RAPID_FIRE_RATE : FIRE_RATE;
+    const fireRateUpgradeBonus = 1 + (this.shipUpgrades.fireRate * 0.1); // +10% per level (faster = lower time)
+    const baseFireRate = this.ship.rapidFireTime > 0 ? RAPID_FIRE_RATE : FIRE_RATE;
+    const fireRate = baseFireRate / fireRateUpgradeBonus;
     const wantsToFire = this.keys.has('Space') || this.keys.has('KeyJ') || this.keys.has('KeyZ');
     const hasAutoFire = this.ship.rapidFireTime > 0;
     
@@ -466,7 +624,7 @@ export class SpaceShooterGame extends BaseGame {
     const y = this.ship.pos.y - this.ship.height / 2;
     
     const weaponLevel = this.ship.weaponLevel;
-    const isSpread = this.ship.weaponType === 'spread' || weaponLevel >= 3;
+    const isSpread = weaponLevel >= 3; // Spread shots at level 3+
     const damage = weaponLevel >= 2 ? 2 : 1;
     const piercing = weaponLevel >= 4;
     const color = weaponLevel >= 4 ? '#ff44ff' : weaponLevel >= 3 ? '#44ffff' : weaponLevel >= 2 ? '#ffff44' : '#44ff44';
@@ -572,6 +730,15 @@ export class SpaceShooterGame extends BaseGame {
       e.t += dt;
       e.shootTimer -= dt;
       if (e.hitFlash > 0) e.hitFlash -= dt;
+      if (e.eliteAbilityTimer > 0) e.eliteAbilityTimer -= dt;
+      
+      // Elite tanker shield regeneration
+      if (e.isElite && e.type === 'tanker' && e.eliteShield < 3) {
+        if (e.eliteAbilityTimer <= 0) {
+          e.eliteShield = Math.min(3, e.eliteShield + 1);
+          e.eliteAbilityTimer = 3; // Regenerate 1 shield every 3 seconds
+        }
+      }
       
       // Movement based on type
       switch (e.type) {
@@ -581,7 +748,23 @@ export class SpaceShooterGame extends BaseGame {
           
         case 'sine':
           e.pos.y += e.vel.y * dt;
-          e.pos.x = e.startX + Math.sin(e.t * 3) * 80;
+          // Elite sine: wider, faster wave + leaves trail particles
+          const waveAmplitude = e.isElite ? 120 : 80;
+          const waveFrequency = e.isElite ? 4 : 3;
+          e.pos.x = e.startX + Math.sin(e.t * waveFrequency) * waveAmplitude;
+          if (e.isElite && Math.random() < 0.3) {
+            this.particles.push({
+              pos: { x: e.pos.x, y: e.pos.y },
+              vel: { x: (Math.random() - 0.5) * 20, y: -30 },
+              life: 0.5,
+              maxLife: 0.5,
+              size: 4,
+              color: '#ff44ff',
+              type: 'trail',
+              rotation: 0,
+              rotationSpeed: 0,
+            });
+          }
           break;
           
         case 'shooter':
@@ -589,8 +772,13 @@ export class SpaceShooterGame extends BaseGame {
           if (e.pos.y > 50 && e.pos.y < this.canvas.height / 2) {
             e.vel.y *= 0.95; // Slow down to shoot
             if (e.shootTimer <= 0) {
-              this.enemyShoot(e);
-              e.shootTimer = 1.5;
+              if (e.isElite) {
+                // Elite shooter fires homing missiles!
+                this.spawnHomingMissile(e.pos.x, e.pos.y + e.height / 2);
+              } else {
+                this.enemyShoot(e);
+              }
+              e.shootTimer = e.isElite ? 2 : 1.5;
             }
           }
           break;
@@ -599,13 +787,36 @@ export class SpaceShooterGame extends BaseGame {
           // Dive toward player
           if (e.t < 1) {
             e.pos.y += 50 * dt;
+            // Elite diver: teleport warning
+            if (e.isElite && e.t > 0.7 && !e.homingTarget) {
+              e.homingTarget = { x: this.ship.pos.x, y: this.ship.pos.y };
+              // Warning indicator
+              this.particles.push({
+                pos: { x: this.ship.pos.x, y: this.ship.pos.y },
+                vel: { x: 0, y: 0 },
+                life: 0.3,
+                maxLife: 0.3,
+                size: 50,
+                color: '#ff0000',
+                type: 'ring',
+                rotation: 0,
+                rotationSpeed: 0,
+              });
+            }
           } else {
+            // Elite diver teleports to predicted position
+            if (e.isElite && e.homingTarget && e.t < 1.1) {
+              e.pos.x = e.homingTarget.x;
+              e.pos.y = e.homingTarget.y - 150;
+              e.homingTarget = null;
+            }
             const dx = this.ship.pos.x - e.pos.x;
             const dy = this.ship.pos.y - e.pos.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+            const diverSpeed = e.isElite ? ENEMY_CONFIGS.diver.speed * 1.3 : ENEMY_CONFIGS.diver.speed;
             if (dist > 0) {
-              e.vel.x = (dx / dist) * ENEMY_CONFIGS.diver.speed;
-              e.vel.y = (dy / dist) * ENEMY_CONFIGS.diver.speed;
+              e.vel.x = (dx / dist) * diverSpeed;
+              e.vel.y = (dy / dist) * diverSpeed;
             }
             e.pos.x += e.vel.x * dt;
             e.pos.y += e.vel.y * dt;
@@ -618,25 +829,54 @@ export class SpaceShooterGame extends BaseGame {
           e.pos.x = e.spinCenter.x + Math.cos(e.spinAngle) * e.spinRadius;
           e.pos.y = e.spinCenter.y + Math.sin(e.spinAngle) * e.spinRadius;
           if (e.shootTimer <= 0 && e.spinCenter.y > 100) {
-            this.enemyShoot(e);
-            e.shootTimer = 0.8;
+            if (e.isElite) {
+              // Elite spinner: bullet vortex!
+              for (let j = 0; j < 8; j++) {
+                const angle = (Math.PI * 2 / 8) * j + e.spinAngle;
+                this.enemyBullets.push({
+                  pos: { x: e.pos.x, y: e.pos.y },
+                  vel: { x: Math.cos(angle) * 150, y: Math.sin(angle) * 150 },
+                  size: 4,
+                  damage: 1,
+                  color: '#ff00ff',
+                });
+              }
+              e.shootTimer = 1.2;
+            } else {
+              this.enemyShoot(e);
+              e.shootTimer = 0.8;
+            }
           }
           break;
           
         case 'tanker':
           e.pos.y += e.vel.y * dt;
           if (e.shootTimer <= 0 && e.pos.y > 80) {
-            // Tanker shoots burst of 3
-            for (let j = -1; j <= 1; j++) {
-              this.enemyBullets.push({
-                pos: { x: e.pos.x, y: e.pos.y + e.height / 2 },
-                vel: { x: j * 80, y: 200 },
-                size: 6,
-                damage: 1,
-                color: '#ff6644',
-              });
+            if (e.isElite) {
+              // Elite tanker: wider spread + more bullets
+              for (let j = -2; j <= 2; j++) {
+                this.enemyBullets.push({
+                  pos: { x: e.pos.x, y: e.pos.y + e.height / 2 },
+                  vel: { x: j * 70, y: 180 },
+                  size: 8,
+                  damage: 1,
+                  color: '#ffaa00',
+                });
+              }
+              e.shootTimer = 1.5;
+            } else {
+              // Normal tanker shoots burst of 3
+              for (let j = -1; j <= 1; j++) {
+                this.enemyBullets.push({
+                  pos: { x: e.pos.x, y: e.pos.y + e.height / 2 },
+                  vel: { x: j * 80, y: 200 },
+                  size: 6,
+                  damage: 1,
+                  color: '#ff6644',
+                });
+              }
+              e.shootTimer = 2;
             }
-            e.shootTimer = 2;
             this.services?.audio?.playSound?.('click');
           }
           break;
@@ -646,6 +886,82 @@ export class SpaceShooterGame extends BaseGame {
       if (e.pos.y > this.canvas.height + 100 || 
           e.pos.x < -100 || e.pos.x > this.canvas.width + 100) {
         this.enemies.splice(i, 1);
+      }
+    }
+    
+    // Update homing missiles
+    this.updateHomingMissiles(dt);
+  }
+  
+  private spawnHomingMissile(x: number, y: number): void {
+    this.homingBullets.push({
+      pos: { x, y },
+      vel: { x: 0, y: 100 },
+      target: { x: this.ship.pos.x, y: this.ship.pos.y },
+      life: 4,
+    });
+    this.services?.audio?.playSound?.('click');
+  }
+  
+  private updateHomingMissiles(dt: number): void {
+    for (let i = this.homingBullets.length - 1; i >= 0; i--) {
+      const m = this.homingBullets[i];
+      m.life -= dt;
+      
+      // Home toward player
+      const dx = this.ship.pos.x - m.pos.x;
+      const dy = this.ship.pos.y - m.pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      if (dist > 0) {
+        const turnSpeed = 3;
+        m.vel.x += (dx / dist) * turnSpeed;
+        m.vel.y += (dy / dist) * turnSpeed;
+        
+        // Limit speed
+        const speed = Math.sqrt(m.vel.x ** 2 + m.vel.y ** 2);
+        if (speed > 250) {
+          m.vel.x = (m.vel.x / speed) * 250;
+          m.vel.y = (m.vel.y / speed) * 250;
+        }
+      }
+      
+      m.pos.x += m.vel.x * dt;
+      m.pos.y += m.vel.y * dt;
+      
+      // Trail particles
+      if (Math.random() < 0.5) {
+        this.particles.push({
+          pos: { x: m.pos.x, y: m.pos.y },
+          vel: { x: -m.vel.x * 0.2, y: -m.vel.y * 0.2 },
+          life: 0.3,
+          maxLife: 0.3,
+          size: 3,
+          color: '#ff4400',
+          type: 'trail',
+          rotation: 0,
+          rotationSpeed: 0,
+        });
+      }
+      
+      // Check collision with player
+      if (this.ship.invincibleTime <= 0) {
+        const hitDist = Math.sqrt(
+          (m.pos.x - this.ship.pos.x) ** 2 + 
+          (m.pos.y - this.ship.pos.y) ** 2
+        );
+        if (hitDist < 25) {
+          this.onShipHit(1);
+          this.spawnExplosion(m.pos.x, m.pos.y, 20, '#ff4400');
+          this.homingBullets.splice(i, 1);
+          continue;
+        }
+      }
+      
+      // Remove if expired or off screen
+      if (m.life <= 0 || m.pos.y > this.canvas.height + 50 || 
+          m.pos.x < -50 || m.pos.x > this.canvas.width + 50) {
+        this.homingBullets.splice(i, 1);
       }
     }
   }
@@ -921,6 +1237,11 @@ export class SpaceShooterGame extends BaseGame {
   private spawnEnemyGroup(type: Enemy['type'], count: number, pattern: string): void {
     const config = ENEMY_CONFIGS[type];
     
+    // Assign a new group ID for this spawn group
+    const groupId = ++this.currentGroupId;
+    this.groupSizes.set(groupId, count);
+    this.groupKills.set(groupId, 0);
+    
     for (let i = 0; i < count; i++) {
       let x: number, delay: number;
       
@@ -946,21 +1267,33 @@ export class SpaceShooterGame extends BaseGame {
       }
       
       setTimeout(() => {
-        this.spawnEnemy(type, x, -50);
+        this.spawnEnemy(type, x, -50, groupId);
       }, delay * 1000);
     }
   }
 
-  private spawnEnemy(type: Enemy['type'], x: number, y: number): void {
+  private spawnEnemy(type: Enemy['type'], x: number, y: number, groupId: number = 0): void {
     const config = ENEMY_CONFIGS[type];
+    
+    // Determine if this is an elite (higher chance in later levels)
+    const eliteChance = ELITE_SPAWN_CHANCE + (this.levelNumber - 1) * 0.02; // +2% per level
+    const isElite = Math.random() < eliteChance;
+    
+    // Calculate stats (elites are stronger)
+    const hpMultiplier = isElite ? ELITE_HP_MULTIPLIER : 1;
+    const sizeMultiplier = isElite ? ELITE_SIZE_MULTIPLIER : 1;
+    const valueMultiplier = isElite ? ELITE_VALUE_MULTIPLIER : 1;
+    
+    const baseHp = config.hp + Math.floor((this.levelNumber - 1) * 0.3 * config.hp);
+    const finalHp = Math.floor(baseHp * hpMultiplier);
     
     const enemy: Enemy = {
       pos: { x, y },
       vel: { x: 0, y: config.speed },
-      width: config.width,
-      height: config.height,
-      hp: config.hp + Math.floor((this.levelNumber - 1) * 0.5),
-      maxHp: config.hp + Math.floor((this.levelNumber - 1) * 0.5),
+      width: Math.floor(config.width * sizeMultiplier),
+      height: Math.floor(config.height * sizeMultiplier),
+      hp: finalHp,
+      maxHp: finalHp,
       type,
       t: 0,
       shootTimer: Math.random() * 2 + 1,
@@ -968,11 +1301,28 @@ export class SpaceShooterGame extends BaseGame {
       spinAngle: 0,
       spinRadius: 60,
       spinCenter: { x, y },
-      value: config.value,
+      value: Math.floor(config.value * valueMultiplier),
       hitFlash: 0,
+      groupId,
+      // Elite properties
+      isElite,
+      eliteShield: isElite && type === 'tanker' ? 3 : 0, // Tankers get regenerating shield
+      eliteAbilityTimer: 0,
+      homingTarget: null,
     };
     
     this.enemies.push(enemy);
+    
+    // Announce elite spawn
+    if (isElite) {
+      this.scorePopups.push({
+        pos: { x, y: y + 30 },
+        text: `⚠ ELITE ${type.toUpperCase()}!`,
+        life: 1.5,
+        color: '#ffcc00',
+        scale: 0,
+      });
+    }
   }
 
   private onWaveComplete(): void {
@@ -1011,12 +1361,17 @@ export class SpaceShooterGame extends BaseGame {
   }
 
   private spawnBoss(): void {
+    // Boss HP scales significantly with level - should feel like a real fight!
+    const bossBaseHp = 120;
+    const bossHpPerLevel = 60;
+    const bossHp = bossBaseHp + this.levelNumber * bossHpPerLevel;
+    
     this.boss = {
       pos: { x: this.canvas.width / 2, y: -120 },
       width: 150,
       height: 100,
-      hp: 50 + this.levelNumber * 20,
-      maxHp: 50 + this.levelNumber * 20,
+      hp: bossHp,
+      maxHp: bossHp,
       phase: 1,
       phaseTimer: 0,
       shootTimer: 2,
@@ -1051,6 +1406,7 @@ export class SpaceShooterGame extends BaseGame {
       powerUpsCollected: this.powerUpsCollectedThisLevel,
       maxComboThisLevel: this.maxComboThisLevel,
       bossTime: this.bossTimer,
+      groupClears: this.groupClearsThisLevel,
     };
     this.showingStats = true;
     this.statsTimer = 5; // Show stats for 5 seconds
@@ -1087,6 +1443,10 @@ export class SpaceShooterGame extends BaseGame {
     this.boss = null;
     this.levelNumber++;
     
+    // Clear remaining projectiles
+    this.homingBullets = [];
+    this.enemyBullets = [];
+    
     // Reset level stats for next level
     this.shotsHitThisLevel = 0;
     this.shotsFiredThisLevel = 0;
@@ -1095,6 +1455,13 @@ export class SpaceShooterGame extends BaseGame {
     this.powerUpsCollectedThisLevel = 0;
     this.maxComboThisLevel = 0;
     this.bossTimer = 0;
+    this.elitesKilledThisLevel = 0;
+    
+    // Reset group tracking for next level
+    this.currentGroupId = 0;
+    this.groupSizes.clear();
+    this.groupKills.clear();
+    this.groupClearsThisLevel = 0;
     
     // Start next level
     this.scorePopups.push({
@@ -1142,14 +1509,54 @@ export class SpaceShooterGame extends BaseGame {
         const e = this.enemies[j];
         if (this.circleRect(b.pos.x, b.pos.y, b.size, 
             e.pos.x - e.width/2, e.pos.y - e.height/2, e.width, e.height)) {
-          e.hp -= b.damage;
+          
+          // Calculate damage with crit chance
+          const critChance = this.shipUpgrades.critChance * 0.05; // 5% per level
+          const isCrit = Math.random() < critChance;
+          let damage = isCrit ? b.damage * 2 : b.damage;
+          
+          // Elite tanker shield absorbs damage
+          if (e.isElite && e.type === 'tanker' && e.eliteShield > 0) {
+            e.eliteShield--;
+            e.hitFlash = 0.15;
+            // Shield absorption effect
+            this.spawnHitSparks(b.pos.x, b.pos.y, 8);
+            this.particles.push({
+              pos: { x: e.pos.x, y: e.pos.y },
+              vel: { x: 0, y: 0 },
+              life: 0.2,
+              maxLife: 0.2,
+              size: e.width,
+              color: '#4488ff',
+              type: 'ring',
+              rotation: 0,
+              rotationSpeed: 0,
+            });
+            if (!b.piercing) {
+              this.bullets.splice(i, 1);
+            }
+            break;
+          }
+          
+          e.hp -= damage;
           e.hitFlash = 0.1;
           
           // Track shots hit for stats
           this.shotsHitThisLevel++;
           
-          // Spawn hit particles
-          this.spawnHitSparks(b.pos.x, b.pos.y, 5);
+          // Spawn hit particles (more for crits)
+          this.spawnHitSparks(b.pos.x, b.pos.y, isCrit ? 10 : 5);
+          
+          // Crit indicator
+          if (isCrit) {
+            this.scorePopups.push({
+              pos: { x: b.pos.x, y: b.pos.y },
+              text: 'CRIT!',
+              life: 0.5,
+              color: '#ff4444',
+              scale: 0,
+            });
+          }
           
           if (!b.piercing) {
             this.bullets.splice(i, 1);
@@ -1167,9 +1574,25 @@ export class SpaceShooterGame extends BaseGame {
         if (this.circleRect(b.pos.x, b.pos.y, b.size,
             this.boss.pos.x - this.boss.width/2, this.boss.pos.y - this.boss.height/2,
             this.boss.width, this.boss.height)) {
-          this.boss.hp -= b.damage;
+          
+          // Crit chance on boss too
+          const critChance = this.shipUpgrades.critChance * 0.05;
+          const isCrit = Math.random() < critChance;
+          const damage = isCrit ? b.damage * 2 : b.damage;
+          
+          this.boss.hp -= damage;
           this.boss.hitFlash = 0.1;
-          this.spawnHitSparks(b.pos.x, b.pos.y, 3);
+          this.spawnHitSparks(b.pos.x, b.pos.y, isCrit ? 6 : 3);
+          
+          if (isCrit) {
+            this.scorePopups.push({
+              pos: { x: b.pos.x, y: b.pos.y },
+              text: 'CRIT!',
+              life: 0.5,
+              color: '#ff4444',
+              scale: 0,
+            });
+          }
           
           // Track shots hit for stats
           this.shotsHitThisLevel++;
@@ -1207,11 +1630,23 @@ export class SpaceShooterGame extends BaseGame {
       }
     }
     
-    // Power-ups vs Ship
+    // Power-ups vs Ship (with coin magnet upgrade)
+    const magnetRange = this.ship.width / 2 + (this.shipUpgrades.coinMagnet * 20);
     for (let i = this.powerUps.length - 1; i >= 0; i--) {
       const p = this.powerUps[i];
+      const dx = this.ship.pos.x - p.pos.x;
+      const dy = this.ship.pos.y - p.pos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      
+      // Magnet effect: pull power-ups toward player
+      if (dist < magnetRange * 2 && dist > 0) {
+        const pullStrength = 200 * (1 - dist / (magnetRange * 2));
+        p.pos.x += (dx / dist) * pullStrength * 0.016; // Approximate dt
+        p.pos.y += (dy / dist) * pullStrength * 0.016;
+      }
+      
       if (this.circleCircle(p.pos.x, p.pos.y, p.size,
-          this.ship.pos.x, this.ship.pos.y, this.ship.width / 2)) {
+          this.ship.pos.x, this.ship.pos.y, magnetRange)) {
         this.collectPowerUp(p);
         this.powerUps.splice(i, 1);
       }
@@ -1240,8 +1675,35 @@ export class SpaceShooterGame extends BaseGame {
     // Remove enemy
     this.enemies.splice(index, 1);
     
-    // Explosion
-    this.spawnExplosion(e.pos.x, e.pos.y, e.width, this.getEnemyColor(e.type));
+    // Elite kill tracking
+    if (e.isElite) {
+      this.elitesKilledThisLevel++;
+    }
+    
+    // Explosion (bigger for elites)
+    const explosionSize = e.isElite ? e.width * 1.5 : e.width;
+    const explosionColor = e.isElite ? '#ffcc00' : this.getEnemyColor(e.type);
+    this.spawnExplosion(e.pos.x, e.pos.y, explosionSize, explosionColor);
+    
+    // Extra explosion for elites
+    if (e.isElite) {
+      setTimeout(() => {
+        this.spawnExplosion(e.pos.x + (Math.random() - 0.5) * 30, e.pos.y + (Math.random() - 0.5) * 30, 25, '#ffaa00');
+      }, 100);
+      this.triggerScreenShake(10, 0.2);
+    }
+    
+    // Track group kills for group clear bonus
+    if (e.groupId > 0) {
+      const currentKills = (this.groupKills.get(e.groupId) || 0) + 1;
+      this.groupKills.set(e.groupId, currentKills);
+      
+      const groupSize = this.groupSizes.get(e.groupId) || 0;
+      if (currentKills === groupSize && groupSize > 1) {
+        // Group cleared! Trigger bonus
+        this.onGroupCleared(e.groupId, groupSize);
+      }
+    }
     
     // Combo system
     this.comboCount++;
@@ -1258,26 +1720,91 @@ export class SpaceShooterGame extends BaseGame {
     this.addScore(points);
     this.totalKills++;
     
-    // Score popup
+    // Score popup (golden for elites)
     const comboText = this.comboCount > 1 ? ` x${this.comboCount}` : '';
+    const eliteText = e.isElite ? '★ ' : '';
     this.scorePopups.push({
       pos: { x: e.pos.x, y: e.pos.y },
-      text: `+${points}${comboText}`,
-      life: 1,
-      color: this.comboCount > 5 ? '#ffff00' : this.comboCount > 3 ? '#ff8844' : '#ffffff',
+      text: `${eliteText}+${points}${comboText}`,
+      life: e.isElite ? 1.5 : 1,
+      color: e.isElite ? '#ffcc00' : (this.comboCount > 5 ? '#ffff00' : this.comboCount > 3 ? '#ff8844' : '#ffffff'),
       scale: 0,
     });
     
-    // Chance to drop power-up
-    if (Math.random() < 0.08) {
+    // Chance to drop power-up (higher for elites)
+    const dropChance = e.isElite ? 0.5 : 0.08;
+    if (Math.random() < dropChance) {
       this.spawnPowerUp(e.pos.x, e.pos.y);
     }
     
-    // Pickups (coins)
-    this.pickups += 1;
+    // Elites drop a second power-up sometimes
+    if (e.isElite && Math.random() < 0.3) {
+      setTimeout(() => {
+        this.spawnPowerUp(e.pos.x + (Math.random() - 0.5) * 40, e.pos.y);
+      }, 200);
+    }
+    
+    // Pickups (coins) - elites drop more
+    const coinDrop = e.isElite ? 5 : 1;
+    this.pickups += coinDrop;
     
     this.services?.audio?.playSound?.('coin');
-    this.triggerScreenShake(5, 0.1);
+    this.triggerScreenShake(e.isElite ? 8 : 5, 0.1);
+  }
+  
+  private onGroupCleared(groupId: number, groupSize: number): void {
+    // Calculate bonus based on group size
+    const bonusScore = GROUP_CLEAR_BONUS_SCORE * groupSize;
+    const bonusPickups = GROUP_CLEAR_BONUS_PICKUPS;
+    
+    // Award bonus
+    this.addScore(bonusScore);
+    this.pickups += bonusPickups;
+    this.groupClearsThisLevel++;
+    
+    // Big flashy popup
+    this.scorePopups.push({
+      pos: { x: this.canvas.width / 2, y: this.canvas.height / 2 - 50 },
+      text: `✦ PERFECT CLEAR! ✦`,
+      life: 1.5,
+      color: '#ffff00',
+      scale: 0,
+    });
+    
+    // Bonus score popup
+    this.scorePopups.push({
+      pos: { x: this.canvas.width / 2, y: this.canvas.height / 2 },
+      text: `+${bonusScore} BONUS`,
+      life: 1.5,
+      color: '#44ffff',
+      scale: 0,
+    });
+    
+    // Spawn a guaranteed power-up for clearing a group
+    this.spawnPowerUp(this.canvas.width / 2, 150);
+    
+    // Special ring explosion effect
+    for (let i = 0; i < 20; i++) {
+      const angle = (Math.PI * 2 / 20) * i;
+      this.particles.push({
+        pos: { x: this.canvas.width / 2, y: this.canvas.height / 2 },
+        vel: { x: Math.cos(angle) * 300, y: Math.sin(angle) * 300 },
+        life: 0.6,
+        maxLife: 0.6,
+        size: 6,
+        color: '#ffff44',
+        type: 'ring',
+        rotation: 0,
+        rotationSpeed: 0,
+      });
+    }
+    
+    // Screen flash and shake
+    this.flashAlpha = 0.3;
+    this.triggerScreenShake(12, 0.3);
+    
+    // Play success sound
+    this.services?.audio?.playSound?.('success');
   }
 
   private onShipHit(damage: number): void {
@@ -1314,22 +1841,27 @@ export class SpaceShooterGame extends BaseGame {
     // Track power-ups collected for stats
     this.powerUpsCollectedThisLevel++;
     
+    // Calculate upgraded shield duration
+    const upgradedShieldDuration = SHIELD_DURATION + (this.shipUpgrades.shieldDuration * 2);
+    
     switch (p.type) {
       case 'weapon':
         this.ship.weaponLevel = Math.min(5, this.ship.weaponLevel + 1);
         break;
-      case 'spread':
-        this.ship.weaponType = 'spread';
-        this.ship.weaponLevel = Math.min(5, this.ship.weaponLevel + 1);
+      case 'speed':
+        // Speed boost STACKS - add time instead of resetting
+        this.ship.speedBoostTime += SPEED_BOOST_DURATION;
         break;
       case 'rapid':
-        this.ship.rapidFireTime = RAPID_FIRE_DURATION;
+        // Rapid fire STACKS - add time instead of resetting
+        this.ship.rapidFireTime += RAPID_FIRE_DURATION;
         break;
       case 'shield':
-        this.ship.shieldTime = SHIELD_DURATION;
+        // Shield STACKS - add time instead of resetting (with upgrade bonus)
+        this.ship.shieldTime += upgradedShieldDuration;
         break;
       case 'bomb':
-        this.ship.bombs = Math.min(5, this.ship.bombs + 1);
+        this.ship.bombs = Math.min(5 + this.shipUpgrades.startingBombs, this.ship.bombs + 1);
         break;
       case 'heal':
         this.ship.hp = Math.min(this.ship.maxHp, this.ship.hp + 1);
@@ -1352,7 +1884,7 @@ export class SpaceShooterGame extends BaseGame {
   private getPowerUpName(type: PowerUp['type']): string {
     switch (type) {
       case 'weapon': return 'POWER UP!';
-      case 'spread': return 'SPREAD SHOT!';
+      case 'speed': return 'SPEED BOOST!';
       case 'rapid': return 'RAPID FIRE!';
       case 'shield': return 'SHIELD!';
       case 'bomb': return '+BOMB';
@@ -1441,7 +1973,7 @@ export class SpaceShooterGame extends BaseGame {
   // ============= SPAWN HELPERS =============
 
   private spawnPowerUp(x: number, y: number): void {
-    const types: PowerUp['type'][] = ['weapon', 'weapon', 'weapon', 'spread', 'rapid', 'shield', 'bomb', 'heal'];
+    const types: PowerUp['type'][] = ['weapon', 'weapon', 'weapon', 'speed', 'rapid', 'shield', 'bomb', 'heal'];
     const type = types[Math.floor(Math.random() * types.length)];
     
     this.powerUps.push({
@@ -1524,13 +2056,24 @@ export class SpaceShooterGame extends BaseGame {
 
   private spawnEngineTrail(): void {
     const offsetX = (Math.random() - 0.5) * 10;
+    const isSpeedBoosted = this.ship.speedBoostTime > 0;
+    
+    // Use cyan/blue colors when speed boosted, orange/yellow normally
+    const color = isSpeedBoosted 
+      ? (Math.random() > 0.5 ? '#00ffff' : '#44aaff')
+      : (Math.random() > 0.5 ? '#ff6600' : '#ffaa00');
+    
+    // Bigger, longer trails when speed boosted
+    const size = isSpeedBoosted ? 6 + Math.random() * 6 : 4 + Math.random() * 4;
+    const life = isSpeedBoosted ? 0.35 : 0.2;
+    
     this.particles.push({
       pos: { x: this.ship.pos.x + offsetX, y: this.ship.pos.y + this.ship.height / 2 },
       vel: { x: offsetX * 2, y: 100 + Math.random() * 50 },
-      life: 0.2,
-      maxLife: 0.2,
-      size: 4 + Math.random() * 4,
-      color: Math.random() > 0.5 ? '#ff6600' : '#ffaa00',
+      life,
+      maxLife: life,
+      size,
+      color,
       type: 'trail',
       rotation: 0,
       rotationSpeed: 0,
@@ -1584,6 +2127,7 @@ export class SpaceShooterGame extends BaseGame {
     this.renderShip(ctx);
     this.renderBullets(ctx);
     this.renderEnemyBullets(ctx);
+    this.renderHomingMissiles(ctx);
     this.renderParticles(ctx);
     this.renderScorePopups(ctx);
     
@@ -1606,6 +2150,136 @@ export class SpaceShooterGame extends BaseGame {
     // Stats screen after boss defeat
     if (this.showingStats && this.levelStats) {
       this.renderStatsScreen(ctx);
+    }
+    
+    // Upgrade shop
+    if (this.showingShop) {
+      this.renderUpgradeShop(ctx);
+    }
+  }
+  
+  private renderHomingMissiles(ctx: CanvasRenderingContext2D): void {
+    for (const m of this.homingBullets) {
+      ctx.save();
+      ctx.translate(m.pos.x, m.pos.y);
+      
+      // Rotate to face direction
+      const angle = Math.atan2(m.vel.y, m.vel.x) + Math.PI / 2;
+      ctx.rotate(angle);
+      
+      // Missile body
+      ctx.fillStyle = '#ff4400';
+      ctx.shadowColor = '#ff4400';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(-4, 6);
+      ctx.lineTo(4, 6);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Warhead
+      ctx.fillStyle = '#ffcc00';
+      ctx.beginPath();
+      ctx.arc(0, -6, 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+  
+  private renderUpgradeShop(ctx: CanvasRenderingContext2D): void {
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 30, 0.92)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    const centerX = this.canvas.width / 2;
+    const startY = 50;
+    
+    // Title
+    ctx.fillStyle = '#44ffff';
+    ctx.font = 'bold 32px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('⚙ UPGRADE SHOP ⚙', centerX, startY);
+    
+    // Coins display
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`💰 ${this.totalCoinsEarned} COINS`, centerX, startY + 35);
+    
+    // Upgrade list
+    const itemHeight = 55;
+    const listStartY = startY + 70;
+    const listWidth = 380;
+    
+    for (let i = 0; i < UPGRADE_DEFINITIONS.length; i++) {
+      const upgrade = UPGRADE_DEFINITIONS[i];
+      const currentLevel = this.shipUpgrades[upgrade.id];
+      const isMaxed = currentLevel >= upgrade.maxLevel;
+      const cost = isMaxed ? 0 : Math.floor(upgrade.baseCost * Math.pow(upgrade.costMultiplier, currentLevel));
+      const canAfford = this.totalCoinsEarned >= cost;
+      const isSelected = i === this.shopSelectedIndex;
+      
+      const y = listStartY + i * itemHeight;
+      
+      // Selection highlight
+      if (isSelected) {
+        ctx.fillStyle = 'rgba(68, 255, 255, 0.2)';
+        ctx.fillRect(centerX - listWidth / 2 - 10, y - 20, listWidth + 20, itemHeight - 5);
+        ctx.strokeStyle = '#44ffff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(centerX - listWidth / 2 - 10, y - 20, listWidth + 20, itemHeight - 5);
+      }
+      
+      // Icon
+      ctx.font = '24px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText(upgrade.icon, centerX - listWidth / 2, y);
+      
+      // Name
+      ctx.fillStyle = isMaxed ? '#888888' : (isSelected ? '#ffffff' : '#cccccc');
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText(upgrade.name, centerX - listWidth / 2 + 35, y - 3);
+      
+      // Description
+      ctx.fillStyle = '#888888';
+      ctx.font = '12px Arial';
+      ctx.fillText(upgrade.description, centerX - listWidth / 2 + 35, y + 12);
+      
+      // Level indicators
+      ctx.textAlign = 'right';
+      for (let lvl = 0; lvl < upgrade.maxLevel; lvl++) {
+        ctx.fillStyle = lvl < currentLevel ? '#44ff44' : '#333333';
+        ctx.fillRect(centerX + listWidth / 2 - 80 + lvl * 14, y - 10, 10, 20);
+      }
+      
+      // Cost or MAXED
+      ctx.textAlign = 'right';
+      if (isMaxed) {
+        ctx.fillStyle = '#44ff44';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText('MAXED', centerX + listWidth / 2, y + 2);
+      } else {
+        ctx.fillStyle = canAfford ? '#ffcc00' : '#ff4444';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(`${cost}`, centerX + listWidth / 2, y + 2);
+      }
+    }
+    
+    // Instructions
+    ctx.fillStyle = '#666666';
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('↑↓ Navigate | SPACE/ENTER Buy | ESC Continue', centerX, this.canvas.height - 30);
+    
+    // Preview of selected upgrade effect
+    const selectedUpgrade = UPGRADE_DEFINITIONS[this.shopSelectedIndex];
+    const currentLvl = this.shipUpgrades[selectedUpgrade.id];
+    if (currentLvl < selectedUpgrade.maxLevel) {
+      ctx.fillStyle = '#44ffff';
+      ctx.font = '14px Arial';
+      ctx.fillText(`Current: Level ${currentLvl} → Level ${currentLvl + 1}`, centerX, this.canvas.height - 55);
     }
   }
   
@@ -1706,6 +2380,15 @@ export class SpaceShooterGame extends BaseGame {
     ctx.textAlign = 'right';
     ctx.fillText(`${this.levelStats.powerUpsCollected}`, rightX, y);
     
+    // Perfect Clears (group clears)
+    y += lineHeight;
+    ctx.fillStyle = '#aaaaaa';
+    ctx.textAlign = 'left';
+    ctx.fillText('Perfect Clears:', leftX, y);
+    ctx.fillStyle = this.levelStats.groupClears > 0 ? '#ffff44' : '#666666';
+    ctx.textAlign = 'right';
+    ctx.fillText(`${this.levelStats.groupClears}`, rightX, y);
+    
     // Boss time
     y += lineHeight;
     ctx.fillStyle = '#aaaaaa';
@@ -1758,21 +2441,24 @@ export class SpaceShooterGame extends BaseGame {
     
     let score = 0;
     
-    // Accuracy bonus (0-40 points)
-    score += Math.min(40, accuracy * 0.5);
+    // Accuracy bonus (0-30 points)
+    score += Math.min(30, accuracy * 0.4);
     
     // No damage bonus (20 points)
     if (this.levelStats.damageTaken === 0) score += 20;
     else if (this.levelStats.damageTaken === 1) score += 10;
     
-    // Combo bonus (0-20 points)
-    score += Math.min(20, this.levelStats.maxComboThisLevel * 2);
+    // Combo bonus (0-15 points)
+    score += Math.min(15, this.levelStats.maxComboThisLevel * 1.5);
     
-    // Speed bonus (0-20 points) - faster boss kill = more points
-    if (this.levelStats.bossTime < 30) score += 20;
-    else if (this.levelStats.bossTime < 60) score += 15;
-    else if (this.levelStats.bossTime < 90) score += 10;
-    else score += 5;
+    // Perfect clears bonus (0-20 points) - reward for clearing groups!
+    score += Math.min(20, this.levelStats.groupClears * 4);
+    
+    // Speed bonus (0-15 points) - faster boss kill = more points
+    if (this.levelStats.bossTime < 30) score += 15;
+    else if (this.levelStats.bossTime < 60) score += 12;
+    else if (this.levelStats.bossTime < 90) score += 8;
+    else score += 4;
     
     if (score >= 90) return { letter: 'S', color: '#ffff44', description: 'PERFECT!' };
     if (score >= 80) return { letter: 'A', color: '#44ff44', description: 'Excellent!' };
@@ -1912,12 +2598,42 @@ export class SpaceShooterGame extends BaseGame {
       const w = e.width;
       const h = e.height;
       
+      // Elite glow effect
+      if (e.isElite) {
+        ctx.save();
+        ctx.shadowColor = '#ffcc00';
+        ctx.shadowBlur = 20;
+        ctx.fillStyle = 'rgba(255, 204, 0, 0.3)';
+        ctx.beginPath();
+        ctx.arc(x, y, Math.max(w, h) * 0.7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        
+        // Elite tanker shield indicator
+        if (e.type === 'tanker' && e.eliteShield > 0) {
+          ctx.strokeStyle = `rgba(68, 136, 255, ${0.3 + e.eliteShield * 0.2})`;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(x, y, Math.max(w, h) * 0.6, 0, Math.PI * 2);
+          ctx.stroke();
+          
+          // Shield count
+          for (let s = 0; s < e.eliteShield; s++) {
+            const angle = (Math.PI * 2 / 3) * s - Math.PI / 2;
+            ctx.fillStyle = '#4488ff';
+            ctx.beginPath();
+            ctx.arc(x + Math.cos(angle) * 25, y + Math.sin(angle) * 25, 5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+      
       // Hit flash
       if (e.hitFlash > 0) {
         ctx.globalAlpha = 0.8;
       }
       
-      const baseColor = this.getEnemyColor(e.type);
+      const baseColor = e.isElite ? '#ffcc00' : this.getEnemyColor(e.type);
       
       switch (e.type) {
         case 'basic':
@@ -1931,9 +2647,9 @@ export class SpaceShooterGame extends BaseGame {
           ctx.fill();
           
           // Eye
-          ctx.fillStyle = '#ff4444';
+          ctx.fillStyle = e.isElite ? '#ff0000' : '#ff4444';
           ctx.beginPath();
-          ctx.arc(x, y, 4, 0, Math.PI * 2);
+          ctx.arc(x, y, e.isElite ? 6 : 4, 0, Math.PI * 2);
           ctx.fill();
           break;
           
@@ -1964,7 +2680,7 @@ export class SpaceShooterGame extends BaseGame {
           ctx.fillRect(x - w / 2, y - h / 3, w, h * 2 / 3);
           
           // Turret
-          ctx.fillStyle = '#666666';
+          ctx.fillStyle = e.isElite ? '#884400' : '#666666';
           ctx.beginPath();
           ctx.arc(x, y + h / 3, w / 4, 0, Math.PI * 2);
           ctx.fill();
@@ -2157,7 +2873,7 @@ export class SpaceShooterGame extends BaseGame {
   private getPowerUpColor(type: PowerUp['type']): string {
     switch (type) {
       case 'weapon': return '#ff8844';
-      case 'spread': return '#ff44ff';
+      case 'speed': return '#44ffff';  // Cyan for speed
       case 'rapid': return '#ffff44';
       case 'shield': return '#4488ff';
       case 'bomb': return '#ff4444';
@@ -2169,7 +2885,7 @@ export class SpaceShooterGame extends BaseGame {
   private getPowerUpIcon(type: PowerUp['type']): string {
     switch (type) {
       case 'weapon': return 'P';
-      case 'spread': return 'S';
+      case 'speed': return 'S';  // S for Speed
       case 'rapid': return 'R';
       case 'shield': return 'O';
       case 'bomb': return 'B';
@@ -2295,6 +3011,11 @@ export class SpaceShooterGame extends BaseGame {
     if (this.ship.rapidFireTime > 0) {
       ctx.fillStyle = '#ffff44';
       ctx.fillText(`RAPID: ${this.ship.rapidFireTime.toFixed(1)}s`, this.canvas.width - padding, timerY);
+      timerY -= 20;
+    }
+    if (this.ship.speedBoostTime > 0) {
+      ctx.fillStyle = '#44ffff';
+      ctx.fillText(`SPEED: ${this.ship.speedBoostTime.toFixed(1)}s`, this.canvas.width - padding, timerY);
     }
     
     // Pickups (coins)
@@ -2355,6 +3076,7 @@ export class SpaceShooterGame extends BaseGame {
     this.powerUps = [];
     this.particles = [];
     this.scorePopups = [];
+    this.homingBullets = [];
     
     this.waveNumber = 1;
     this.waveTime = 0;
@@ -2384,6 +3106,19 @@ export class SpaceShooterGame extends BaseGame {
     this.levelStats = null;
     this.showingStats = false;
     this.statsTimer = 0;
+    
+    // Reset group tracking
+    this.currentGroupId = 0;
+    this.groupSizes.clear();
+    this.groupKills.clear();
+    this.groupClearsThisLevel = 0;
+    
+    // Reset elite tracking
+    this.elitesKilledThisLevel = 0;
+    
+    // Reset shop state (but NOT upgrades or totalCoinsEarned - those persist!)
+    this.showingShop = false;
+    this.shopSelectedIndex = 0;
     
     this.startWave(1);
     this.services?.audio?.playSound?.('powerup');

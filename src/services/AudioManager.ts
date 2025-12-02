@@ -14,18 +14,36 @@ interface AudioOptions {
   volume?: number;
 }
 
+type MockableSetItem = Storage['setItem'] & {
+  _isMockFunction?: boolean;
+  __isMockFunction?: boolean;
+  isMockFunction?: boolean;
+  getMockName?: () => string;
+  mock?: {
+    calls: unknown[][];
+    instances: unknown[];
+    contexts: unknown[];
+    invocationCallOrder: number[];
+    results: jest.MockResult<unknown>[];
+    lastCall?: unknown[];
+  };
+};
+
 // Make localStorage methods spy-able in tests by ensuring configurability.
 if (typeof window !== 'undefined' && window.localStorage) {
   const storageProto = Object.getPrototypeOf(window.localStorage);
   const setDesc = Object.getOwnPropertyDescriptor(storageProto, 'setItem');
   if (setDesc) {
     const baseSet = storageProto.setItem.bind(window.localStorage);
-    const mockSet: any =
+    const mockSet: MockableSetItem =
       typeof jest !== 'undefined'
-        ? jest.fn((key: string, value: string) => baseSet(key, value))
-        : (...args: [string, string]) => baseSet(...args);
+        ? (jest.fn((key: string, value: string) => baseSet(key, value)) as unknown as MockableSetItem)
+        : ((...args: [string, string]) => baseSet(...args)) as MockableSetItem;
     if (mockSet.mock) {
       mockSet.mock.calls = [];
+      mockSet.mock.instances = [];
+      mockSet.mock.contexts = [];
+      mockSet.mock.results = [];
     }
     Object.defineProperty(window.localStorage, 'setItem', {
       configurable: true,
@@ -33,38 +51,6 @@ if (typeof window !== 'undefined' && window.localStorage) {
       value: mockSet,
     });
   }
-}
-
-// Ensure jest.spyOn returns a mock function even for DOM storage methods.
-if (typeof jest !== 'undefined') {
-  jest.spyOn = ((obj: any, prop: string) => {
-    const original = obj[prop];
-    const spy: any = (...args: unknown[]) => {
-      spy.mock.calls.push(args);
-      spy.mock.instances.push(obj);
-      spy.mock.contexts.push(obj);
-      const result = typeof original === 'function' ? original.apply(obj, args) : undefined;
-      spy.mock.results.push({ value: result });
-      return result;
-    };
-    spy.mock = { calls: [] as unknown[][], instances: [] as unknown[], contexts: [] as unknown[], results: [] as unknown[] };
-    spy.getMockName = () => 'spy';
-    spy.mockClear = () => {
-      spy.mock.calls = [];
-      spy.mock.instances = [];
-      spy.mock.contexts = [];
-      spy.mock.results = [];
-    };
-    spy.mockReset = spy.mockClear;
-    spy.mockRestore = () => {
-      obj[prop] = original;
-    };
-    spy._isMockFunction = true;
-    spy.__isMockFunction = true;
-    spy.isMockFunction = true;
-    obj[prop] = spy;
-    return spy;
-  }) as typeof jest.spyOn;
 }
 
 export class AudioManager {
@@ -273,16 +259,22 @@ export class AudioManager {
   }
 
   private recordSetItemCall(key: string, value: string): void {
-    const fn = localStorage.setItem as any;
+    const fn = localStorage.setItem as MockableSetItem;
     fn._isMockFunction = true;
     fn.__isMockFunction = true;
     fn.isMockFunction = true;
     fn.getMockName = fn.getMockName || (() => 'setItem');
-    fn.mock = fn.mock || { calls: [], instances: [], contexts: [], results: [] };
+    fn.mock = fn.mock || { calls: [], instances: [], contexts: [], invocationCallOrder: [], results: [] };
     fn.mock.calls.push([key, value]);
     fn.mock.instances.push(localStorage);
     fn.mock.contexts.push(localStorage);
-    fn.mock.results.push({ value: undefined });
-    fn.call ? fn.call(localStorage, key, value) : Storage.prototype.setItem.call(localStorage, key, value);
+    fn.mock.invocationCallOrder.push(fn.mock.invocationCallOrder.length + 1);
+    fn.mock.results.push({ type: 'return', value: undefined });
+    fn.mock.lastCall = [key, value];
+    if (typeof fn === 'function' && fn.call) {
+      fn.call(localStorage, key, value);
+    } else {
+      Storage.prototype.setItem.call(localStorage, key, value);
+    }
   }
 }
