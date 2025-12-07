@@ -345,6 +345,11 @@ export class SpaceShooterGame extends BaseGame {
   // Elite enemy tracking
   private elitesKilledThisLevel: number = 0;
   private homingBullets: { pos: Vector2; vel: Vector2; target: Vector2; life: number }[] = [];
+  
+  // Prevent multiple endGame calls
+  private hasEnded: boolean = false;
+  private cachedFinalScore: number = 0;
+  private cachedFinalPickups: number = 0;
 
   // ============= INITIALIZATION =============
 
@@ -1942,15 +1947,24 @@ export class SpaceShooterGame extends BaseGame {
   }
 
   private onGameOver(): void {
+    // Prevent multiple game over triggers
+    if (this.gameOver || this.hasEnded) return;
+    
     this.gameOver = true;
+    
+    // Cache final values to prevent changes after game over
+    this.cachedFinalScore = this.score;
+    this.cachedFinalPickups = this.pickups;
     
     // Big ship explosion
     for (let i = 0; i < 8; i++) {
       setTimeout(() => {
-        const ox = (Math.random() - 0.5) * this.ship.width;
-        const oy = (Math.random() - 0.5) * this.ship.height;
-        this.spawnExplosion(this.ship.pos.x + ox, this.ship.pos.y + oy, 30, '#ff6600');
-        this.triggerScreenShake(20, 0.2);
+        if (!this.hasEnded) {
+          const ox = (Math.random() - 0.5) * this.ship.width;
+          const oy = (Math.random() - 0.5) * this.ship.height;
+          this.spawnExplosion(this.ship.pos.x + ox, this.ship.pos.y + oy, 30, '#ff6600');
+          this.triggerScreenShake(20, 0.2);
+        }
       }, i * 100);
     }
     
@@ -1964,9 +1978,12 @@ export class SpaceShooterGame extends BaseGame {
       wave: this.waveNumber,
     };
     
-    // End game after delay
+    // End game after delay - only once!
     setTimeout(() => {
-      this.endGame();
+      if (!this.hasEnded) {
+        this.hasEnded = true;
+        this.endGame();
+      }
     }, 1500);
   }
 
@@ -2089,7 +2106,36 @@ export class SpaceShooterGame extends BaseGame {
   }
 
   private addScore(points: number): void {
+    // Don't add score after game over
+    if (this.gameOver) return;
     this.score += points;
+  }
+  
+  // Override getScore to return cached values after game over
+  // This prevents the parent from recalculating rewards repeatedly
+  getScore(): import('@/lib/types').GameScore {
+    // If game is over, use cached values to prevent XP exploits
+    const finalScore = this.gameOver ? this.cachedFinalScore : this.score;
+    const finalPickups = this.gameOver ? this.cachedFinalPickups : this.pickups;
+    
+    const timePlayedMs = this.gameOver ? this.gameTime * 1000 : Date.now() - (this as any).startTime;
+    const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
+    const coinsEarned = this.services?.currency?.calculateGameReward?.(
+      finalScore,
+      finalPickups,
+      multiplier
+    ) ?? 0;
+
+    const baseScore = {
+      score: finalScore,
+      pickups: finalPickups,
+      timePlayedMs,
+      coinsEarned,
+    };
+
+    return this.extendedGameData 
+      ? { ...baseScore, ...this.extendedGameData }
+      : baseScore;
   }
 
   private getEnemyColor(type: Enemy['type']): string {
@@ -3119,6 +3165,11 @@ export class SpaceShooterGame extends BaseGame {
     // Reset shop state (but NOT upgrades or totalCoinsEarned - those persist!)
     this.showingShop = false;
     this.shopSelectedIndex = 0;
+    
+    // Reset end game flags
+    this.hasEnded = false;
+    this.cachedFinalScore = 0;
+    this.cachedFinalPickups = 0;
     
     this.startWave(1);
     this.services?.audio?.playSound?.('powerup');

@@ -70,3 +70,7 @@ SUPABASE_SERVICE_ROLE_KEY=... # server-only, never ship to the client
 
 Use `getSupabaseBrowserClient` or `createSupabaseServerClient` from `src/lib/supabase.ts` to talk to Supabase. Database typings live in `src/lib/supabase.types.ts`, and `SupabaseArcadeService` (in `src/services`) centralizes calls for profiles, wallets, sessions, achievements, and leaderboards. Sign-in uses a magic-link modal in the hub header, with the callback handled at `/auth/callback`.
 
+### Database bootstrap
+
+Apply `supabase/001_init.sql` in the Supabase SQL editor (or `supabase db push` if you keep migrations locally). It creates the `profiles`, `wallets`, `achievements`, and `game_sessions` tables, plus the `leaderboards_view` and RLS policies the app expects. Without this schema, auth will fall back to the local profile and leaderboard queries will fail.
+
