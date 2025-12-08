@@ -1,0 +1,1 @@
+export { AsteroidsGame } from './AsteroidsGame';

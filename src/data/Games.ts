@@ -122,7 +122,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 120,
     tier: 2,
-    description: 'Blast space rocks in this retro shooter. Coming soon!'
+    description: 'Blast space rocks in this retro shooter!'
   },
   {
     id: 'frog-hop',

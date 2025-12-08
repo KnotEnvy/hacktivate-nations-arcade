@@ -19,6 +19,10 @@ gameLoader.registerGame('space', async () => {
   const { SpaceShooterGame } = await import('./space/SpaceShooterGame');
   return new SpaceShooterGame();
 });
+gameLoader.registerGame('asteroids', async () => {
+  const { AsteroidsGame } = await import('./asteroids/AsteroidsGame');
+  return new AsteroidsGame();
+});
 gameLoader.registerGame('breakout', async () => {
   const { BreakoutGame } = await import('./breakout/BreakoutGame');
   return new BreakoutGame();
