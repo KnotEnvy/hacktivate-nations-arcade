@@ -13,7 +13,7 @@ interface LeaderboardPanelProps {
   signedIn: boolean;
 }
 
-const periods: Period[] = ['day', 'week', 'all_time'];
+const periods: Period[] = ['daily', 'weekly', 'monthly', 'all_time'];
 
 export function LeaderboardPanel({ supabaseService, signedIn }: LeaderboardPanelProps) {
   const [gameId, setGameId] = useState<string>(AVAILABLE_GAMES[0]?.id ?? 'runner');

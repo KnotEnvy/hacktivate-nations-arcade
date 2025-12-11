@@ -313,6 +313,7 @@ export class SpaceShooterGame extends BaseGame {
   private enemiesKilledThisLevel: number = 0;
   private damageTakenThisLevel: number = 0;
   private powerUpsCollectedThisLevel: number = 0;
+  private totalPowerUpsCollected: number = 0;
   private maxComboThisLevel: number = 0;
   private bossTimer: number = 0;
   private levelStats: LevelStats | null = null;
@@ -1845,6 +1846,7 @@ export class SpaceShooterGame extends BaseGame {
   private collectPowerUp(p: PowerUp): void {
     // Track power-ups collected for stats
     this.powerUpsCollectedThisLevel++;
+    this.totalPowerUpsCollected++;
     
     // Calculate upgraded shield duration
     const upgradedShieldDuration = SHIELD_DURATION + (this.shipUpgrades.shieldDuration * 2);
@@ -1971,11 +1973,18 @@ export class SpaceShooterGame extends BaseGame {
     this.services?.audio?.playSound?.('game_over');
     
     // Set extended data for achievements
+    const survivalTimeSec = Math.floor((Date.now() - (this as any).startTime) / 1000);
     this.extendedGameData = {
       maxCombo: this.maxCombo,
       totalKills: this.totalKills,
       level: this.levelNumber,
       wave: this.waveNumber,
+      waves_completed: this.waveNumber,
+      bosses_defeated: this.bossDefeated ? 1 : 0,
+      max_stage: this.levelNumber,
+      enemies_destroyed: this.totalKills,
+      powerups_collected: this.totalPowerUpsCollected,
+      survival_time: survivalTimeSec,
     };
     
     // End game after delay - only once!
@@ -2118,7 +2127,7 @@ export class SpaceShooterGame extends BaseGame {
     const finalScore = this.gameOver ? this.cachedFinalScore : this.score;
     const finalPickups = this.gameOver ? this.cachedFinalPickups : this.pickups;
     
-    const timePlayedMs = this.gameOver ? this.gameTime * 1000 : Date.now() - (this as any).startTime;
+    const timePlayedMs = this.gameOver ? this.gameTime : Date.now() - (this as any).startTime;
     const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services?.currency?.calculateGameReward?.(
       finalScore,
@@ -3147,6 +3156,7 @@ export class SpaceShooterGame extends BaseGame {
     this.enemiesKilledThisLevel = 0;
     this.damageTakenThisLevel = 0;
     this.powerUpsCollectedThisLevel = 0;
+    this.totalPowerUpsCollected = 0;
     this.maxComboThisLevel = 0;
     this.bossTimer = 0;
     this.levelStats = null;

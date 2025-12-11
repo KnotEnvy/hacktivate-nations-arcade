@@ -42,6 +42,21 @@ interface GameEndData {
   uniqueThemes?: number;
   timePlayedMs?: number;
   pickups?: number;
+  wave?: number;
+  waves_completed?: number;
+  bosses_defeated?: number;
+  max_stage?: number;
+  enemies_destroyed?: number;
+  powerups_collected?: number;
+  survival_time?: number;
+  totalKills?: number;
+  matches_made?: number;
+  perfect_levels?: number;
+  fast_completion?: number;
+  levels_completed?: number;
+  bricks_broken?: number;
+  levels_cleared?: number;
+  total_bricks_broken?: number;
 }
 
 export function ArcadeHub() {
@@ -367,6 +382,8 @@ export function ArcadeHub() {
     challengeService.updateProgress('', 'time_played', playTimeSeconds);
     
     // Check achievements and handle rewards
+    const survivalSeconds = Math.floor((gameData.timePlayedMs || 0) / 1000);
+
     const newlyUnlocked = [
       ...achievementService.checkAchievement('distance', gameData.distance || 0, selectedGameId),
       ...achievementService.checkAchievement('max_speed', gameData.speed || 0, selectedGameId),
@@ -391,7 +408,33 @@ export function ArcadeHub() {
       ...achievementService.checkAchievement('score', gameData.score || 0, selectedGameId),
       ...achievementService.checkAchievement('tetris_count', gameData.tetrisCount || 0, selectedGameId),
       ...achievementService.checkAchievement('unique_themes', gameData.uniqueThemes || 0, selectedGameId),
-      ...achievementService.checkAchievement('games_played', updatedStats.gamesPlayed)
+      ...achievementService.checkAchievement('games_played', updatedStats.gamesPlayed),
+      ...(selectedGameId === 'space'
+        ? [
+            ...achievementService.checkAchievement('waves_completed', gameData.waves_completed || gameData.wave || 0, selectedGameId),
+            ...achievementService.checkAchievement('bosses_defeated', gameData.bosses_defeated || 0, selectedGameId),
+            ...achievementService.checkAchievement('max_stage', gameData.max_stage || gameData.level || 0, selectedGameId),
+            ...achievementService.checkAchievement('enemies_destroyed', gameData.enemies_destroyed || gameData.totalKills || 0, selectedGameId),
+            ...achievementService.checkAchievement('powerups_collected', gameData.powerups_collected || 0, selectedGameId),
+            ...achievementService.checkAchievement('survival_time', survivalSeconds, selectedGameId),
+          ]
+        : []),
+      ...(selectedGameId === 'memory'
+        ? [
+            ...achievementService.checkAchievement('matches_made', gameData.matches_made || 0, selectedGameId),
+            ...achievementService.checkAchievement('perfect_levels', gameData.perfect_levels || 0, selectedGameId),
+            ...(gameData.fast_completion ? achievementService.checkAchievement('fast_completion', gameData.fast_completion, selectedGameId) : []),
+            ...achievementService.checkAchievement('levels_completed', gameData.levels_completed || 0, selectedGameId),
+          ]
+        : []),
+      ...(selectedGameId === 'breakout'
+        ? [
+            ...achievementService.checkAchievement('bricks_broken', gameData.bricks_broken || 0, selectedGameId),
+            ...achievementService.checkAchievement('levels_cleared', gameData.levels_cleared || 0, selectedGameId),
+            ...achievementService.checkAchievement('powerups_collected', gameData.powerups_collected || 0, selectedGameId),
+            ...achievementService.checkAchievement('total_bricks_broken', gameData.total_bricks_broken || 0, selectedGameId),
+          ]
+        : [])
     ];
 
     newlyUnlocked.forEach((achievement) => {
@@ -431,12 +474,7 @@ export function ArcadeHub() {
           gameId: selectedGameId,
           score: gameData.score || 0,
           durationMs: gameData.timePlayedMs || 0,
-          metadata: {
-            coinsEarned: gameData.coinsEarned || 0,
-            distance: gameData.distance || 0,
-            speed: gameData.speed || 0,
-            combo: gameData.combo || 0,
-          },
+          metadata: { ...gameData },
         })
         .catch(error => console.warn('Supabase session record failed:', error));
 

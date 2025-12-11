@@ -144,7 +144,7 @@ export interface Database {
       [_ in never]: never;
     };
     Enums: {
-      leaderboard_period: 'day' | 'week' | 'all_time';
+      leaderboard_period: 'daily' | 'weekly' | 'monthly' | 'all_time';
     };
   };
 }

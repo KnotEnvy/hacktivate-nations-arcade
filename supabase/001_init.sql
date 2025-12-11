@@ -56,19 +56,75 @@ create table if not exists public.game_sessions (
   created_at timestamptz default now()
 );
 
--- Leaderboard materialization (all-time for now)
+-- Leaderboard materialization for multiple periods
 create or replace view public.leaderboards_view as
 select
-  gs.game_id,
-  gs.user_id,
-  p.username,
-  p.avatar_url,
-  gs.score,
-  rank() over (partition by gs.game_id order by gs.score desc) as rank,
-  'all_time'::public.leaderboard_period as period,
-  gs.created_at
-from public.game_sessions gs
-join public.profiles p on p.id = gs.user_id;
+  game_id,
+  user_id,
+  username,
+  avatar_url,
+  score,
+  rank() over (partition by game_id, period order by score desc) as rank,
+  period,
+  created_at
+from (
+  -- All time
+  select
+    gs.game_id,
+    gs.user_id,
+    p.username,
+    p.avatar_url,
+    gs.score,
+    'all_time'::public.leaderboard_period as period,
+    gs.created_at
+  from public.game_sessions gs
+  join public.profiles p on p.id = gs.user_id
+
+  union all
+
+  -- Daily (current day)
+  select
+    gs.game_id,
+    gs.user_id,
+    p.username,
+    p.avatar_url,
+    gs.score,
+    'daily'::public.leaderboard_period as period,
+    gs.created_at
+  from public.game_sessions gs
+  join public.profiles p on p.id = gs.user_id
+  where gs.created_at >= date_trunc('day', now())
+
+  union all
+
+  -- Weekly (current week)
+  select
+    gs.game_id,
+    gs.user_id,
+    p.username,
+    p.avatar_url,
+    gs.score,
+    'weekly'::public.leaderboard_period as period,
+    gs.created_at
+  from public.game_sessions gs
+  join public.profiles p on p.id = gs.user_id
+  where gs.created_at >= date_trunc('week', now())
+
+  union all
+
+  -- Monthly (current month)
+  select
+    gs.game_id,
+    gs.user_id,
+    p.username,
+    p.avatar_url,
+    gs.score,
+    'monthly'::public.leaderboard_period as period,
+    gs.created_at
+  from public.game_sessions gs
+  join public.profiles p on p.id = gs.user_id
+  where gs.created_at >= date_trunc('month', now())
+) leaderboard_source;
 
 -- Enable Row Level Security
 alter table public.profiles enable row level security;
