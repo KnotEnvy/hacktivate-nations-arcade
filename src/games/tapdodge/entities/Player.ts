@@ -24,6 +24,12 @@ export class Player {
     private invulnTime: number = 0;
     private blinkTimer: number = 0;
 
+    // Vertical dodge state
+    private isDucking: boolean = false;
+    private isJumping: boolean = false;
+    private dodgeTimer: number = 0;
+    private readonly DODGE_DURATION: number = 0.5;
+
     constructor(canvasWidth: number, canvasHeight: number) {
         this.canvasWidth = canvasWidth;
         this.y = canvasHeight - 80;
@@ -96,6 +102,43 @@ export class Player {
 
         // Pulse animation
         this.pulsePhase += dt * 4;
+
+        // Dodge timer
+        if (this.dodgeTimer > 0) {
+            this.dodgeTimer -= dt;
+            if (this.dodgeTimer <= 0) {
+                this.isDucking = false;
+                this.isJumping = false;
+            }
+        }
+    }
+
+    public duck(): void {
+        if (!this.isDucking && !this.isJumping) {
+            this.isDucking = true;
+            this.isJumping = false;
+            this.dodgeTimer = this.DODGE_DURATION;
+        }
+    }
+
+    public jump(): void {
+        if (!this.isJumping && !this.isDucking) {
+            this.isJumping = true;
+            this.isDucking = false;
+            this.dodgeTimer = this.DODGE_DURATION;
+        }
+    }
+
+    public getIsDucking(): boolean {
+        return this.isDucking;
+    }
+
+    public getIsJumping(): boolean {
+        return this.isJumping;
+    }
+
+    public getDodgeTimeRemaining(): number {
+        return this.dodgeTimer;
     }
 
     public takeDamage(): boolean {
@@ -172,13 +215,33 @@ export class Player {
         ctx.fillStyle = gradient;
         ctx.fillRect(this.x - 10, this.y - 10, this.width + 20, this.height + 20);
 
-        // Main body (diamond shape)
+        // Main body (diamond shape) - modified during duck/jump
         ctx.fillStyle = hasGhost ? '#A78BFA' : '#22D3EE';
         ctx.beginPath();
-        ctx.moveTo(cx, this.y); // Top
-        ctx.lineTo(this.x + this.width, cy); // Right
-        ctx.lineTo(cx, this.y + this.height); // Bottom
-        ctx.lineTo(this.x, cy); // Left
+
+        if (this.isDucking) {
+            // Squashed shape when ducking
+            const squash = 0.5;
+            const duckOffset = this.height * 0.25;
+            ctx.moveTo(cx, this.y + duckOffset + this.height * (1 - squash) / 2); // Top (lowered)
+            ctx.lineTo(this.x + this.width, cy + duckOffset); // Right
+            ctx.lineTo(cx, this.y + this.height); // Bottom
+            ctx.lineTo(this.x, cy + duckOffset); // Left
+        } else if (this.isJumping) {
+            // Stretched shape when jumping
+            const stretch = 1.3;
+            const jumpOffset = -this.height * 0.3;
+            ctx.moveTo(cx, this.y + jumpOffset); // Top (raised)
+            ctx.lineTo(this.x + this.width * 0.9, cy + jumpOffset * 0.5); // Right
+            ctx.lineTo(cx, this.y + this.height + jumpOffset * 0.2); // Bottom
+            ctx.lineTo(this.x + this.width * 0.1, cy + jumpOffset * 0.5); // Left
+        } else {
+            // Normal diamond shape
+            ctx.moveTo(cx, this.y); // Top
+            ctx.lineTo(this.x + this.width, cy); // Right
+            ctx.lineTo(cx, this.y + this.height); // Bottom
+            ctx.lineTo(this.x, cy); // Left
+        }
         ctx.closePath();
         ctx.fill();
 

@@ -319,6 +319,14 @@ export class TapDodgeGame extends BaseGame {
       this.lastMoveDir = 0;
     }
 
+    // Up/Down input for laser dodge
+    if (this.services.input.isUpPressed?.() || this.services.input.isKeyPressed?.('ArrowUp') || this.services.input.isKeyPressed?.('KeyW')) {
+      this.player.jump();
+    }
+    if (this.services.input.isDownPressed?.() || this.services.input.isKeyPressed?.('ArrowDown') || this.services.input.isKeyPressed?.('KeyS')) {
+      this.player.duck();
+    }
+
     // Pause toggle
     const pausePressed = this.services.input.isKeyPressed?.('Escape') || this.services.input.isKeyPressed?.('KeyP');
     if (pausePressed && !this.isPaused) {
@@ -372,6 +380,11 @@ export class TapDodgeGame extends BaseGame {
 
     this.obstacles.push(new Obstacle(config));
 
+    // Random chance to spawn laser instead (10% chance after zone 2)
+    if (this.waveSystem.getZoneIndex() >= 1 && Math.random() < 0.1) {
+      this.spawnLaser();
+    }
+
     // Random chance to spawn coin or gem alongside
     if (Math.random() < 0.3) {
       const coinLane = (lane + 1 + Math.floor(Math.random() * 3)) % laneCount;
@@ -384,6 +397,24 @@ export class TapDodgeGame extends BaseGame {
         this.coins.push(new Coin(coinX, -50, baseSpeed));
       }
     }
+  }
+
+  private spawnLaser(): void {
+    const baseSpeed = 150 * this.waveSystem.getSpeedMultiplier();
+    const isHigh = Math.random() < 0.5;
+
+    const config: ObstacleConfig = {
+      x: 0,
+      y: -30,
+      width: this.canvas.width,
+      height: 20,
+      speed: baseSpeed,
+      type: 'laser',
+      laserPosition: isHigh ? 'high' : 'low',
+      isDestructible: false
+    };
+
+    this.obstacles.push(new Obstacle(config));
   }
 
   private spawnWallWithGap(): void {
@@ -558,12 +589,15 @@ export class TapDodgeGame extends BaseGame {
   }
 
   private updateLaneWarnings(): void {
+    // Only show lane warnings during fever mode
+    if (this.feverSystem.getLevel() < 1) return;
+
     const laneCount = 5;
     const laneWidth = this.canvas.width / laneCount;
 
-    // Add warnings for obstacles
+    // Add warnings for obstacles (not lasers since they span all lanes)
     for (const obstacle of this.obstacles) {
-      if (obstacle.y < 100) {
+      if (obstacle.y < 100 && obstacle.type !== 'laser') {
         const lane = Math.floor((obstacle.x + obstacle.width / 2) / laneWidth);
         const timeToImpact = (this.player.y - obstacle.y) / obstacle.speed;
         this.laneWarningSystem.addWarning(lane, timeToImpact, 'obstacle');
@@ -591,6 +625,56 @@ export class TapDodgeGame extends BaseGame {
 
         const obsBounds = obstacle.getBounds();
 
+        // Special handling for laser obstacles
+        if (obstacle.type === 'laser') {
+          const isInLaserZone = this.intersects(playerBounds, obsBounds);
+
+          if (isInLaserZone) {
+            // Check if player is correctly dodging
+            const isDodgingCorrectly =
+              (obstacle.laserPosition === 'high' && this.player.getIsDucking()) ||
+              (obstacle.laserPosition === 'low' && this.player.getIsJumping());
+
+            if (isDodgingCorrectly) {
+              // Successfully dodging - set visual feedback
+              obstacle.setDodging(true);
+
+              // Award near-miss if not already
+              if (!obstacle.isNearMissed) {
+                obstacle.isNearMissed = true;
+                const result = this.comboSystem.addNearMiss();
+                const bonus = Math.floor(result.bonus * 2 * this.feverSystem.getMultiplier());
+                this.score += bonus;
+                this.addPopup(this.player.getCenterX(), this.player.y - 30, `DODGE! +${bonus}`, '#22D3EE');
+                this.particles.createNearMiss(this.player.getCenterX(), this.player.getCenterY());
+                this.services.audio.playSound('success');
+              }
+            } else {
+              // Not dodging correctly - hit!
+              obstacle.setDodging(false);
+              if (!this.player.isInvulnerable()) {
+                const tookDamage = this.player.takeDamage();
+                if (tookDamage) {
+                  this.lives--;
+                  this.feverSystem.onDamage();
+                  this.particles.createExplosion(this.player.getCenterX(), this.player.getCenterY(), '#EF4444');
+                  this.screenShake.shake(10, 0.4);
+                  this.services.audio.playSound('collision');
+
+                  if (this.lives <= 0) {
+                    this.triggerGameOver();
+                    return;
+                  }
+                }
+              }
+            }
+          } else {
+            obstacle.setDodging(false);
+          }
+          continue;
+        }
+
+        // Regular obstacle collision
         if (this.intersects(playerBounds, obsBounds)) {
           // Hit!
           if (this.player.isInvulnerable()) {
@@ -888,66 +972,83 @@ export class TapDodgeGame extends BaseGame {
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-    let y = this.getHudStartY();
-
-    // Lives
-    ctx.fillStyle = '#EF4444';
-    ctx.font = '20px Arial';
-    ctx.textAlign = 'left';
-    let heartsText = '';
-    for (let i = 0; i < 3; i++) {
-      heartsText += i < this.lives ? '❤️' : '🖤';
-    }
-    ctx.fillText(heartsText, 16, y);
-    y += 28;
+    // ===== TOP-LEFT: Zone and score info =====
+    let topY = this.getHudStartY();
 
     // Zone indicator
     const zone = this.waveSystem.getCurrentZone();
     ctx.fillStyle = this.currentZoneColors.accent;
     ctx.font = 'bold 14px Arial';
-    ctx.fillText(zone.name, 16, y);
-    y += 22;
+    ctx.textAlign = 'left';
+    ctx.fillText(zone.name, 16, topY);
+    topY += 20;
+
+    // Best score
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = '14px Arial';
+    ctx.fillText(`Best: ${this.highScore}`, 16, topY);
+    topY += 20;
+
+    // Gems collected
+    if (this.gemsCollected > 0) {
+      ctx.fillStyle = '#A855F7';
+      ctx.fillText(`💎 ${this.gemsCollected}`, 16, topY);
+      topY += 20;
+    }
+
+    // ===== BOTTOM-LEFT: Fever meter and combos =====
+    let bottomLeftY = this.canvas.height - 120;
 
     // Fever multiplier HUD
-    y += this.feverSystem.renderHUD(ctx, 16, y);
+    bottomLeftY += this.feverSystem.renderHUD(ctx, 16, bottomLeftY);
 
     // Combos
-    ctx.fillStyle = '#FFFFFF';
     ctx.font = '14px Arial';
 
     const coinCombo = this.comboSystem.getCoinCombo();
     if (coinCombo > 0) {
       ctx.fillStyle = '#FBBF24';
-      ctx.fillText(`Coin Combo: x${this.comboSystem.getCoinMultiplier().toFixed(1)}`, 16, y);
-      y += 20;
+      ctx.textAlign = 'left';
+      ctx.fillText(`Coin x${this.comboSystem.getCoinMultiplier().toFixed(1)}`, 16, bottomLeftY);
+      bottomLeftY += 18;
     }
 
     const nearChain = this.comboSystem.getNearMissChain();
     if (nearChain > 0) {
       ctx.fillStyle = '#60A5FA';
-      ctx.fillText(`Near Chain: x${nearChain}`, 16, y);
-      y += 20;
+      ctx.textAlign = 'left';
+      ctx.fillText(`Chain x${nearChain}`, 16, bottomLeftY);
+      bottomLeftY += 18;
     }
 
     // Active power-ups
-    ctx.fillStyle = '#FFFFFF';
     for (const powerUp of this.activePowerUps) {
       const config = POWERUP_CONFIG[powerUp.type];
       ctx.fillStyle = config.color;
-      ctx.fillText(`${config.icon} ${powerUp.duration.toFixed(1)}s`, 16, y);
-      y += 20;
+      ctx.textAlign = 'left';
+      ctx.fillText(`${config.icon} ${powerUp.duration.toFixed(1)}s`, 16, bottomLeftY);
+      bottomLeftY += 18;
     }
 
-    // Best score and gems
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '14px Arial';
-    ctx.fillText(`Best: ${this.highScore}`, 16, y);
-    y += 20;
+    // ===== BOTTOM-RIGHT: Lives =====
+    ctx.fillStyle = '#EF4444';
+    ctx.font = '24px Arial';
+    ctx.textAlign = 'right';
+    let heartsText = '';
+    for (let i = 0; i < 3; i++) {
+      heartsText += i < this.lives ? '❤️' : '🖤';
+    }
+    ctx.fillText(heartsText, this.canvas.width - 16, this.canvas.height - 30);
 
-    if (this.gemsCollected > 0) {
-      ctx.fillStyle = '#A855F7';
-      ctx.fillText(`💎 ${this.gemsCollected}`, 16, y);
-      y += 20;
+    // Dodge indicator when ducking/jumping
+    if (this.player.getIsDucking()) {
+      ctx.fillStyle = '#22D3EE';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('⬇ DUCKING', this.canvas.width - 16, this.canvas.height - 60);
+    } else if (this.player.getIsJumping()) {
+      ctx.fillStyle = '#22D3EE';
+      ctx.font = 'bold 16px Arial';
+      ctx.fillText('⬆ JUMPING', this.canvas.width - 16, this.canvas.height - 60);
     }
 
     // Boss wave timer

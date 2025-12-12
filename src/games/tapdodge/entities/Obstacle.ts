@@ -1,6 +1,6 @@
 // ===== src/games/tapdodge/entities/Obstacle.ts =====
 
-export type ObstacleType = 'block' | 'spike' | 'wall' | 'moving';
+export type ObstacleType = 'block' | 'spike' | 'wall' | 'moving' | 'laser';
 
 export interface ObstacleConfig {
     x: number;
@@ -12,6 +12,7 @@ export interface ObstacleConfig {
     gapLane?: number; // For wall type - which lane has the gap
     movingRange?: number; // For moving type - horizontal oscillation
     isDestructible?: boolean;
+    laserPosition?: 'high' | 'low'; // For laser type - requires jump or duck
 }
 
 export class Obstacle {
@@ -31,10 +32,13 @@ export class Obstacle {
     public isNearMissed: boolean = false;
     public isDestructible: boolean;
     public isDestroyed: boolean = false;
+    public laserPosition: 'high' | 'low' = 'high'; // For laser obstacles
+    public isBeingDodged: boolean = false; // Player is currently dodging through
 
     // Visual
     private glowPhase: number = Math.random() * Math.PI * 2;
     private warningAlpha: number = 0;
+    private dodgeAnimPhase: number = 0; // Animation when dodging through
 
     constructor(config: ObstacleConfig) {
         this.x = config.x;
@@ -46,6 +50,7 @@ export class Obstacle {
         this.startX = config.x;
         this.movingRange = config.movingRange || 0;
         this.isDestructible = config.isDestructible ?? (this.type === 'block');
+        this.laserPosition = config.laserPosition || 'high';
     }
 
     public update(dt: number, speedMultiplier: number = 1): void {
@@ -61,9 +66,21 @@ export class Obstacle {
         // Glow animation
         this.glowPhase += dt * 4;
 
+        // Dodge animation
+        if (this.isBeingDodged) {
+            this.dodgeAnimPhase += dt * 15;
+        }
+
         // Warning flash when close to player
         if (this.y > 300) {
             this.warningAlpha = Math.min(1, (this.y - 300) / 200);
+        }
+    }
+
+    public setDodging(isDodging: boolean): void {
+        this.isBeingDodged = isDodging;
+        if (!isDodging) {
+            this.dodgeAnimPhase = 0;
         }
     }
 
@@ -110,6 +127,9 @@ export class Obstacle {
                 break;
             case 'moving':
                 this.renderMoving(ctx);
+                break;
+            case 'laser':
+                this.renderLaser(ctx);
                 break;
             default:
                 this.renderBlock(ctx);
@@ -239,5 +259,85 @@ export class Obstacle {
         ctx.lineTo(this.x + this.width - 5 - arrowSize, cy + arrowSize / 2);
         ctx.closePath();
         ctx.fill();
+    }
+
+    private renderLaser(ctx: CanvasRenderingContext2D): void {
+        const cy = this.y + this.height / 2;
+
+        // Dodge animation - laser flickers and distorts when being dodged
+        if (this.isBeingDodged) {
+            ctx.globalAlpha = 0.3 + Math.sin(this.dodgeAnimPhase) * 0.3;
+        }
+
+        // Laser beam glow
+        const glowIntensity = Math.sin(this.glowPhase * 2) * 0.3 + 0.7;
+        const beamColor = this.laserPosition === 'high' ? '#EF4444' : '#22D3EE';
+        const glowColor = this.laserPosition === 'high' ? 'rgba(239, 68, 68,' : 'rgba(34, 211, 238,';
+
+        // Outer glow
+        ctx.strokeStyle = `${glowColor}${glowIntensity * 0.3})`;
+        ctx.lineWidth = 20;
+        ctx.beginPath();
+        ctx.moveTo(this.x, cy);
+        ctx.lineTo(this.x + this.width, cy);
+        ctx.stroke();
+
+        // Middle glow
+        ctx.strokeStyle = `${glowColor}${glowIntensity * 0.6})`;
+        ctx.lineWidth = 10;
+        ctx.beginPath();
+        ctx.moveTo(this.x, cy);
+        ctx.lineTo(this.x + this.width, cy);
+        ctx.stroke();
+
+        // Core beam
+        ctx.strokeStyle = beamColor;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(this.x, cy);
+        ctx.lineTo(this.x + this.width, cy);
+        ctx.stroke();
+
+        // White hot center
+        ctx.strokeStyle = '#FFFFFF';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = glowIntensity;
+        ctx.beginPath();
+        ctx.moveTo(this.x, cy);
+        ctx.lineTo(this.x + this.width, cy);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+
+        // Electric sparks along the beam
+        const sparkCount = 8;
+        for (let i = 0; i < sparkCount; i++) {
+            const sparkX = this.x + (this.width / sparkCount) * i + Math.sin(this.glowPhase * 3 + i) * 10;
+            const sparkY = cy + Math.sin(this.glowPhase * 5 + i * 2) * 8;
+            const sparkAlpha = Math.sin(this.glowPhase * 4 + i) * 0.5 + 0.5;
+
+            ctx.fillStyle = `rgba(255, 255, 255, ${sparkAlpha})`;
+            ctx.beginPath();
+            ctx.arc(sparkX, sparkY, 3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // Position indicator text
+        ctx.font = 'bold 14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#FFFFFF';
+
+        const indicatorY = this.laserPosition === 'high' ? this.y - 15 : this.y + this.height + 20;
+        const indicatorText = this.laserPosition === 'high' ? '⬇ DUCK ⬇' : '⬆ JUMP ⬆';
+
+        // Background for text
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const textWidth = ctx.measureText(indicatorText).width;
+        ctx.fillRect(this.x + this.width / 2 - textWidth / 2 - 8, indicatorY - 12, textWidth + 16, 20);
+
+        ctx.fillStyle = beamColor;
+        ctx.fillText(indicatorText, this.x + this.width / 2, indicatorY);
+
+        // Reset alpha if was dodging
+        ctx.globalAlpha = 1;
     }
 }
