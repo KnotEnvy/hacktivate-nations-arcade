@@ -6,12 +6,23 @@ export const GAME_CONFIG = {
   CURRENCY_RATE: 250, // coins per active minute
 } as const;
 
-export const UNLOCK_COSTS = {
-  0: 0,     // Runner (default)
-  1: 2000,  // +1 game
-  2: 5000,  // +2 games
-  3: 10000, // tier 3
-  4: 20000, // tier 4
+// Tier progression costs (unlock the tier itself).
+export const TIER_UNLOCK_COSTS = {
+  0: 0, // Tier 0 is free/open by default
+  1: 2000,
+  2: 5000,
+  3: 10000,
+  4: 20000,
+} as const;
+
+// Per-game costs scale within a tier by this increment.
+// Example: tier 0 -> 100, 200, 300... as games unlock.
+export const TIER_GAME_COST_INCREMENTS = {
+  0: 100,
+  1: 1000,
+  2: 5000,
+  3: 10000,
+  4: 20000,
 } as const;
 
 export const ECONOMY = {

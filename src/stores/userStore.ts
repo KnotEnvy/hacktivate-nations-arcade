@@ -7,6 +7,7 @@ interface UserState extends UserProgress {
   setLevel: (level: number) => void;
   setTotalCoins: (coins: number) => void;
   addUnlockedTier: (tier: number) => void;
+  addUnlockedGame: (gameId: string) => void;
   addAchievement: (achievementId: string) => void;
   updateLastPlayed: () => void;
   loadFromStorage: () => void;
@@ -17,6 +18,7 @@ export const useUserStore = create<UserState>((set, get) => ({
   level: 1,
   totalCoins: 0,
   unlockedTiers: [0], // Tier 0 is always unlocked
+  unlockedGames: ['runner'], // Runner is free by default
   achievements: [],
   lastPlayedAt: new Date(),
   
@@ -28,6 +30,15 @@ export const useUserStore = create<UserState>((set, get) => ({
     if (!state.unlockedTiers.includes(tier)) {
       const newTiers = [...state.unlockedTiers, tier];
       set({ unlockedTiers: newTiers });
+      get().saveToStorage();
+    }
+  },
+
+  addUnlockedGame: (gameId) => {
+    const state = get();
+    if (!state.unlockedGames.includes(gameId)) {
+      const newGames = [...state.unlockedGames, gameId];
+      set({ unlockedGames: newGames });
       get().saveToStorage();
     }
   },
@@ -54,6 +65,8 @@ export const useUserStore = create<UserState>((set, get) => ({
           const data = JSON.parse(saved);
           set({
             ...data,
+            unlockedTiers: data.unlockedTiers ?? [0],
+            unlockedGames: data.unlockedGames ?? ['runner'],
             lastPlayedAt: new Date(data.lastPlayedAt)
           });
         } catch (error) {
@@ -70,6 +83,7 @@ export const useUserStore = create<UserState>((set, get) => ({
         level: state.level,
         totalCoins: state.totalCoins,
         unlockedTiers: state.unlockedTiers,
+        unlockedGames: state.unlockedGames,
         achievements: state.achievements,
         lastPlayedAt: state.lastPlayedAt.toISOString()
       }));

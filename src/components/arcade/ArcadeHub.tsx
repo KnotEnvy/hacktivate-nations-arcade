@@ -1,4 +1,4 @@
-// ===== src/components/arcade/ArcadeHub.tsx =====
+﻿// ===== src/components/arcade/ArcadeHub.tsx =====
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -26,6 +26,12 @@ import { LeaderboardPanel } from './LeaderboardPanel';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { AVAILABLE_GAMES } from '@/data/Games';
+import {
+  DEFAULT_UNLOCKED_GAME_IDS,
+  getTierUnlockCost,
+  isDefaultUnlockedGame,
+  isGameUnlocked,
+} from '@/lib/unlocks';
 
 interface GameEndData {
   score?: number;
@@ -63,10 +69,12 @@ export function ArcadeHub() {
   const [currentGame, setCurrentGame] = useState<GameModule | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [unlockedTiers, setUnlockedTiers] = useState<number[]>([0]); // Tier 0 is always unlocked
+  const [unlockedGames, setUnlockedGames] = useState<string[]>(Array.from(DEFAULT_UNLOCKED_GAME_IDS));
   const [currencyService] = useState(new CurrencyService());
   const [currentCoins, setCurrentCoins] = useState(0);
   const [showHub, setShowHub] = useState(true);
   const [activeTab, setActiveTab] = useState<'games' | 'challenges' | 'achievements' | 'profile'>('games');
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
 
   // Services
   const [challengeService] = useState(new ChallengeService());
@@ -159,6 +167,14 @@ export function ArcadeHub() {
     return unsubscribe;
   }, [challengeService, achievementService, userService, audioManager, currencyService, addNotification]);
 
+  useEffect(() => {
+    setChallenges(challengeService.getChallenges());
+    const unsubscribe = challengeService.onChallengesChanged((next) => {
+      setChallenges(next);
+    });
+    return unsubscribe;
+  }, [challengeService]);
+
   // Create Supabase service on the client when signed in.
   useEffect(() => {
     let mounted = true;
@@ -225,31 +241,67 @@ export function ArcadeHub() {
   }, []);
 
   useEffect(() => {
-    // Load unlocked tiers from localStorage
-    const saved = localStorage.getItem('hacktivate-unlocked-tiers');
-    if (saved) {
-      const tiers = JSON.parse(saved);
-      setUnlockedTiers(tiers);
-      
-      // Check unlocking achievements
-      if (tiers.length > 1) {
-        achievementService.checkAchievement('games_unlocked', tiers.length - 1);
+    const savedV2 = localStorage.getItem('hacktivate-unlocks-v2');
+    if (savedV2) {
+      try {
+        const parsed = JSON.parse(savedV2) as { tiers?: number[]; games?: string[] };
+        const tiers = Array.isArray(parsed.tiers) ? parsed.tiers : [0];
+        const games = Array.isArray(parsed.games)
+          ? Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...parsed.games]))
+          : Array.from(DEFAULT_UNLOCKED_GAME_IDS);
+
+        setUnlockedTiers(tiers.includes(0) ? tiers : [0, ...tiers]);
+        setUnlockedGames(games);
+
+        const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
+        if (paidUnlocked > 0) {
+          achievementService.checkAchievement('games_unlocked', paidUnlocked);
+        }
+        if (games.length >= AVAILABLE_GAMES.length) {
+          achievementService.checkAchievement('all_games_unlocked', 1);
+        }
+      } catch (error) {
+        console.warn('Failed to load unlock state:', error);
       }
-      if (tiers.length >= AVAILABLE_GAMES.length) {
-        achievementService.checkAchievement('all_games_unlocked', 1);
+      return;
+    }
+
+    const legacy = localStorage.getItem('hacktivate-unlocked-tiers');
+    if (legacy) {
+      try {
+        const legacyTiers = JSON.parse(legacy) as number[];
+        const tiers = Array.from(new Set([0, ...legacyTiers])).sort((a, b) => a - b);
+        const legacyGames = AVAILABLE_GAMES.filter(g => tiers.includes(g.tier)).map(g => g.id);
+        const games = Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...legacyGames]));
+
+        setUnlockedTiers(tiers);
+        setUnlockedGames(games);
+        localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
+
+        const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
+        if (paidUnlocked > 0) {
+          achievementService.checkAchievement('games_unlocked', paidUnlocked);
+        }
+        if (games.length >= AVAILABLE_GAMES.length) {
+          achievementService.checkAchievement('all_games_unlocked', 1);
+        }
+      } catch (error) {
+        console.warn('Failed to migrate unlock tiers:', error);
       }
     }
   }, [achievementService]);
 
-  const saveUnlockedTiers = (tiers: number[]) => {
+  const saveUnlockState = (tiers: number[], games: string[]) => {
     setUnlockedTiers(tiers);
-    localStorage.setItem('hacktivate-unlocked-tiers', JSON.stringify(tiers));
+    setUnlockedGames(games);
+    localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
   };
 
 
   const handleGameSelect = async (gameId: string) => {
     try {
       audioManager.playSound('click');
+      if (!isGameUnlocked(gameId, unlockedTiers, unlockedGames)) return;
       const game = await gameLoader.loadGame(gameId);
       if (game) {
         setCurrentGame(game);
@@ -270,22 +322,35 @@ export function ArcadeHub() {
     }
   };
 
-  const handleGameUnlock = (gameId: string, cost: number) => {
-    if (currencyService.spendCoins(cost, `unlock_${gameId}`)) {
-      const game = AVAILABLE_GAMES.find(g => g.id === gameId);
-      if (game && !unlockedTiers.includes(game.tier)) {
+  const handleTierUnlock = (tier: number, cost: number) => {
+    if (currencyService.spendCoins(cost, `unlock_tier_${tier}`)) {
+      if (!unlockedTiers.includes(tier)) {
         audioManager.playSound('unlock');
-        const newTiers = [...unlockedTiers, game.tier];
-        saveUnlockedTiers(newTiers);
-        
-        // Check achievements
-        achievementService.checkAchievement('games_unlocked', newTiers.length - 1);
-        if (newTiers.length >= AVAILABLE_GAMES.length) {
-          achievementService.checkAchievement('all_games_unlocked', 1);
-        }
-        
-        addNotification('achievement', 'Game Unlocked!', `${game.title} is now available`);
+        const newTiers = [...unlockedTiers, tier].sort((a, b) => a - b);
+        saveUnlockState(newTiers, unlockedGames);
+        addNotification('achievement', 'Tier Unlocked!', `Tier ${tier} is now open`);
       }
+    }
+  };
+
+  const handleGameUnlock = (gameId: string, cost: number) => {
+    const game = AVAILABLE_GAMES.find(g => g.id === gameId);
+    if (!game) return;
+    if (!unlockedTiers.includes(game.tier)) return;
+    if (unlockedGames.includes(gameId) || isDefaultUnlockedGame(gameId)) return;
+
+    if (currencyService.spendCoins(cost, `unlock_${gameId}`)) {
+      audioManager.playSound('unlock');
+      const newGames = [...unlockedGames, gameId];
+      saveUnlockState(unlockedTiers, newGames);
+
+      const paidUnlocked = newGames.filter(id => !isDefaultUnlockedGame(id)).length;
+      achievementService.checkAchievement('games_unlocked', paidUnlocked);
+      if (newGames.length >= AVAILABLE_GAMES.length) {
+        achievementService.checkAchievement('all_games_unlocked', 1);
+      }
+
+      addNotification('achievement', 'Game Unlocked!', `${game.title} is now available`);
     }
   };
 
@@ -502,10 +567,10 @@ export function ArcadeHub() {
     const confirmed = window.confirm(
       '🔄 Reset All Progress?\n\n' +
       'This will reset:\n' +
-      '• Coins and unlocked games\n' +
-      '• User profile and stats\n' +
-      '• Achievements and challenges\n' +
-      '• All saved progress\n\n' +
+      '\u2022 Coins and unlocks\n' +
+      '\u2022 User profile and stats\n' +
+      '\u2022 Achievements and challenges\n' +
+      '\u2022 All saved progress\n\n' +
       'This action cannot be undone!'
     );
     
@@ -513,9 +578,10 @@ export function ArcadeHub() {
     
     // Reset all services
     currencyService.resetCoins();
-    saveUnlockedTiers([0]);
+    saveUnlockState([0], Array.from(DEFAULT_UNLOCKED_GAME_IDS));
     
     // Clear all localStorage
+    localStorage.removeItem('hacktivate-unlocks-v2');
     localStorage.removeItem('hacktivate-unlocked-tiers');
     localStorage.removeItem('hacktivate-user-progress');
     localStorage.removeItem('hacktivate-user-profile');
@@ -531,14 +597,14 @@ export function ArcadeHub() {
     setCurrentCoins(0);
     setNotifications([]);
     
-    alert('🎮 All progress reset! Welcome back to the beginning.');
+    alert('\u{1F3AE} All progress reset! Welcome back to the beginning.');
   };
 
   const tabButtons = [
-    { id: 'games', label: 'Games', icon: '🎮' },
-    { id: 'challenges', label: 'Challenges', icon: '🎯' },
-    { id: 'achievements', label: 'Achievements', icon: '🏆' },
-    { id: 'profile', label: 'Profile', icon: '👤' }
+    { id: 'games', label: 'Games', icon: '\u{1F3AE}' },
+    { id: 'challenges', label: 'Challenges', icon: '\u{1F3AF}' },
+    { id: 'achievements', label: 'Achievements', icon: '\u{1F3C6}' },
+    { id: 'profile', label: 'Profile', icon: '\u{1F464}' }
   ];
 
   const welcomeName =
@@ -551,26 +617,48 @@ export function ArcadeHub() {
     await signInWithEmail(email);
   };
 
+  const tiers = Array.from(new Set(AVAILABLE_GAMES.map(g => g.tier))).sort((a, b) => a - b);
+  const nextTierToUnlock = tiers.find(t => t !== 0 && !unlockedTiers.includes(t));
+  const nextUnlockMessage =
+    nextTierToUnlock != null
+      ? `Next tier unlock: ${getTierUnlockCost(nextTierToUnlock)} coins (Tier ${nextTierToUnlock})`
+      : 'All tiers unlocked';
+  const daily = challenges.filter(c => c.type === 'daily');
+  const dailyCompleted = daily.filter(c => c.completed).length;
+  const unlockedGameCount = unlockedGames.length;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4" data-testid="arcade-root">
+    <div
+      className="min-h-screen relative overflow-x-hidden bg-gradient-to-br from-gray-950 via-purple-950 to-gray-950 px-4 py-6"
+      data-testid="arcade-root"
+    >
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -top-40 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-purple-600/15 blur-3xl" />
+        <div className="absolute -top-24 left-8 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
+        <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-fuchsia-500/10 blur-3xl" />
+      </div>
       {/* Header */}
-      <header className="relative flex justify-between items-center mb-8 bg-gradient-to-r from-purple-800 to-purple-900 rounded-lg px-4 py-3 shadow-lg">
+      <header className="sticky top-4 z-40 flex justify-between items-center mb-8 max-w-7xl mx-auto border border-white/10 bg-gradient-to-r from-purple-900/60 to-indigo-900/40 backdrop-blur-xl rounded-2xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
         <div className="flex items-center gap-4">
-          <h1 className="text-3xl font-bold text-white font-arcade">
-            🕹️ HacktivateNations Arcade
-          </h1>
+          <div className="flex flex-col leading-tight">
+            <h1 className="text-2xl font-bold text-white font-arcade">
+              Hacktivate Nations Arcade
+            </h1>
+            <div className="text-xs text-purple-200/80">
+              Earn coins • Unlock tiers • Chase highscores
+            </div>
+          </div>
           {!showHub && (
             <button
               onClick={handleBackToHub}
-              className="arcade-button text-sm px-4 py-2"
+              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
             >
-              ← Back to Hub
+              {'\u2190 Back to Hub'}
             </button>
           )}
           <button
             onClick={() => setShowOnboarding(true)}
-            className="ml-2 text-sm text-white underline hover:text-purple-200"
+            className="ml-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
           >
             Help
           </button>
@@ -579,9 +667,9 @@ export function ArcadeHub() {
               audioManager.playSound('click');
               setShowAudioSettings(true);
             }}
-            className="ml-2 px-3 py-1 bg-purple-700 hover:bg-purple-600 text-white text-sm rounded transition-colors"
+            className="ml-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
           >
-            🔊 Audio
+            Audio
           </button>
           {/* Debug buttons for development */}
           {process.env.NODE_ENV === 'development' && (
@@ -596,7 +684,7 @@ export function ArcadeHub() {
               <button
                 onClick={() => currencyService.addCoins(2000, 'debug_unlock')}
                 className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
-                title="Add 2000 coins (unlock tier 1)"
+                title="Add 2000 coins (debug)"
               >
                 +2K
               </button>
@@ -605,7 +693,7 @@ export function ArcadeHub() {
                 className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-2 py-1 rounded"
                 title="Reset all progress"
               >
-                🔄 Reset
+                Reset
               </button>
             </div>
           )}
@@ -654,7 +742,7 @@ export function ArcadeHub() {
           {notifications.map(notification => (
             <div
               key={notification.id}
-              className={`p-3 rounded-lg shadow-lg border-l-4 bg-gray-800 text-white animate-in slide-in-from-right ${
+              className={`p-3 rounded-xl shadow-lg border bg-gray-900/80 backdrop-blur text-white animate-in slide-in-from-right ${
                 notification.type === 'achievement' ? 'border-yellow-500' :
                 notification.type === 'levelup' ? 'border-purple-500' :
                 'border-blue-500'
@@ -679,7 +767,7 @@ export function ArcadeHub() {
             />
             {/* Tab Navigation */}
             <div className="flex justify-center">
-              <div className="bg-gray-800 p-1 rounded-lg">
+              <div className="inline-flex gap-1 bg-gray-900/50 border border-white/10 backdrop-blur p-1 rounded-full shadow-sm">
                 {tabButtons.map(tab => (
                   <button
                     key={tab.id}
@@ -689,10 +777,10 @@ export function ArcadeHub() {
                         setActiveTab(tab.id as any);
                       }
                     }}
-                    className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
                       activeTab === tab.id
-                        ? 'bg-purple-600 text-white'
-                        : 'text-gray-300 hover:text-white hover:bg-gray-700'
+                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow'
+                        : 'text-gray-300 hover:text-white hover:bg-white/10'
                     }`}
                   >
                     {tab.icon} {tab.label}
@@ -705,12 +793,71 @@ export function ArcadeHub() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {activeTab === 'games' && (
                 <>
-                  <div className="lg:col-span-2 space-y-4">
+                  <div className="lg:col-span-2 space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
+                        <div className="text-xs uppercase tracking-wider text-gray-300">
+                          Daily Challenges
+                        </div>
+                        <div className="mt-2 flex items-baseline gap-2">
+                          <div className="text-2xl font-bold text-white">
+                            {dailyCompleted}/{daily.length}
+                          </div>
+                          <div className="text-sm text-gray-300">complete</div>
+                        </div>
+                        <div className="mt-2 text-xs text-gray-400">
+                          Finish all dailies for a 1.5× coin boost.
+                        </div>
+                        <button
+                          onClick={() => {
+                            audioManager.playSound('click');
+                            setActiveTab('challenges');
+                          }}
+                          className="mt-3 w-full rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold py-2 transition-colors"
+                        >
+                          View Challenges
+                        </button>
+                      </div>
+
+                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
+                        <div className="text-xs uppercase tracking-wider text-gray-300">
+                          Unlock Progress
+                        </div>
+                        <div className="mt-2 text-2xl font-bold text-white">
+                          {unlockedGameCount}/{AVAILABLE_GAMES.length}
+                        </div>
+                        <div className="mt-1 text-sm text-gray-300">games unlocked</div>
+                        <div className="mt-2 text-xs text-gray-400">
+                          Tiers open: {unlockedTiers.length}/{tiers.length}
+                        </div>
+                        <div className="mt-3 w-full rounded-lg bg-white/10 border border-white/10 text-white/90 text-sm font-semibold py-2 text-center">
+                          {nextUnlockMessage}
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
+                        <div className="text-xs uppercase tracking-wider text-gray-300">
+                          Pro Tip
+                        </div>
+                        <div className="mt-2 text-sm text-gray-200 leading-relaxed">
+                          Bounce between games to stack coins faster, then come back and
+                          unlock the next tier.
+                        </div>
+                        <div className="mt-3 flex items-center justify-between rounded-lg bg-black/30 border border-white/10 px-3 py-2">
+                          <div className="text-xs text-gray-300">Balance</div>
+                          <div className="text-sm font-bold text-yellow-300">
+                            {currentCoins} coins
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                     <GameCarousel
                       games={AVAILABLE_GAMES}
                       unlockedTiers={unlockedTiers}
+                      unlockedGames={unlockedGames}
                       currentCoins={currentCoins}
                       onGameSelect={handleGameSelect}
+                      onTierUnlock={handleTierUnlock}
                       onGameUnlock={handleGameUnlock}
                     />
                     <LeaderboardPanel supabaseService={supabaseService} signedIn={!!session} />
@@ -767,14 +914,11 @@ export function ArcadeHub() {
 
             {/* Welcome message for games tab */}
             {activeTab === 'games' && (
-              <div className="text-center text-gray-300 mt-8">
-                <h3 className="text-xl mb-4">Welcome to the Arcade!</h3>
-                <p className="max-w-2xl mx-auto">
-                  Play games to earn coins and experience, unlock new games, complete daily challenges, 
-                  and collect achievements. Each game offers unique challenges and rewards!
-                </p>
-                <p className="text-sm mt-4 opacity-75">
-                  Current Balance: {currentCoins} coins | Next unlock at: 2,000 coins
+              <div className="mt-8 rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-6 text-center text-gray-200">
+                <h3 className="text-xl font-bold text-white">Welcome to the Arcade</h3>
+                <p className="max-w-2xl mx-auto mt-2 text-sm text-gray-300">
+                  Play to earn coins, unlock tiers, and then unlock games within each tier.
+                  Complete daily challenges for bonuses, and chase leaderboard spots.
                 </p>
               </div>
             )}

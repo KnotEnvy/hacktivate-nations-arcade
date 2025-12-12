@@ -1,4 +1,4 @@
-// ===== src/components/arcade/CurrencyDisplay.tsx =====
+﻿// ===== src/components/arcade/CurrencyDisplay.tsx =====
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -14,36 +14,34 @@ export function CurrencyDisplay({ currencyService }: CurrencyDisplayProps) {
   const [animate, setAnimate] = useState(false);
 
   useEffect(() => {
+    const service = currencyService ?? new CurrencyService();
     if (!currencyService) {
-      // Create a local instance for display
-      const service = new CurrencyService();
       service.init();
-      setCoins(service.getCurrentCoins());
-      
-      const unsubscribe = service.onCoinsChanged((newCoins) => {
-        setCoins(newCoins);
-        setAnimate(true);
-        setTimeout(() => setAnimate(false), 600);
-      });
-
-      return unsubscribe;
-    } else {
-      setCoins(currencyService.getCurrentCoins());
-      
-      const unsubscribe = currencyService.onCoinsChanged((newCoins) => {
-        setCoins(newCoins);
-        setAnimate(true);
-        setTimeout(() => setAnimate(false), 600);
-      });
-
-      return unsubscribe;
     }
+
+    setCoins(service.getCurrentCoins());
+
+    const unsubscribe = service.onCoinsChanged((newCoins) => {
+      setCoins(newCoins);
+      setAnimate(true);
+      setTimeout(() => setAnimate(false), 600);
+    });
+
+    return unsubscribe;
   }, [currencyService]);
 
   return (
-    <div className={`currency-display transition-all duration-300 ${animate ? 'animate-bounce scale-110' : ''}`}>
-      <span className="mr-2">💰</span>
-      <span className="font-mono">{formatNumber(coins)}</span>
+    <div
+      className={`currency-display transition-all duration-300 ${
+        animate ? 'animate-bounce scale-110' : ''
+      }`}
+    >
+      <span className="mr-2" aria-hidden>
+        {'\u{1FA99}'}
+      </span>
+      <span className="font-mono" aria-label="Coins">
+        {formatNumber(coins)}
+      </span>
     </div>
   );
 }

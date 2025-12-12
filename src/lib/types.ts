@@ -67,6 +67,7 @@ export interface UserProgress {
   level: number;
   totalCoins: number;
   unlockedTiers: number[];
+  unlockedGames: string[];
   achievements: string[];
   lastPlayedAt: Date;
 }
