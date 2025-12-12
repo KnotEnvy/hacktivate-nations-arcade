@@ -1,50 +1,71 @@
-<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1e3a8a"/>
+    <linearGradient id="mineBg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A"/>
       <stop offset="100%" stop-color="#111827"/>
     </linearGradient>
+    <radialGradient id="mineGlow" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1D4ED8" stop-opacity="0.25"/>
+      <stop offset="100%" stop-color="#1D4ED8" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="cellPattern" width="36" height="36" patternUnits="userSpaceOnUse">
+      <rect width="36" height="36" fill="#047857"/>
+      <rect width="36" height="36" fill="none" stroke="#0f766e" stroke-width="2"/>
+      <rect x="2" y="2" width="32" height="32" fill="rgba(255,255,255,0.03)"/>
+    </pattern>
+    <filter id="uiShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#000" flood-opacity="0.6"/>
+    </filter>
+    <filter id="minePulse" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
 
-  <!-- Grid -->
-  <g stroke="#374151" stroke-width="2" fill="#1f2937">
-    <rect x="96" y="96" width="64" height="64"/>
-    <rect x="160" y="96" width="64" height="64"/>
-    <rect x="224" y="96" width="64" height="64"/>
-    <rect x="288" y="96" width="64" height="64"/>
-    <rect x="352" y="96" width="64" height="64"/>
+  <rect width="512" height="512" fill="url(#mineBg)"/>
+  <circle cx="256" cy="210" r="230" fill="url(#mineGlow)"/>
 
-    <rect x="96" y="160" width="64" height="64"/>
-    <rect x="160" y="160" width="64" height="64"/>
-    <rect x="224" y="160" width="64" height="64"/>
-    <rect x="288" y="160" width="64" height="64"/>
-    <rect x="352" y="160" width="64" height="64"/>
+  <rect x="76" y="88" width="360" height="288" rx="10" fill="url(#cellPattern)" stroke="#334155" stroke-width="3"/>
 
-    <rect x="96" y="224" width="64" height="64"/>
-    <rect x="160" y="224" width="64" height="64"/>
-    <rect x="224" y="224" width="64" height="64"/>
-    <rect x="288" y="224" width="64" height="64"/>
-    <rect x="352" y="224" width="64" height="64"/>
-
-    <rect x="96" y="288" width="64" height="64"/>
-    <rect x="160" y="288" width="64" height="64"/>
-    <rect x="224" y="288" width="64" height="64"/>
-    <rect x="288" y="288" width="64" height="64"/>
-    <rect x="352" y="288" width="64" height="64"/>
-
-    <rect x="96" y="352" width="64" height="64"/>
-    <rect x="160" y="352" width="64" height="64"/>
-    <rect x="224" y="352" width="64" height="64"/>
-    <rect x="288" y="352" width="64" height="64"/>
-    <rect x="352" y="352" width="64" height="64"/>
+  <g>
+    <rect x="184" y="196" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="220" y="196" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="256" y="196" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="184" y="232" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="220" y="232" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="256" y="232" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="184" y="268" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="220" y="268" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <rect x="256" y="268" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
   </g>
-  <!-- Flag -->
-  <polygon points="120,364 148,364 148,336" fill="#facc15" stroke="#92400e" stroke-width="4"/>
-  <!-- Mine -->
-  <circle cx="256" cy="192" r="20" fill="#dc2626" stroke="#7f1d1d" stroke-width="4"/>
-  <!-- Number -->
-  <text x="352" y="176" text-anchor="middle" font-size="32" fill="#ffffff" font-weight="bold">3</text>
-  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.8)"/>
-  <text x="256" y="465" text-anchor="middle" font-size="32" font-weight="bold" fill="#facc15">MINESWEEPER</text>
+
+  <text x="238" y="222" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="20" fill="#60A5FA">1</text>
+  <text x="274" y="258" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="20" fill="#34D399">2</text>
+  <text x="202" y="294" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="20" fill="#F87171">3</text>
+
+  <g transform="translate(112 328)">
+    <rect x="0" y="0" width="36" height="36" fill="#047857" stroke="#0f766e" stroke-width="2"/>
+    <polygon points="10,26 26,26 26,10" fill="#FBBF24" stroke="#92400e" stroke-width="2"/>
+    <line x1="10" y1="26" x2="10" y2="8" stroke="#92400e" stroke-width="2"/>
+  </g>
+
+  <g transform="translate(364 160)" filter="url(#minePulse)">
+    <rect x="-18" y="-18" width="36" height="36" fill="#1f2937" stroke="#374151" stroke-width="2"/>
+    <circle cx="0" cy="0" r="10" fill="#dc2626" stroke="#7f1d1d" stroke-width="2"/>
+    <circle cx="0" cy="0" r="18" fill="rgba(220,38,38,0.25)"/>
+  </g>
+
+  <g filter="url(#uiShadow)">
+    <rect x="16" y="12" width="140" height="52" rx="8" fill="rgba(0,0,0,0.65)" stroke="#334155" stroke-width="2"/>
+    <text x="28" y="36" font-family="Arial" font-weight="bold" font-size="16" fill="#ffffff">MINES 6</text>
+    <text x="28" y="56" font-family="Arial" font-weight="bold" font-size="16" fill="#ffffff">TIME 32.4s</text>
+  </g>
+
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.78)"/>
+  <rect x="0" y="420" width="512" height="3" fill="#FBBF24"/>
+  <text x="256" y="462" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="34" fill="#FBBF24" letter-spacing="2">MINESWEEPER</text>
+  <text x="256" y="492" text-anchor="middle" font-family="Arial" font-weight="bold" font-size="14" fill="#94A3B8">SAFE START • THREE DIFFICULTIES • BEAT YOUR TIME</text>
 </svg>

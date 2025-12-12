@@ -6,6 +6,14 @@ interface Spawnable {
   position: Vector2;
 }
 
+type SnakePowerUpType = 'wrap' | 'slow' | 'double';
+
+interface ActivePowerUp {
+  type: SnakePowerUpType;
+  duration: number;
+  maxDuration: number;
+}
+
 export class SnakeGame extends BaseGame {
   manifest: GameManifest = {
     id: 'snake',
@@ -35,6 +43,9 @@ export class SnakeGame extends BaseGame {
   private direction: Vector2 = new Vector2(1, 0);
   private nextDirection: Vector2 = new Vector2(1, 0);
 
+  private lastTouch: { x: number; y: number } | null = null;
+  private readonly touchThreshold = 14;
+
   private food: Spawnable = { position: new Vector2() };
   private coin: Spawnable | null = null;
   private coinTimer = 0;
@@ -43,21 +54,43 @@ export class SnakeGame extends BaseGame {
   private coinLifetime = 6; // seconds before disappearing
   private coinBlinkTime = 1; // blink for the last second
 
+  private powerUp: (Spawnable & { type: SnakePowerUpType }) | null = null;
+  private powerUpTimer = 0;
+  private powerUpInterval = 12; // seconds
+  private powerUpAge = 0;
+  private powerUpLifetime = 8; // seconds
+  private powerUpBlinkTime = 1.2; // blink near expiry
+  private activePowerUps: ActivePowerUp[] = [];
+  private pendingGrowth = 0;
+
   private colorTimer = 0;
   private readonly colorDuration = 1.25; // seconds
 
   private moveTimer = 0;
-  private speed = 8; // cells per second
+  private baseSpeed = 8; // cells per second
+
+  private foodEaten = 0;
+  private maxLength = 0;
+  private powerupsUsed = 0;
+  private powerupTypesUsed: Set<SnakePowerUpType> = new Set();
+  private highScore = 0;
 
   protected onInit(): void {
     this.reset();
+    try {
+      const saved = localStorage.getItem('snake_best');
+      this.highScore = saved ? parseInt(saved, 10) || 0 : 0;
+    } catch {
+      this.highScore = 0;
+    }
   }
 
   protected onUpdate(dt: number): void {
     this.handleInput();
 
+    const effectiveSpeed = this.hasPowerUp('slow') ? this.baseSpeed * 0.6 : this.baseSpeed;
     this.moveTimer += dt;
-    if (this.moveTimer >= 1 / this.speed) {
+    if (this.moveTimer >= 1 / effectiveSpeed) {
       this.moveTimer = 0;
       this.step();
     }
@@ -68,6 +101,15 @@ export class SnakeGame extends BaseGame {
         this.coin = null;
         this.coinAge = 0;
         this.coinTimer = 0;
+      }
+    }
+
+    if (this.powerUp) {
+      this.powerUpAge += dt;
+      if (this.powerUpAge >= this.powerUpLifetime) {
+        this.powerUp = null;
+        this.powerUpAge = 0;
+        this.powerUpTimer = 0;
       }
     }
 
@@ -82,6 +124,19 @@ export class SnakeGame extends BaseGame {
         this.spawnCoin();
       }
     }
+
+    this.powerUpTimer += dt;
+    if (this.powerUpTimer >= this.powerUpInterval) {
+      this.powerUpTimer = 0;
+      if (!this.powerUp) {
+        this.spawnPowerUp();
+      }
+    }
+
+    for (const p of this.activePowerUps) {
+      p.duration -= dt;
+    }
+    this.activePowerUps = this.activePowerUps.filter(p => p.duration > 0);
   }
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
@@ -150,6 +205,27 @@ export class SnakeGame extends BaseGame {
       }
     }
 
+    if (this.powerUp) {
+      const px = x0 + this.powerUp.position.x * tile + tile / 2;
+      const py = y0 + this.powerUp.position.y * tile + tile / 2;
+      const blinkStart = this.powerUpLifetime - this.powerUpBlinkTime;
+      const showPowerUp =
+        this.powerUpAge < blinkStart ||
+        Math.floor((this.powerUpAge - blinkStart) * 8) % 2 === 0;
+
+      if (showPowerUp) {
+        ctx.fillStyle = this.getPowerUpColor(this.powerUp.type);
+        ctx.beginPath();
+        ctx.arc(px, py, tile / 2 - 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.font = `bold ${tile * 0.5}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.getPowerUpIcon(this.powerUp.type), px, py + 1);
+      }
+    }
+
     const time = Date.now() * 0.002;
     this.snake.forEach((seg, i) => {
       const drawX = x0 + seg.x * tile;
@@ -187,6 +263,28 @@ export class SnakeGame extends BaseGame {
     });
   }
 
+  protected onRenderUI(ctx: CanvasRenderingContext2D): void {
+    let y = this.getHudStartY();
+    ctx.textAlign = 'left';
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(`Length: ${this.snake.length}`, 20, y);
+    y += 18;
+    ctx.fillStyle = '#94A3B8';
+    ctx.fillText(`Best: ${this.highScore}`, 20, y);
+    y += 18;
+
+    for (const p of this.activePowerUps) {
+      ctx.fillStyle = this.getPowerUpColor(p.type);
+      ctx.fillText(
+        `${this.getPowerUpLabel(p.type)} ${p.duration.toFixed(1)}s`,
+        20,
+        y
+      );
+      y += 18;
+    }
+  }
+
   protected onRestart(): void {
     this.reset();
   }
@@ -196,15 +294,28 @@ export class SnakeGame extends BaseGame {
   }
 
   protected onGameEnd(finalScore: any): void {
+    try {
+      if (this.score > this.highScore) {
+        this.highScore = this.score;
+        localStorage.setItem('snake_best', String(this.highScore));
+      }
+    } catch {
+      /* ignore */
+    }
+
     this.extendedGameData = {
       snake_length: this.snake.length,
-      final_speed: this.speed,
-      food_eaten: Math.floor(this.score / 10) // Each food gives 10 points
+      final_speed: this.baseSpeed,
+      food_eaten: this.foodEaten,
+      max_length: this.maxLength,
+      powerupsUsed: this.powerupsUsed,
+      powerupTypesUsed: [...this.powerupTypesUsed],
     };
 
     this.services?.analytics?.trackGameSpecificStat?.('snake', 'snake_length', this.snake.length);
-    this.services?.analytics?.trackGameSpecificStat?.('snake', 'final_speed', this.speed);
-    this.services?.analytics?.trackGameSpecificStat?.('snake', 'food_eaten', Math.floor(this.score / 10));
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'final_speed', this.baseSpeed);
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'food_eaten', this.foodEaten);
+    this.services?.analytics?.trackGameSpecificStat?.('snake', 'powerups_used', this.powerupsUsed);
 
     super.onGameEnd?.(finalScore);
   }
@@ -225,41 +336,67 @@ export class SnakeGame extends BaseGame {
     this.nextDirection = this.direction;
     this.spawnFood();
     this.coin = null;
+    this.powerUp = null;
     this.coinTimer = 0;
     this.coinAge = 0;
+    this.powerUpTimer = 0;
+    this.powerUpAge = 0;
+    this.activePowerUps = [];
+    this.pendingGrowth = 0;
     this.colorTimer = 0;
-    this.speed = 8;
+    this.baseSpeed = 8;
     this.score = 0;
     this.pickups = 0;
+    this.foodEaten = 0;
+    this.maxLength = this.snake.length;
+    this.powerupsUsed = 0;
+    this.powerupTypesUsed.clear();
   }
 
   private step(): void {
     const newHead = this.snake[0].clone().add(this.nextDirection);
 
+    if (this.hasPowerUp('wrap')) {
+      if (newHead.x < 0) newHead.x = this.gridWidth - 1;
+      if (newHead.x >= this.gridWidth) newHead.x = 0;
+      if (newHead.y < 0) newHead.y = this.gridHeight - 1;
+      if (newHead.y >= this.gridHeight) newHead.y = 0;
+    }
+
     // check collisions
     if (
-      this.hitWall(newHead) ||
+      (!this.hasPowerUp('wrap') && this.hitWall(newHead)) ||
       this.snake.some(s => s.x === newHead.x && s.y === newHead.y)
     ) {
+      this.services.audio.playSound('collision');
       this.endGame();
       return;
     }
 
     this.snake.unshift(newHead);
 
-    if (
+    const ateFood =
       newHead.x === this.food.position.x &&
-      newHead.y === this.food.position.y
-    ) {
-      this.score += 10;
-      this.spawnFood();
-      this.speed += 0.05;
-      this.services.audio.playSound('success');
-    } else if (
+      newHead.y === this.food.position.y;
+    const ateCoin =
       this.coin &&
       newHead.x === this.coin.position.x &&
-      newHead.y === this.coin.position.y
-    ) {
+      newHead.y === this.coin.position.y;
+    const atePowerUp =
+      this.powerUp &&
+      newHead.x === this.powerUp.position.x &&
+      newHead.y === this.powerUp.position.y;
+
+    if (ateFood) {
+      this.score += 10;
+      this.foodEaten++;
+      this.spawnFood();
+      this.baseSpeed += 0.05;
+      if (this.hasPowerUp('double')) {
+        this.pendingGrowth += 1;
+      }
+      this.services.audio.playSound('success');
+    } else if (ateCoin) {
       this.score += 20;
       this.pickups += 1;
       this.coin = null;
@@ -267,13 +404,25 @@ export class SnakeGame extends BaseGame {
       this.coinTimer = 0;
       this.colorTimer = this.colorDuration;
       this.services.audio.playSound('coin');
-      this.snake.pop();
+      this.consumePendingGrowthOrPop();
+    } else if (atePowerUp) {
+      const type = this.powerUp!.type;
+      this.activatePowerUp(type);
+      this.powerupsUsed++;
+      this.powerupTypesUsed.add(type);
+      this.score += 30;
+      this.powerUp = null;
+      this.powerUpAge = 0;
+      this.powerUpTimer = 0;
+      this.services.audio.playSound('powerup');
+      this.consumePendingGrowthOrPop();
     } else {
-      this.snake.pop();
+      this.consumePendingGrowthOrPop();
     }
 
     this.direction = this.nextDirection;
-    this.speed += 0.002; // gradual difficulty increase
+    this.baseSpeed += 0.002; // gradual difficulty increase
+    this.maxLength = Math.max(this.maxLength, this.snake.length);
   }
 
   private hitWall(pos: Vector2): boolean {
@@ -294,6 +443,14 @@ export class SnakeGame extends BaseGame {
     this.coinAge = 0;
   }
 
+  private spawnPowerUp(): void {
+    this.powerUp = {
+      position: this.randomEmptyCell(),
+      type: this.randomPowerUpType(),
+    };
+    this.powerUpAge = 0;
+  }
+
   private randomEmptyCell(): Vector2 {
     let pos: Vector2;
     do {
@@ -305,12 +462,116 @@ export class SnakeGame extends BaseGame {
       this.snake.some(s => s.x === pos.x && s.y === pos.y) ||
       (this.food &&
         pos.x === this.food.position.x &&
-        pos.y === this.food.position.y)
+        pos.y === this.food.position.y) ||
+      (this.coin &&
+        pos.x === this.coin.position.x &&
+        pos.y === this.coin.position.y) ||
+      (this.powerUp &&
+        pos.x === this.powerUp.position.x &&
+        pos.y === this.powerUp.position.y)
     );
     return pos;
   }
 
+  private randomPowerUpType(): SnakePowerUpType {
+    const r = Math.random();
+    if (r < 0.45) return 'double';
+    if (r < 0.75) return 'slow';
+    return 'wrap';
+  }
+
+  private activatePowerUp(type: SnakePowerUpType): void {
+    const duration = this.getPowerUpDuration(type);
+    const existing = this.activePowerUps.find(p => p.type === type);
+    if (existing) {
+      existing.duration += duration;
+      existing.maxDuration += duration;
+    } else {
+      this.activePowerUps.push({ type, duration, maxDuration: duration });
+    }
+  }
+
+  private hasPowerUp(type: SnakePowerUpType): boolean {
+    return this.activePowerUps.some(p => p.type === type);
+  }
+
+  private getPowerUpDuration(type: SnakePowerUpType): number {
+    switch (type) {
+      case 'wrap': return 8;
+      case 'slow': return 6;
+      case 'double': return 7;
+      default: return 6;
+    }
+  }
+
+  private getPowerUpColor(type: SnakePowerUpType): string {
+    switch (type) {
+      case 'wrap': return '#A855F7';
+      case 'slow': return '#38BDF8';
+      case 'double': return '#FBBF24';
+      default: return '#FFFFFF';
+    }
+  }
+
+  private getPowerUpIcon(type: SnakePowerUpType): string {
+    switch (type) {
+      case 'wrap': return 'W';
+      case 'slow': return 'S';
+      case 'double': return 'G';
+      default: return '?';
+    }
+  }
+
+  private getPowerUpLabel(type: SnakePowerUpType): string {
+    switch (type) {
+      case 'wrap': return 'Wrap Walls';
+      case 'slow': return 'Slow Time';
+      case 'double': return 'Double Growth';
+      default: return 'Power-Up';
+    }
+  }
+
+  private consumePendingGrowthOrPop(): void {
+    if (this.pendingGrowth > 0) {
+      this.pendingGrowth -= 1;
+    } else {
+      this.snake.pop();
+    }
+  }
+
   private handleInput(): void {
+    const touches = this.services.input.getTouches?.() || [];
+    if (touches.length > 0) {
+      const t = touches[0];
+      if (!this.lastTouch) {
+        this.lastTouch = { x: t.x, y: t.y };
+      } else {
+        const dx = t.x - this.lastTouch.x;
+        const dy = t.y - this.lastTouch.y;
+        const absDx = Math.abs(dx);
+        const absDy = Math.abs(dy);
+
+        if (Math.max(absDx, absDy) >= this.touchThreshold) {
+          if (absDx > absDy) {
+            if (dx > 0 && this.direction.x !== -1) {
+              this.nextDirection = new Vector2(1, 0);
+            } else if (dx < 0 && this.direction.x !== 1) {
+              this.nextDirection = new Vector2(-1, 0);
+            }
+          } else {
+            if (dy > 0 && this.direction.y !== -1) {
+              this.nextDirection = new Vector2(0, 1);
+            } else if (dy < 0 && this.direction.y !== 1) {
+              this.nextDirection = new Vector2(0, -1);
+            }
+          }
+          this.lastTouch = { x: t.x, y: t.y };
+        }
+      }
+    } else {
+      this.lastTouch = null;
+    }
+
     if (this.services.input.isLeftPressed() && this.direction.x !== 1) {
       this.nextDirection = new Vector2(-1, 0);
     } else if (

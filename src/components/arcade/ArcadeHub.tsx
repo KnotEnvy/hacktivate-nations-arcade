@@ -434,6 +434,15 @@ export function ArcadeHub() {
             ...achievementService.checkAchievement('powerups_collected', gameData.powerups_collected || 0, selectedGameId),
             ...achievementService.checkAchievement('total_bricks_broken', gameData.total_bricks_broken || 0, selectedGameId),
           ]
+        : []),
+      ...(selectedGameId === 'minesweeper'
+        ? [
+            ...achievementService.checkAchievement('cells_cleared', gameData.cells_cleared || 0, selectedGameId),
+            ...achievementService.checkAchievement('games_won', gameData.games_won || 0, selectedGameId),
+            ...(gameData.fast_win
+              ? achievementService.checkAchievement('fast_win', gameData.fast_win, selectedGameId)
+              : []),
+          ]
         : [])
     ];
 

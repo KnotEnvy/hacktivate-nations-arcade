@@ -35,6 +35,7 @@ export class MemoryMatchGame extends BaseGame {
   private grid = { rows: 4, cols: 4 };
   private margin = 16;
   private gap = 10;
+  private powerUpBarReserve = 70;
   private mode: 'classic' | 'timed' = 'classic';
   private timeLimitSec = 90;
   private elapsedSec = 0;
@@ -94,7 +95,11 @@ export class MemoryMatchGame extends BaseGame {
 
   private computeLayout(rows: number, cols: number): { tileW: number; tileH: number } {
     const availableW = this.canvas.width - this.margin * 2 - (cols - 1) * this.gap;
-    const availableH = this.canvas.height - this.margin * 2 - (rows - 1) * this.gap;
+    const availableH =
+      this.canvas.height -
+      this.margin * 2 -
+      (rows - 1) * this.gap -
+      this.powerUpBarReserve;
     const tileW = Math.floor(availableW / cols);
     const tileH = Math.floor(availableH / rows);
     return { tileW, tileH };
@@ -125,11 +130,14 @@ export class MemoryMatchGame extends BaseGame {
           this.pickups += 1;
           this.matchesMadeThisGame += 1;
           this.services.audio.playSound('success');
+          this.spawnBurstForCards(this.firstPick, this.secondPick, '#34D399');
         } else {
           this.firstPick.flipped = false;
           this.secondPick.flipped = false;
           this.streak = 0;
           this.services.audio.playSound('collision');
+          this.shakeTime = 0.25;
+          this.spawnBurstForCards(this.firstPick, this.secondPick, '#F87171');
         }
         this.firstPick = this.secondPick = null;
         this.compareLock = false;
@@ -187,6 +195,16 @@ export class MemoryMatchGame extends BaseGame {
 
   private handleTap(x: number, y: number): void {
     if (this.flipCooldown > 0 || this.compareLock) return;
+
+    const powerButton = this.getPowerUpButtons().find(
+      b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
+    );
+    if (powerButton) {
+      if (powerButton.id === 'hint') this.useHint();
+      if (powerButton.id === 'shuffle') this.shuffleUnmatched();
+      if (powerButton.id === 'reveal') this.revealThree();
+      return;
+    }
     // Find card
     const c = this.cards.find(card => !card.matched && !card.flipped && x >= card.x && x <= card.x + card.w && y >= card.y && y <= card.y + card.h);
     if (!c) return;
@@ -214,6 +232,11 @@ export class MemoryMatchGame extends BaseGame {
     }
 
     const ICONS = ICON_SET;
+    ctx.save();
+    if (this.shakeTime > 0) {
+      const mag = 6 * this.shakeTime;
+      ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+    }
     for (const c of this.cards) {
       const t = c.anim;
       // back to front flip via horizontal scale
@@ -240,6 +263,17 @@ export class MemoryMatchGame extends BaseGame {
       }
       ctx.restore();
     }
+
+    for (const p of this.particles) {
+      const alpha = Math.max(0, Math.min(1, p.life));
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
@@ -257,6 +291,36 @@ export class MemoryMatchGame extends BaseGame {
     if (best) {
       if (best.leastMoves !== null) { ctx.fillText(`Best Moves: ${best.leastMoves}`, 16, y); y += 20; }
       if (best.bestTime !== null) { ctx.fillText(`Best Time: ${best.bestTime.toFixed(1)}s`, 16, y); y += 20; }
+    }
+
+    const buttons = this.getPowerUpButtons();
+    for (const b of buttons) {
+      const disabled = b.cooldown > 0 || this.compareLock;
+      ctx.save();
+      ctx.globalAlpha = disabled ? 0.5 : 1;
+      ctx.fillStyle = '#0F172A';
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(b.x, b.y, b.w, b.h);
+
+      ctx.fillStyle = b.color;
+      ctx.font = 'bold 14px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2 - 6);
+
+      ctx.fillStyle = '#94A3B8';
+      ctx.font = '12px Arial';
+      const keyLabel = b.cooldown > 0 ? `${b.cooldown.toFixed(0)}s` : b.key;
+      ctx.fillText(keyLabel, b.x + b.w / 2, b.y + b.h / 2 + 10);
+
+      if (b.cooldown > 0) {
+        const pct = Math.max(0, Math.min(1, b.cooldown / b.maxCooldown));
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(b.x, b.y, b.w, b.h * pct);
+      }
+      ctx.restore();
     }
   }
 
@@ -374,5 +438,85 @@ export class MemoryMatchGame extends BaseGame {
     setTimeout(() => { picks.forEach(c => c.flipped = false); }, 700);
     this.revealCooldown = 12;
     this.score = Math.max(0, this.score - 20);
+  }
+
+  private spawnBurstForCards(a: Card, b: Card, color: string): void {
+    this.spawnBurst(a.x + a.w / 2, a.y + a.h / 2, color);
+    this.spawnBurst(b.x + b.w / 2, b.y + b.h / 2, color);
+  }
+
+  private spawnBurst(x: number, y: number, color: string): void {
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 80 + Math.random() * 140;
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 0.6 + Math.random() * 0.4,
+        color,
+        size: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  private getPowerUpButtons(): Array<{
+    id: 'hint' | 'shuffle' | 'reveal';
+    label: string;
+    key: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    cooldown: number;
+    maxCooldown: number;
+    color: string;
+  }> {
+    const gap = 12;
+    const h = 46;
+    const y = this.canvas.height - h - 12;
+    const w = Math.min(160, (this.canvas.width - gap * 4) / 3);
+    const totalW = w * 3 + gap * 2;
+    const startX = (this.canvas.width - totalW) / 2;
+
+    return [
+      {
+        id: 'hint',
+        label: 'Hint',
+        key: 'H',
+        x: startX,
+        y,
+        w,
+        h,
+        cooldown: this.hintCooldown,
+        maxCooldown: 6,
+        color: '#FBBF24',
+      },
+      {
+        id: 'shuffle',
+        label: 'Shuffle',
+        key: 'S',
+        x: startX + w + gap,
+        y,
+        w,
+        h,
+        cooldown: this.shuffleCooldown,
+        maxCooldown: 10,
+        color: '#A78BFA',
+      },
+      {
+        id: 'reveal',
+        label: 'Reveal 3',
+        key: 'V',
+        x: startX + (w + gap) * 2,
+        y,
+        w,
+        h,
+        cooldown: this.revealCooldown,
+        maxCooldown: 12,
+        color: '#38BDF8',
+      },
+    ];
   }
 }
