@@ -1,35 +1,150 @@
 <svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#0B1020"/>
-      <stop offset="100%" stop-color="#1F2937"/>
+    <!-- Background gradient - cyberpunk dark -->
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0D1B2A"/>
+      <stop offset="100%" stop-color="#1E3A5F"/>
     </linearGradient>
+    <!-- Lane glow -->
+    <linearGradient id="laneGlow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22D3EE" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#22D3EE" stop-opacity="0"/>
+    </linearGradient>
+    <!-- Diamond gradient -->
+    <linearGradient id="gemGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#E879F9"/>
+      <stop offset="50%" stop-color="#A855F7"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+    <!-- Fever glow -->
+    <radialGradient id="feverGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#EC4899" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#EC4899" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Player glow -->
+    <filter id="playerGlow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
-  <rect width="512" height="512" fill="url(#bg)"/>
-
-  <!-- Falling blocks -->
-  <g fill="#EF4444">
-    <rect x="110" y="100" width="60" height="28" rx="4"/>
-    <rect x="250" y="60" width="80" height="30" rx="4"/>
-    <rect x="360" y="140" width="70" height="26" rx="4"/>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#bgGrad)"/>
+  
+  <!-- Fever mode glow overlay -->
+  <circle cx="256" cy="280" r="200" fill="url(#feverGlow)"/>
+  
+  <!-- Grid lines (subtle) -->
+  <g stroke="#22D3EE" stroke-opacity="0.15" stroke-width="1">
+    <line x1="102" y1="0" x2="102" y2="420"/>
+    <line x1="204" y1="0" x2="204" y2="420"/>
+    <line x1="306" y1="0" x2="306" y2="420"/>
+    <line x1="408" y1="0" x2="408" y2="420"/>
   </g>
-
-  <!-- Coin -->
-  <g transform="translate(300, 220)">
-    <circle cx="0" cy="0" r="16" fill="#FBBF24"/>
-    <circle cx="-3" cy="-3" r="4" fill="#FEF3C7"/>
+  
+  <!-- Lane warning indicators (top) -->
+  <g>
+    <!-- Lane 1 - warning -->
+    <rect x="4" y="10" width="96" height="28" fill="#F97316" fill-opacity="0.6" rx="4"/>
+    <polygon points="52,30 44,20 60,20" fill="white"/>
+    <!-- Lane 3 - gem indicator -->
+    <rect x="208" y="10" width="96" height="28" fill="#A855F7" fill-opacity="0.6" rx="4"/>
+    <text x="256" y="30" text-anchor="middle" font-size="16" fill="white">💎</text>
+    <!-- Lane 5 - warning -->
+    <rect x="412" y="10" width="96" height="28" fill="#EF4444" fill-opacity="0.8" rx="4"/>
+    <text x="460" y="30" text-anchor="middle" font-size="14" fill="white">⚠️</text>
   </g>
-
-  <!-- Player -->
-  <rect x="238" y="360" width="36" height="36" rx="4" fill="#22D3EE"/>
-
-  <!-- Motion trail -->
-  <g opacity="0.3" fill="#22D3EE">
-    <circle cx="210" cy="380" r="10"/>
-    <circle cx="190" cy="390" r="8"/>
+  
+  <!-- Falling obstacles -->
+  <g>
+    <!-- Block obstacle (lane 1) -->
+    <rect x="20" y="80" width="72" height="32" fill="#EF4444" rx="4"/>
+    <rect x="20" y="80" width="72" height="6" fill="#FCA5A5" rx="2"/>
+    
+    <!-- Spike obstacle (lane 2) -->
+    <g transform="translate(127, 180)">
+      <polygon points="25,0 50,35 0,35" fill="#F97316"/>
+      <polygon points="25,5 45,30 5,30" fill="#FDBA74"/>
+    </g>
+    
+    <!-- Wall (lanes 2-4) -->
+    <rect x="106" y="260" width="300" height="24" fill="#DC2626" rx="2"/>
+    <rect x="106" y="260" width="300" height="4" fill="#FECACA" rx="1"/>
+    
+    <!-- Moving obstacle (lane 5) -->
+    <rect x="420" y="140" width="68" height="28" fill="#8B5CF6" rx="4"/>
+    <rect x="420" y="140" width="68" height="5" fill="#C4B5FD" rx="2"/>
   </g>
-
+  
+  <!-- Coins -->
+  <g>
+    <circle cx="360" y="100" r="14" fill="#FBBF24"/>
+    <circle cx="356" y="96" r="4" fill="#FEF3C7"/>
+    <circle cx="460" y="220" r="14" fill="#FBBF24"/>
+    <circle cx="456" y="216" r="4" fill="#FEF3C7"/>
+  </g>
+  
+  <!-- Diamond Gem (rare!) -->
+  <g transform="translate(256, 160)">
+    <!-- Glow -->
+    <circle cx="0" cy="0" r="30" fill="url(#feverGlow)"/>
+    <!-- Diamond shape -->
+    <polygon points="0,-20 18,0 0,20 -18,0" fill="url(#gemGrad)"/>
+    <!-- Inner facet -->
+    <polygon points="0,-20 9,0 0,0 -9,0" fill="rgba(255,255,255,0.4)"/>
+    <!-- Sparkle -->
+    <circle cx="0" cy="0" r="4" fill="white"/>
+    <!-- Orbiting sparkles -->
+    <circle cx="25" cy="0" r="3" fill="white" fill-opacity="0.8"/>
+    <circle cx="-20" cy="15" r="2" fill="white" fill-opacity="0.6"/>
+    <circle cx="10" cy="-22" r="2" fill="white" fill-opacity="0.7"/>
+  </g>
+  
+  <!-- Player character (diamond shape with glow) -->
+  <g transform="translate(256, 340)" filter="url(#playerGlow)">
+    <!-- Trail effect -->
+    <circle cx="-30" cy="10" r="8" fill="#22D3EE" fill-opacity="0.3"/>
+    <circle cx="-50" cy="15" r="6" fill="#22D3EE" fill-opacity="0.2"/>
+    <circle cx="-65" cy="18" r="4" fill="#22D3EE" fill-opacity="0.1"/>
+    
+    <!-- Shield aura -->
+    <circle cx="0" cy="0" r="32" fill="none" stroke="#06B6D4" stroke-width="3" stroke-opacity="0.5"/>
+    
+    <!-- Main character - diamond shape -->
+    <polygon points="0,-22 20,0 0,22 -20,0" fill="#22D3EE"/>
+    <!-- Inner glow -->
+    <polygon points="0,-14 12,0 0,14 -12,0" fill="#67E8F9"/>
+    <!-- Eyes -->
+    <circle cx="-5" cy="-3" r="3" fill="#0F172A"/>
+    <circle cx="5" cy="-3" r="3" fill="#0F172A"/>
+    <!-- Eye glow -->
+    <circle cx="-5" cy="-3" r="1" fill="white"/>
+    <circle cx="5" cy="-3" r="1" fill="white"/>
+  </g>
+  
+  <!-- Fever Mode indicator -->
+  <g transform="translate(20, 380)">
+    <!-- Bar background -->
+    <rect x="0" y="0" width="120" height="10" fill="rgba(0,0,0,0.5)" rx="5"/>
+    <!-- Bar fill -->
+    <rect x="0" y="0" width="96" height="10" fill="#EC4899" rx="5"/>
+    <!-- Text -->
+    <text x="0" y="28" font-size="14" font-weight="bold" fill="#EC4899">🔥 2.5x FEVER</text>
+  </g>
+  
+  <!-- Lives indicator -->
+  <g transform="translate(380, 380)">
+    <text x="0" y="18" font-size="20" fill="#EF4444">❤️❤️🖤</text>
+  </g>
+  
   <!-- Title strip -->
-  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.6)"/>
-  <text x="256" y="470" text-anchor="middle" font-size="28" font-weight="bold" fill="#FBBF24">TAP DODGE</text>
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.75)"/>
+  <rect x="0" y="420" width="512" height="3" fill="#22D3EE"/>
+  
+  <!-- Title text -->
+  <text x="256" y="462" text-anchor="middle" font-size="32" font-weight="bold" fill="#22D3EE">TAP DODGE</text>
+  <text x="256" y="492" text-anchor="middle" font-size="14" font-weight="bold" fill="#94A3B8">DODGE • COLLECT • SURVIVE</text>
 </svg>
