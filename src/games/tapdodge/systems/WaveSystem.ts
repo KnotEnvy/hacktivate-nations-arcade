@@ -93,6 +93,7 @@ export class WaveSystem {
     private bossWaveTimer: number = 0;
     private bossWaveWarningTimer: number = 0;
     private lastBossWaveTime: number = 0;
+    private bossesCleared: number = 0;
 
     private readonly BOSS_WAVE_INTERVAL = 45; // seconds between boss waves
     private readonly BOSS_WAVE_WARNING_DURATION = 3; // warning before boss
@@ -214,6 +215,9 @@ export class WaveSystem {
         this.bossWaveActive = false;
         this.bossWaveTimer = 0;
         this.lastBossWaveTime = this.gameTime;
+        if (survived) {
+            this.bossesCleared++;
+        }
         this.onBossWaveEnd?.(survived);
     }
 
@@ -270,5 +274,10 @@ export class WaveSystem {
         this.bossWaveTimer = 0;
         this.bossWaveWarningTimer = 0;
         this.lastBossWaveTime = 0;
+        this.bossesCleared = 0;
+    }
+
+    public getBossesCleared(): number {
+        return this.bossesCleared;
     }
 }

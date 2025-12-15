@@ -22,7 +22,7 @@ import { AudioSettings } from './AudioSettings';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
-import { LeaderboardPanel } from './LeaderboardPanel';
+import { LeaderboardsTab } from './LeaderboardsTab';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { AVAILABLE_GAMES } from '@/data/Games';
@@ -73,7 +73,9 @@ export function ArcadeHub() {
   const [currencyService] = useState(new CurrencyService());
   const [currentCoins, setCurrentCoins] = useState(0);
   const [showHub, setShowHub] = useState(true);
-  const [activeTab, setActiveTab] = useState<'games' | 'challenges' | 'achievements' | 'profile'>('games');
+  const [activeTab, setActiveTab] = useState<'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile'>(
+    'games'
+  );
   const [challenges, setChallenges] = useState<Challenge[]>([]);
 
   // Services
@@ -602,8 +604,9 @@ export function ArcadeHub() {
 
   const tabButtons = [
     { id: 'games', label: 'Games', icon: '\u{1F3AE}' },
+    { id: 'leaderboards', label: 'Leaderboards', icon: '\u{1F3C6}' },
     { id: 'challenges', label: 'Challenges', icon: '\u{1F3AF}' },
-    { id: 'achievements', label: 'Achievements', icon: '\u{1F3C6}' },
+    { id: 'achievements', label: 'Achievements', icon: '\u{1F3C5}' },
     { id: 'profile', label: 'Profile', icon: '\u{1F464}' }
   ];
 
@@ -860,7 +863,26 @@ export function ArcadeHub() {
                       onTierUnlock={handleTierUnlock}
                       onGameUnlock={handleGameUnlock}
                     />
-                    <LeaderboardPanel supabaseService={supabaseService} signedIn={!!session} />
+                  </div>
+                  <div>
+                    <UserProfile userService={userService} />
+                  </div>
+                </>
+              )}
+
+              {activeTab === 'leaderboards' && (
+                <>
+                  <div className="lg:col-span-2 space-y-4">
+                    <LeaderboardsTab
+                      supabaseService={supabaseService}
+                      signedIn={!!session}
+                      authDisabled={authDisabled}
+                      games={AVAILABLE_GAMES}
+                      unlockedTiers={unlockedTiers}
+                      unlockedGames={unlockedGames}
+                      onPlayGame={(gameId) => void handleGameSelect(gameId)}
+                      onRequestSignIn={() => setShowAuthModal(true)}
+                    />
                   </div>
                   <div>
                     <UserProfile userService={userService} />

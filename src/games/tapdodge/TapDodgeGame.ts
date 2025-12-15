@@ -104,6 +104,24 @@ export class TapDodgeGame extends BaseGame {
     accent: '#22D3EE'
   };
 
+  // ===== Stats Recap =====
+  private showingRecap: boolean = false;
+  private recapTimer: number = 0;
+  private recapAnimPhase: number = 0;
+  private recapStats: {
+    score: number;
+    highScore: number;
+    isNewRecord: boolean;
+    survivalTime: number;
+    nearMisses: number;
+    maxChain: number;
+    coinsCollected: number;
+    gemsCollected: number;
+    maxFever: number;
+    zoneReached: number;
+    bossesCleared: number;
+  } | null = null;
+
   protected onInit(): void {
     // Initialize systems
     this.particles = new ParticleSystem();
@@ -193,6 +211,12 @@ export class TapDodgeGame extends BaseGame {
   }
 
   protected onUpdate(dt: number): void {
+    // Handle stats recap
+    if (this.showingRecap) {
+      this.updateRecap(dt);
+      return;
+    }
+
     // Handle finishing sequence
     if (this.finishingTimer > 0) {
       this.updateFinishingSequence(dt);
@@ -291,6 +315,22 @@ export class TapDodgeGame extends BaseGame {
 
     if (this.finishingTimer <= 0) {
       this.endGame();
+    }
+  }
+
+  private updateRecap(dt: number): void {
+    this.recapTimer += dt;
+    this.recapAnimPhase += dt * 4;
+    this.particles.update(dt);
+    this.backgroundSystem.update(dt * 0.2, 0.3);
+
+    // Continue to game over after player input or 8 seconds
+    const touches = this.services.input.getTouches?.() || [];
+    const keyPressed = this.services.input.isActionPressed?.() || this.services.input.isKeyPressed?.('Space') || this.services.input.isKeyPressed?.('Enter');
+
+    if ((this.recapTimer > 2 && (touches.length > 0 || keyPressed)) || this.recapTimer > 8) {
+      this.showingRecap = false;
+      this.finishingTimer = 0.5;
     }
   }
 
@@ -828,10 +868,32 @@ export class TapDodgeGame extends BaseGame {
   private triggerGameOver(): void {
     this.particles.createDeathExplosion(this.player.getCenterX(), this.player.getCenterY(), this.canvas.width);
     this.screenShake.shake(15, 0.8);
-    this.finishingTimer = 1.0;
 
     // Fail boss wave if active
     this.waveSystem.failBossWave();
+
+    // Calculate stats for recap
+    const survivalTime = this.gameStartTime > 0 ? (Date.now() - this.gameStartTime) / 1000 : 0;
+    const isNewRecord = this.score > this.highScore;
+
+    this.recapStats = {
+      score: this.score,
+      highScore: Math.max(this.score, this.highScore),
+      isNewRecord,
+      survivalTime,
+      nearMisses: this.comboSystem.getTotalNearMisses(),
+      maxChain: this.comboSystem.getMaxNearMissChain(),
+      coinsCollected: this.pickups,
+      gemsCollected: this.gemsCollected,
+      maxFever: this.feverSystem.getMaxLevelReached(),
+      zoneReached: this.waveSystem.getZoneIndex(),
+      bossesCleared: this.waveSystem.getBossesCleared()
+    };
+
+    // Show recap instead of immediately ending
+    this.showingRecap = true;
+    this.recapTimer = 0;
+    this.recapAnimPhase = 0;
 
     this.services.analytics.trackFeatureUsage('tapdodge_game_over', {
       score: this.score,
@@ -971,7 +1033,180 @@ export class TapDodgeGame extends BaseGame {
     ctx.restore();
   }
 
+  private renderRecap(ctx: CanvasRenderingContext2D): void {
+    if (!this.recapStats) return;
+
+    const stats = this.recapStats;
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+
+    // Animate entry - items appear sequentially
+    const itemDelay = 0.3;
+    const getAlpha = (index: number) => {
+      const delay = index * itemDelay;
+      return Math.min(1, Math.max(0, (this.recapTimer - delay) * 2));
+    };
+
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Subtle vignette
+    const vignette = ctx.createRadialGradient(cx, cy, 0, cx, cy, this.canvas.width * 0.7);
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    let y = 60;
+
+    // ===== HEADER: GAME OVER or NEW RECORD =====
+    ctx.globalAlpha = getAlpha(0);
+    ctx.textAlign = 'center';
+    if (stats.isNewRecord) {
+      ctx.fillStyle = '#FBBF24';
+      ctx.font = 'bold 36px Arial';
+      ctx.fillText('🏆 NEW RECORD! 🏆', cx, y);
+    } else {
+      ctx.fillStyle = '#EF4444';
+      ctx.font = 'bold 32px Arial';
+      ctx.fillText('GAME OVER', cx, y);
+    }
+    y += 50;
+
+    // ===== SCORE =====
+    ctx.globalAlpha = getAlpha(1);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 48px Arial';
+    const displayScore = Math.floor(stats.score * Math.min(1, (this.recapTimer - 0.3) * 3));
+    ctx.fillText(displayScore.toLocaleString(), cx, y);
+
+    ctx.font = '16px Arial';
+    ctx.fillStyle = '#94A3B8';
+    ctx.fillText(`Best: ${stats.highScore.toLocaleString()}`, cx, y + 25);
+    y += 60;
+
+    // ===== STATS GRID =====
+    const statsToShow = [
+      { icon: '⏱️', label: 'Survival', value: `${stats.survivalTime.toFixed(1)}s`, color: '#22D3EE' },
+      { icon: '💨', label: 'Near Misses', value: stats.nearMisses.toString(), color: '#60A5FA' },
+      { icon: '🔥', label: 'Max Chain', value: `x${stats.maxChain}`, color: '#F97316' },
+      { icon: '🪙', label: 'Coins', value: stats.coinsCollected.toString(), color: '#FBBF24' },
+      { icon: '💎', label: 'Gems', value: stats.gemsCollected.toString(), color: '#A855F7' },
+      { icon: '🌡️', label: 'Max Fever', value: `Lv.${stats.maxFever}`, color: '#EC4899' }
+    ];
+
+    const gridCols = 3;
+    const gridWidth = Math.min(this.canvas.width - 40, 360);
+    const cellWidth = gridWidth / gridCols;
+    const startX = cx - gridWidth / 2;
+
+    y += 10;
+    for (let i = 0; i < statsToShow.length; i++) {
+      const stat = statsToShow[i];
+      const col = i % gridCols;
+      const row = Math.floor(i / gridCols);
+      const x = startX + col * cellWidth + cellWidth / 2;
+      const rowY = y + row * 55;
+
+      ctx.globalAlpha = getAlpha(2 + i * 0.3);
+
+      // Icon
+      ctx.font = '20px Arial';
+      ctx.fillText(stat.icon, x, rowY);
+
+      // Value
+      ctx.fillStyle = stat.color;
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText(stat.value, x, rowY + 22);
+
+      // Label
+      ctx.fillStyle = '#64748B';
+      ctx.font = '11px Arial';
+      ctx.fillText(stat.label, x, rowY + 36);
+    }
+    y += 120;
+
+    // ===== ACHIEVEMENTS EARNED =====
+    ctx.globalAlpha = getAlpha(5);
+    const achievements: string[] = [];
+
+    if (stats.zoneReached >= 1) achievements.push(`🏔️ Zone ${stats.zoneReached + 1} Reached`);
+    if (stats.bossesCleared > 0) achievements.push(`👹 ${stats.bossesCleared} Boss${stats.bossesCleared > 1 ? 'es' : ''} Cleared`);
+    if (stats.maxChain >= 5) achievements.push('⚡ Chain Master');
+    if (stats.gemsCollected >= 3) achievements.push('💎 Gem Hunter');
+    if (stats.maxFever >= 3) achievements.push('🔥 Fever Lord');
+    if (stats.nearMisses >= 20) achievements.push('😎 Daredevil');
+    if (stats.survivalTime >= 60) achievements.push('🕐 Survivor');
+
+    if (achievements.length > 0) {
+      ctx.fillStyle = '#FBBF24';
+      ctx.font = 'bold 14px Arial';
+      ctx.fillText('ACHIEVEMENTS', cx, y);
+      y += 20;
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '13px Arial';
+      ctx.fillText(achievements.slice(0, 3).join('  •  '), cx, y);
+      if (achievements.length > 3) {
+        y += 18;
+        ctx.fillText(achievements.slice(3, 6).join('  •  '), cx, y);
+      }
+      y += 25;
+    }
+
+    // ===== MOTIVATIONAL MESSAGE =====
+    ctx.globalAlpha = getAlpha(6);
+    y += 10;
+
+    let motivationalMessage = '';
+    let messageColor = '#94A3B8';
+
+    if (stats.isNewRecord) {
+      motivationalMessage = 'You\'re on fire! Can you beat it again?';
+      messageColor = '#FBBF24';
+    } else if (stats.score < 500) {
+      motivationalMessage = 'Tip: Near misses give bonus points!';
+      messageColor = '#60A5FA';
+    } else if (stats.maxFever < 2) {
+      motivationalMessage = 'Challenge: Reach Fever Level 3!';
+      messageColor = '#EC4899';
+    } else if (stats.gemsCollected === 0) {
+      motivationalMessage = 'Next goal: Collect a rare 💎 gem!';
+      messageColor = '#A855F7';
+    } else if (stats.bossesCleared === 0) {
+      motivationalMessage = 'Next challenge: Survive a boss wave!';
+      messageColor = '#F97316';
+    } else {
+      const tips = [
+        'Fever mode = 3x points! Stay safe!',
+        'Gems are worth 5x more than coins!',
+        'Use Ghost to phase through danger!',
+        'Near-miss chains stack up fast!'
+      ];
+      motivationalMessage = tips[Math.floor(Math.random() * tips.length)];
+    }
+
+    ctx.fillStyle = messageColor;
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(motivationalMessage, cx, y);
+
+    // ===== TAP TO CONTINUE =====
+    ctx.globalAlpha = getAlpha(7) * (Math.sin(this.recapAnimPhase * 2) * 0.3 + 0.7);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '16px Arial';
+    ctx.fillText('Tap or Press SPACE to continue', cx, this.canvas.height - 40);
+
+    ctx.globalAlpha = 1;
+  }
+
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
+    // Show recap screen if active
+    if (this.showingRecap) {
+      this.renderRecap(ctx);
+      return;
+    }
+
     // ===== TOP-LEFT: Zone and score info =====
     let topY = this.getHudStartY();
 

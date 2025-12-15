@@ -1,8 +1,8 @@
 // ===== src/app/layout.tsx =====
 import type { Metadata, Viewport } from 'next';
-import { 
-  Inter, 
-  Orbitron, 
+import {
+  Inter,
+  Orbitron,
   Exo,
   Source_Code_Pro,
   Space_Mono,
@@ -51,7 +51,7 @@ export const metadata: Metadata = {
     apple: '/apple-touch-icon.png',
   },
 
-  manifest: '/manifest.json', 
+  manifest: '/manifest.json',
 };
 
 // Separate viewport export is correct

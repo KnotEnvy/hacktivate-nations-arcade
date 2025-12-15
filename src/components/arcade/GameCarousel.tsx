@@ -74,9 +74,8 @@ export function GameCarousel({
           src={game.thumbnail}
           alt={game.title}
           fill
-          className={`object-cover transition-all duration-300 ${
-            unlocked ? 'opacity-100' : 'opacity-60 grayscale blur-[1px]'
-          }`}
+          className={`object-cover transition-all duration-300 ${unlocked ? 'opacity-100' : 'opacity-60 grayscale blur-[1px]'
+            }`}
           onError={() => handleImageError(game.id)}
           onLoad={() => handleImageLoad(game.id)}
           priority={game.id === games[0]?.id}
@@ -171,9 +170,8 @@ export function GameCarousel({
                       <div
                         key={game.id}
                         data-testid={`game-card-${game.id}`}
-                        className={`game-card w-72 flex-shrink-0 ${
-                          selectedGameId === game.id ? 'ring-2 ring-purple-400/60' : ''
-                        }`}
+                        className={`game-card w-72 flex-shrink-0 ${selectedGameId === game.id ? 'ring-2 ring-purple-400/60' : ''
+                          }`}
                         onClick={() => setSelectedGameId(game.id)}
                       >
                         <div className="aspect-square bg-black/30 border-b border-white/10 flex items-center justify-center relative rounded-t-2xl">
@@ -280,11 +278,10 @@ export function GameCarousel({
                     data-testid={`tier-unlock-${tier}`}
                     disabled={!canUnlockTier}
                     onClick={() => onTierUnlock(tier, tierCost)}
-                    className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm ${
-                      canUnlockTier
+                    className={`w-full font-bold py-2 px-4 rounded-lg transition-colors text-sm ${canUnlockTier
                         ? 'bg-yellow-500 hover:bg-yellow-600 text-black'
                         : 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                    }`}
+                      }`}
                   >
                     Unlock Tier for {tierCost} coins
                   </button>
