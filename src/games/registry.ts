@@ -40,6 +40,10 @@ gameLoader.registerGame('minesweeper', async () => {
   return new MinesweeperGame();
 
 });
+gameLoader.registerGame('mini-golf', async () => {
+  const { MiniGolfGame } = await import('./mini-golf/MiniGolfGame');
+  return new MiniGolfGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {

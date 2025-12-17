@@ -87,14 +87,14 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     description: 'Coming soon!'
   },
   {
-    id: 'mini-golf',
-    title: 'Mini Golf',
-    thumbnail: '/games/coming-soon-thumb.svg',
-    inputSchema: ['keyboard', 'touch'],
-    assetBudgetKB: 90,
-    tier: 1,
-    description: 'Coming soon!'
-  },
+  id: 'mini-golf',
+  title: 'Mini Golf',
+  thumbnail: '/games/mini-golf/mini-golf-thumb.svg',
+  inputSchema: ['keyboard', 'touch'],
+  assetBudgetKB: 90,
+  tier: 1,
+  description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
+},
   {
     id: 'bubble-pop',
     title: 'Bubble Pop',
