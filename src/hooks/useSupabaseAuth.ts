@@ -33,7 +33,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
 
   const loadProfile = useCallback(
-    async (userId: string, fallbackName?: string) => {
+    async (userId: string, fallbackName?: string, accessToken?: string) => {
       const service = arcadeServiceRef.current;
       if (!supabaseRef.current || !service) return;
       setError(null);
@@ -61,7 +61,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         const created = await service.upsertProfile({
           id: userId,
           username,
-        });
+        }, accessToken ? { accessToken } : undefined);
         setProfile(created);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to create profile');
@@ -81,12 +81,13 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         arcadeServiceRef.current = service;
         setAuthDisabled(false);
 
-        const syncProfile = (user: Session['user']) => {
+        const syncProfile = (nextSession: Session) => {
+          const user = nextSession.user;
           const fallback =
             user.user_metadata?.preferred_username ||
             user.email?.split('@')[0] ||
             'Player';
-          void loadProfile(user.id, fallback);
+          void loadProfile(user.id, fallback, nextSession.access_token);
         };
 
         const { data, error: sessionError } = await supabase.auth.getSession();
@@ -95,7 +96,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setSession(data.session);
         setLoading(false);
         if (data.session?.user) {
-          syncProfile(data.session.user);
+          syncProfile(data.session);
         }
 
         const {
@@ -104,8 +105,8 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           if (!mounted) return;
           setSession(nextSession);
           setEmailSent(false);
-          if (nextSession?.user) {
-            syncProfile(nextSession.user);
+          if (nextSession) {
+            syncProfile(nextSession);
           } else {
             setProfile(null);
           }
@@ -168,17 +169,17 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         email,
         password,
       });
-      if (signInError) {
-        setError(signInError.message);
-      } else {
-        setSession(data.session);
-        if (data.session?.user) {
-          const fallback =
-            data.session.user.user_metadata?.preferred_username ||
-            data.session.user.email?.split('@')[0];
-          await loadProfile(data.session.user.id, fallback);
+        if (signInError) {
+          setError(signInError.message);
+        } else {
+          setSession(data.session);
+          if (data.session?.user) {
+            const fallback =
+              data.session.user.user_metadata?.preferred_username ||
+              data.session.user.email?.split('@')[0];
+            await loadProfile(data.session.user.id, fallback, data.session.access_token);
+          }
         }
-      }
       setLoading(false);
     },
     [loadProfile]
@@ -203,17 +204,17 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
               : undefined,
         },
       });
-      if (signUpError) {
-        setError(signUpError.message);
-      } else {
-        setEmailSent(true);
-        if (data.session?.user) {
-          const fallback =
-            data.session.user.user_metadata?.preferred_username ||
-            data.session.user.email?.split('@')[0];
-          await loadProfile(data.session.user.id, fallback);
+        if (signUpError) {
+          setError(signUpError.message);
+        } else {
+          setEmailSent(true);
+          if (data.session?.user) {
+            const fallback =
+              data.session.user.user_metadata?.preferred_username ||
+              data.session.user.email?.split('@')[0];
+            await loadProfile(data.session.user.id, fallback, data.session.access_token);
+          }
         }
-      }
       setLoading(false);
     },
     [loadProfile]
@@ -229,9 +230,9 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {
-      await loadProfile(session.user.id);
+      await loadProfile(session.user.id, undefined, session.access_token);
     }
-  }, [loadProfile, session?.user]);
+  }, [loadProfile, session?.access_token, session?.user]);
 
   return {
     session,

@@ -208,11 +208,18 @@ export function ArcadeHub() {
   useEffect(() => {
     if (!supabaseService || !session) return;
     const profileData = userService.getProfile();
+    const accessToken = session.access_token;
+    if (!accessToken) {
+      console.warn('Supabase profile sync skipped: missing access token.');
+      return;
+    }
     void supabaseService
       .upsertProfile({
         id: session.user.id,
         username: profileData.username,
         avatarUrl: profileData.avatar,
+      }, {
+        accessToken,
       })
       .catch(error => console.warn('Supabase profile sync failed:', error));
   }, [session, supabaseService, userService]);
@@ -220,6 +227,11 @@ export function ArcadeHub() {
   // Push wallet updates when coins change.
   useEffect(() => {
     if (!supabaseService || !session) return;
+    const accessToken = session.access_token;
+    if (!accessToken) {
+      console.warn('Supabase wallet sync skipped: missing access token.');
+      return;
+    }
     const unsubscribe = currencyService.onCoinsChanged(balance => {
       const stats = userService.getStats();
       void supabaseService
@@ -227,6 +239,8 @@ export function ArcadeHub() {
           userId: session.user.id,
           balance,
           lifetimeEarned: stats.coinsEarned,
+        }, {
+          accessToken,
         })
         .catch(error => console.warn('Supabase wallet sync failed:', error));
     });
@@ -525,17 +539,24 @@ export function ArcadeHub() {
         `achievement_${achievement.id}`
       );
 
-      if (supabaseService && session) {
-        void supabaseService
-          .upsertAchievement({
-            userId: session.user.id,
-            achievementId: achievement.id,
-            progress: achievement.requirement.value,
-            unlockedAt: achievement.unlockedAt?.toISOString() ?? new Date().toISOString(),
-          })
-          .catch(error => console.warn('Supabase achievement sync failed:', error));
-      }
-    });
+       if (supabaseService && session) {
+         const accessToken = session.access_token;
+         if (!accessToken) {
+           console.warn('Supabase achievement sync skipped: missing access token.');
+         } else {
+          void supabaseService
+            .upsertAchievement({
+              userId: session.user.id,
+              achievementId: achievement.id,
+              progress: achievement.requirement.value,
+              unlockedAt: achievement.unlockedAt?.toISOString() ?? new Date().toISOString(),
+            }, {
+             accessToken,
+           })
+            .catch(error => console.warn('Supabase achievement sync failed:', error));
+         }
+       }
+     });
 
     if (newlyUnlocked.length > 0) {
       const current = userService.getStats().achievementsUnlocked;
@@ -543,25 +564,34 @@ export function ArcadeHub() {
     }
 
     // Persist session + wallet to Supabase when available (non-blocking).
-    if (supabaseService && session) {
-      void supabaseService
-        .recordGameSession({
-          userId: session.user.id,
-          gameId: selectedGameId,
-          score: gameData.score || 0,
-          durationMs: gameData.timePlayedMs || 0,
-          metadata: { ...gameData },
-        })
-        .catch(error => console.warn('Supabase session record failed:', error));
+     if (supabaseService && session) {
+       const accessToken = session.access_token;
+       if (!accessToken) {
+         console.warn('Supabase session sync skipped: missing access token.');
+         return;
+       }
+       void supabaseService
+         .recordGameSession({
+           userId: session.user.id,
+           gameId: selectedGameId,
+           score: gameData.score || 0,
+           durationMs: gameData.timePlayedMs || 0,
+           metadata: { ...gameData },
+         }, {
+           accessToken,
+         })
+         .catch(error => console.warn('Supabase session record failed:', error));
 
-      void supabaseService
-        .upsertWallet({
-          userId: session.user.id,
-          balance: currencyService.getCurrentCoins(),
-          lifetimeEarned: newStats.coinsEarned,
-        })
-        .catch(error => console.warn('Supabase wallet sync failed:', error));
-    }
+       void supabaseService
+         .upsertWallet({
+           userId: session.user.id,
+           balance: currencyService.getCurrentCoins(),
+           lifetimeEarned: newStats.coinsEarned,
+         }, {
+           accessToken,
+         })
+         .catch(error => console.warn('Supabase wallet sync failed:', error));
+     }
 
   };
 

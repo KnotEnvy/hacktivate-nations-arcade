@@ -72,6 +72,18 @@ export const createSupabaseServerClient = (options?: {
   });
 };
 
+export const createSupabaseAccessTokenClient = (accessToken: string): TypedClient => {
+  const { supabaseUrl, supabaseAnonKey } = getPublicConfig();
+  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
+    accessToken: async () => accessToken,
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+      detectSessionInUrl: false,
+    },
+  });
+};
+
 export const assertSupabaseEnv = (): void => {
   getPublicConfig();
 };

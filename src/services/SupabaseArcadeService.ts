@@ -1,5 +1,6 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import type { Database, Json } from '@/lib/supabase.types';
+import { createSupabaseAccessTokenClient } from '@/lib/supabase';
 
 type DbClient = SupabaseClient<Database>;
 type LeaderboardPeriod = Database['public']['Enums']['leaderboard_period'];
@@ -39,9 +40,14 @@ export interface LeaderboardQuery {
   limit?: number;
 }
 
+interface SupabaseRequestOptions {
+  accessToken?: string;
+}
+
 const throwOnError = (error: PostgrestError | null, context: string) => {
   if (error) {
-    throw new Error(`[Supabase] ${context}: ${error.message}`);
+    const meta = [error.code, error.details, error.hint].filter(Boolean).join(' | ');
+    throw new Error(`[Supabase] ${context}: ${error.message}${meta ? ` | ${meta}` : ''}`);
   }
 };
 
@@ -50,8 +56,13 @@ const throwOnError = (error: PostgrestError | null, context: string) => {
 export class SupabaseArcadeService {
   constructor(private readonly client: DbClient) {}
 
-  async upsertProfile(input: ProfileUpsertInput) {
-    const { data, error } = await this.client
+  private getClient(options?: SupabaseRequestOptions) {
+    return options?.accessToken ? createSupabaseAccessTokenClient(options.accessToken) : this.client;
+  }
+
+  async upsertProfile(input: ProfileUpsertInput, options?: SupabaseRequestOptions) {
+    const client = this.getClient(options);
+    const { data, error } = await client
       .from('profiles')
       .upsert(
         {
@@ -70,8 +81,9 @@ export class SupabaseArcadeService {
     return data;
   }
 
-  async upsertWallet(input: WalletUpsertInput) {
-    const { data, error } = await this.client
+  async upsertWallet(input: WalletUpsertInput, options?: SupabaseRequestOptions) {
+    const client = this.getClient(options);
+    const { data, error } = await client
       .from('wallets')
       .upsert(
         {
@@ -89,8 +101,9 @@ export class SupabaseArcadeService {
     return data;
   }
 
-  async recordGameSession(input: GameSessionInput) {
-    const { data, error } = await this.client
+  async recordGameSession(input: GameSessionInput, options?: SupabaseRequestOptions) {
+    const client = this.getClient(options);
+    const { data, error } = await client
       .from('game_sessions')
       .insert({
         user_id: input.userId,
@@ -107,8 +120,9 @@ export class SupabaseArcadeService {
     return data;
   }
 
-  async upsertAchievement(input: AchievementUpsertInput) {
-    const { data, error } = await this.client
+  async upsertAchievement(input: AchievementUpsertInput, options?: SupabaseRequestOptions) {
+    const client = this.getClient(options);
+    const { data, error } = await client
       .from('achievements')
       .upsert(
         {
