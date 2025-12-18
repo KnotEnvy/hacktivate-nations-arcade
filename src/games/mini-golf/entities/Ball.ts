@@ -32,7 +32,15 @@ export class Ball {
   }
 
   isStopped(): boolean {
-    return this.getSpeed() < 2;
+    // Use a slightly higher threshold to ensure ball truly stops
+    // and doesn't hover at the edge of moving/stopped
+    return this.getSpeed() < 5;
+  }
+
+  // Force the ball to stop completely
+  stop(): void {
+    this.vx = 0;
+    this.vy = 0;
   }
 
   render(ctx: CanvasRenderingContext2D): void {

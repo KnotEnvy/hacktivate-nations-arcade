@@ -334,10 +334,25 @@ export class MiniGolfGame extends BaseGame {
       return;
     }
     
-    // Apply wind
-    const windForce = this.wind.getForce();
-    this.ball.vx += windForce.x * dt;
-    this.ball.vy += windForce.y * dt;
+    // Check if ball is already stopped BEFORE applying any forces
+    if (this.ball.isStopped()) {
+      // Ball has come to rest - lock it in place and switch to aiming
+      this.ball.vx = 0;
+      this.ball.vy = 0;
+      this.phase = 'aiming';
+      this.particles.emit(this.ball.x, this.ball.y, 3, '#ffffff', 'dust');
+      return;
+    }
+    
+    // Only apply wind when ball is moving fast enough
+    const speed = this.ball.getSpeed();
+    if (speed > 10) {
+      const windForce = this.wind.getForce();
+      // Scale wind effect based on speed - less effect when nearly stopped
+      const windScale = Math.min(1, speed / 100);
+      this.ball.vx += windForce.x * dt * windScale;
+      this.ball.vy += windForce.y * dt * windScale;
+    }
     
     // Update physics
     const collision = this.physics.updateBall(this.ball, dt, this.obstacles);
@@ -377,12 +392,6 @@ export class MiniGolfGame extends BaseGame {
     } else if (holeResult.nearMiss) {
       // Ball was close but too fast
       this.particles.emit(this.hole.x, this.hole.y, 3, '#FFD700', 'sparkle');
-    }
-    
-    // Check if ball stopped
-    if (this.ball.isStopped()) {
-      this.phase = 'aiming';
-      this.particles.emit(this.ball.x, this.ball.y, 3, '#ffffff', 'dust');
     }
   }
 

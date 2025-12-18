@@ -25,7 +25,7 @@ export class PhysicsSystem {
   private readonly FRICTION = 0.985;
   private readonly SAND_FRICTION = 0.92;
   private readonly BOUNCE_DAMPING = 0.7;
-  private readonly MIN_SPEED = 1;
+  private readonly MIN_SPEED = 5; // Match ball's isStopped threshold
   private readonly BUMPER_BOOST = 1.3;
 
   constructor(width: number, height: number) {
@@ -131,7 +131,7 @@ export class PhysicsSystem {
     ball.vx *= friction;
     ball.vy *= friction;
     
-    // Stop if very slow
+    // Stop completely if very slow - this prevents wind drift
     if (ball.getSpeed() < this.MIN_SPEED) {
       ball.vx = 0;
       ball.vy = 0;
