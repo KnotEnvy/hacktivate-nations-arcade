@@ -34,7 +34,7 @@ export class Ball {
   isStopped(): boolean {
     // Use a slightly higher threshold to ensure ball truly stops
     // and doesn't hover at the edge of moving/stopped
-    return this.getSpeed() < 5;
+    return this.getSpeed() < 2;
   }
 
   // Force the ball to stop completely

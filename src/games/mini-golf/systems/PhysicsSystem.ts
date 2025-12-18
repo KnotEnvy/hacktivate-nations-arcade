@@ -25,7 +25,7 @@ export class PhysicsSystem {
   private readonly FRICTION = 0.985;
   private readonly SAND_FRICTION = 0.92;
   private readonly BOUNCE_DAMPING = 0.7;
-  private readonly MIN_SPEED = 5; // Match ball's isStopped threshold
+  private readonly MIN_SPEED = 2; // Match ball's isStopped threshold
   private readonly BUMPER_BOOST = 1.3;
 
   constructor(width: number, height: number) {
