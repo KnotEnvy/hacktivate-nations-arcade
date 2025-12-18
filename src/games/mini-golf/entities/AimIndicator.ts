@@ -28,7 +28,39 @@ export class AimIndicator {
     const maxLength = 150;
     const length = this.power * maxLength;
     
-    // Power meter background
+    // Direction arrow (now in front, showing where ball will go)
+    const arrowLength = 40;
+    const pulse = 1 + Math.sin(this.pulsePhase) * 0.1;
+    
+    // Arrow shaft
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(-5, 0);
+    ctx.lineTo(-arrowLength * pulse, 0);
+    ctx.stroke();
+    
+    // Arrow head
+    const headSize = 12;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(-arrowLength * pulse - headSize, 0);
+    ctx.lineTo(-arrowLength * pulse + 5, -headSize / 2);
+    ctx.lineTo(-arrowLength * pulse + 5, headSize / 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Dotted trajectory line extending further
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(-arrowLength * pulse - headSize, 0);
+    ctx.lineTo(-arrowLength * pulse - 50 - length * 0.5, 0);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    
+    // Power meter (behind the ball)
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fillRect(15, -8, maxLength + 10, 16);
     
@@ -68,49 +100,17 @@ export class AimIndicator {
       ctx.stroke();
     }
     
-    // Direction arrow
-    const arrowLength = 40;
-    const pulse = 1 + Math.sin(this.pulsePhase) * 0.1;
-    
-    // Arrow shaft
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(-5, 0);
-    ctx.lineTo(-arrowLength * pulse, 0);
-    ctx.stroke();
-    
-    // Arrow head
-    const headSize = 12;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(-arrowLength * pulse - headSize, 0);
-    ctx.lineTo(-arrowLength * pulse + 5, -headSize / 2);
-    ctx.lineTo(-arrowLength * pulse + 5, headSize / 2);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Dotted trajectory line
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]);
-    ctx.beginPath();
-    ctx.moveTo(-arrowLength * pulse - headSize, 0);
-    ctx.lineTo(-arrowLength * pulse - 50 - length * 0.5, 0);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    
     ctx.restore();
     
-    // Power percentage text
+    // Power percentage text (positioned toward the drag point)
     ctx.save();
     ctx.fillStyle = '#ffffff';
     ctx.font = 'bold 14px Arial';
     ctx.textAlign = 'center';
     ctx.fillText(
       `${Math.round(this.power * 100)}%`,
-      this.x + Math.cos(this.angle) * (maxLength * 0.5 + 40),
-      this.y + Math.sin(this.angle) * (maxLength * 0.5 + 40) + 5
+      this.x + Math.cos(this.angle + Math.PI) * (maxLength * 0.5 + 40),
+      this.y + Math.sin(this.angle + Math.PI) * (maxLength * 0.5 + 40) + 5
     );
     ctx.restore();
   }

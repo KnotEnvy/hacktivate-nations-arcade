@@ -17,7 +17,7 @@ import { CourseRenderer } from './systems/CourseRenderer';
 // Data
 import { COURSES, CourseData } from './data/courses';
 
-type GamePhase = 'aiming' | 'rolling' | 'sinking' | 'nextHole' | 'complete';
+type GamePhase = 'aiming' | 'rolling' | 'sinking' | 'nextHole' | 'stats' | 'complete';
 
 export class MiniGolfGame extends BaseGame {
   manifest: GameManifest = {
@@ -96,6 +96,13 @@ export class MiniGolfGame extends BaseGame {
   }
 
   private handlePointerDown(e: MouseEvent): void {
+    // Handle stats screen click to continue
+    if (this.phase === 'stats') {
+      this.phase = 'complete';
+      this.endGame();
+      return;
+    }
+    
     if (this.phase !== 'aiming') return;
     
     const rect = this.canvas.getBoundingClientRect();
@@ -131,6 +138,14 @@ export class MiniGolfGame extends BaseGame {
 
   private handleTouchStart(e: TouchEvent): void {
     e.preventDefault();
+    
+    // Handle stats screen tap to continue
+    if (this.phase === 'stats') {
+      this.phase = 'complete';
+      this.endGame();
+      return;
+    }
+    
     if (this.phase !== 'aiming' || e.touches.length === 0) return;
     
     const touch = e.touches[0];
@@ -184,10 +199,10 @@ export class MiniGolfGame extends BaseGame {
       return;
     }
     
-    // Normalize and apply power
+    // Normalize and apply power - FLIP direction so ball goes toward arrow
     const dist = Math.sqrt(dx * dx + dy * dy);
-    const vx = (dx / dist) * power * 3;
-    const vy = (dy / dist) * power * 3;
+    const vx = -(dx / dist) * power * 3;
+    const vy = -(dy / dist) * power * 3;
     
     this.ball.vx = vx;
     this.ball.vy = vy;
@@ -284,6 +299,9 @@ export class MiniGolfGame extends BaseGame {
         break;
       case 'nextHole':
         this.updateNextHole(dt);
+        break;
+      case 'stats':
+        this.updateStats(dt);
         break;
       case 'complete':
         this.updateComplete(dt);
@@ -476,17 +494,10 @@ export class MiniGolfGame extends BaseGame {
     const totalPar = COURSES.reduce((sum, c) => sum + c.par, 0);
     const scoreVsPar = this.totalStrokes - totalPar;
     
-    let scoreMessage: string;
+    // Calculate bonus coins
     if (scoreVsPar < 0) {
-      scoreMessage = `${Math.abs(scoreVsPar)} Under Par! 🏆`;
       this.coinsThisRound += Math.abs(scoreVsPar) * 20;
-    } else if (scoreVsPar === 0) {
-      scoreMessage = 'Even Par!';
-    } else {
-      scoreMessage = `${scoreVsPar} Over Par`;
     }
-    
-    this.showMessage(`Final: ${this.totalStrokes} - ${scoreMessage}`, 5);
     
     // Award coins
     this.score = Math.max(0, (totalPar * 100) - (this.totalStrokes * 10) + this.coinsThisRound);
@@ -501,8 +512,20 @@ export class MiniGolfGame extends BaseGame {
       holeInOnes: this.strokesPerHole.filter(s => s === 1).length,
     };
     
-    // End the game
-    this.endGame();
+    // Show stats screen first (user must click to continue to game over)
+    this.phase = 'stats';
+  }
+
+  private updateStats(dt: number): void {
+    // Check for click/tap to continue
+    const input = this.services?.input;
+    if (input) {
+      if (input.isKeyPressed('Space') || input.isKeyPressed('Enter') || 
+          input.isMousePressed?.() || input.isTouchActive?.()) {
+        this.phase = 'complete';
+        this.endGame();
+      }
+    }
   }
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
@@ -585,6 +608,9 @@ export class MiniGolfGame extends BaseGame {
     ctx.font = '14px Arial';
     ctx.fillText(`🪙 ${this.coinsThisRound}`, this.canvas.width - 15, 48);
     
+    // ===== SCORECARD ON RIGHT SIDE =====
+    this.renderScorecard(ctx);
+    
     // Message overlay
     if (this.messageTimer > 0) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
@@ -615,62 +641,470 @@ export class MiniGolfGame extends BaseGame {
       ctx.fillText('Release to shoot!', this.canvas.width / 2, this.canvas.height - 30);
     }
     
+    // End game stats screen
+    if (this.phase === 'stats') {
+      this.renderStatsScreen(ctx);
+    }
+    
     // Game complete screen
     if (this.phase === 'complete') {
       this.renderCompleteScreen(ctx);
     }
   }
 
-  private renderCompleteScreen(ctx: CanvasRenderingContext2D): void {
-    // Overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+  private renderScorecard(ctx: CanvasRenderingContext2D): void {
+    // Scorecard position (right side of screen - much larger now)
+    const cardX = 500;
+    const cardY = 55;
+    const cardWidth = 260;
+    const cardHeight = 540;
+    
+    // Main card background with gradient effect
+    const bgGradient = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardHeight);
+    bgGradient.addColorStop(0, 'rgba(20, 40, 20, 0.95)');
+    bgGradient.addColorStop(0.5, 'rgba(15, 35, 15, 0.95)');
+    bgGradient.addColorStop(1, 'rgba(10, 30, 10, 0.95)');
+    ctx.fillStyle = bgGradient;
+    
+    // Rounded rectangle for card
+    this.roundRect(ctx, cardX, cardY, cardWidth, cardHeight, 12);
+    ctx.fill();
+    
+    // Outer border (gold)
+    ctx.strokeStyle = '#D4AF37';
+    ctx.lineWidth = 3;
+    this.roundRect(ctx, cardX, cardY, cardWidth, cardHeight, 12);
+    ctx.stroke();
+    
+    // Inner border (darker gold)
+    ctx.strokeStyle = '#8B7355';
+    ctx.lineWidth = 1;
+    this.roundRect(ctx, cardX + 4, cardY + 4, cardWidth - 8, cardHeight - 8, 10);
+    ctx.stroke();
+    
+    // ===== HEADER SECTION =====
+    const headerHeight = 70;
+    const headerGradient = ctx.createLinearGradient(cardX, cardY, cardX, cardY + headerHeight);
+    headerGradient.addColorStop(0, '#2D5A27');
+    headerGradient.addColorStop(1, '#1E3D1A');
+    ctx.fillStyle = headerGradient;
+    this.roundRectTop(ctx, cardX + 3, cardY + 3, cardWidth - 6, headerHeight, 10);
+    ctx.fill();
+    
+    // Header decorative line
+    ctx.strokeStyle = '#D4AF37';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cardX + 15, cardY + headerHeight + 3);
+    ctx.lineTo(cardX + cardWidth - 15, cardY + headerHeight + 3);
+    ctx.stroke();
+    
+    // Golf ball icon in header
+    ctx.beginPath();
+    ctx.arc(cardX + cardWidth / 2, cardY + 25, 12, 0, Math.PI * 2);
+    const ballGrad = ctx.createRadialGradient(cardX + cardWidth / 2 - 3, cardY + 22, 0, cardX + cardWidth / 2, cardY + 25, 12);
+    ballGrad.addColorStop(0, '#ffffff');
+    ballGrad.addColorStop(1, '#cccccc');
+    ctx.fillStyle = ballGrad;
+    ctx.fill();
+    ctx.strokeStyle = '#999';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    // Title text
+    ctx.fillStyle = '#D4AF37';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('HACKTIVATE NATIONS', cardX + cardWidth / 2, cardY + 50);
+    
+    ctx.fillStyle = '#90EE90';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText('⛳ SCORECARD ⛳', cardX + cardWidth / 2, cardY + 67);
+    
+    // ===== COLUMN HEADERS =====
+    const tableTop = cardY + headerHeight + 15;
+    const rowHeight = 38;
+    const col1 = cardX + 25;  // HOLE
+    const col2 = cardX + 70;  // PAR
+    const col3 = cardX + 115; // SCORE
+    const col4 = cardX + 165; // +/-
+    
+    // Column header background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.fillRect(cardX + 8, tableTop - 5, cardWidth - 16, 25);
+    
+    ctx.fillStyle = '#D4AF37';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('HOLE', col1, tableTop + 12);
+    ctx.fillText('PAR', col2, tableTop + 12);
+    ctx.fillText('SCORE', col3, tableTop + 12);
+    ctx.fillText('+/-', col4, tableTop + 12);
+    
+    // ===== HOLE ROWS =====
+    const rowsStartY = tableTop + 30;
+    let runningTotal = 0;
+    let runningPar = 0;
+    
+    for (let i = 0; i < 9; i++) {
+      const rowY = rowsStartY + i * rowHeight;
+      const holePar = COURSES[i].par;
+      const holeStrokes = this.strokesPerHole[i];
+      const isCurrentHole = i === this.currentHole;
+      const isCompleted = i < this.strokesPerHole.length;
+      
+      // Alternating row backgrounds
+      if (i % 2 === 0) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.fillRect(cardX + 8, rowY - 5, cardWidth - 16, rowHeight - 2);
+      }
+      
+      // Highlight current hole with glowing effect
+      if (isCurrentHole && this.phase !== 'complete' && this.phase !== 'stats') {
+        // Outer glow
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+        ctx.fillRect(cardX + 6, rowY - 7, cardWidth - 12, rowHeight + 2);
+        // Inner highlight
+        ctx.fillStyle = 'rgba(255, 215, 0, 0.25)';
+        ctx.fillRect(cardX + 8, rowY - 5, cardWidth - 16, rowHeight - 2);
+        // Left accent bar
+        ctx.fillStyle = '#FFD700';
+        ctx.fillRect(cardX + 8, rowY - 5, 4, rowHeight - 2);
+      }
+      
+      // Hole number (in circle for current hole)
+      if (isCurrentHole && this.phase !== 'complete' && this.phase !== 'stats') {
+        ctx.beginPath();
+        ctx.arc(col1, rowY + 12, 14, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFD700';
+        ctx.fill();
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(`${i + 1}`, col1, rowY + 17);
+      } else {
+        ctx.fillStyle = isCompleted ? '#ffffff' : '#666666';
+        ctx.font = isCompleted ? 'bold 16px Arial' : '16px Arial';
+        ctx.fillText(`${i + 1}`, col1, rowY + 17);
+      }
+      
+      // Par value
+      ctx.fillStyle = '#90EE90';
+      ctx.font = '16px Arial';
+      ctx.fillText(`${holePar}`, col2, rowY + 17);
+      
+      // Score and +/-
+      if (isCompleted) {
+        const diff = holeStrokes - holePar;
+        runningTotal += holeStrokes;
+        runningPar += holePar;
+        
+        // Score value with background indicator
+        let scoreBg = '#555555';
+        let scoreColor = '#ffffff';
+        if (diff < -1) {
+          scoreBg = '#FFD700'; // Gold for eagle+
+          scoreColor = '#000000';
+        } else if (diff === -1) {
+          scoreBg = '#4CAF50'; // Green for birdie
+          scoreColor = '#ffffff';
+        } else if (diff === 0) {
+          scoreBg = '#2196F3'; // Blue for par
+          scoreColor = '#ffffff';
+        } else if (diff === 1) {
+          scoreBg = '#FF9800'; // Orange for bogey
+          scoreColor = '#000000';
+        } else {
+          scoreBg = '#f44336'; // Red for double+
+          scoreColor = '#ffffff';
+        }
+        
+        // Score circle background
+        ctx.beginPath();
+        ctx.arc(col3, rowY + 12, 14, 0, Math.PI * 2);
+        ctx.fillStyle = scoreBg;
+        ctx.fill();
+        
+        ctx.fillStyle = scoreColor;
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(`${holeStrokes}`, col3, rowY + 17);
+        
+        // +/- indicator
+        let diffStr: string;
+        if (diff < 0) {
+          ctx.fillStyle = '#4CAF50';
+          diffStr = `${diff}`;
+        } else if (diff === 0) {
+          ctx.fillStyle = '#87CEEB';
+          diffStr = 'E';
+        } else {
+          ctx.fillStyle = '#FF6B6B';
+          diffStr = `+${diff}`;
+        }
+        ctx.font = 'bold 14px Arial';
+        ctx.fillText(diffStr, col4, rowY + 17);
+        
+      } else if (isCurrentHole && this.strokes > 0) {
+        // Current hole in progress
+        ctx.beginPath();
+        ctx.arc(col3, rowY + 12, 14, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 0, 0.3)';
+        ctx.fill();
+        ctx.strokeStyle = '#FFFF00';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        ctx.fillStyle = '#FFFF00';
+        ctx.font = 'bold 16px Arial';
+        ctx.fillText(`${this.strokes}`, col3, rowY + 17);
+        
+        ctx.fillStyle = '#666666';
+        ctx.font = '14px Arial';
+        ctx.fillText('...', col4, rowY + 17);
+      } else {
+        // Not yet played
+        ctx.fillStyle = '#444444';
+        ctx.font = '14px Arial';
+        ctx.fillText('-', col3, rowY + 17);
+        ctx.fillText('-', col4, rowY + 17);
+      }
+    }
+    
+    // ===== TOTALS SECTION =====
+    const totalsY = rowsStartY + 9 * rowHeight + 5;
+    
+    // Divider line
+    ctx.strokeStyle = '#D4AF37';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cardX + 15, totalsY - 10);
+    ctx.lineTo(cardX + cardWidth - 15, totalsY - 10);
+    ctx.stroke();
+    
+    // Totals background
+    ctx.fillStyle = 'rgba(212, 175, 55, 0.15)';
+    ctx.fillRect(cardX + 8, totalsY - 5, cardWidth - 16, 35);
+    
+    // TOTAL label
+    ctx.fillStyle = '#D4AF37';
+    ctx.font = 'bold 14px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('TOTAL', col1 + 10, totalsY + 17);
+    
+    // Total par
+    const totalPar = COURSES.reduce((s, c) => s + c.par, 0);
+    ctx.fillStyle = '#90EE90';
+    ctx.font = 'bold 16px Arial';
+    ctx.fillText(`${totalPar}`, col2, totalsY + 17);
+    
+    // Total strokes
+    if (this.strokesPerHole.length > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 18px Arial';
+      ctx.fillText(`${runningTotal}`, col3, totalsY + 18);
+      
+      // Total +/-
+      const totalDiff = runningTotal - runningPar;
+      if (totalDiff < 0) {
+        ctx.fillStyle = '#4CAF50';
+      } else if (totalDiff === 0) {
+        ctx.fillStyle = '#87CEEB';
+      } else {
+        ctx.fillStyle = '#FF6B6B';
+      }
+      ctx.font = 'bold 16px Arial';
+      const totalDiffStr = totalDiff === 0 ? 'E' : (totalDiff > 0 ? `+${totalDiff}` : `${totalDiff}`);
+      ctx.fillText(totalDiffStr, col4, totalsY + 17);
+    }
+    
+    // ===== FOOTER/LEGEND =====
+    const legendY = totalsY + 45;
+    
+    ctx.fillStyle = '#888888';
+    ctx.font = '9px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🟡 Eagle  🟢 Birdie  🔵 Par  🟠 Bogey  🔴 Double+', cardX + cardWidth / 2, legendY);
+    
+    // Course name at bottom
+    const course = COURSES[this.currentHole];
+    if (course) {
+      ctx.fillStyle = '#D4AF37';
+      ctx.font = 'italic 11px Arial';
+      ctx.fillText(`"${course.name}"`, cardX + cardWidth / 2, legendY + 18);
+    }
+  }
+
+  // Helper method to draw rounded rectangles
+  private roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // Helper for rounded top corners only
+  private roundRectTop(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  private renderStatsScreen(ctx: CanvasRenderingContext2D): void {
+    // Semi-transparent overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    const centerX = this.canvas.width / 2;
     
     // Title
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 36px Arial';
+    ctx.font = 'bold 32px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('🏌️ Round Complete! 🏌️', this.canvas.width / 2, 100);
+    ctx.fillText('⛳ ROUND COMPLETE ⛳', centerX, 70);
     
-    // Scorecard
-    const totalPar = COURSES.reduce((sum, c) => sum + c.par, 0);
+    // Stats box
+    const boxX = 60;
+    const boxY = 100;
+    const boxWidth = this.canvas.width - 120;
+    const boxHeight = 380;
+    
+    ctx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(boxX, boxY, boxWidth, boxHeight);
+    
+    // Calculate stats
+    const totalPar = COURSES.reduce((s, c) => s + c.par, 0);
     const scoreVsPar = this.totalStrokes - totalPar;
+    const holeInOnes = this.strokesPerHole.filter(s => s === 1).length;
+    const eagles = this.strokesPerHole.filter((s, i) => s <= COURSES[i].par - 2).length;
+    const birdies = this.strokesPerHole.filter((s, i) => s === COURSES[i].par - 1).length;
+    const pars = this.strokesPerHole.filter((s, i) => s === COURSES[i].par).length;
+    const bogeys = this.strokesPerHole.filter((s, i) => s === COURSES[i].par + 1).length;
+    const doublePlus = this.strokesPerHole.filter((s, i) => s >= COURSES[i].par + 2).length;
+    const bestHole = Math.min(...this.strokesPerHole);
+    const worstHole = Math.max(...this.strokesPerHole);
     
+    // Main score display
     ctx.fillStyle = '#ffffff';
-    ctx.font = '24px Arial';
-    ctx.fillText(`Total Strokes: ${this.totalStrokes}`, this.canvas.width / 2, 160);
+    ctx.font = 'bold 48px Arial';
+    ctx.fillText(`${this.totalStrokes}`, centerX, 170);
     
-    ctx.fillStyle = scoreVsPar <= 0 ? '#90EE90' : '#FF6B6B';
+    ctx.font = '18px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('TOTAL STROKES', centerX, 195);
+    
+    // Score vs Par
     ctx.font = 'bold 28px Arial';
-    const scoreText = scoreVsPar === 0 ? 'Even Par!' : 
-                      (scoreVsPar < 0 ? `${Math.abs(scoreVsPar)} Under Par!` : `${scoreVsPar} Over Par`);
-    ctx.fillText(scoreText, this.canvas.width / 2, 200);
-    
-    // Per-hole breakdown
-    ctx.fillStyle = '#87CEEB';
-    ctx.font = '14px Arial';
-    let y = 250;
-    for (let i = 0; i < this.strokesPerHole.length; i++) {
-      const par = COURSES[i].par;
-      const strokes = this.strokesPerHole[i];
-      const diff = strokes - par;
-      const diffStr = diff === 0 ? 'E' : (diff > 0 ? `+${diff}` : `${diff}`);
-      ctx.fillText(`Hole ${i + 1}: ${strokes} (Par ${par}) ${diffStr}`, this.canvas.width / 2, y);
-      y += 22;
+    if (scoreVsPar < 0) {
+      ctx.fillStyle = '#4CAF50';
+      ctx.fillText(`${scoreVsPar} (${Math.abs(scoreVsPar)} Under Par)`, centerX, 240);
+    } else if (scoreVsPar === 0) {
+      ctx.fillStyle = '#87CEEB';
+      ctx.fillText('Even Par!', centerX, 240);
+    } else {
+      ctx.fillStyle = '#FF6B6B';
+      ctx.fillText(`+${scoreVsPar} (${scoreVsPar} Over Par)`, centerX, 240);
     }
+    
+    // Stats grid
+    const statY = 280;
+    const col1 = centerX - 100;
+    const col2 = centerX + 100;
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.textAlign = 'center';
+    
+    // Left column
+    ctx.fillText('HOLE-IN-ONES', col1, statY);
+    ctx.fillStyle = holeInOnes > 0 ? '#FFD700' : '#ffffff';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${holeInOnes}`, col1, statY + 28);
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('EAGLES', col1, statY + 60);
+    ctx.fillStyle = eagles > 0 ? '#C0C0C0' : '#ffffff';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${eagles}`, col1, statY + 88);
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('BIRDIES', col1, statY + 120);
+    ctx.fillStyle = '#90EE90';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${birdies}`, col1, statY + 148);
+    
+    // Right column
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('PARS', col2, statY);
+    ctx.fillStyle = '#87CEEB';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${pars}`, col2, statY + 28);
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('BOGEYS', col2, statY + 60);
+    ctx.fillStyle = '#FFA500';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${bogeys}`, col2, statY + 88);
+    
+    ctx.font = '14px Arial';
+    ctx.fillStyle = '#888888';
+    ctx.fillText('DOUBLE+', col2, statY + 120);
+    ctx.fillStyle = '#FF6B6B';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`${doublePlus}`, col2, statY + 148);
     
     // Coins earned
     ctx.fillStyle = '#FFD700';
-    ctx.font = 'bold 24px Arial';
-    ctx.fillText(`🪙 ${this.coinsThisRound} Coins Earned!`, this.canvas.width / 2, y + 30);
+    ctx.font = 'bold 22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(`🪙 ${this.coinsThisRound} Coins Earned!`, centerX, statY + 190);
     
-    // Hole in ones
-    const holeInOnes = this.strokesPerHole.filter(s => s === 1).length;
-    if (holeInOnes > 0) {
-      ctx.fillStyle = '#FF69B4';
-      ctx.font = '20px Arial';
-      ctx.fillText(`🎉 ${holeInOnes} Hole-in-One${holeInOnes > 1 ? 's' : ''}!`, this.canvas.width / 2, y + 60);
-    }
+    // Continue prompt
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '16px Arial';
+    ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 300) * 0.5;
+    ctx.fillText('Tap or click to continue...', centerX, this.canvas.height - 30);
+    ctx.globalAlpha = 1;
+  }
+
+  private renderCompleteScreen(ctx: CanvasRenderingContext2D): void {
+    // This screen shows briefly after stats, or can be removed entirely
+    // The BaseGame's endGame() will handle the actual game over display
+    
+    // Just show a simple overlay while transitioning
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('🏌️ Thanks for Playing! 🏌️', this.canvas.width / 2, this.canvas.height / 2);
+    
+    ctx.fillStyle = '#90EE90';
+    ctx.font = '24px Arial';
+    const totalPar = COURSES.reduce((sum, c) => sum + c.par, 0);
+    const scoreVsPar = this.totalStrokes - totalPar;
+    const scoreText = scoreVsPar === 0 ? 'Even Par' : 
+                      (scoreVsPar < 0 ? `${Math.abs(scoreVsPar)} Under Par!` : `${scoreVsPar} Over Par`);
+    ctx.fillText(`Final Score: ${this.totalStrokes} (${scoreText})`, this.canvas.width / 2, this.canvas.height / 2 + 50);
   }
 
   restart(): void {
