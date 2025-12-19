@@ -44,6 +44,10 @@ gameLoader.registerGame('mini-golf', async () => {
   const { MiniGolfGame } = await import('./mini-golf/MiniGolfGame');
   return new MiniGolfGame();
 });
+gameLoader.registerGame('color-drop', async () => {
+  const { ColorDropGame } = await import('./color-drop/ColorDropGame');
+  return new ColorDropGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {

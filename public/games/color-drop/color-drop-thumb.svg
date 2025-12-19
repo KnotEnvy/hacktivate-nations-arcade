@@ -1,0 +1,211 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Gem Gradients -->
+    <radialGradient id="redGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#FF8888"/>
+      <stop offset="50%" stop-color="#FF4444"/>
+      <stop offset="100%" stop-color="#CC0000"/>
+    </radialGradient>
+    <radialGradient id="blueGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#88BBFF"/>
+      <stop offset="50%" stop-color="#4488FF"/>
+      <stop offset="100%" stop-color="#0044CC"/>
+    </radialGradient>
+    <radialGradient id="greenGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#88FF88"/>
+      <stop offset="50%" stop-color="#44FF44"/>
+      <stop offset="100%" stop-color="#00CC00"/>
+    </radialGradient>
+    <radialGradient id="yellowGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#FFEE88"/>
+      <stop offset="50%" stop-color="#FFDD44"/>
+      <stop offset="100%" stop-color="#CCAA00"/>
+    </radialGradient>
+    <radialGradient id="purpleGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#CC88FF"/>
+      <stop offset="50%" stop-color="#AA44FF"/>
+      <stop offset="100%" stop-color="#7700CC"/>
+    </radialGradient>
+    <radialGradient id="orangeGem" cx="30%" cy="30%" r="70%">
+      <stop offset="0%" stop-color="#FFAA88"/>
+      <stop offset="50%" stop-color="#FF8844"/>
+      <stop offset="100%" stop-color="#CC5500"/>
+    </radialGradient>
+    
+    <!-- Background gradient -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a0a2e"/>
+      <stop offset="50%" stop-color="#16213e"/>
+      <stop offset="100%" stop-color="#0f0f23"/>
+    </linearGradient>
+    
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Sparkle filter -->
+    <filter id="sparkle" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" fill="url(#bgGradient)"/>
+  
+  <!-- Stars -->
+  <g fill="#FFFFFF" opacity="0.4">
+    <circle cx="50" cy="80" r="1.5"/>
+    <circle cx="120" cy="45" r="1"/>
+    <circle cx="200" cy="70" r="1.5"/>
+    <circle cx="350" cy="50" r="1"/>
+    <circle cx="420" cy="90" r="1.5"/>
+    <circle cx="480" cy="60" r="1"/>
+    <circle cx="30" cy="150" r="1"/>
+    <circle cx="470" cy="180" r="1.5"/>
+    <circle cx="60" cy="400" r="1"/>
+    <circle cx="450" cy="420" r="1.5"/>
+  </g>
+  
+  <!-- Grid background -->
+  <rect x="76" y="85" width="360" height="300" rx="10" fill="rgba(0,0,0,0.3)" stroke="rgba(255,255,255,0.1)" stroke-width="2"/>
+  
+  <!-- Gem Grid - Row 1 -->
+  <g transform="translate(96, 105)">
+    <!-- Red gem -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#880000" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(156, 105)">
+    <!-- Blue gem -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#blueGem)" stroke="#002288" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(216, 105)">
+    <!-- Green gem -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#greenGem)" stroke="#008800" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(276, 105)">
+    <!-- Yellow gem -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#yellowGem)" stroke="#886600" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(336, 105)">
+    <!-- Purple gem -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#purpleGem)" stroke="#440088" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  
+  <!-- Gem Grid - Row 2 -->
+  <g transform="translate(96, 165)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#orangeGem)" stroke="#883300" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(156, 165)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#880000" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(216, 165)">
+    <!-- Selected gem with glow -->
+    <g filter="url(#glow)">
+      <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#FFFFFF" stroke-width="3"/>
+    </g>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.5)"/>
+  </g>
+  <g transform="translate(276, 165)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#blueGem)" stroke="#002288" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(336, 165)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#greenGem)" stroke="#008800" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  
+  <!-- Gem Grid - Row 3 (matching row - 3 red gems!) -->
+  <g transform="translate(96, 225)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#purpleGem)" stroke="#440088" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(156, 225)" filter="url(#glow)">
+    <!-- Red match 1 -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#FFD700" stroke-width="3"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.5)"/>
+  </g>
+  <g transform="translate(216, 225)" filter="url(#glow)">
+    <!-- Red match 2 -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#FFD700" stroke-width="3"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.5)"/>
+  </g>
+  <g transform="translate(276, 225)" filter="url(#glow)">
+    <!-- Red match 3 -->
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#redGem)" stroke="#FFD700" stroke-width="3"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.5)"/>
+  </g>
+  <g transform="translate(336, 225)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#orangeGem)" stroke="#883300" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  
+  <!-- Gem Grid - Row 4 -->
+  <g transform="translate(96, 285)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#yellowGem)" stroke="#886600" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(156, 285)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#greenGem)" stroke="#008800" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(216, 285)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#blueGem)" stroke="#002288" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(276, 285)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#purpleGem)" stroke="#440088" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  <g transform="translate(336, 285)">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#yellowGem)" stroke="#886600" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  
+  <!-- Sparkle effects around matched gems -->
+  <g fill="#FFD700" filter="url(#sparkle)">
+    <polygon points="175,210 178,218 186,218 180,223 182,231 175,226 168,231 170,223 164,218 172,218" opacity="0.9"/>
+    <polygon points="240,195 242,200 247,200 243,203 244,208 240,205 236,208 237,203 233,200 238,200" opacity="0.8"/>
+    <polygon points="320,235 322,240 327,240 323,243 324,248 320,245 316,248 317,243 313,240 318,240" opacity="0.9"/>
+  </g>
+  
+  <!-- Particle explosion hints -->
+  <g fill="#FF4444" opacity="0.6">
+    <circle cx="145" cy="248" r="3"/>
+    <circle cx="150" cy="260" r="2"/>
+    <circle cx="345" cy="248" r="3"/>
+    <circle cx="350" cy="238" r="2"/>
+  </g>
+  
+  <!-- Falling gem -->
+  <g transform="translate(156, 40)" opacity="0.7">
+    <polygon points="25,0 50,15 50,40 25,55 0,40 0,15" fill="url(#blueGem)" stroke="#002288" stroke-width="2"/>
+    <circle cx="15" cy="18" r="6" fill="rgba(255,255,255,0.4)"/>
+  </g>
+  
+  <!-- Score/Combo display area -->
+  <g transform="translate(256, 395)">
+    <text text-anchor="middle" font-size="32" font-weight="bold" fill="#FFD700" font-family="Arial">3x COMBO!</text>
+  </g>
+  
+  <!-- Title banner -->
+  <rect x="0" y="420" width="512" height="92" fill="rgba(0,0,0,0.8)"/>
+  <text x="256" y="468" text-anchor="middle" font-size="36" font-weight="bold" fill="#FF69B4" font-family="Arial">COLOR DROP</text>
+  <text x="256" y="495" text-anchor="middle" font-size="16" fill="#AAAAAA" font-family="Arial">Match 3+ Gems • Build Combos • Level Up!</text>
+</svg>

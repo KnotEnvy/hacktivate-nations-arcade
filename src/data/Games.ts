@@ -71,11 +71,11 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'color-drop',
     title: 'Color Drop',
-    thumbnail: '/games/coming-soon-thumb.svg',
-    inputSchema: ['touch'],
+    thumbnail: '/games/color-drop/color-drop-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 1,
-    description: 'Coming soon!'
+    description: 'Match colorful gems in this addictive puzzle game! Build combos and create special gems!'
   },
   {
     id: 'tower-builder',
