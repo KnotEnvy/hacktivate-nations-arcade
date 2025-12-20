@@ -913,11 +913,30 @@ export class AudioManager {
       [196, 246.94, 293.66],  // G (G3, B3, D4)
     ];
 
+    // Lead melody notes for each bar (follows chord tones + passing notes)
+    const melodyPatterns = [
+      [329.63, 392, 440, 392],     // Am: E4, G4, A4, G4
+      [349.23, 392, 440, 349.23],  // F: F4, G4, A4, F4
+      [523.25, 493.88, 440, 392],  // C: C5, B4, A4, G4
+      [392, 440, 493.88, 440],     // G: G4, A4, B4, A4
+    ];
+
     const currentChord = chordProgressions[this.barIndex];
+    const currentMelody = melodyPatterns[this.barIndex];
+
+    // Crash cymbal on beat 1 of first bar (every 4 bars)
+    if (this.beatIndex === 0 && this.barIndex === 0) {
+      this.playMusicCrash(now, 0.2);
+    }
 
     // Play bass note on beat 1 and 3
     if (this.beatIndex === 0 || this.beatIndex === 2) {
       this.playMusicBass(currentChord[0] / 2, now);
+    }
+
+    // Bass walk/fill on beat 4 of bar 4 (transition)
+    if (this.beatIndex === 3 && this.barIndex === 3) {
+      this.playBassWalk(now);
     }
 
     // Play chord pad on beat 1
@@ -928,12 +947,30 @@ export class AudioManager {
     // Arpeggiator pattern
     this.playArpeggio(currentChord, now);
 
-    // Hi-hat on every beat
+    // Lead melody - dreamy synth
+    this.playLeadMelody(currentMelody[this.beatIndex], now, 'hub');
+
+    // Counter-melody on offbeats (subtle)
+    if (this.beatIndex === 1 || this.beatIndex === 3) {
+      this.playCounterMelody(currentChord[1] * 2, now);
+    }
+
+    // Hi-hat on every beat with variation
     this.playMusicHiHat(now, this.beatIndex % 2 === 0 ? 0.15 : 0.08);
+
+    // Open hi-hat accent on beat 2
+    if (this.beatIndex === 1) {
+      this.playOpenHiHat(now, 0.1);
+    }
 
     // Kick on beats 1 and 3
     if (this.beatIndex === 0 || this.beatIndex === 2) {
       this.playMusicKick(now);
+    }
+
+    // Clap/snap on beat 2 and 4 (subtle)
+    if (this.beatIndex === 1 || this.beatIndex === 3) {
+      this.playMusicClap(now, 0.15);
     }
   }
 
@@ -995,10 +1032,33 @@ export class AudioManager {
       [196, 233.08, 293.66],   // Am (raised)
     ];
 
+    // Intense lead melody patterns for each bar
+    const melodyPatterns = [
+      [293.66, 349.23, 392, 349.23],   // Dm: D4, F4, G4, F4
+      [261.63, 311.13, 349.23, 311.13], // Cm: C4, Eb4, F4, Eb4
+      [293.66, 392, 440, 392],          // Dm: D4, G4, A4, G4
+      [311.13, 349.23, 392, 440],       // Eb: Eb4, F4, G4, A4
+      [293.66, 349.23, 440, 392],       // Dm: D4, F4, A4, G4
+      [329.63, 392, 493.88, 440],       // Em: E4, G4, B4, A4
+      [349.23, 440, 523.25, 440],       // F: F4, A4, C5, A4
+      [392, 440, 523.25, 587.33],       // Am: G4, A4, C5, D5
+    ];
+
     const currentChord = chordProgressions[this.barIndex];
+    const currentMelody = melodyPatterns[this.barIndex];
+
+    // Crash on bar 1 and bar 5 (every 4 bars)
+    if (this.beatIndex === 0 && (this.barIndex === 0 || this.barIndex === 4)) {
+      this.playMusicCrash(now, 0.35);
+    }
 
     // More aggressive bass - every beat
     this.playGameBass(currentChord[0] / 2, now);
+
+    // Sub-bass accent on beat 1
+    if (this.beatIndex === 0) {
+      this.playSubBass(currentChord[0] / 4, now);
+    }
 
     // Chord stabs on beat 1 and offbeat
     if (this.beatIndex === 0 || this.beatIndex === 2) {
@@ -1008,8 +1068,21 @@ export class AudioManager {
     // Fast arpeggio
     this.playFastArpeggio(currentChord, now);
 
+    // Intense lead melody
+    this.playLeadMelody(currentMelody[this.beatIndex], now, 'game');
+
+    // Accent stabs on upbeats for intensity
+    if (this.beatIndex === 1 || this.beatIndex === 3) {
+      this.playAccentStab(currentChord[2] * 2, now);
+    }
+
     // Hi-hat on every 8th note feel
     this.playMusicHiHat(now, 0.12);
+
+    // Open hi-hat for groove
+    if (this.beatIndex === 1) {
+      this.playOpenHiHat(now, 0.15);
+    }
 
     // Driving kick pattern
     if (this.beatIndex === 0 || this.beatIndex === 2) {
@@ -1018,6 +1091,11 @@ export class AudioManager {
     // Snare on 2 and 4
     if (this.beatIndex === 1 || this.beatIndex === 3) {
       this.playMusicSnare(now);
+    }
+
+    // Tom fill on last beat of every 4 bars
+    if (this.beatIndex === 3 && (this.barIndex === 3 || this.barIndex === 7)) {
+      this.playTomFill(now);
     }
   }
 
@@ -1316,6 +1394,319 @@ export class AudioManager {
     noiseGain.connect(this.musicGainNode!);
 
     noise.start(now);
+  }
+
+  // ============= MELODY AND ACCENT COMPONENTS =============
+
+  private playLeadMelody(freq: number, now: number, style: 'hub' | 'game'): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    if (style === 'hub') {
+      // Dreamy lead - sine with slow attack
+      osc.type = 'sine';
+      filter.type = 'lowpass';
+      filter.frequency.value = 2000;
+      filter.Q.value = 1;
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.05);
+      gain.gain.setValueAtTime(0.1, now + 0.3);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+
+      osc.frequency.value = freq;
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGainNode);
+
+      osc.start(now);
+      osc.stop(now + 0.5);
+    } else {
+      // Intense lead - saw with bite
+      osc.type = 'sawtooth';
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(3000, now);
+      filter.frequency.exponentialRampToValueAtTime(1500, now + 0.15);
+      filter.Q.value = 3;
+
+      gain.gain.setValueAtTime(0.15, now);
+      gain.gain.setValueAtTime(0.12, now + 0.1);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+
+      // Slight pitch bend for expression
+      osc.frequency.setValueAtTime(freq * 0.98, now);
+      osc.frequency.exponentialRampToValueAtTime(freq, now + 0.02);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGainNode);
+
+      osc.start(now);
+      osc.stop(now + 0.25);
+
+      // Add octave layer for thickness
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'square';
+      osc2.frequency.value = freq * 2;
+      gain2.gain.setValueAtTime(0.05, now);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+      osc2.connect(gain2);
+      gain2.connect(this.musicGainNode);
+      osc2.start(now);
+      osc2.stop(now + 0.12);
+    }
+  }
+
+  private playCounterMelody(freq: number, now: number): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+
+    filter.type = 'bandpass';
+    filter.frequency.value = 1200;
+    filter.Q.value = 2;
+
+    gain.gain.setValueAtTime(0.06, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGainNode);
+
+    osc.start(now);
+    osc.stop(now + 0.18);
+  }
+
+  private playMusicCrash(now: number, volume = 0.25): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    // Long noise burst for crash
+    const bufferSize = ctx.sampleRate * 0.8;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    const hiFilter = ctx.createBiquadFilter();
+
+    filter.type = 'highpass';
+    filter.frequency.value = 4000;
+
+    hiFilter.type = 'lowpass';
+    hiFilter.frequency.setValueAtTime(12000, now);
+    hiFilter.frequency.exponentialRampToValueAtTime(3000, now + 0.6);
+
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+
+    noise.connect(filter);
+    filter.connect(hiFilter);
+    hiFilter.connect(gain);
+    gain.connect(this.musicGainNode);
+
+    noise.start(now);
+  }
+
+  private playOpenHiHat(now: number, volume = 0.12): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    const bufferSize = ctx.sampleRate * 0.15;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    filter.type = 'highpass';
+    filter.frequency.value = 6000;
+
+    gain.gain.setValueAtTime(volume, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGainNode);
+
+    noise.start(now);
+  }
+
+  private playMusicClap(now: number, volume = 0.2): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    // Multiple noise bursts for clap texture
+    [0, 0.01, 0.02].forEach(delay => {
+      const bufferSize = ctx.sampleRate * 0.08;
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      filter.type = 'bandpass';
+      filter.frequency.value = 1500;
+      filter.Q.value = 0.5;
+
+      const t = now + delay;
+      gain.gain.setValueAtTime(volume * (delay === 0 ? 1 : 0.7), t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+
+      noise.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGainNode!);
+
+      noise.start(t);
+    });
+  }
+
+  private playBassWalk(now: number): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    // Quick ascending bass fill
+    const notes = [98, 110, 123.47, 130.81]; // G2, A2, B2, C3
+    const noteDuration = 0.1;
+
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      osc.type = 'sawtooth';
+      osc.frequency.value = freq;
+
+      filter.type = 'lowpass';
+      filter.frequency.value = 300;
+
+      const t = now + i * noteDuration;
+      gain.gain.setValueAtTime(0.2, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + noteDuration - 0.01);
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGainNode!);
+
+      osc.start(t);
+      osc.stop(t + noteDuration);
+    });
+  }
+
+  private playSubBass(freq: number, now: number): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+
+    gain.gain.setValueAtTime(0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+
+    osc.connect(gain);
+    gain.connect(this.musicGainNode);
+
+    osc.start(now);
+    osc.stop(now + 0.35);
+  }
+
+  private playAccentStab(freq: number, now: number): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const osc = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    osc.type = 'sawtooth';
+    osc.frequency.value = freq;
+    osc2.type = 'square';
+    osc2.frequency.value = freq * 1.005; // Slight detune
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(4000, now);
+    filter.frequency.exponentialRampToValueAtTime(800, now + 0.06);
+    filter.Q.value = 5;
+
+    gain.gain.setValueAtTime(0.08, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+
+    osc.connect(filter);
+    osc2.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGainNode);
+
+    osc.start(now);
+    osc2.start(now);
+    osc.stop(now + 0.1);
+    osc2.stop(now + 0.1);
+  }
+
+  private playTomFill(now: number): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    // Descending tom pattern
+    const toms = [200, 150, 100]; // High, mid, low tom
+    const spacing = 0.08;
+
+    toms.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + i * spacing);
+      osc.frequency.exponentialRampToValueAtTime(freq * 0.7, now + i * spacing + 0.1);
+
+      const t = now + i * spacing;
+      gain.gain.setValueAtTime(0.35, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+
+      osc.connect(gain);
+      gain.connect(this.musicGainNode!);
+
+      osc.start(t);
+      osc.stop(t + 0.15);
+    });
   }
 
   setMasterVolume(volume: number): void {

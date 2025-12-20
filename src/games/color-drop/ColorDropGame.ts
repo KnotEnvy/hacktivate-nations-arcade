@@ -2,7 +2,7 @@
 // Color Drop - A Bejeweled-style Match-3 Gem Game
 
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
+import { GameManifest, GameScore } from '@/lib/types';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -1532,7 +1532,7 @@ export class ColorDropGame extends BaseGame {
     };
   }
 
-  protected onGameEnd(finalScore: any): void {
+  protected onGameEnd(finalScore: GameScore): void {
     this.extendedGameData = {
       level_reached: this.level,
       max_combo: this.maxCombo,
