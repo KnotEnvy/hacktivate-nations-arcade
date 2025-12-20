@@ -80,6 +80,9 @@ export class AudioManager {
   private currentMusicName: MusicName | null = null;
   private beatIndex: number = 0;
   private barIndex: number = 0;
+  private phraseIndex: number = 0; // Track 16-bar phrases for riser timing
+  private reverbNode: ConvolverNode | null = null;
+  private reverbGain: GainNode | null = null;
 
   async init(): Promise<void> {
     let context: AudioContext | null = null;
@@ -865,6 +868,7 @@ export class AudioManager {
     this.currentMusicName = 'hub_music';
     this.beatIndex = 0;
     this.barIndex = 0;
+    this.phraseIndex = 0;
 
     // Create master music gain node with fade-in
     this.musicGainNode = ctx.createGain();
@@ -876,10 +880,16 @@ export class AudioManager {
     );
     this.musicGainNode.connect(this.masterGain);
 
+    // Create reverb for spatial depth
+    this.createReverb();
+
     // Start ambient pad (continuous atmospheric layer)
     this.startAmbientPad();
 
-    // Music loop - 120 BPM (500ms per beat)
+    // Start subtle filter sweep on pad
+    this.startFilterSweep();
+
+    // Music loop - 110 BPM
     const bpm = 110;
     const beatDuration = 60000 / bpm;
 
@@ -892,6 +902,16 @@ export class AudioManager {
       if (this.beatIndex >= 4) {
         this.beatIndex = 0;
         this.barIndex = (this.barIndex + 1) % 4;
+
+        // Track phrases for dynamic builds
+        if (this.barIndex === 0) {
+          this.phraseIndex = (this.phraseIndex + 1) % 4;
+
+          // Play riser before phrase 4 starts (build-up)
+          if (this.phraseIndex === 3) {
+            this.playRiser('hub');
+          }
+        }
       }
     }, beatDuration);
 
@@ -983,6 +1003,7 @@ export class AudioManager {
     this.currentMusicName = 'game_music';
     this.beatIndex = 0;
     this.barIndex = 0;
+    this.phraseIndex = 0;
 
     // Create master music gain node with fade-in
     this.musicGainNode = ctx.createGain();
@@ -993,6 +1014,12 @@ export class AudioManager {
       ctx.currentTime + Math.max(fadeSeconds, 0.1)
     );
     this.musicGainNode.connect(this.masterGain);
+
+    // Create reverb for game as well (less wet)
+    this.createReverb();
+    if (this.reverbGain) {
+      this.reverbGain.gain.value = 0.08; // Less reverb for tighter game feel
+    }
 
     // Faster tempo for game intensity - 140 BPM
     const bpm = 140;
@@ -1007,6 +1034,16 @@ export class AudioManager {
       if (this.beatIndex >= 4) {
         this.beatIndex = 0;
         this.barIndex = (this.barIndex + 1) % 8;
+
+        // Track phrases and play risers
+        if (this.barIndex === 0) {
+          this.phraseIndex = (this.phraseIndex + 1) % 2;
+        }
+
+        // Riser before bar 7 (building to climax at bar 8)
+        if (this.barIndex === 6 && this.beatIndex === 0) {
+          this.playRiser('game');
+        }
       }
     }, beatDuration);
 
@@ -1134,6 +1171,136 @@ export class AudioManager {
       osc.start(now);
       this.musicNodes.push(osc, gain, filter);
     });
+  }
+
+  // Create reverb effect using algorithmic approach
+  private createReverb(): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+
+    // Create impulse response for reverb
+    const sampleRate = ctx.sampleRate;
+    const length = sampleRate * 2; // 2 second reverb tail
+    const impulse = ctx.createBuffer(2, length, sampleRate);
+
+    for (let channel = 0; channel < 2; channel++) {
+      const channelData = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i++) {
+        // Exponential decay with random noise
+        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5);
+      }
+    }
+
+    this.reverbNode = ctx.createConvolver();
+    this.reverbNode.buffer = impulse;
+
+    this.reverbGain = ctx.createGain();
+    this.reverbGain.gain.value = 0.15; // Subtle reverb mix
+
+    // Connect reverb in parallel (wet signal)
+    this.musicGainNode.connect(this.reverbNode);
+    this.reverbNode.connect(this.reverbGain);
+    this.reverbGain.connect(this.masterGain!);
+
+    this.musicNodes.push(this.reverbNode, this.reverbGain);
+  }
+
+  // Slow filter sweep for evolving pad texture
+  private startFilterSweep(): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const now = ctx.currentTime;
+
+    // Create a slow LFO for filter modulation
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.05; // Very slow: one cycle per 20 seconds
+
+    lfoGain.gain.value = 300; // Modulation depth
+
+    // Create a filter that will be modulated
+    const sweepFilter = ctx.createBiquadFilter();
+    sweepFilter.type = 'lowpass';
+    sweepFilter.frequency.value = 600; // Base frequency
+    sweepFilter.Q.value = 1;
+
+    // Connect LFO to filter frequency
+    lfo.connect(lfoGain);
+    lfoGain.connect(sweepFilter.frequency);
+
+    lfo.start(now);
+    this.musicNodes.push(lfo, lfoGain, sweepFilter);
+  }
+
+  // Riser/build-up sweep for transitions
+  private playRiser(style: 'hub' | 'game'): void {
+    if (!this.context || !this.musicGainNode) return;
+
+    const ctx = this.context;
+    const now = ctx.currentTime;
+    const duration = style === 'hub' ? 3.5 : 2.5; // Hub is longer, more subtle
+
+    // White noise riser
+    const bufferSize = ctx.sampleRate * duration;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const noiseGain = ctx.createGain();
+    const noiseFilter = ctx.createBiquadFilter();
+
+    noiseFilter.type = 'bandpass';
+    noiseFilter.Q.value = 5;
+    // Sweep filter frequency up
+    noiseFilter.frequency.setValueAtTime(200, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(8000, now + duration);
+
+    // Volume swell
+    const volume = style === 'hub' ? 0.08 : 0.15;
+    noiseGain.gain.setValueAtTime(0.001, now);
+    noiseGain.gain.exponentialRampToValueAtTime(volume, now + duration * 0.9);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.musicGainNode);
+
+    noise.start(now);
+
+    // Add pitched sweep layer
+    const sweepOsc = ctx.createOscillator();
+    const sweepGain = ctx.createGain();
+    const sweepFilter2 = ctx.createBiquadFilter();
+
+    sweepOsc.type = 'sawtooth';
+    sweepOsc.frequency.setValueAtTime(style === 'hub' ? 110 : 73.42, now);
+    sweepOsc.frequency.exponentialRampToValueAtTime(style === 'hub' ? 440 : 293.66, now + duration);
+
+    sweepFilter2.type = 'lowpass';
+    sweepFilter2.frequency.setValueAtTime(200, now);
+    sweepFilter2.frequency.exponentialRampToValueAtTime(4000, now + duration);
+    sweepFilter2.Q.value = 3;
+
+    const pitchVolume = style === 'hub' ? 0.06 : 0.1;
+    sweepGain.gain.setValueAtTime(0.001, now);
+    sweepGain.gain.exponentialRampToValueAtTime(pitchVolume, now + duration * 0.8);
+    sweepGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+    sweepOsc.connect(sweepFilter2);
+    sweepFilter2.connect(sweepGain);
+    sweepGain.connect(this.musicGainNode);
+
+    sweepOsc.start(now);
+    sweepOsc.stop(now + duration + 0.1);
   }
 
   private playMusicBass(freq: number, now: number): void {
