@@ -170,6 +170,24 @@ export function ArcadeHub() {
   }, [challengeService, achievementService, userService, audioManager, currencyService, addNotification]);
 
   useEffect(() => {
+    const applyPerkModifiers = () => {
+      const modifiers = userService.getPerkModifiers();
+      currencyService.setRewardModifiers({
+        coinMultiplier: modifiers.coinMultiplier,
+        minCoinsPerGame: modifiers.minCoinsPerGame,
+        bonusCoinsPerScore: modifiers.bonusCoinsPerScore,
+      });
+    };
+
+    applyPerkModifiers();
+    const unsubscribe = userService.onUserDataChanged(() => {
+      applyPerkModifiers();
+    });
+
+    return unsubscribe;
+  }, [currencyService, userService]);
+
+  useEffect(() => {
     setChallenges(challengeService.getChallenges());
     const unsubscribe = challengeService.onChallengesChanged((next) => {
       setChallenges(next);
@@ -383,13 +401,15 @@ export function ArcadeHub() {
 
   const handleChallengeComplete = useCallback(
     (challenge: Challenge) => {
+      const modifiers = userService.getPerkModifiers();
+      const reward = Math.floor(challenge.reward * modifiers.challengeRewardMultiplier);
       audioManager.playSound('success');
       addNotification(
         'challenge',
         'Challenge Complete!',
-        `${challenge.title} - +${challenge.reward} coins`
+        `${challenge.title} - +${reward} coins`
       );
-      currencyService.addCoins(challenge.reward, `challenge_${challenge.id}`);
+      currencyService.addCoins(reward, `challenge_${challenge.id}`);
       const current = userService.getStats().challengesCompleted;
       userService.updateStats({ challengesCompleted: current + 1 });
       if (challengeService.areAllDailyChallengesCompleted()) {
@@ -419,14 +439,28 @@ export function ArcadeHub() {
     
     const stats = userService.getStats();
     const profile = userService.getProfile();
+    const previousLevel = profile.level;
+    const modifiers = userService.getPerkModifiers();
     
     // Calculate experience gained
-    const experienceGained = Math.floor(gameData.score / 10) + gameData.coinsEarned;
+    const baseExperience = Math.floor((gameData.score || 0) / 10) + (gameData.coinsEarned || 0);
+    const experienceGained = Math.floor(baseExperience * modifiers.xpMultiplier);
     const levelResult = userService.addExperience(experienceGained);
     
     if (levelResult.leveledUp) {
       audioManager.playSound('powerup');
       addNotification('levelup', 'Level Up!', `You reached level ${levelResult.newLevel}!`);
+
+      const unlockedPerks = UserService.getNewPerks(previousLevel, levelResult.newLevel);
+      unlockedPerks.forEach((perk) => {
+        addNotification('levelup', `Perk Unlocked: ${perk.name}`, perk.description);
+      });
+
+      const unlockedMilestones = UserService.getNewMilestones(previousLevel, levelResult.newLevel);
+      unlockedMilestones.forEach((milestone) => {
+        addNotification('levelup', milestone.title, milestone.description);
+        currencyService.addCoins(milestone.bonusCoins, `milestone_level_${milestone.level}`);
+      });
     }
     
     // Update user stats

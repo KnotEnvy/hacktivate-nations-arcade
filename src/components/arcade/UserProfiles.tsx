@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { UserProfile as UserProfileType, UserStats, UserService } from '@/services/UserServices';
+import { MAX_LEVEL, UserProfile as UserProfileType, UserStats, UserService } from '@/services/UserServices';
 import { Analytics } from '@/services/Analytics';
 
 interface UserProfileProps {
@@ -39,11 +39,18 @@ export function UserProfile({ userService }: UserProfileProps) {
     });
   }, []);
 
+  const isMaxLevel = profile.level >= MAX_LEVEL;
   const currentLevelXp = UserService.experienceForLevel(profile.level);
-  const nextLevelXp = UserService.experienceForLevel(profile.level + 1);
-  const experienceToNextLevel = nextLevelXp - profile.experience;
-  const experienceProgress =
-    (profile.experience - currentLevelXp) / (nextLevelXp - currentLevelXp);
+  const nextLevelXp = isMaxLevel
+    ? currentLevelXp
+    : UserService.experienceForLevel(profile.level + 1);
+  const experienceToNextLevel = isMaxLevel
+    ? 0
+    : Math.max(0, nextLevelXp - profile.experience);
+  const rawProgress = isMaxLevel
+    ? 1
+    : (profile.experience - currentLevelXp) / (nextLevelXp - currentLevelXp);
+  const experienceProgress = Math.min(1, Math.max(0, rawProgress));
 
   const handleAvatarChange = (newAvatar: string) => {
     userService.updateProfile({ avatar: newAvatar });
@@ -74,7 +81,7 @@ export function UserProfile({ userService }: UserProfileProps) {
             </div>
           </div>
           <div className="text-xs text-gray-400">
-            {experienceToNextLevel} XP to next level
+            {isMaxLevel ? 'MAX LEVEL REACHED' : `${experienceToNextLevel} XP to next level`}
           </div>
         </div>
       </div>

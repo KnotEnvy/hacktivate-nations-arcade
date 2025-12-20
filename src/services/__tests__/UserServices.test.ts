@@ -1,4 +1,4 @@
-import { UserService } from '@/services/UserServices';
+import { MAX_LEVEL, UserService } from '@/services/UserServices';
 
 describe('UserService', () => {
   let userService: UserService;
@@ -50,16 +50,21 @@ describe('UserService', () => {
     });
 
     test('calculates correct experience for levels', () => {
-      const level1 = UserService.experienceForLevel(1);
-      const level2 = UserService.experienceForLevel(2);
-      const level3 = UserService.experienceForLevel(3);
-      const level4 = UserService.experienceForLevel(4);
+      expect(UserService.experienceForLevel(1)).toBe(0);
+      expect(UserService.experienceForLevel(2)).toBe(2000);
+      expect(UserService.experienceForLevel(3)).toBe(4000);
+      expect(UserService.experienceForLevel(4)).toBe(8000);
+      expect(UserService.experienceForLevel(5)).toBe(18000);
+      expect(UserService.experienceForLevel(6)).toBe(35000);
+      expect(UserService.experienceForLevel(7)).toBe(70000);
+      expect(UserService.experienceForLevel(8)).toBe(125000);
+      expect(UserService.experienceForLevel(9)).toBe(250000);
+      expect(UserService.experienceForLevel(10)).toBe(500000);
+    });
 
-      expect(level1).toBe(0);
-      expect(level2).toBeGreaterThan(0);
-      expect(level3).toBeGreaterThan(level2);
-      expect(level4).toBeGreaterThan(level3);
-      expect(level4 - level3).toBeGreaterThan(level3 - level2);
+    test('caps experience table at max level', () => {
+      const maxLevelXp = UserService.experienceForLevel(MAX_LEVEL);
+      expect(UserService.experienceForLevel(MAX_LEVEL + 5)).toBe(maxLevelXp);
     });
 
     test('adds experience correctly', () => {

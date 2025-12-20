@@ -23,8 +23,101 @@ export interface UserStats {
   coinsEarned: number;
 }
 
-const XP_BASE = 1500;
-const XP_GROWTH = 1.6;
+export const MAX_LEVEL = 35;
+const WARRIOR_XP_STEP = 250000;
+
+export interface PerkModifiers {
+  coinMultiplier: number;
+  xpMultiplier: number;
+  challengeRewardMultiplier: number;
+  minCoinsPerGame: number;
+  bonusCoinsPerScore: number;
+}
+
+export interface PlayerPerk {
+  id: string;
+  level: number;
+  name: string;
+  description: string;
+  modifiers: Partial<PerkModifiers>;
+}
+
+export interface LevelMilestone {
+  level: number;
+  title: string;
+  description: string;
+  bonusCoins: number;
+  modifiers: Partial<PerkModifiers>;
+}
+
+const WARRIOR_XP_TABLE: number[] = (() => {
+  const table: number[] = [
+    0, // index 0 unused
+    0, // level 1
+    2000,
+    4000,
+    8000,
+    18000,
+    35000,
+    70000,
+    125000,
+    250000,
+  ];
+
+  for (let level = 10; level <= MAX_LEVEL; level += 1) {
+    table[level] = (table[level - 1] || 0) + WARRIOR_XP_STEP;
+  }
+
+  return table;
+})();
+
+const PERKS: PlayerPerk[] = [
+  {
+    id: 'token-magnet',
+    level: 3,
+    name: 'Token Magnet',
+    description: 'Permanent +10% coins earned from games.',
+    modifiers: { coinMultiplier: 0.1 },
+  },
+  {
+    id: 'extra-credit',
+    level: 7,
+    name: 'Extra Credit',
+    description: 'Permanent +10% XP earned from games.',
+    modifiers: { xpMultiplier: 0.1 },
+  },
+  {
+    id: 'arcade-allowance',
+    level: 11,
+    name: 'Arcade Allowance',
+    description: 'Guarantees at least 20 coins per game.',
+    modifiers: { minCoinsPerGame: 20 },
+  },
+  {
+    id: 'daily-double',
+    level: 15,
+    name: 'Daily Double',
+    description: 'Permanent +50% daily challenge coin rewards.',
+    modifiers: { challengeRewardMultiplier: 0.5 },
+  },
+  {
+    id: 'high-score-dividend',
+    level: 25,
+    name: 'High Score Dividend',
+    description: 'Earn +1 bonus coin per 1,000 score.',
+    modifiers: { bonusCoinsPerScore: 1 },
+  },
+];
+
+const LEVEL_MILESTONES: LevelMilestone[] = [
+  {
+    level: 20,
+    title: 'CRT Overdrive',
+    description: 'Legend status unlocked. +20% coins, +20% XP, and a bonus coin drop.',
+    bonusCoins: 1000,
+    modifiers: { coinMultiplier: 0.2, xpMultiplier: 0.2 },
+  },
+];
 
 export class UserService {
   private profile: UserProfile;
@@ -118,6 +211,13 @@ export class UserService {
         console.warn('Failed to load user stats:', error);
       }
     }
+
+    if (this.profile.level > MAX_LEVEL) {
+      this.profile.level = MAX_LEVEL;
+    }
+    const minExperience = UserService.experienceForLevel(this.profile.level);
+    const maxExperience = UserService.experienceForLevel(MAX_LEVEL);
+    this.profile.experience = Math.min(Math.max(this.profile.experience, minExperience), maxExperience);
   }
 
   private saveUserData(): void {
@@ -140,19 +240,26 @@ export class UserService {
   }
 
   public static experienceForLevel(level: number): number {
-    if (level <= 1) return 0;
-    const tiers = level - 1;
-    return Math.floor((XP_BASE * (Math.pow(XP_GROWTH, tiers) - 1)) / (XP_GROWTH - 1));
+    const clampedLevel = Math.min(Math.max(1, level), MAX_LEVEL);
+    return WARRIOR_XP_TABLE[clampedLevel] ?? WARRIOR_XP_TABLE[MAX_LEVEL];
   }
 
   addExperience(amount: number): { leveledUp: boolean; newLevel: number } {
-    const oldLevel = this.profile.level;
-    this.profile.experience += amount;
+    const maxExperience = UserService.experienceForLevel(MAX_LEVEL);
+
+    if (this.profile.level >= MAX_LEVEL) {
+      this.profile.experience = Math.min(this.profile.experience + amount, maxExperience);
+      this.saveUserData();
+      this.notifyListeners();
+      return { leveledUp: false, newLevel: MAX_LEVEL };
+    }
+
+    this.profile.experience = Math.min(this.profile.experience + amount, maxExperience);
     let newLevel = this.profile.level;
 
     // Level up once per call when crossing the next threshold
     const nextLevelExp = UserService.experienceForLevel(this.profile.level + 1);
-    const leveledUp = this.profile.experience >= nextLevelExp;
+    const leveledUp = this.profile.experience >= nextLevelExp && this.profile.level < MAX_LEVEL;
     if (leveledUp) {
       this.profile.level += 1;
       newLevel = this.profile.level;
@@ -163,6 +270,57 @@ export class UserService {
     this.notifyListeners();
 
     return { leveledUp, newLevel };
+  }
+
+  public static getUnlockedPerksForLevel(level: number): PlayerPerk[] {
+    return PERKS.filter(perk => level >= perk.level);
+  }
+
+  public static getNewPerks(previousLevel: number, newLevel: number): PlayerPerk[] {
+    return PERKS.filter(perk => perk.level > previousLevel && perk.level <= newLevel);
+  }
+
+  public static getMilestonesForLevel(level: number): LevelMilestone[] {
+    return LEVEL_MILESTONES.filter(milestone => level >= milestone.level);
+  }
+
+  public static getNewMilestones(previousLevel: number, newLevel: number): LevelMilestone[] {
+    return LEVEL_MILESTONES.filter(milestone => milestone.level > previousLevel && milestone.level <= newLevel);
+  }
+
+  public getPerkModifiers(): PerkModifiers {
+    const unlockedPerks = UserService.getUnlockedPerksForLevel(this.profile.level);
+    const unlockedMilestones = UserService.getMilestonesForLevel(this.profile.level);
+
+    const modifiers: PerkModifiers = {
+      coinMultiplier: 1,
+      xpMultiplier: 1,
+      challengeRewardMultiplier: 1,
+      minCoinsPerGame: 0,
+      bonusCoinsPerScore: 0,
+    };
+
+    const allModifiers = [...unlockedPerks.map(perk => perk.modifiers), ...unlockedMilestones.map(m => m.modifiers)];
+
+    allModifiers.forEach((perk) => {
+      if (perk.coinMultiplier) {
+        modifiers.coinMultiplier += perk.coinMultiplier;
+      }
+      if (perk.xpMultiplier) {
+        modifiers.xpMultiplier += perk.xpMultiplier;
+      }
+      if (perk.challengeRewardMultiplier) {
+        modifiers.challengeRewardMultiplier += perk.challengeRewardMultiplier;
+      }
+      if (perk.minCoinsPerGame) {
+        modifiers.minCoinsPerGame = Math.max(modifiers.minCoinsPerGame, perk.minCoinsPerGame);
+      }
+      if (perk.bonusCoinsPerScore) {
+        modifiers.bonusCoinsPerScore += perk.bonusCoinsPerScore;
+      }
+    });
+
+    return modifiers;
   }
 
   getProfile(): UserProfile {

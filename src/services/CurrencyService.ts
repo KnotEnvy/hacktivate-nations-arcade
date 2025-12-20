@@ -7,11 +7,22 @@ export interface CurrencyTransaction {
   timestamp: Date;
 }
 
+export interface RewardModifiers {
+  coinMultiplier: number;
+  minCoinsPerGame: number;
+  bonusCoinsPerScore: number;
+}
+
 export class CurrencyService {
   private currentCoins: number = 0;
   private transactions: CurrencyTransaction[] = [];
   private listeners: Array<(coins: number) => void> = [];
   private bonusMultiplier: number = 1;
+  private rewardModifiers: RewardModifiers = {
+    coinMultiplier: 1,
+    minCoinsPerGame: 0,
+    bonusCoinsPerScore: 0,
+  };
 
   init(): void {
     // Load from localStorage for now
@@ -31,6 +42,14 @@ export class CurrencyService {
 
   setBonusMultiplier(multiplier: number): void {
     this.bonusMultiplier = multiplier;
+  }
+
+  setRewardModifiers(modifiers: RewardModifiers): void {
+    this.rewardModifiers = { ...modifiers };
+  }
+
+  getRewardModifiers(): RewardModifiers {
+    return { ...this.rewardModifiers };
   }
 
   // Reset method for development
@@ -78,7 +97,11 @@ export class CurrencyService {
     const baseReward =
       Math.floor(score / ECONOMY.SCORE_TO_COINS_RATIO) +
       pickups * ECONOMY.PICKUP_COIN_VALUE;
-    return Math.floor(baseReward * bonusMultiplier);
+    const rewardMultiplier = bonusMultiplier * this.rewardModifiers.coinMultiplier;
+    const scaledReward = Math.floor(baseReward * rewardMultiplier);
+    const scoreBonus = Math.floor(score / 1000) * this.rewardModifiers.bonusCoinsPerScore;
+    const total = scaledReward + scoreBonus;
+    return Math.max(total, this.rewardModifiers.minCoinsPerGame);
   }
 
   onCoinsChanged(callback: (coins: number) => void): () => void {
