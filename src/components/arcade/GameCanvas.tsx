@@ -1,7 +1,7 @@
 // ===== src/components/arcade/GameCanvas.tsx =====
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCanvas } from '@/hooks/useCanvas';
 import { useGameModule } from '@/hooks/useGameModule';
 import { GameModule, GameScore } from '@/lib/types';
@@ -30,12 +30,17 @@ export function GameCanvas({ game, onGameEnd, currencyService, audioManager, ach
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');
+  const hasHandledGameOverRef = useRef(false);
 
   useEffect(() => {
     if (isInitialized && game) {
       setGameState('ready');
     }
   }, [isInitialized, game]);
+
+  useEffect(() => {
+    hasHandledGameOverRef.current = false;
+  }, [game]);
 
   useEffect(() => {
     if (isRunning) {
@@ -50,10 +55,17 @@ export function GameCanvas({ game, onGameEnd, currencyService, audioManager, ach
     if (!game || !isInitialized) return;
 
     const checkGameOver = () => {
-      if (game.isGameOver && game.isGameOver()) {
+      const isGameOver = game.isGameOver?.();
+      if (isGameOver) {
+        if (hasHandledGameOverRef.current) return;
+        hasHandledGameOverRef.current = true;
         setGameState('ended');
         stopGame();
         onGameEnd?.(game.getScore?.());
+        return;
+      }
+      if (hasHandledGameOverRef.current) {
+        hasHandledGameOverRef.current = false;
       }
     };
 

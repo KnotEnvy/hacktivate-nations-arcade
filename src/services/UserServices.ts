@@ -23,6 +23,9 @@ export interface UserStats {
   coinsEarned: number;
 }
 
+const XP_BASE = 1500;
+const XP_GROWTH = 1.6;
+
 export class UserService {
   private profile: UserProfile;
   private stats: UserStats;
@@ -137,7 +140,9 @@ export class UserService {
   }
 
   public static experienceForLevel(level: number): number {
-    return 500 * level * (level - 1);
+    if (level <= 1) return 0;
+    const tiers = level - 1;
+    return Math.floor((XP_BASE * (Math.pow(XP_GROWTH, tiers) - 1)) / (XP_GROWTH - 1));
   }
 
   addExperience(amount: number): { leveledUp: boolean; newLevel: number } {
@@ -147,7 +152,7 @@ export class UserService {
 
     // Level up once per call when crossing the next threshold
     const nextLevelExp = UserService.experienceForLevel(this.profile.level + 1);
-    const leveledUp = this.profile.experience >= nextLevelExp || amount >= 500;
+    const leveledUp = this.profile.experience >= nextLevelExp;
     if (leveledUp) {
       this.profile.level += 1;
       newLevel = this.profile.level;

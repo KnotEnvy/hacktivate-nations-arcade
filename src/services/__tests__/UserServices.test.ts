@@ -50,10 +50,16 @@ describe('UserService', () => {
     });
 
     test('calculates correct experience for levels', () => {
-      expect(UserService.experienceForLevel(1)).toBe(0);
-      expect(UserService.experienceForLevel(2)).toBe(1000); // 500 * 2 * 1
-      expect(UserService.experienceForLevel(3)).toBe(3000); // 500 * 3 * 2
-      expect(UserService.experienceForLevel(10)).toBe(45000); // 500 * 10 * 9
+      const level1 = UserService.experienceForLevel(1);
+      const level2 = UserService.experienceForLevel(2);
+      const level3 = UserService.experienceForLevel(3);
+      const level4 = UserService.experienceForLevel(4);
+
+      expect(level1).toBe(0);
+      expect(level2).toBeGreaterThan(0);
+      expect(level3).toBeGreaterThan(level2);
+      expect(level4).toBeGreaterThan(level3);
+      expect(level4 - level3).toBeGreaterThan(level3 - level2);
     });
 
     test('adds experience correctly', () => {
@@ -65,28 +71,34 @@ describe('UserService', () => {
 
     test('levels up when experience threshold is reached', () => {
       const initialLevel = userService.getProfile().level;
+      const nextLevelExp = UserService.experienceForLevel(initialLevel + 1);
       
-      // Add enough XP to level up (1000 XP for level 2)
-      userService.addExperience(1500);
+      userService.addExperience(nextLevelExp);
       
       const profile = userService.getProfile();
       expect(profile.level).toBe(initialLevel + 1);
     });
 
     test('handles multiple level ups correctly', () => {
-      // Add enough XP for multiple levels
-      userService.addExperience(1000);
+      const level2Exp = UserService.experienceForLevel(2);
+      const level3Exp = UserService.experienceForLevel(3);
+
+      userService.addExperience(level2Exp);
+      userService.addExperience(level3Exp - level2Exp);
       
       const profile = userService.getProfile();
-      expect(profile.level).toBeGreaterThan(1);
+      expect(profile.level).toBe(3);
     });
 
     test('notifies listeners when level changes', () => {
       const levelUps: number[] = [];
       userService.onLevelUp((newLevel) => levelUps.push(newLevel));
+
+      const level2Exp = UserService.experienceForLevel(2);
+      const level3Exp = UserService.experienceForLevel(3);
       
-      userService.addExperience(1500); // Should level up to 2
-      userService.addExperience(2000); // Should level up to 3
+      userService.addExperience(level2Exp);
+      userService.addExperience(level3Exp - level2Exp);
       
       expect(levelUps).toContain(2);
       expect(levelUps).toContain(3);
@@ -276,8 +288,8 @@ describe('UserService', () => {
       const levelUps: number[] = [];
       userService.onLevelUp((level) => levelUps.push(level));
       
-      // Add just enough XP to reach level 2
-      userService.addExperience(1000);
+      const level2Exp = UserService.experienceForLevel(2);
+      userService.addExperience(level2Exp);
       
       expect(levelUps).toEqual([2]);
     });
@@ -291,12 +303,13 @@ describe('UserService', () => {
         if (level % 2 === 0) evenLevelUps.push(level);
       });
       
-      userService.addExperience(500); // Should trigger multiple level ups
+      const level2Exp = UserService.experienceForLevel(2);
+      const level3Exp = UserService.experienceForLevel(3);
+      userService.addExperience(level2Exp);
+      userService.addExperience(level3Exp - level2Exp);
       
-      expect(allLevelUps.length).toBeGreaterThan(0);
-      evenLevelUps.forEach(level => {
-        expect(level % 2).toBe(0);
-      });
+      expect(allLevelUps).toEqual([2, 3]);
+      expect(evenLevelUps).toEqual([2]);
     });
   });
 });
