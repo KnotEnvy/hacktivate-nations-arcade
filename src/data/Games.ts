@@ -80,11 +80,11 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'tower-builder',
     title: 'Tower Builder',
-    thumbnail: '/games/coming-soon-thumb.svg',
-    inputSchema: ['touch'],
+    thumbnail: '/games/tower-builder/tower-builder-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 1,
-    description: 'Coming soon!'
+    description: 'Stack blocks with precision timing! Build the tallest tower you can!'
   },
   {
   id: 'mini-golf',

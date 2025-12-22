@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Sky gradient -->
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB"/>
+      <stop offset="50%" style="stop-color:#E0F6FF"/>
+      <stop offset="100%" style="stop-color:#FFB347"/>
+    </linearGradient>
+    
+    <!-- Block gradients -->
+    <linearGradient id="block1Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FF9B9B"/>
+      <stop offset="50%" style="stop-color:#FF6B6B"/>
+      <stop offset="100%" style="stop-color:#CC4444"/>
+    </linearGradient>
+    
+    <linearGradient id="block2Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#7EDCD4"/>
+      <stop offset="50%" style="stop-color:#4ECDC4"/>
+      <stop offset="100%" style="stop-color:#2E9D94"/>
+    </linearGradient>
+    
+    <linearGradient id="block3Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#75C7E1"/>
+      <stop offset="50%" style="stop-color:#45B7D1"/>
+      <stop offset="100%" style="stop-color:#2587A1"/>
+    </linearGradient>
+    
+    <linearGradient id="block4Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#B6DEC4"/>
+      <stop offset="50%" style="stop-color:#96CEB4"/>
+      <stop offset="100%" style="stop-color:#669E84"/>
+    </linearGradient>
+    
+    <linearGradient id="block5Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFAC7"/>
+      <stop offset="50%" style="stop-color:#FFEAA7"/>
+      <stop offset="100%" style="stop-color:#CCBA77"/>
+    </linearGradient>
+    
+    <linearGradient id="block6Grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#EDB0ED"/>
+      <stop offset="50%" style="stop-color:#DDA0DD"/>
+      <stop offset="100%" style="stop-color:#AD70AD"/>
+    </linearGradient>
+    
+    <linearGradient id="foundationGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4A5568"/>
+      <stop offset="50%" style="stop-color:#2C3E50"/>
+      <stop offset="100%" style="stop-color:#1C2E40"/>
+    </linearGradient>
+    
+    <linearGradient id="groundGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a5568"/>
+      <stop offset="100%" style="stop-color:#1a202c"/>
+    </linearGradient>
+    
+    <!-- Glow filter -->
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <!-- Star glow -->
+    <filter id="starGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background Sky -->
+  <rect width="512" height="512" fill="url(#skyGrad)"/>
+  
+  <!-- Clouds -->
+  <g opacity="0.6" fill="white">
+    <ellipse cx="80" cy="100" rx="40" ry="20"/>
+    <ellipse cx="100" cy="90" rx="30" ry="18"/>
+    <ellipse cx="120" cy="100" rx="35" ry="17"/>
+    
+    <ellipse cx="400" cy="80" rx="35" ry="18"/>
+    <ellipse cx="420" cy="70" rx="25" ry="15"/>
+    <ellipse cx="440" cy="80" rx="30" ry="15"/>
+    
+    <ellipse cx="250" cy="60" rx="45" ry="22"/>
+    <ellipse cx="275" cy="50" rx="35" ry="18"/>
+    <ellipse cx="300" cy="60" rx="40" ry="20"/>
+  </g>
+  
+  <!-- Background Buildings (far) -->
+  <g fill="#1a1a2e" opacity="0.6">
+    <rect x="20" y="320" width="50" height="192"/>
+    <rect x="90" y="280" width="40" height="232"/>
+    <rect x="150" y="340" width="55" height="172"/>
+    <rect x="380" y="300" width="45" height="212"/>
+    <rect x="440" y="330" width="60" height="182"/>
+  </g>
+  
+  <!-- Background Buildings (mid) -->
+  <g fill="#16213e" opacity="0.7">
+    <rect x="50" y="350" width="45" height="162"/>
+    <rect x="120" y="310" width="50" height="202"/>
+    <rect x="340" y="340" width="50" height="172"/>
+    <rect x="420" y="300" width="55" height="212"/>
+  </g>
+  
+  <!-- Ground -->
+  <rect x="0" y="440" width="512" height="72" fill="url(#groundGrad)"/>
+  <line x1="0" y1="440" x2="512" y2="440" stroke="#718096" stroke-width="3"/>
+  
+  <!-- Tower Foundation -->
+  <g transform="translate(256, 440)">
+    <rect x="-100" y="-30" width="200" height="30" fill="url(#foundationGrad)" stroke="#1C2E40" stroke-width="2"/>
+    <rect x="-100" y="-30" width="200" height="10" fill="rgba(255,255,255,0.1)"/>
+  </g>
+  
+  <!-- Tower Blocks -->
+  <!-- Block 1 -->
+  <g transform="translate(256, 410)">
+    <rect x="-90" y="-30" width="180" height="30" fill="url(#block1Grad)" stroke="#CC4444" stroke-width="2"/>
+    <rect x="-90" y="-30" width="180" height="10" fill="rgba(255,255,255,0.2)"/>
+  </g>
+  
+  <!-- Block 2 -->
+  <g transform="translate(256, 380)">
+    <rect x="-85" y="-30" width="170" height="30" fill="url(#block2Grad)" stroke="#2E9D94" stroke-width="2"/>
+    <rect x="-85" y="-30" width="170" height="10" fill="rgba(255,255,255,0.2)"/>
+  </g>
+  
+  <!-- Block 3 - Perfect! -->
+  <g transform="translate(256, 350)">
+    <rect x="-85" y="-30" width="170" height="30" fill="url(#block3Grad)" stroke="#FFD700" stroke-width="3"/>
+    <rect x="-85" y="-30" width="170" height="10" fill="rgba(255,255,255,0.2)"/>
+    <!-- Perfect sparkle left -->
+    <circle cx="-95" cy="-15" r="5" fill="#FFD700" filter="url(#starGlow)"/>
+    <!-- Perfect sparkle right -->
+    <circle cx="95" cy="-15" r="5" fill="#FFD700" filter="url(#starGlow)"/>
+  </g>
+  
+  <!-- Block 4 -->
+  <g transform="translate(256, 320)">
+    <rect x="-80" y="-30" width="160" height="30" fill="url(#block4Grad)" stroke="#669E84" stroke-width="2"/>
+    <rect x="-80" y="-30" width="160" height="10" fill="rgba(255,255,255,0.2)"/>
+  </g>
+  
+  <!-- Block 5 -->
+  <g transform="translate(256, 290)">
+    <rect x="-75" y="-30" width="150" height="30" fill="url(#block5Grad)" stroke="#CCBA77" stroke-width="2"/>
+    <rect x="-75" y="-30" width="150" height="10" fill="rgba(255,255,255,0.2)"/>
+  </g>
+  
+  <!-- Swinging Block (at top) -->
+  <g transform="translate(340, 220)">
+    <!-- Drop indicator line -->
+    <line x1="0" y1="30" x2="0" y2="240" stroke="rgba(255,255,255,0.3)" stroke-width="1" stroke-dasharray="5,5"/>
+    <!-- The swinging block -->
+    <rect x="-70" y="0" width="140" height="30" fill="url(#block6Grad)" stroke="#AD70AD" stroke-width="2" filter="url(#glow)"/>
+    <rect x="-70" y="0" width="140" height="10" fill="rgba(255,255,255,0.2)"/>
+  </g>
+  
+  <!-- Combo indicator -->
+  <g transform="translate(256, 160)">
+    <text x="0" y="0" font-family="Arial, sans-serif" font-size="36" font-weight="bold" fill="#FFD700" text-anchor="middle" filter="url(#starGlow)">
+      x3 COMBO!
+    </text>
+  </g>
+  
+  <!-- Stars/Sparkles around perfect block -->
+  <g fill="#FFD700" filter="url(#starGlow)">
+    <!-- Star 1 -->
+    <polygon points="130,340 133,348 142,348 135,353 138,362 130,356 122,362 125,353 118,348 127,348" transform="rotate(-15, 130, 351)"/>
+    <!-- Star 2 -->
+    <polygon points="382,340 385,348 394,348 387,353 390,362 382,356 374,362 377,353 370,348 379,348" transform="rotate(15, 382, 351)"/>
+    <!-- Star 3 -->
+    <polygon points="200,300 202,306 209,306 204,310 206,317 200,313 194,317 196,310 191,306 198,306"/>
+    <!-- Star 4 -->
+    <polygon points="312,300 314,306 321,306 316,310 318,317 312,313 306,317 308,310 303,306 310,306"/>
+  </g>
+  
+  <!-- Power-up floating -->
+  <g transform="translate(100, 280)">
+    <circle cx="0" cy="0" r="18" fill="rgba(0,255,255,0.3)"/>
+    <circle cx="0" cy="0" r="14" fill="rgba(0,0,0,0.7)" stroke="#00FFFF" stroke-width="2"/>
+    <text x="0" y="5" font-family="Arial, sans-serif" font-size="14" fill="#00FFFF" text-anchor="middle">⏱</text>
+  </g>
+  
+  <!-- Height indicator -->
+  <g transform="translate(50, 350)">
+    <rect x="-30" y="-20" width="60" height="40" rx="8" fill="rgba(0,0,0,0.6)"/>
+    <text x="0" y="-2" font-family="Arial, sans-serif" font-size="12" fill="#888888" text-anchor="middle">HEIGHT</text>
+    <text x="0" y="14" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFD700" text-anchor="middle">5</text>
+  </g>
+  
+  <!-- Score -->
+  <g transform="translate(462, 350)">
+    <rect x="-40" y="-20" width="80" height="40" rx="8" fill="rgba(0,0,0,0.6)"/>
+    <text x="0" y="-2" font-family="Arial, sans-serif" font-size="12" fill="#888888" text-anchor="middle">SCORE</text>
+    <text x="0" y="14" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#FFFFFF" text-anchor="middle">850</text>
+  </g>
+  
+  <!-- Title at bottom -->
+  <g transform="translate(256, 490)">
+    <text x="0" y="0" font-family="Arial, sans-serif" font-size="28" font-weight="bold" fill="#FFFFFF" text-anchor="middle" stroke="#000000" stroke-width="1">
+      TOWER BUILDER
+    </text>
+  </g>
+</svg>

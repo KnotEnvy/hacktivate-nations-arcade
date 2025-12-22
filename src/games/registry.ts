@@ -48,6 +48,10 @@ gameLoader.registerGame('color-drop', async () => {
   const { ColorDropGame } = await import('./color-drop/ColorDropGame');
   return new ColorDropGame();
 });
+gameLoader.registerGame('tower-builder', async () => {
+  const { TowerBuilderGame } = await import('./tower-builder/TowerBuilderGame');
+  return new TowerBuilderGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {
