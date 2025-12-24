@@ -15,7 +15,7 @@ import { GameManifest, GameScore } from '@/lib/types';
 // TYPES & INTERFACES
 // ============================================================================
 
-type GameState = 'ready' | 'swinging' | 'dropping' | 'landing' | 'wobbling' | 'gameOver';
+type GameState = 'ready' | 'swinging' | 'dropping' | 'landing' | 'wobbling' | 'stats' | 'gameOver';
 type PowerUpType = 'slowmo' | 'widen' | 'perfect';
 
 interface Block {
@@ -72,6 +72,19 @@ interface CloudType {
   width: number;
   speed: number;
   opacity: number;
+}
+
+interface FallingDebris {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+  velocity: { x: number; y: number };
+  rotation: number;
+  rotationVel: number;
+  alpha: number;
+  side: 'left' | 'right';
 }
 
 // ============================================================================
@@ -139,6 +152,7 @@ export class TowerBuilderGame extends BaseGame {
 
   // Visual effects
   private particles: Particle[] = [];
+  private fallingDebris: FallingDebris[] = [];
   private screenShake: number = 0;
   private flashAlpha: number = 0;
   private comboScale: number = 1;
@@ -161,6 +175,14 @@ export class TowerBuilderGame extends BaseGame {
   // Animation timers
   private readyTimer: number = 0;
   private gameOverTimer: number = 0;
+  private statsTimer: number = 0;
+
+  // Extended stats for recap screen
+  private totalBlocksDropped: number = 0;
+  private narrowestBlock: number = INITIAL_BLOCK_WIDTH;
+  private totalPrecisionScore: number = 0;
+  private powerUpsCollected: number = 0;
+  private closeCallCount: number = 0; // Blocks that barely made it
 
   // ============================================================================
   // INITIALIZATION
@@ -246,6 +268,7 @@ export class TowerBuilderGame extends BaseGame {
   private startNewGame(): void {
     this.tower = [];
     this.particles = [];
+    this.fallingDebris = [];
     this.powerUps = [];
     this.activePowerUps = [];
 
@@ -256,6 +279,14 @@ export class TowerBuilderGame extends BaseGame {
     this.blocksPlaced = 0;
     this.totalPerfects = 0;
     this.pickups = 0;
+
+    // Reset extended stats
+    this.totalBlocksDropped = 0;
+    this.narrowestBlock = INITIAL_BLOCK_WIDTH;
+    this.totalPrecisionScore = 0;
+    this.powerUpsCollected = 0;
+    this.closeCallCount = 0;
+    this.statsTimer = 0;
 
     this.cameraY = 0;
     this.targetCameraY = 0;
@@ -334,6 +365,7 @@ export class TowerBuilderGame extends BaseGame {
     this.updateClouds(scaledDt);
     this.updateStars(dt);
     this.updateParticles(dt);
+    this.updateFallingDebris(dt);
     this.updateCamera(dt);
     this.updateVisualEffects(dt);
 
@@ -361,6 +393,10 @@ export class TowerBuilderGame extends BaseGame {
         this.updateWobbling(scaledDt);
         break;
 
+      case 'stats':
+        this.statsTimer += dt;
+        break;
+
       case 'gameOver':
         this.gameOverTimer += dt;
         break;
@@ -381,7 +417,12 @@ export class TowerBuilderGame extends BaseGame {
     if (this.inputPressed) {
       if (this.gameState === 'swinging') {
         this.dropBlock();
-      } else if (this.gameState === 'gameOver' && this.gameOverTimer > 1) {
+      } else if (this.gameState === 'stats' && this.statsTimer > 1.5) {
+        // Transition from stats to game over and finalize the game
+        this.gameState = 'gameOver';
+        this.gameOverTimer = 0;
+        this.endGame(); // Now award coins and track analytics
+      } else if (this.gameState === 'gameOver' && this.gameOverTimer > 0.5) {
         this.restart();
       }
     }
@@ -433,7 +474,7 @@ export class TowerBuilderGame extends BaseGame {
 
     this.droppingBlock = {
       x: dropX,
-      y: lastBlock.y - BLOCK_HEIGHT - 300 + this.cameraY,
+      y: lastBlock.y - BLOCK_HEIGHT - 300,
       width: blockWidth,
       height: BLOCK_HEIGHT,
       color: BLOCK_COLORS[this.blocksPlaced % BLOCK_COLORS.length],
@@ -482,6 +523,8 @@ export class TowerBuilderGame extends BaseGame {
     const overlapRight = Math.min(blockRight, lastRight);
     const overlapWidth = overlapRight - overlapLeft;
 
+    this.totalBlocksDropped++;
+
     if (overlapWidth <= 0) {
       // Complete miss - game over
       this.triggerGameOver(block);
@@ -492,6 +535,20 @@ export class TowerBuilderGame extends BaseGame {
     const offset = Math.abs(block.x - lastBlock.x);
     const isPerfect = offset <= PERFECT_THRESHOLD;
     const isGood = offset <= GOOD_THRESHOLD;
+
+    // Track precision
+    const precision = overlapWidth / block.width;
+    this.totalPrecisionScore += precision;
+
+    // Track narrowest block
+    if (overlapWidth < this.narrowestBlock) {
+      this.narrowestBlock = overlapWidth;
+    }
+
+    // Track close calls (barely made it - less than 30% overlap but survived)
+    if (precision < 0.3 && overlapWidth > 0) {
+      this.closeCallCount++;
+    }
 
     // Create the new settled block
     const settledBlock: Block = {
@@ -511,6 +568,11 @@ export class TowerBuilderGame extends BaseGame {
     this.blocksPlaced++;
     this.height = this.blocksPlaced;
 
+    // Create falling debris for the trimmed portions
+    if (!isPerfect && overlapWidth < block.width * 0.95) {
+      this.createFallingDebris(block, lastBlock, overlapLeft, overlapRight);
+    }
+
     // Handle perfect/good/normal landing
     if (isPerfect) {
       this.handlePerfectLanding(settledBlock);
@@ -523,12 +585,87 @@ export class TowerBuilderGame extends BaseGame {
     // Check for power-up collection
     this.checkPowerUpCollection(settledBlock);
 
-    // Update camera target
+    // Update camera target - camera should move UP (negative Y in screen space means up)
     this.targetCameraY = Math.max(0, (this.tower.length - 8) * BLOCK_HEIGHT);
 
     // Spawn next block
     this.droppingBlock = null;
     this.gameState = 'wobbling';
+  }
+
+  private createFallingDebris(
+    block: Block, 
+    lastBlock: Block, 
+    overlapLeft: number, 
+    overlapRight: number
+  ): void {
+    const blockLeft = block.x - block.width / 2;
+    const blockRight = block.x + block.width / 2;
+
+    // Left side debris (if block extends past left edge of tower)
+    if (blockLeft < overlapLeft) {
+      const debrisWidth = overlapLeft - blockLeft;
+      this.fallingDebris.push({
+        x: blockLeft + debrisWidth / 2,
+        y: block.y,
+        width: debrisWidth,
+        height: BLOCK_HEIGHT,
+        color: block.color,
+        velocity: { 
+          x: -80 - Math.random() * 60, // Fall to the left
+          y: -50 - Math.random() * 50  // Small upward bump
+        },
+        rotation: 0,
+        rotationVel: -3 - Math.random() * 4, // Spin counterclockwise
+        alpha: 1,
+        side: 'left'
+      });
+    }
+
+    // Right side debris (if block extends past right edge of tower)
+    if (blockRight > overlapRight) {
+      const debrisWidth = blockRight - overlapRight;
+      this.fallingDebris.push({
+        x: overlapRight + debrisWidth / 2,
+        y: block.y,
+        width: debrisWidth,
+        height: BLOCK_HEIGHT,
+        color: block.color,
+        velocity: { 
+          x: 80 + Math.random() * 60,  // Fall to the right
+          y: -50 - Math.random() * 50  // Small upward bump
+        },
+        rotation: 0,
+        rotationVel: 3 + Math.random() * 4, // Spin clockwise
+        alpha: 1,
+        side: 'right'
+      });
+    }
+
+    // Play a breaking/crumble sound
+    this.services.audio.playSound('click');
+  }
+
+  private updateFallingDebris(dt: number): void {
+    this.fallingDebris = this.fallingDebris.filter(debris => {
+      // Apply gravity
+      debris.velocity.y += GRAVITY * dt;
+      
+      // Update position
+      debris.x += debris.velocity.x * dt;
+      debris.y += debris.velocity.y * dt;
+      
+      // Update rotation
+      debris.rotation += debris.rotationVel * dt;
+      
+      // Fade out as it falls
+      if (debris.y > GROUND_Y + 100) {
+        debris.alpha -= dt * 2;
+      }
+      
+      // Remove when faded or fallen off screen
+      return debris.alpha > 0 && debris.y < CANVAS_HEIGHT + 200;
+    });
   }
 
   private handlePerfectLanding(block: Block): void {
@@ -579,21 +716,27 @@ export class TowerBuilderGame extends BaseGame {
     this.screenShake = 2;
     this.createLandingParticles(block.x, block.y, block.color);
 
-    // Create falling debris for the cut-off part
-    if (overlapWidth < originalWidth * 0.9) {
-      this.createDebrisParticles(block.x, block.y, block.color);
-    }
-
     this.services.audio.playSound('click');
   }
 
   private triggerGameOver(fallingBlock: Block): void {
-    this.gameState = 'gameOver';
-    this.gameOverTimer = 0;
+    // Go to stats screen first instead of directly to game over
+    this.gameState = 'stats';
+    this.statsTimer = 0;
 
-    // Create dramatic falling animation
-    fallingBlock.velocity.y = 200;
-    fallingBlock.rotationVel = (Math.random() - 0.5) * 5;
+    // Create dramatic falling animation for the missed block
+    this.fallingDebris.push({
+      x: fallingBlock.x,
+      y: fallingBlock.y,
+      width: fallingBlock.width,
+      height: BLOCK_HEIGHT,
+      color: fallingBlock.color,
+      velocity: { x: (Math.random() - 0.5) * 100, y: 200 },
+      rotation: 0,
+      rotationVel: (Math.random() - 0.5) * 8,
+      alpha: 1,
+      side: Math.random() > 0.5 ? 'left' : 'right'
+    });
 
     // Explosion particles
     for (let i = 0; i < 30; i++) {
@@ -623,7 +766,11 @@ export class TowerBuilderGame extends BaseGame {
       total_perfects: this.totalPerfects,
       blocks_placed: this.blocksPlaced
     };
+  }
 
+  private transitionToFinalGameOver(): void {
+    this.gameState = 'gameOver';
+    this.gameOverTimer = 0;
     this.endGame();
   }
 
@@ -674,6 +821,8 @@ export class TowerBuilderGame extends BaseGame {
   }
 
   private activatePowerUp(type: PowerUpType): void {
+    this.powerUpsCollected++;
+    
     switch (type) {
       case 'slowmo':
         this.slowMotionActive = true;
@@ -747,25 +896,6 @@ export class TowerBuilderGame extends BaseGame {
     }
   }
 
-  private createDebrisParticles(x: number, y: number, color: string): void {
-    for (let i = 0; i < 8; i++) {
-      const side = Math.random() > 0.5 ? 1 : -1;
-      this.particles.push({
-        x: x + side * 50,
-        y,
-        vx: side * (50 + Math.random() * 100),
-        vy: -50 + Math.random() * 100,
-        size: 5 + Math.random() * 8,
-        color,
-        life: 1.2,
-        maxLife: 1.2,
-        type: 'confetti',
-        rotation: Math.random() * Math.PI * 2,
-        rotationSpeed: (Math.random() - 0.5) * 10
-      });
-    }
-  }
-
   private createPowerUpParticles(x: number, y: number, type: PowerUpType): void {
     const colors: Record<PowerUpType, string> = {
       slowmo: '#00FFFF',
@@ -826,13 +956,17 @@ export class TowerBuilderGame extends BaseGame {
   }
 
   private updateCamera(dt: number): void {
-    // Smooth camera follow
+    // Smooth camera follow - camera moves up as tower grows
     const cameraDiff = this.targetCameraY - this.cameraY;
     this.cameraY += cameraDiff * 5 * dt;
+    
+    // Clamp camera to prevent going negative
+    this.cameraY = Math.max(0, this.cameraY);
   }
 
   private updateBackground(dt: number): void {
-    // Update parallax layers based on camera
+    // Parallax layers move slower than camera to create depth effect
+    // As camera goes up, background shifts down slightly (parallax)
     this.backgroundLayers.forEach(layer => {
       layer.yOffset = this.cameraY * layer.speed;
     });
@@ -890,6 +1024,7 @@ export class TowerBuilderGame extends BaseGame {
     this.renderBackground(ctx);
     this.renderGround(ctx);
     this.renderTower(ctx);
+    this.renderFallingDebris(ctx);
     this.renderPowerUps(ctx);
     this.renderSwingingBlock(ctx);
     this.renderDroppingBlock(ctx);
@@ -900,7 +1035,9 @@ export class TowerBuilderGame extends BaseGame {
 
     this.renderHUD(ctx);
 
-    if (this.gameState === 'gameOver') {
+    if (this.gameState === 'stats') {
+      this.renderStatsScreen(ctx);
+    } else if (this.gameState === 'gameOver') {
       this.renderGameOver(ctx);
     }
   }
@@ -951,9 +1088,11 @@ export class TowerBuilderGame extends BaseGame {
     const starAlpha = (this.skyGradientOffset - 0.5) * 2;
     this.stars.forEach(star => {
       const twinkle = 0.5 + 0.5 * Math.sin(star.twinkle);
+      // Stars are infinitely far, so minimal parallax
+      const parallaxY = this.cameraY * 0.02;
       ctx.fillStyle = `rgba(255, 255, 255, ${starAlpha * twinkle})`;
       ctx.beginPath();
-      ctx.arc(star.x, star.y - this.cameraY * 0.05, star.size, 0, Math.PI * 2);
+      ctx.arc(star.x, star.y + parallaxY, star.size, 0, Math.PI * 2);
       ctx.fill();
     });
   }
@@ -961,7 +1100,10 @@ export class TowerBuilderGame extends BaseGame {
   private renderClouds(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
     this.clouds.forEach(cloud => {
-      const y = cloud.y - this.cameraY * 0.15;
+      // Clouds move with very slow parallax (they're far away)
+      const parallaxY = this.cameraY * 0.05;
+      const y = cloud.y + parallaxY;
+      
       if (y > -50 && y < CANVAS_HEIGHT + 50) {
         ctx.globalAlpha = cloud.opacity * (1 - this.skyGradientOffset * 0.7);
         this.drawCloud(ctx, cloud.x, y, cloud.width);
@@ -983,7 +1125,13 @@ export class TowerBuilderGame extends BaseGame {
   private renderBackground(ctx: CanvasRenderingContext2D): void {
     this.backgroundLayers.forEach(layer => {
       layer.buildings.forEach(building => {
-        const y = GROUND_Y - building.height + layer.yOffset;
+        // Buildings are anchored to ground, parallax makes them appear to move slower
+        // As tower grows and cameraY increases, background moves down but slower than foreground
+        const parallaxOffset = this.cameraY * layer.speed;
+        const y = GROUND_Y - building.height + parallaxOffset;
+
+        // Only render if visible
+        if (y + building.height < -50 || y > CANVAS_HEIGHT + 50) return;
 
         // Building body
         ctx.fillStyle = building.color;
@@ -998,7 +1146,7 @@ export class TowerBuilderGame extends BaseGame {
           const windowSize = 4;
           const windowSpacing = 10;
           for (let wx = building.x + 5; wx < building.x + building.width - 5; wx += windowSpacing) {
-            for (let wy = y + 10; wy < GROUND_Y - 10; wy += windowSpacing) {
+            for (let wy = y + 10; wy < y + building.height - 10; wy += windowSpacing) {
               if (Math.random() > 0.3) {
                 ctx.fillStyle = windowColor;
                 ctx.fillRect(wx, wy, windowSize, windowSize);
@@ -1011,29 +1159,33 @@ export class TowerBuilderGame extends BaseGame {
   }
 
   private renderGround(ctx: CanvasRenderingContext2D): void {
-    const groundY = GROUND_Y + BLOCK_HEIGHT / 2 - this.cameraY;
+    // Ground position moves with camera (add cameraY to push down as tower grows)
+    const groundScreenY = GROUND_Y + BLOCK_HEIGHT / 2 + this.cameraY;
+
+    // Only render if visible
+    if (groundScreenY > CANVAS_HEIGHT) return;
 
     // Ground gradient
-    const gradient = ctx.createLinearGradient(0, groundY, 0, CANVAS_HEIGHT);
+    const gradient = ctx.createLinearGradient(0, groundScreenY, 0, CANVAS_HEIGHT);
     gradient.addColorStop(0, '#4a5568');
     gradient.addColorStop(0.3, '#2d3748');
     gradient.addColorStop(1, '#1a202c');
 
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, groundY, CANVAS_WIDTH, CANVAS_HEIGHT - groundY);
+    ctx.fillRect(0, groundScreenY, CANVAS_WIDTH, CANVAS_HEIGHT - groundScreenY + 100);
 
     // Ground line
     ctx.strokeStyle = '#718096';
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.moveTo(0, groundY);
-    ctx.lineTo(CANVAS_WIDTH, groundY);
+    ctx.moveTo(0, groundScreenY);
+    ctx.lineTo(CANVAS_WIDTH, groundScreenY);
     ctx.stroke();
   }
 
   private renderTower(ctx: CanvasRenderingContext2D): void {
     this.tower.forEach((block, index) => {
-      const screenY = block.y - this.cameraY;
+      const screenY = block.y + this.cameraY;
 
       if (screenY > -BLOCK_HEIGHT && screenY < CANVAS_HEIGHT + BLOCK_HEIGHT) {
         ctx.save();
@@ -1086,7 +1238,7 @@ export class TowerBuilderGame extends BaseGame {
     this.powerUps.forEach(pu => {
       if (pu.collected) return;
 
-      const screenY = pu.y - this.cameraY + Math.sin(pu.floatOffset) * 5;
+      const screenY = pu.y + this.cameraY + Math.sin(pu.floatOffset) * 5;
       const colors: Record<PowerUpType, string> = {
         slowmo: '#00FFFF',
         widen: '#00FF00',
@@ -1137,7 +1289,7 @@ export class TowerBuilderGame extends BaseGame {
 
     const block = this.swingingBlock;
     const lastBlock = this.tower[this.tower.length - 1];
-    const y = lastBlock.y - BLOCK_HEIGHT - 100 - this.cameraY;
+    const y = lastBlock.y - BLOCK_HEIGHT - 100 + this.cameraY;
 
     // Swing indicator line
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
@@ -1194,7 +1346,7 @@ export class TowerBuilderGame extends BaseGame {
     if (!this.droppingBlock) return;
 
     const block = this.droppingBlock;
-    const screenY = block.y - this.cameraY;
+    const screenY = block.y + this.cameraY;
 
     // Motion blur effect
     ctx.globalAlpha = 0.5;
@@ -1218,7 +1370,7 @@ export class TowerBuilderGame extends BaseGame {
 
   private renderParticles(ctx: CanvasRenderingContext2D): void {
     this.particles.forEach(p => {
-      const screenY = p.y - this.cameraY;
+      const screenY = p.y + this.cameraY;
       const alpha = p.life / p.maxLife;
 
       ctx.save();
@@ -1248,6 +1400,185 @@ export class TowerBuilderGame extends BaseGame {
 
       ctx.restore();
     });
+  }
+
+  private renderFallingDebris(ctx: CanvasRenderingContext2D): void {
+    this.fallingDebris.forEach(debris => {
+      const screenY = debris.y + this.cameraY;
+
+      // Don't render if off screen
+      if (screenY < -100 || screenY > CANVAS_HEIGHT + 100) return;
+
+      ctx.save();
+      ctx.translate(debris.x, screenY);
+      ctx.rotate(debris.rotation);
+      ctx.globalAlpha = debris.alpha;
+
+      // Debris shadow
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(-debris.width / 2 + 3, -debris.height / 2 + 3, debris.width, debris.height);
+
+      // Debris body with gradient (same style as blocks)
+      const gradient = ctx.createLinearGradient(0, -debris.height / 2, 0, debris.height / 2);
+      gradient.addColorStop(0, this.lightenColor(debris.color, 30));
+      gradient.addColorStop(0.5, debris.color);
+      gradient.addColorStop(1, this.darkenColor(debris.color, 30));
+
+      ctx.fillStyle = gradient;
+      ctx.fillRect(-debris.width / 2, -debris.height / 2, debris.width, debris.height);
+
+      // Highlight
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+      ctx.fillRect(-debris.width / 2, -debris.height / 2, debris.width, debris.height / 3);
+
+      // Border
+      ctx.strokeStyle = this.darkenColor(debris.color, 50);
+      ctx.lineWidth = 2;
+      ctx.strokeRect(-debris.width / 2, -debris.height / 2, debris.width, debris.height);
+
+      // Add some cracks/damage lines for visual effect
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-debris.width / 4, -debris.height / 2);
+      ctx.lineTo(0, debris.height / 4);
+      ctx.moveTo(debris.width / 4, -debris.height / 2);
+      ctx.lineTo(debris.width / 6, 0);
+      ctx.stroke();
+
+      ctx.restore();
+    });
+  }
+
+  private renderStatsScreen(ctx: CanvasRenderingContext2D): void {
+    // Animated fade in
+    const fadeIn = Math.min(1, this.statsTimer * 2);
+    
+    // Semi-transparent overlay
+    ctx.fillStyle = `rgba(0, 0, 20, ${0.85 * fadeIn})`;
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    if (this.statsTimer < 0.3) return;
+
+    const slideProgress = Math.min(1, (this.statsTimer - 0.3) * 3);
+    const easeOut = 1 - Math.pow(1 - slideProgress, 3);
+
+    ctx.save();
+    ctx.globalAlpha = easeOut;
+
+    // Title
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 36px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('📊 RUN STATS', CANVAS_WIDTH / 2, 70);
+
+    // Stats panel background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+    ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(60, 100, CANVAS_WIDTH - 120, 380, 15);
+    ctx.fill();
+    ctx.stroke();
+
+    // Calculate some fun stats
+    const avgPrecision = this.totalBlocksDropped > 0 
+      ? Math.round((this.totalPrecisionScore / this.totalBlocksDropped) * 100) 
+      : 0;
+    const perfectRate = this.blocksPlaced > 0 
+      ? Math.round((this.totalPerfects / this.blocksPlaced) * 100) 
+      : 0;
+    const timePlayedSec = Math.round(this.gameTime);
+    const blocksPerMin = timePlayedSec > 0 
+      ? Math.round((this.blocksPlaced / timePlayedSec) * 60) 
+      : 0;
+
+    // Stats display with staggered animation
+    const stats = [
+      { icon: '🏗️', label: 'TOWER HEIGHT', value: `${this.height} blocks`, color: '#4ECDC4' },
+      { icon: '⭐', label: 'PERFECT LANDINGS', value: `${this.totalPerfects} (${perfectRate}%)`, color: '#FFD700' },
+      { icon: '🔥', label: 'BEST COMBO', value: `${this.maxPerfectStreak}x streak`, color: '#FF6B6B' },
+      { icon: '🎯', label: 'AVG PRECISION', value: `${avgPrecision}%`, color: '#45B7D1' },
+      { icon: '📦', label: 'NARROWEST BLOCK', value: `${Math.round(this.narrowestBlock)}px`, color: '#96CEB4' },
+      { icon: '⚡', label: 'POWER-UPS USED', value: `${this.powerUpsCollected}`, color: '#DDA0DD' },
+      { icon: '😅', label: 'CLOSE CALLS', value: `${this.closeCallCount}`, color: '#FFEAA7' },
+      { icon: '⏱️', label: 'TIME PLAYED', value: `${timePlayedSec}s (${blocksPerMin} BPM)`, color: '#85C1E9' },
+    ];
+
+    let yPos = 140;
+    stats.forEach((stat, index) => {
+      const statDelay = 0.5 + index * 0.1;
+      if (this.statsTimer < statDelay) return;
+
+      const statProgress = Math.min(1, (this.statsTimer - statDelay) * 4);
+      const statEase = 1 - Math.pow(1 - statProgress, 2);
+      
+      ctx.save();
+      ctx.globalAlpha = statEase;
+      ctx.translate((1 - statEase) * -50, 0);
+
+      // Icon
+      ctx.font = '24px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText(stat.icon, 85, yPos);
+
+      // Label
+      ctx.fillStyle = '#AAAAAA';
+      ctx.font = '14px Arial';
+      ctx.fillText(stat.label, 120, yPos - 8);
+
+      // Value
+      ctx.fillStyle = stat.color;
+      ctx.font = 'bold 20px Arial';
+      ctx.fillText(stat.value, 120, yPos + 14);
+
+      ctx.restore();
+
+      yPos += 45;
+    });
+
+    // Fun rating based on performance
+    if (this.statsTimer > 1.3) {
+      const ratingProgress = Math.min(1, (this.statsTimer - 1.3) * 2);
+      ctx.globalAlpha = ratingProgress;
+
+      let rating = '🌟 NICE TRY!';
+      let ratingColor = '#AAAAAA';
+      
+      if (this.height >= 30 && perfectRate >= 50) {
+        rating = '🏆 LEGENDARY!';
+        ratingColor = '#FFD700';
+      } else if (this.height >= 20 && perfectRate >= 40) {
+        rating = '💎 AMAZING!';
+        ratingColor = '#4ECDC4';
+      } else if (this.height >= 15 || this.maxPerfectStreak >= 5) {
+        rating = '🔥 GREAT JOB!';
+        ratingColor = '#FF6B6B';
+      } else if (this.height >= 10) {
+        rating = '👍 SOLID RUN!';
+        ratingColor = '#45B7D1';
+      } else if (this.height >= 5) {
+        rating = '💪 KEEP GOING!';
+        ratingColor = '#96CEB4';
+      }
+
+      ctx.fillStyle = ratingColor;
+      ctx.font = 'bold 28px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(rating, CANVAS_WIDTH / 2, 520);
+    }
+
+    // Continue prompt
+    if (this.statsTimer > 1.5) {
+      const blinkAlpha = 0.5 + 0.5 * Math.sin(this.statsTimer * 4);
+      ctx.globalAlpha = blinkAlpha;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '16px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Tap or press SPACE to continue...', CANVAS_WIDTH / 2, 570);
+    }
+
+    ctx.restore();
   }
 
   private drawStar(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string): void {
@@ -1340,42 +1671,74 @@ export class TowerBuilderGame extends BaseGame {
 
   private renderGameOver(ctx: CanvasRenderingContext2D): void {
     // Fade overlay
-    const alpha = Math.min(0.8, this.gameOverTimer * 2);
+    const alpha = Math.min(0.9, this.gameOverTimer * 3);
     ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
-    if (this.gameOverTimer < 0.5) return;
+    if (this.gameOverTimer < 0.2) return;
 
-    const slideIn = Math.min(1, (this.gameOverTimer - 0.5) * 3);
+    const slideIn = Math.min(1, (this.gameOverTimer - 0.2) * 4);
+    const easeOut = 1 - Math.pow(1 - slideIn, 3);
 
     ctx.save();
-    ctx.translate(0, (1 - slideIn) * -50);
-    ctx.globalAlpha = slideIn;
+    ctx.translate(0, (1 - easeOut) * -30);
+    ctx.globalAlpha = easeOut;
 
-    // Game Over title
+    // Game Over title with impact
     ctx.fillStyle = '#FF6B6B';
-    ctx.font = 'bold 48px Arial';
+    ctx.font = 'bold 52px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, 180);
+    ctx.fillText('GAME OVER', CANVAS_WIDTH / 2, 200);
 
-    // Stats panel
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-    ctx.fillRect(CANVAS_WIDTH / 2 - 150, 220, 300, 200);
+    // Decorative line
+    ctx.strokeStyle = '#FF6B6B';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(CANVAS_WIDTH / 2 - 100, 220);
+    ctx.lineTo(CANVAS_WIDTH / 2 + 100, 220);
+    ctx.stroke();
 
+    // Final score panel
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.15)';
+    ctx.beginPath();
+    ctx.roundRect(CANVAS_WIDTH / 2 - 120, 260, 240, 140, 15);
+    ctx.fill();
+    ctx.strokeStyle = '#FFD700';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Final score
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = '24px Arial';
-    ctx.fillText(`Final Height: ${this.height}`, CANVAS_WIDTH / 2, 270);
-    ctx.fillText(`Score: ${this.score}`, CANVAS_WIDTH / 2, 310);
-    ctx.fillText(`Best Combo: ${this.maxPerfectStreak}x`, CANVAS_WIDTH / 2, 350);
-
+    ctx.font = '20px Arial';
+    ctx.fillText('FINAL SCORE', CANVAS_WIDTH / 2, 300);
+    
     ctx.fillStyle = '#FFD700';
-    ctx.fillText(`Coins: +${this.pickups}`, CANVAS_WIDTH / 2, 390);
+    ctx.font = 'bold 48px Arial';
+    ctx.fillText(`${this.score}`, CANVAS_WIDTH / 2, 355);
 
-    // Restart prompt
-    if (this.gameOverTimer > 1) {
-      ctx.fillStyle = '#AAAAAA';
-      ctx.font = '18px Arial';
-      ctx.fillText('Tap or Press SPACE to play again', CANVAS_WIDTH / 2, 480);
+    // Coins earned
+    const finalScore = this.getScore();
+    ctx.fillStyle = '#4ECDC4';
+    ctx.font = 'bold 24px Arial';
+    ctx.fillText(`💰 +${finalScore.coinsEarned} coins`, CANVAS_WIDTH / 2, 440);
+
+    // Play again prompt
+    if (this.gameOverTimer > 0.5) {
+      const pulseScale = 1 + 0.05 * Math.sin(this.gameOverTimer * 6);
+      ctx.save();
+      ctx.translate(CANVAS_WIDTH / 2, 520);
+      ctx.scale(pulseScale, pulseScale);
+      
+      // Button background
+      ctx.fillStyle = '#4ECDC4';
+      ctx.beginPath();
+      ctx.roundRect(-100, -25, 200, 50, 25);
+      ctx.fill();
+      
+      ctx.fillStyle = '#000000';
+      ctx.font = 'bold 20px Arial';
+      ctx.fillText('PLAY AGAIN', 0, 7);
+      ctx.restore();
     }
 
     ctx.restore();
