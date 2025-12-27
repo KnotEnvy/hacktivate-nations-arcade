@@ -8,12 +8,16 @@ export class Player {
 
   private isGrounded = true;
   private isJumping = false;
+  private isSliding = false;
+  private slideDuration = 0;
+  private slideMaxDuration = 0.4; // seconds
   private groundY: number;
   private worldWidth: number;
 
   private jumpsRemaining = 1;
   private maxJumps = 1;
   private lastJumpPressed = false;
+  private lastSlidePressed = false;
 
   private jumpPower = -11;
   private jumpHoldBoost = -0.6;
@@ -47,18 +51,36 @@ export class Player {
     inputPressed: boolean,
     hasDoubleJump: boolean = false,
     leftPressed: boolean = false,
-    rightPressed: boolean = false
+    rightPressed: boolean = false,
+    downPressed: boolean = false
   ): void {
     // Update max jumps based on power-up
     this.maxJumps = hasDoubleJump ? 2 : 1;
 
-    // Horizontal movement
-    this.velocity.x = 0;
-    if (leftPressed) this.velocity.x -= this.moveSpeed;
-    if (rightPressed) this.velocity.x += this.moveSpeed;
+    // Horizontal movement (disabled while sliding)
+    if (!this.isSliding) {
+      this.velocity.x = 0;
+      if (leftPressed) this.velocity.x -= this.moveSpeed;
+      if (rightPressed) this.velocity.x += this.moveSpeed;
+    }
 
-    // Handle jump start
-    if (inputPressed && !this.lastJumpPressed && this.jumpsRemaining > 0) {
+    // Handle slide start (only when grounded and not already sliding)
+    if (downPressed && !this.lastSlidePressed && this.isGrounded && !this.isSliding) {
+      this.startSlide();
+    }
+
+    // Update slide duration
+    if (this.isSliding) {
+      this.slideDuration += dt;
+      if (this.slideDuration >= this.slideMaxDuration || !downPressed) {
+        this.endSlide();
+      }
+    }
+
+    this.lastSlidePressed = downPressed;
+
+    // Handle jump start (can't jump while sliding)
+    if (inputPressed && !this.lastJumpPressed && this.jumpsRemaining > 0 && !this.isSliding) {
       this.jump();
     }
 
@@ -139,10 +161,10 @@ export class Player {
       this.jumpsRemaining--;
       this.isJumping = true;
       this.jumpHoldTime = 0;
-      
+
       // Stretch effect on jump
       this.squashStretch = 0.6; // More pronounced stretch
-      
+
       if (!this.isGrounded) {
         // Double jump effect - slightly weaker but still good
         this.velocity.y = this.jumpPower * 0.85;
@@ -152,21 +174,41 @@ export class Player {
     }
   }
 
+  startSlide(): void {
+    this.isSliding = true;
+    this.slideDuration = 0;
+    // Squash effect for slide
+    this.squashStretch = 1.3;
+  }
+
+  endSlide(): void {
+    this.isSliding = false;
+    this.slideDuration = 0;
+  }
+
   render(ctx: CanvasRenderingContext2D): void {
     // Render trail
     this.renderTrail(ctx);
-    
-    const bob = this.isGrounded ? Math.sin(this.runTime) * 1.5 : 0;
-    
+
+    const bob = this.isGrounded && !this.isSliding ? Math.sin(this.runTime) * 1.5 : 0;
+
     ctx.save();
     ctx.translate(this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + bob);
-    
-    // Apply squash and stretch
-    ctx.scale(this.squashStretch, 2 - this.squashStretch);
-    
-    // Slight rotation based on vertical velocity
-    ctx.rotate(this.velocity.y * 0.02);
-    
+
+    // Apply squash and stretch (more extreme when sliding)
+    if (this.isSliding) {
+      ctx.scale(1.5, 0.5);
+    } else {
+      ctx.scale(this.squashStretch, 2 - this.squashStretch);
+    }
+
+    // Slight rotation based on vertical velocity (or forward lean when sliding)
+    if (this.isSliding) {
+      ctx.rotate(0.1); // Forward lean
+    } else {
+      ctx.rotate(this.velocity.y * 0.02);
+    }
+
     ctx.translate(-this.size.x / 2, -this.size.y / 2);
 
     // Body with enhanced visuals
@@ -214,6 +256,19 @@ export class Player {
       ctx.globalAlpha = 1;
     }
 
+    // Slide dust effect
+    if (this.isSliding) {
+      ctx.fillStyle = '#A8A29E';
+      ctx.globalAlpha = 0.6;
+      // Dust trail behind player
+      for (let i = 0; i < 3; i++) {
+        const offset = i * 8;
+        const size = 4 - i;
+        ctx.fillRect(this.size.x + offset, this.size.y - 4, size, size);
+      }
+      ctx.globalAlpha = 1;
+    }
+
     ctx.restore();
   }
 
@@ -241,6 +296,15 @@ export class Player {
   }
 
   getBounds(): Rectangle {
+    // Smaller hitbox when sliding
+    if (this.isSliding) {
+      return new Rectangle(
+        this.position.x,
+        this.position.y + this.size.y / 2,
+        this.size.x,
+        this.size.y / 2
+      );
+    }
     return new Rectangle(this.position.x, this.position.y, this.size.x, this.size.y);
   }
 
@@ -250,5 +314,9 @@ export class Player {
 
   getJumpsRemaining(): number {
     return this.jumpsRemaining;
+  }
+
+  getIsSliding(): boolean {
+    return this.isSliding;
   }
 }
