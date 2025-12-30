@@ -5,6 +5,7 @@ export class ComboSystem {
   private comboTimeLimit: number = 3.5; // seconds
   private multiplier: number = 1;
   private maxCombo: number = 0;
+  private onResetCallback: (() => void) | null = null;
   
   addCoin(): number {
     this.combo++;
@@ -36,6 +37,13 @@ export class ComboSystem {
     this.combo = 0;
     this.multiplier = 1;
     this.comboTimer = 0;
+    if (this.onResetCallback) {
+      this.onResetCallback();
+    }
+  }
+
+  setOnResetCallback(callback: () => void): void {
+    this.onResetCallback = callback;
   }
   
   getCombo(): number {

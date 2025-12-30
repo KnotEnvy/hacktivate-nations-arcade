@@ -7,13 +7,16 @@ import { Coin } from './entities/Coin';
 import { PowerUp, PowerUpType } from './entities/PowerUp';
 import { FlyingEnemy } from './entities/FlyingEnemy';
 import { HoverEnemy } from './entities/HoverEnemy';
-import { Boss } from './entities/Boss';
+import { Boss, AttackType } from './entities/Boss';
 import { BossProjectile } from './entities/BossProjectile';
+import { GroundPound } from './entities/GroundPound';
 import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
+import { ComboFlash } from './systems/ComboFlash';
 import { EnvironmentSystem } from './systems/EnvironmentSystem';
 import { ParallaxSystem } from './systems/ParallaxSystem';
+import { PlayerAura } from './entities/PlayerAura';
 
 // Deterministic noise function for ground textures
 const pseudoNoise = (x: number, y: number): number => {
@@ -57,10 +60,13 @@ export class RunnerGame extends BaseGame {
   private hoverEnemies: HoverEnemy[] = [];
   private boss: Boss | null = null;
   private bossProjectiles: BossProjectile[] = [];
+  private groundPounds: GroundPound[] = [];
   private particles!: ParticleSystem;
   private screenShake!: ScreenShake;
   private comboSystem!: ComboSystem;
+  private comboFlash!: ComboFlash;
   private environmentSystem!: EnvironmentSystem;
+  private playerAura!: PlayerAura;
   
   private gameSpeed: number = 1;
   // Distance based spawning
@@ -89,8 +95,12 @@ export class RunnerGame extends BaseGame {
     currentStep: 0, // 0=jump, 1=slide, 2=coins, 3=complete
   };
 
-  // Boss system
-  private currentThemeIndex: number = 0;
+  // Boss and theme system (decoupled from distance)
+  private themeLevel: number = 0;              // Current theme index (0-4, cycles through 5 themes)
+  private bossDefeatedForTheme: boolean = false; // Prevents duplicate boss spawns in same theme
+  private themeProgress: number = 0;           // Progress within current theme (0 to THEME_DISTANCE)
+  private readonly THEME_DISTANCE: number = 2000;
+  private readonly BOSS_SPAWN_THRESHOLD: number = 1800;
   private bossesDefeated: number = 0;
   private bossVictoryTimer: number = 0;
   private bossVictoryDuration: number = 3; // seconds
@@ -136,7 +146,12 @@ export class RunnerGame extends BaseGame {
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
     this.comboSystem = new ComboSystem();
+    this.comboFlash = new ComboFlash();
     this.environmentSystem = new EnvironmentSystem();
+    this.playerAura = new PlayerAura();
+
+    // Connect combo flash to combo system
+    this.comboSystem.setOnResetCallback(() => this.comboFlash.resetMilestones());
     // Initialize the new parallax system
     this.parallaxSystem = new ParallaxSystem(
       this.canvas.width,
@@ -201,6 +216,8 @@ export class RunnerGame extends BaseGame {
     const hasDoubleJump = this.hasPowerUp('double-jump');
     this.player.update(dt, jumpPressed, hasDoubleJump, leftPressed, rightPressed, downPressed);
 
+    // Update player afterimages (for speed boost visual effect)
+    this.player.updateAfterimages(dt, this.hasPowerUp('speed-boost'));
 
     // Detect jump start by comparing jumps remaining
     const jumpsAfter = this.player.getJumpsRemaining();
@@ -251,13 +268,16 @@ export class RunnerGame extends BaseGame {
     }
     const effectiveSpeed = this.gameSpeed * speedMultiplier;
     const distanceIncrement = effectiveSpeed * dt * 100;
-    
+
+    // Update theme progress (separate from distance - for boss spawning)
+    this.themeProgress += distanceIncrement;
+
     // Update all entities
     this.updateEntities(dt, effectiveSpeed);
     this.updateSystems(dt);
-    
-    // Update environment
-    this.environmentSystem.updateTheme(this.distance);
+
+    // Update environment using themeLevel directly (NOT distance)
+    this.environmentSystem.setTheme(this.themeLevel);
     
     // Handle spawning
     this.handleSpawning();
@@ -299,10 +319,22 @@ export class RunnerGame extends BaseGame {
   private handlePlayerEffects(jumpStarted: boolean, landing: boolean, slideStarted: boolean = false): void {
     if (jumpStarted) {
       this.particles.createJumpDust(this.player.position.x, this.player.position.y);
+      // Impact ring on jump
+      this.particles.createImpactRing(
+        this.player.position.x + this.player.size.x / 2,
+        this.player.position.y + this.player.size.y,
+        'jump'
+      );
     }
 
     if (landing) {
       this.particles.createLandingDust(this.player.position.x, this.player.position.y);
+      // Impact ring on landing
+      this.particles.createImpactRing(
+        this.player.position.x + this.player.size.x / 2,
+        this.groundY,
+        'land'
+      );
       this.screenShake.shake(3, 0.1);
     }
 
@@ -351,23 +383,26 @@ export class RunnerGame extends BaseGame {
     if (this.boss) {
       this.boss.update(dt, gameSpeed);
 
-      // Boss attacks
-      if (this.boss.shouldAttack()) {
-        const attackPos = this.boss.getAttackPosition();
-        this.bossProjectiles.push(
-          new BossProjectile(attackPos.x, attackPos.y, this.groundY - 32)
-        );
-        this.services.audio.playSound('powerup');
+      // Process boss attack queue
+      const attacks = this.boss.consumeAttacks();
+      for (const attack of attacks) {
+        this.handleBossAttack(attack.type, attack.x, attack.y);
       }
 
       // Transition to boss victory when defeated
       if (this.boss.isDefeated() && this.boss.isOffScreen()) {
         this.bossesDefeated++;
-        this.pickups += 10; // Bonus coins
+        this.pickups += 15; // Bonus coins for defeating boss
+        this.bossDefeatedForTheme = true; // Mark boss as defeated for this theme
         this.gameState = 'boss-victory';
         this.bossVictoryTimer = 0;
+
+        // Spawn victory coins
+        this.spawnVictoryCoins();
+
         this.boss = null;
-        this.screenShake.shake(15, 0.5);
+        this.groundPounds = []; // Clear any remaining ground pounds
+        this.screenShake.shake(20, 0.6);
         this.services.audio.playSound('success');
       }
     }
@@ -375,12 +410,25 @@ export class RunnerGame extends BaseGame {
     // Update boss projectiles
     this.bossProjectiles.forEach(proj => proj.update(dt, gameSpeed));
     this.bossProjectiles = this.bossProjectiles.filter(proj => !proj.isOffScreen());
+
+    // Update ground pounds
+    this.groundPounds.forEach(gp => gp.update(dt));
+    this.groundPounds = this.groundPounds.filter(gp => !gp.isOffScreen());
   }
 
   private updateSystems(dt: number): void {
     this.particles.update(dt);
     this.screenShake.update(dt);
     this.comboSystem.update(dt);
+    this.comboFlash.update(dt);
+
+    // Update player aura based on game state
+    this.playerAura.update(dt, {
+      combo: this.comboSystem.getCombo(),
+      hasSpeedBoost: this.hasPowerUp('speed-boost'),
+      hasInvincibility: this.hasPowerUp('invincibility'),
+      gameSpeed: this.gameSpeed
+    });
 
     // Update active power-ups
     this.activePowerUps = this.activePowerUps.filter(powerUp => {
@@ -414,24 +462,19 @@ export class RunnerGame extends BaseGame {
     // Only spawn during playing state
     if (this.gameState !== 'playing' && this.gameState !== 'tutorial') return;
 
-    const THEME_DISTANCE = 2000;
-    const BOSS_TRIGGER_OFFSET = 1800; // Boss appears 200m before theme change
-
-    // Boss spawning before theme changes
-    const distanceInTheme = this.distance % THEME_DISTANCE;
-    if (distanceInTheme >= BOSS_TRIGGER_OFFSET && !this.boss && this.gameState === 'playing') {
-      const nextThemeDistance = Math.floor(this.distance / THEME_DISTANCE) * THEME_DISTANCE + THEME_DISTANCE;
-      // Only spawn if we haven't spawned for this theme yet
-      const currentTheme = Math.floor(this.distance / THEME_DISTANCE);
-      if (currentTheme > this.currentThemeIndex) {
-        this.currentThemeIndex = currentTheme;
-        this.spawnBoss();
-        // Clear obstacles and enemies for boss fight
-        this.obstacles = [];
-        this.flyingEnemies = [];
-        this.hoverEnemies = [];
-        return;
-      }
+    // Boss spawning: based on themeProgress, not distance
+    if (
+      !this.boss &&
+      !this.bossDefeatedForTheme &&
+      this.themeProgress >= this.BOSS_SPAWN_THRESHOLD &&
+      this.gameState === 'playing'
+    ) {
+      this.spawnBoss();
+      // Clear obstacles and enemies for boss fight
+      this.obstacles = [];
+      this.flyingEnemies = [];
+      this.hoverEnemies = [];
+      return;
     }
 
     // Special events (combo-based)
@@ -538,14 +581,20 @@ export class RunnerGame extends BaseGame {
       this.gameState = 'playing';
       this.bossVictoryTimer = 0;
 
-      // CHANGE THEME after boss defeat
-      // Force environment to update to next theme
-      const themes: any[] = ['day', 'sunset', 'night', 'desert', 'forest'];
-      const nextThemeIndex = (this.currentThemeIndex) % themes.length;
-      // Manually update distance to trigger theme change
-      const THEME_DISTANCE = 2000;
-      this.distance = nextThemeIndex * THEME_DISTANCE;
-      this.environmentSystem.updateTheme(this.distance);
+      // CLEAN THEME TRANSITION:
+      // 1. Advance to next theme level
+      this.themeLevel = (this.themeLevel + 1) % 5;
+
+      // 2. Reset theme progress (start fresh in new theme)
+      this.themeProgress = 0;
+
+      // 3. Reset boss-defeated flag for new theme
+      this.bossDefeatedForTheme = false;
+
+      // 4. Update environment to new theme
+      this.environmentSystem.setTheme(this.themeLevel);
+
+      // NOTE: distance is NOT touched - it continues as pure progress metric
     }
   }
 
@@ -650,6 +699,7 @@ export class RunnerGame extends BaseGame {
       this.boss.render(ctx);
     }
     this.bossProjectiles.forEach(proj => proj.render(ctx));
+    this.groundPounds.forEach(gp => gp.render(ctx));
 
     // Apply death animation scale
     if (this.gameState === 'death-animation') {
@@ -685,12 +735,24 @@ export class RunnerGame extends BaseGame {
         ctx.shadowBlur = 10;
       }
 
+      // Render player aura (behind player)
+      this.playerAura.render(
+        ctx,
+        this.player.position.x,
+        this.player.position.y,
+        this.player.size.x,
+        this.player.size.y
+      );
+
       this.player.render(ctx);
       ctx.globalAlpha = 1;
       ctx.shadowBlur = 0;
     }
 
     this.particles.render(ctx);
+
+    // Render combo flash overlay (on top of everything in game layer)
+    this.comboFlash.render(ctx, this.canvas.width, this.canvas.height);
 
     ctx.restore();
   }
@@ -907,40 +969,76 @@ export class RunnerGame extends BaseGame {
 
     // Boss fight indicator
     if (this.boss && !this.boss.isDefeated()) {
-      ctx.fillStyle = '#DC2626';
-      ctx.font = 'bold 24px Arial';
+      const bossConfig = this.boss.getConfig();
+      const bossName = this.boss.getBossName();
+      const bossNum = this.boss.getBossNumber();
+
+      // Boss name with glow
+      ctx.save();
+      ctx.shadowColor = bossConfig.glowColor;
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = bossConfig.glowColor;
+      ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText('BOSS FIGHT!', this.canvas.width / 2, 40);
+      ctx.fillText(`#${bossNum} ${bossName.toUpperCase()}`, this.canvas.width / 2, 35);
+      ctx.restore();
 
       // Boss health bar
-      const barWidth = 200;
-      const barHeight = 12;
+      const barWidth = 250;
+      const barHeight = 14;
       const barX = this.canvas.width / 2 - barWidth / 2;
-      const barY = 50;
+      const barY = 48;
       const healthPercent = this.boss.health / this.boss.maxHealth;
+
+      // Background
+      ctx.fillStyle = '#1F2937';
+      ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
 
       ctx.fillStyle = '#374151';
       ctx.fillRect(barX, barY, barWidth, barHeight);
 
-      ctx.fillStyle = '#EF4444';
+      // Health gradient
+      const healthGradient = ctx.createLinearGradient(barX, barY, barX + barWidth * healthPercent, barY);
+      if (healthPercent > 0.3) {
+        healthGradient.addColorStop(0, bossConfig.primaryColor);
+        healthGradient.addColorStop(1, bossConfig.secondaryColor);
+      } else {
+        // Rage mode - pulsing red
+        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+        healthGradient.addColorStop(0, `rgba(239, 68, 68, ${pulse})`);
+        healthGradient.addColorStop(1, '#DC2626');
+      }
+      ctx.fillStyle = healthGradient;
       ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
 
-      ctx.strokeStyle = '#1F2937';
+      // Border
+      ctx.strokeStyle = bossConfig.glowColor;
       ctx.lineWidth = 2;
       ctx.strokeRect(barX, barY, barWidth, barHeight);
 
+      // Health text
       ctx.fillStyle = '#FFFFFF';
-      ctx.font = '12px Arial';
-      ctx.fillText(`${this.boss.health}/${this.boss.maxHealth}`, this.canvas.width / 2, barY + barHeight + 15);
+      ctx.font = 'bold 11px Arial';
+      ctx.fillText(`${this.boss.health}/${this.boss.maxHealth}`, this.canvas.width / 2, barY + barHeight + 14);
+
+      // Phase indicator
+      const phase = this.boss.getPhase();
+      if (phase === 'rage') {
+        ctx.fillStyle = '#EF4444';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText('RAGE MODE', this.canvas.width / 2, barY + barHeight + 28);
+      } else if (phase === 'intro') {
+        ctx.fillStyle = '#FBBF24';
+        ctx.font = 'bold 12px Arial';
+        ctx.fillText('INCOMING...', this.canvas.width / 2, barY + barHeight + 28);
+      }
     }
 
-    // Next boss warning
-    if (!this.boss) {
-      const THEME_DISTANCE = 2000;
-      const distanceInTheme = this.distance % THEME_DISTANCE;
-      const distanceToNextBoss = THEME_DISTANCE - distanceInTheme - 200;
+    // Next boss warning (based on themeProgress, not distance)
+    if (!this.boss && !this.bossDefeatedForTheme) {
+      const distanceToNextBoss = this.BOSS_SPAWN_THRESHOLD - this.themeProgress;
 
-      if (distanceInTheme >= 1600 && distanceInTheme < 1800) {
+      if (this.themeProgress >= 1600 && this.themeProgress < this.BOSS_SPAWN_THRESHOLD) {
         ctx.fillStyle = '#FBBF24';
         ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'center';
@@ -948,12 +1046,18 @@ export class RunnerGame extends BaseGame {
       }
     }
 
-    // Combo display
+    // Combo display with scale effect on milestones
     if (this.comboSystem.getCombo() > 1) {
+      const comboScale = this.comboFlash.getTextScale();
+      ctx.save();
       ctx.fillStyle = '#F59E0B';
       ctx.font = 'bold 20px Arial';
       ctx.textAlign = 'right';
-      ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, this.canvas.width - 20, 100);
+      // Apply scale from center of text position
+      ctx.translate(this.canvas.width - 20, 100);
+      ctx.scale(comboScale, comboScale);
+      ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, 0, 0);
+      ctx.restore();
      
       // Combo timer bar
       const timeLeft = this.comboSystem.getTimeLeft();
@@ -1119,9 +1223,49 @@ export class RunnerGame extends BaseGame {
   }
 
   private spawnBoss(): void {
-    this.boss = new Boss(this.canvas.width + 100, this.groundY);
+    this.boss = new Boss(this.canvas.width + 100, this.groundY, this.themeLevel);
     this.screenShake.shake(20, 0.8);
     this.services.audio.playSound('unlock');
+
+    // Clear enemies for boss fight
+    this.flyingEnemies = [];
+    this.hoverEnemies = [];
+  }
+
+  private handleBossAttack(type: AttackType, x: number, y: number): void {
+    switch (type) {
+      case 'projectile':
+        this.bossProjectiles.push(
+          new BossProjectile(x, y, this.groundY - 32)
+        );
+        this.services.audio.playSound('powerup');
+        break;
+
+      case 'groundPound':
+        this.groundPounds.push(new GroundPound(x, this.groundY));
+        this.screenShake.shake(10, 0.3);
+        this.services.audio.playSound('hit');
+        break;
+
+      case 'summon':
+        // Spawn a hover enemy as minion
+        this.hoverEnemies.push(new HoverEnemy(x, y));
+        this.services.audio.playSound('powerup');
+        break;
+
+      // Charge is handled internally by Boss
+    }
+  }
+
+  private spawnVictoryCoins(): void {
+    // Rain down bonus coins after boss defeat
+    const coinCount = 8;
+    for (let i = 0; i < coinCount; i++) {
+      const x = 100 + Math.random() * (this.canvas.width - 200);
+      const y = 50 + Math.random() * 100;
+      const coin = new Coin(x, y);
+      this.coins.push(coin);
+    }
   }
 
   private spawnObstacle(offset: number = 50): void {
@@ -1227,6 +1371,14 @@ export class RunnerGame extends BaseGame {
           return;
         }
       }
+
+      // Check ground pound collisions (must jump to avoid)
+      for (const groundPound of this.groundPounds) {
+        if (playerBounds.intersects(groundPound.getBounds())) {
+          this.takeDamage();
+          return;
+        }
+      }
     }
 
     // Check boss collision (player can damage boss by jumping on it from above)
@@ -1237,13 +1389,19 @@ export class RunnerGame extends BaseGame {
         if (this.player.position.y + this.player.size.y < bossBounds.y + 20 && this.player.velocity.y > 0) {
           const defeated = this.boss.takeDamage(1);
           this.player.velocity.y = -8; // Bounce player up
+
+          // Impact ring on boss hit
+          this.particles.createImpactRing(
+            this.boss.position.x + this.boss.size.x / 2,
+            this.boss.position.y,
+            'boss'
+          );
+
           this.screenShake.shake(5, 0.15);
           this.services.audio.playSound('coin');
           this.pickups += 2; // Bonus coins for hitting boss
 
-          if (defeated) {
-            this.nextBossMilestone = Math.ceil(this.distance / 500) * 500 + 500;
-          }
+          // Boss defeat is now handled via bossDefeatedForTheme flag
         } else if (!isInvincible) {
           // Side collision = death
           this.services.audio.playSound('collision');
@@ -1267,6 +1425,16 @@ export class RunnerGame extends BaseGame {
           coin.position.x + coin.size/2,
           coin.position.y + coin.size/2
         );
+
+        // Impact ring on coin pickup
+        this.particles.createImpactRing(
+          coin.position.x + coin.size/2,
+          coin.position.y + coin.size/2,
+          'coin'
+        );
+
+        // Trigger combo flash on milestones
+        this.comboFlash.trigger(this.comboSystem.getCombo());
 
         // Screen shake for coin pickup
         this.screenShake.shake(2, 0.1);
@@ -1391,14 +1559,20 @@ export class RunnerGame extends BaseGame {
     this.hoverEnemies = [];
     this.boss = null;
     this.bossProjectiles = [];
+    this.groundPounds = [];
     this.activePowerUps = [];
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
     this.comboSystem?.resetAll?.();
+    this.comboFlash = new ComboFlash();
     this.environmentSystem = new EnvironmentSystem();
+    this.playerAura = new PlayerAura();
+    this.comboSystem.setOnResetCallback(() => this.comboFlash.resetMilestones());
     this.gameSpeed = 1;
     this.distance = 0;
-    this.currentThemeIndex = 0;
+    this.themeLevel = 0;
+    this.bossDefeatedForTheme = false;
+    this.themeProgress = 0;
     this.bossesDefeated = 0;
     this.bossVictoryTimer = 0;
     this.specialEventMeter = 0;

@@ -1,15 +1,26 @@
 // ===== src/games/runner/systems/ParticleSystem.ts (ENHANCED) =====
 import { Particle } from '../entities/Particle';
+import { ImpactRing, ImpactRingType } from '../entities/ImpactRing';
 
 export class ParticleSystem {
   private particles: Particle[] = [];
+  private impactRings: ImpactRing[] = [];
 
   update(dt: number): void {
     this.particles = this.particles.filter(particle => particle.update(dt));
+    this.impactRings = this.impactRings.filter(ring => ring.update(dt));
   }
 
   render(ctx: CanvasRenderingContext2D): void {
+    // Render rings first (behind particles)
+    this.impactRings.forEach(ring => ring.render(ctx));
     this.particles.forEach(particle => particle.render(ctx));
+  }
+
+  createImpactRing(x: number, y: number, type: ImpactRingType): void {
+    if (this.impactRings.length < 10) { // Performance limit
+      this.impactRings.push(new ImpactRing(x, y, type));
+    }
   }
 
   createCoinPickup(x: number, y: number): void {

@@ -38,6 +38,11 @@ export class Player {
   private trailPositions: Vector2[] = [];
   private maxTrailLength = 8;
 
+  // Afterimage effect (for speed boost)
+  private afterimages: {x: number, y: number, alpha: number, scale: number}[] = [];
+  private afterimageTimer: number = 0;
+  private afterimageInterval: number = 0.03; // Generate every 30ms
+
   constructor(x: number, y: number, groundY: number, worldWidth: number) {
     this.position = new Vector2(x, y);
     this.velocity = new Vector2(0, 0);
@@ -148,11 +153,67 @@ export class Player {
   private updateTrail(): void {
     // Add current position to trail
     this.trailPositions.unshift(this.position.clone());
-    
+
     // Limit trail length
     if (this.trailPositions.length > this.maxTrailLength) {
       this.trailPositions.pop();
     }
+  }
+
+  updateAfterimages(dt: number, hasSpeedBoost: boolean): void {
+    // Only generate during speed boost
+    if (hasSpeedBoost) {
+      this.afterimageTimer += dt;
+      if (this.afterimageTimer >= this.afterimageInterval) {
+        this.afterimageTimer = 0;
+        this.afterimages.unshift({
+          x: this.position.x,
+          y: this.position.y,
+          alpha: 0.6,
+          scale: 1
+        });
+
+        // Limit to 5 afterimages
+        if (this.afterimages.length > 5) {
+          this.afterimages.pop();
+        }
+      }
+    } else {
+      // Clear afterimages when speed boost ends
+      this.afterimages = [];
+      this.afterimageTimer = 0;
+    }
+
+    // Fade and shrink existing afterimages
+    this.afterimages = this.afterimages.filter(img => {
+      img.alpha -= dt * 2;
+      img.scale -= dt * 0.3;
+      return img.alpha > 0 && img.scale > 0.5;
+    });
+  }
+
+  private renderAfterimages(ctx: CanvasRenderingContext2D): void {
+    if (this.afterimages.length === 0) return;
+
+    ctx.save();
+
+    for (let i = this.afterimages.length - 1; i >= 0; i--) {
+      const img = this.afterimages[i];
+
+      ctx.save();
+      ctx.globalAlpha = img.alpha * 0.5;
+      ctx.translate(img.x + this.size.x / 2, img.y + this.size.y / 2);
+      ctx.scale(img.scale, img.scale);
+      ctx.translate(-this.size.x / 2, -this.size.y / 2);
+
+      // Simplified player shape (orange tint for speed boost)
+      ctx.fillStyle = `rgba(249, 115, 22, ${img.alpha})`;
+      ctx.fillRect(0, 0, this.size.x, this.size.y);
+
+      ctx.restore();
+    }
+
+    ctx.restore();
   }
 
   jump(): void {
@@ -187,6 +248,9 @@ export class Player {
   }
 
   render(ctx: CanvasRenderingContext2D): void {
+    // Render afterimages first (behind everything)
+    this.renderAfterimages(ctx);
+
     // Render trail
     this.renderTrail(ctx);
 

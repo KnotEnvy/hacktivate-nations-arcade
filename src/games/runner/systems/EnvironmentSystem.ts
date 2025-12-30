@@ -14,7 +14,14 @@ export class EnvironmentSystem {
     // Calculate transition progress within current theme
     this.transitionProgress = (distance % this.themeChangeDistance) / this.themeChangeDistance;
   }
-  
+
+  // Set theme directly by index (for decoupled theme progression)
+  setTheme(themeIndex: number): void {
+    const themes: EnvironmentTheme[] = ['day', 'sunset', 'night', 'desert', 'forest'];
+    this.currentTheme = themes[themeIndex % themes.length];
+    this.transitionProgress = 0;
+  }
+
   getCurrentTheme(): EnvironmentTheme {
     return this.currentTheme;
   }
