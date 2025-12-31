@@ -277,11 +277,42 @@ With visuals and bosses complete, focus on:
 - `death-animation` → `stats-recap` → game over
 
 **Key Thresholds:**
-- Boss spawns: 1800 theme progress
-- Boss warning: 1600-1800 theme progress
+- Boss spawns: 2800 theme progress
+- Boss warning: 2600-2800 theme progress
 - Rage mode: < 30% HP
 - Combo milestones: 5, 10, 15, 20, 25, 30
 
 ---
 
-**Boss Enhancement System: COMPLETE!**
+## Latest: Boss Particle Effects (COMPLETED)
+
+### New Particle Effects Added to `ParticleSystem.ts`
+
+| Effect | Trigger | Description |
+|--------|---------|-------------|
+| `createBossExplosion` | Boss defeat | Large themed burst (30 primary + 20 secondary + 15 glow + 10 white) |
+| `createBossHitEffect` | Player stomps boss | Small themed burst + white sparks |
+| `createBossRageEffect` | Boss in rage mode | Red pulsing particles around boss |
+| `createGroundPoundDust` | Ground pound attack | Dust cloud + debris chunks |
+| `createChargeTrail` | Boss charging | Trailing particles + speed lines |
+| `createProjectileTrail` | Projectile flying | Fire trail behind projectiles |
+| `createSummonEffect` | Summon attack | Purple magic ring + rising sparkles |
+
+### Integration Points in RunnerGame.ts
+
+- Boss charge → `createChargeTrail()` every frame
+- Boss rage → `createBossRageEffect()` at 30% chance per frame
+- Boss hit → `createBossHitEffect()` + impact ring
+- Boss defeat → `createBossExplosion()` + victory coins at death location
+- Ground pound → `createGroundPoundDust()` on attack
+- Summon → `createSummonEffect()` when minion spawns
+- Projectile → `createProjectileTrail()` at 50% chance per frame
+
+### Other Fixes
+- Victory coins now spawn in circular burst around boss death location
+- Boss spawn threshold increased to 2800m (was 1800m)
+- Warning appears at 2600m
+
+---
+
+**Boss System with Particles: COMPLETE!**

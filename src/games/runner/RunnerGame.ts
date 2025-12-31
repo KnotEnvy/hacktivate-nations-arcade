@@ -100,7 +100,7 @@ export class RunnerGame extends BaseGame {
   private bossDefeatedForTheme: boolean = false; // Prevents duplicate boss spawns in same theme
   private themeProgress: number = 0;           // Progress within current theme (0 to THEME_DISTANCE)
   private readonly THEME_DISTANCE: number = 2000;
-  private readonly BOSS_SPAWN_THRESHOLD: number = 1800;
+  private readonly BOSS_SPAWN_THRESHOLD: number = 2800;
   private bossesDefeated: number = 0;
   private bossVictoryTimer: number = 0;
   private bossVictoryDuration: number = 3; // seconds
@@ -383,6 +383,23 @@ export class RunnerGame extends BaseGame {
     if (this.boss) {
       this.boss.update(dt, gameSpeed);
 
+      // Boss charge trail particles
+      if (this.boss.isCharging()) {
+        this.particles.createChargeTrail(
+          this.boss.position.x + this.boss.size.x,
+          this.boss.position.y,
+          this.boss.getBossType()
+        );
+      }
+
+      // Boss rage particles
+      if (this.boss.getPhase() === 'rage' && Math.random() < 0.3) {
+        this.particles.createBossRageEffect(
+          this.boss.position.x + this.boss.size.x / 2,
+          this.boss.position.y + this.boss.size.y / 2
+        );
+      }
+
       // Process boss attack queue
       const attacks = this.boss.consumeAttacks();
       for (const attack of attacks) {
@@ -397,8 +414,13 @@ export class RunnerGame extends BaseGame {
         this.gameState = 'boss-victory';
         this.bossVictoryTimer = 0;
 
-        // Spawn victory coins
-        this.spawnVictoryCoins();
+        // Spawn victory coins at boss death location
+        const bossX = this.boss.position.x + this.boss.size.x / 2;
+        const bossY = this.boss.position.y + this.boss.size.y / 2;
+        this.spawnVictoryCoins(bossX, bossY);
+
+        // Boss explosion particles
+        this.particles.createBossExplosion(bossX, bossY, this.boss.getBossType());
 
         this.boss = null;
         this.groundPounds = []; // Clear any remaining ground pounds
@@ -408,7 +430,16 @@ export class RunnerGame extends BaseGame {
     }
 
     // Update boss projectiles
-    this.bossProjectiles.forEach(proj => proj.update(dt, gameSpeed));
+    this.bossProjectiles.forEach(proj => {
+      proj.update(dt, gameSpeed);
+      // Add fire trail particles
+      if (Math.random() < 0.5) {
+        this.particles.createProjectileTrail(
+          proj.position.x + proj.size.x,
+          proj.position.y + proj.size.y / 2
+        );
+      }
+    });
     this.bossProjectiles = this.bossProjectiles.filter(proj => !proj.isOffScreen());
 
     // Update ground pounds
@@ -1038,7 +1069,7 @@ export class RunnerGame extends BaseGame {
     if (!this.boss && !this.bossDefeatedForTheme) {
       const distanceToNextBoss = this.BOSS_SPAWN_THRESHOLD - this.themeProgress;
 
-      if (this.themeProgress >= 1600 && this.themeProgress < this.BOSS_SPAWN_THRESHOLD) {
+      if (this.themeProgress >= 2600 && this.themeProgress < this.BOSS_SPAWN_THRESHOLD) {
         ctx.fillStyle = '#FBBF24';
         ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'center';
@@ -1243,6 +1274,8 @@ export class RunnerGame extends BaseGame {
 
       case 'groundPound':
         this.groundPounds.push(new GroundPound(x, this.groundY));
+        // Ground pound dust effect
+        this.particles.createGroundPoundDust(x, this.groundY);
         this.screenShake.shake(10, 0.3);
         this.services.audio.playSound('hit');
         break;
@@ -1250,6 +1283,8 @@ export class RunnerGame extends BaseGame {
       case 'summon':
         // Spawn a hover enemy as minion
         this.hoverEnemies.push(new HoverEnemy(x, y));
+        // Summon effect particles
+        this.particles.createSummonEffect(x, y);
         this.services.audio.playSound('powerup');
         break;
 
@@ -1257,12 +1292,15 @@ export class RunnerGame extends BaseGame {
     }
   }
 
-  private spawnVictoryCoins(): void {
-    // Rain down bonus coins after boss defeat
+  private spawnVictoryCoins(bossX: number, bossY: number): void {
+    // Spawn bonus coins in a burst pattern around boss death location
     const coinCount = 8;
     for (let i = 0; i < coinCount; i++) {
-      const x = 100 + Math.random() * (this.canvas.width - 200);
-      const y = 50 + Math.random() * 100;
+      // Spread coins in a circular pattern around boss position
+      const angle = (i / coinCount) * Math.PI * 2;
+      const distance = 30 + Math.random() * 50;
+      const x = Math.max(20, Math.min(this.canvas.width - 20, bossX + Math.cos(angle) * distance));
+      const y = Math.max(50, Math.min(this.groundY - 50, bossY + Math.sin(angle) * distance));
       const coin = new Coin(x, y);
       this.coins.push(coin);
     }
@@ -1385,10 +1423,16 @@ export class RunnerGame extends BaseGame {
     if (this.boss && !this.boss.isDefeated()) {
       const bossBounds = this.boss.getBounds();
       if (playerBounds.intersects(bossBounds)) {
-        // If player is above boss and falling, damage boss
-        if (this.player.position.y + this.player.size.y < bossBounds.y + 20 && this.player.velocity.y > 0) {
+        // Stomp detection: player is falling AND player's center is above boss's top half
+        // This is more forgiving - allows stomping even when falling fast
+        const playerCenterY = this.player.position.y + this.player.size.y / 2;
+        const bossMidY = bossBounds.y + bossBounds.height / 2;
+        const isFalling = this.player.velocity.y > 0;
+        const isAboveBossCenter = playerCenterY < bossMidY;
+
+        if (isFalling && isAboveBossCenter) {
           const defeated = this.boss.takeDamage(1);
-          this.player.velocity.y = -8; // Bounce player up
+          this.player.velocity.y = -10; // Stronger bounce for better feel
 
           // Impact ring on boss hit
           this.particles.createImpactRing(
@@ -1397,16 +1441,21 @@ export class RunnerGame extends BaseGame {
             'boss'
           );
 
+          // Boss hit particles
+          this.particles.createBossHitEffect(
+            this.boss.position.x + this.boss.size.x / 2,
+            this.boss.position.y + this.boss.size.y / 2,
+            this.boss.getBossType()
+          );
+
           this.screenShake.shake(5, 0.15);
           this.services.audio.playSound('coin');
           this.pickups += 2; // Bonus coins for hitting boss
 
           // Boss defeat is now handled via bossDefeatedForTheme flag
         } else if (!isInvincible) {
-          // Side collision = death
-          this.services.audio.playSound('collision');
-          this.screenShake.shake(10, 0.3);
-          this.endGame();
+          // Side/bottom collision - use takeDamage to respect lives system
+          this.takeDamage();
           return;
         }
       }
