@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameModule } from '@/lib/types';
+import type { Json } from '@/lib/supabase.types';
 import { gameLoader } from '@/games/registry';
 import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService, Challenge } from '@/services/ChallengeService';
@@ -60,6 +61,9 @@ interface GameEndData {
   perfect_levels?: number;
   fast_completion?: number;
   levels_completed?: number;
+  cells_cleared?: number;
+  games_won?: number;
+  fast_win?: number;
   bricks_broken?: number;
   levels_cleared?: number;
   total_bricks_broken?: number;
@@ -83,8 +87,8 @@ export function ArcadeHub() {
   const [achievementService] = useState(new AchievementService());
   const [userService] = useState(new UserService());
   const [audioManager] = useState(new AudioManager());
-  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const challengeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncTimeoutRef = useRef<number | null>(null);
+  const challengeSyncTimeoutRef = useRef<number | null>(null);
   const isHydratingRef = useRef(false);
   const hasHydratedRef = useRef(false);
   const unlocksRef = useRef<{ tiers: number[]; games: string[] }>({
@@ -180,7 +184,7 @@ export function ArcadeHub() {
             lastActiveAt,
             unlockedTiers: nextUnlockedTiers,
             unlockedGames: nextUnlockedGames,
-            stats,
+            stats: stats as unknown as Json,
           },
           { accessToken }
         )
@@ -444,7 +448,7 @@ export function ArcadeHub() {
                   : null,
               unlockedTiers,
               unlockedGames,
-              stats: nextStats,
+              stats: nextStats as unknown as Json,
             },
             { accessToken }
           );

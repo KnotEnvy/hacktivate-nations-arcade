@@ -77,6 +77,35 @@ export class AchievementService {
     return newlyUnlocked;
   }
 
+  setUnlockedAchievements(unlocks: Array<{ id: string; unlockedAt?: Date | string | null }>): void {
+    const unlockedIds = unlocks.map(entry => entry.id);
+    this.unlockedAchievements = new Set(unlockedIds);
+
+    const unlockedAtMap = new Map(
+      unlocks.map(entry => [
+        entry.id,
+        entry.unlockedAt ? new Date(entry.unlockedAt) : undefined,
+      ])
+    );
+
+    this.achievements.forEach(achievement => {
+      if (this.unlockedAchievements.has(achievement.id)) {
+        achievement.unlocked = true;
+        achievement.unlockedAt = unlockedAtMap.get(achievement.id);
+      } else {
+        achievement.unlocked = false;
+        achievement.unlockedAt = undefined;
+      }
+    });
+
+    this.saveProgress();
+    this.notifyListeners();
+  }
+
+  getUnlockedAchievementIds(): string[] {
+    return Array.from(this.unlockedAchievements);
+  }
+
   // Enhanced stat tracking methods
   trackGameSpecificStat(gameId: string, statType: string, value: number): Achievement[] {
     return this.checkAchievement(statType, value, gameId);

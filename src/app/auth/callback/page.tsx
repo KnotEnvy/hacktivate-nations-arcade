@@ -8,6 +8,7 @@ export default function AuthCallbackPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [message, setMessage] = useState('Signing you in...');
+  const [status, setStatus] = useState<'pending' | 'success' | 'error'>('pending');
 
   useEffect(() => {
     const run = async () => {
@@ -39,10 +40,12 @@ export default function AuthCallbackPage() {
         }
 
         setMessage('Signed in! Redirecting...');
+        setStatus('success');
         setTimeout(() => router.push('/'), 800);
       } catch (err) {
         const text = err instanceof Error ? err.message : 'Unable to complete sign in.';
         setMessage(text);
+        setStatus('error');
       }
     };
 
@@ -54,6 +57,14 @@ export default function AuthCallbackPage() {
       <div className="bg-gray-900/80 border border-purple-700 rounded-xl px-6 py-8 shadow-xl">
         <h1 className="text-xl font-bold mb-2">Authenticating...</h1>
         <p className="text-sm text-gray-200">{message}</p>
+        {status === 'error' && (
+          <button
+            onClick={() => router.push('/')}
+            className="mt-4 w-full rounded-lg bg-white text-gray-900 font-semibold py-2 hover:bg-gray-100 transition-colors"
+          >
+            Return to Arcade
+          </button>
+        )}
       </div>
     </div>
   );

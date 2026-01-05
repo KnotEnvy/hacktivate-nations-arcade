@@ -10,7 +10,7 @@ interface AuthModalProps {
   onPasswordSignUp: (email: string, password: string, username?: string) => Promise<void>;
   loading: boolean;
   error?: string | null;
-  emailSent?: boolean;
+  emailSentMode?: 'magic' | 'signup' | null;
 }
 
 export function AuthModal({
@@ -21,7 +21,7 @@ export function AuthModal({
   onPasswordSignUp,
   loading,
   error,
-  emailSent,
+  emailSentMode,
 }: AuthModalProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -74,7 +74,7 @@ export function AuthModal({
             className="text-gray-300 hover:text-white rounded-full p-2 transition-colors"
             aria-label="Close sign in"
           >
-            ✕
+            X
           </button>
         </div>
 
@@ -121,6 +121,8 @@ export function AuthModal({
               type="email"
               value={email}
               onChange={event => setEmail(event.target.value)}
+              autoComplete="email"
+              autoCapitalize="none"
               className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
               placeholder="you@example.com"
               required
@@ -134,8 +136,9 @@ export function AuthModal({
                   type="password"
                   value={password}
                   onChange={event => setPassword(event.target.value)}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                   className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  placeholder="••••••••"
+                  placeholder="Enter password"
                   required
                 />
               </label>
@@ -147,8 +150,9 @@ export function AuthModal({
                       type="password"
                       value={confirmPassword}
                       onChange={event => setConfirmPassword(event.target.value)}
+                      autoComplete="new-password"
                       className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                      placeholder="••••••••"
+                      placeholder="Confirm password"
                       required
                     />
                   </label>
@@ -158,6 +162,7 @@ export function AuthModal({
                       type="text"
                       value={username}
                       onChange={event => setUsername(event.target.value)}
+                      autoComplete="username"
                       className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       placeholder="ArcadeHero"
                     />
@@ -181,9 +186,14 @@ export function AuthModal({
           </button>
         </form>
 
-        {emailSent && (
+        {emailSentMode === 'magic' && (
           <div className="rounded-lg bg-green-900/60 border border-green-700 px-3 py-2 text-green-200 text-sm">
             Magic link sent! Check your email to complete sign in.
+          </div>
+        )}
+        {emailSentMode === 'signup' && (
+          <div className="rounded-lg bg-green-900/60 border border-green-700 px-3 py-2 text-green-200 text-sm">
+            Account created. Check your email to confirm and finish setup.
           </div>
         )}
         {(localError || error) && (
@@ -199,3 +209,4 @@ export function AuthModal({
     </div>
   );
 }
+

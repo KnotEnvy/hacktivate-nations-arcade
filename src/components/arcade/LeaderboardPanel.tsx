@@ -5,7 +5,7 @@ import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import type { Database } from '@/lib/supabase.types';
 import { AVAILABLE_GAMES } from '@/data/Games';
 
-type LeaderboardRow = Database['public']['Tables']['leaderboards_view']['Row'];
+type LeaderboardRow = Database['public']['Views']['leaderboards_view']['Row'];
 type Period = Database['public']['Enums']['leaderboard_period'];
 
 interface LeaderboardPanelProps {

@@ -7,13 +7,14 @@ import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
+type EmailSentMode = 'magic' | 'signup' | null;
 
 interface UseSupabaseAuthState {
   session: Session | null;
   profile: ProfileRow | null;
   loading: boolean;
   error: string | null;
-  emailSent: boolean;
+  emailSentMode: EmailSentMode;
   authDisabled: boolean;
   signInWithEmail: (email: string) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
@@ -27,15 +28,17 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [emailSent, setEmailSent] = useState(false);
+  const [emailSentMode, setEmailSentMode] = useState<EmailSentMode>(null);
   const [authDisabled, setAuthDisabled] = useState(false);
   const supabaseRef = useRef<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
   const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
+  const activeUserIdRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(
     async (userId: string, fallbackName?: string, accessToken?: string) => {
       const service = arcadeServiceRef.current;
       if (!supabaseRef.current || !service) return;
+      const isActiveUser = () => activeUserIdRef.current === userId;
       setError(null);
 
       const { data, error: fetchError } = await supabaseRef.current
@@ -43,6 +46,8 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         .select('*')
         .eq('id', userId)
         .single();
+
+      if (!isActiveUser()) return;
 
       // If not found, create a profile with basic defaults
       if (fetchError && fetchError.code !== 'PGRST116') {
@@ -62,8 +67,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           id: userId,
           username,
         }, accessToken ? { accessToken } : undefined);
+        if (!isActiveUser()) return;
         setProfile(created);
       } catch (err) {
+        if (!isActiveUser()) return;
         setError(err instanceof Error ? err.message : 'Failed to create profile');
       }
     },
@@ -72,6 +79,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
 
   useEffect(() => {
     let mounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
     const initClient = async () => {
       if (typeof window === 'undefined') return;
       try {
@@ -83,6 +91,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
 
         const syncProfile = (nextSession: Session) => {
           const user = nextSession.user;
+          activeUserIdRef.current = user.id;
           const fallback =
             user.user_metadata?.preferred_username ||
             user.email?.split('@')[0] ||
@@ -94,25 +103,26 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         if (!mounted) return;
         if (sessionError) setError(sessionError.message);
         setSession(data.session);
+        activeUserIdRef.current = data.session?.user?.id ?? null;
         setLoading(false);
         if (data.session?.user) {
           syncProfile(data.session);
         }
 
         const {
-          data: { subscription },
+          data: authState,
         } = supabase.auth.onAuthStateChange((_event, nextSession) => {
           if (!mounted) return;
           setSession(nextSession);
-          setEmailSent(false);
+          setEmailSentMode(null);
           if (nextSession) {
             syncProfile(nextSession);
           } else {
+            activeUserIdRef.current = null;
             setProfile(null);
           }
         });
-
-        return () => subscription.unsubscribe();
+        subscription = authState.subscription;
       } catch (err) {
         if (!mounted) return;
         const message = err instanceof Error ? err.message : 'Supabase unavailable';
@@ -125,6 +135,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     void initClient();
     return () => {
       mounted = false;
+      if (subscription) {
+        subscription.unsubscribe();
+        subscription = null;
+      }
     };
   }, [loadProfile]);
 
@@ -136,7 +150,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       }
       setLoading(true);
       setError(null);
-      setEmailSent(false);
+      setEmailSentMode(null);
       const { error: signInError } = await supabaseRef.current.auth.signInWithOtp({
         email,
         options: {
@@ -151,7 +165,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setLoading(false);
         return;
       }
-      setEmailSent(true);
+      setEmailSentMode('magic');
       setLoading(false);
     },
     []
@@ -163,6 +177,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setError('Supabase not configured');
         return;
       }
+      setEmailSentMode(null);
       setLoading(true);
       setError(null);
       const { data, error: signInError } = await supabaseRef.current.auth.signInWithPassword({
@@ -174,6 +189,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         } else {
           setSession(data.session);
           if (data.session?.user) {
+            activeUserIdRef.current = data.session.user.id;
             const fallback =
               data.session.user.user_metadata?.preferred_username ||
               data.session.user.email?.split('@')[0];
@@ -191,6 +207,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setError('Supabase not configured');
         return;
       }
+      setEmailSentMode(null);
       setLoading(true);
       setError(null);
       const { data, error: signUpError } = await supabaseRef.current.auth.signUp({
@@ -207,8 +224,11 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         if (signUpError) {
           setError(signUpError.message);
         } else {
-          setEmailSent(true);
+          if (!data.session) {
+            setEmailSentMode('signup');
+          }
           if (data.session?.user) {
+            activeUserIdRef.current = data.session.user.id;
             const fallback =
               data.session.user.user_metadata?.preferred_username ||
               data.session.user.email?.split('@')[0];
@@ -224,8 +244,10 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     if (!supabaseRef.current) return;
     setError(null);
     await supabaseRef.current.auth.signOut();
+    activeUserIdRef.current = null;
     setSession(null);
     setProfile(null);
+    setEmailSentMode(null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -239,7 +261,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     profile,
     loading,
     error,
-    emailSent,
+    emailSentMode,
     authDisabled,
     signInWithEmail,
     signInWithPassword,

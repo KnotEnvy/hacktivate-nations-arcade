@@ -36,6 +36,12 @@ export class CurrencyService {
     return this.currentCoins;
   }
 
+  setBalance(amount: number): void {
+    this.currentCoins = amount;
+    this.saveToStorage();
+    this.notifyListeners();
+  }
+
   getBonusMultiplier(): number {
     return this.bonusMultiplier;
   }

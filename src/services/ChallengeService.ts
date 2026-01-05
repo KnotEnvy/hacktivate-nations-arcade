@@ -50,12 +50,12 @@ export class ChallengeService {
 
   generateDailyChallenges(): void {
     const now = new Date();
-    const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+    const tomorrowUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1));
+    const todayKey = now.toISOString().slice(0, 10);
     
     // Check if we already have today's challenges
-    const today = now.toDateString();
     const hasTodaysChallenges = this.challenges.some(c => 
-      c.type === 'daily' && c.expiresAt.toDateString() === tomorrow.toDateString()
+      c.type === 'daily' && c.expiresAt.toISOString().slice(0, 10) === tomorrowUtc.toISOString().slice(0, 10)
     );
 
     if (hasTodaysChallenges) return;
@@ -66,17 +66,17 @@ export class ChallengeService {
     // Generate 3 new daily challenges
     const challengeTemplates = [
       // Runner-specific challenges
-      { title: 'Speed Demon', description: 'Reach 2x speed in Endless Runner', gameId: 'runner', target: 1, reward: 200 },
-      { title: 'Coin Collector', description: 'Collect 50 coins in a single run', gameId: 'runner', target: 50, reward: 300 },
-      { title: 'Marathon Runner', description: 'Run 1000 meters in Endless Runner', gameId: 'runner', target: 1000, reward: 400 },
-      { title: 'Power Player', description: 'Use 3 power-ups in one run', gameId: 'runner', target: 3, reward: 250 },
-      { title: 'Combo Master', description: 'Achieve a 10x coin combo', gameId: 'runner', target: 10, reward: 350 },
+      { id: 'runner_speed_demon', title: 'Speed Demon', description: 'Reach 2x speed in Endless Runner', gameId: 'runner', target: 1, reward: 200 },
+      { id: 'runner_coin_collector', title: 'Coin Collector', description: 'Collect 50 coins in a single run', gameId: 'runner', target: 50, reward: 300 },
+      { id: 'runner_marathon', title: 'Marathon Runner', description: 'Run 1000 meters in Endless Runner', gameId: 'runner', target: 1000, reward: 400 },
+      { id: 'runner_power_player', title: 'Power Player', description: 'Use 3 power-ups in one run', gameId: 'runner', target: 3, reward: 250 },
+      { id: 'runner_combo_master', title: 'Combo Master', description: 'Achieve a 10x coin combo', gameId: 'runner', target: 10, reward: 350 },
       
       // Cross-game challenges
-      { title: 'Daily Grind', description: 'Play any game 3 times', target: 3, reward: 150 },
-      { title: 'Coin Hunter', description: 'Earn 500 coins from any source', target: 500, reward: 100 },
-      { title: 'High Scorer', description: 'Score 5000 points in any game', target: 5000, reward: 200 },
-      { title: 'Persistent Player', description: 'Play for 10 minutes total', target: 600, reward: 180 }, // 10 minutes in seconds
+      { id: 'cross_daily_grind', title: 'Daily Grind', description: 'Play any game 3 times', target: 3, reward: 150 },
+      { id: 'cross_coin_hunter', title: 'Coin Hunter', description: 'Earn 500 coins from any source', target: 500, reward: 100 },
+      { id: 'cross_high_scorer', title: 'High Scorer', description: 'Score 5000 points in any game', target: 5000, reward: 200 },
+      { id: 'cross_persistent_player', title: 'Persistent Player', description: 'Play for 10 minutes total', target: 600, reward: 180 }, // 10 minutes in seconds
     ];
 
     // Randomly select 3 challenges
@@ -85,22 +85,28 @@ export class ChallengeService {
     
     while (selectedChallenges.length < 3 && usedTemplates.size < challengeTemplates.length) {
       const template = challengeTemplates[Math.floor(Math.random() * challengeTemplates.length)];
-      const templateKey = `${template.title}-${template.gameId || 'cross'}`;
+      const { id: templateId, ...templateData } = template;
       
-      if (!usedTemplates.has(templateKey)) {
-        usedTemplates.add(templateKey);
+      if (!usedTemplates.has(templateId)) {
+        usedTemplates.add(templateId);
         selectedChallenges.push({
-          id: `daily-${Date.now()}-${selectedChallenges.length}`,
-          ...template,
+          id: `daily-${todayKey}-${templateId}`,
+          ...templateData,
           type: 'daily' as const,
           progress: 0,
           completed: false,
-          expiresAt: tomorrow
+          expiresAt: tomorrowUtc
         });
       }
     }
 
     this.challenges.push(...selectedChallenges);
+    this.saveChallenges();
+    this.notifyListeners();
+  }
+
+  setChallenges(challenges: Challenge[]): void {
+    this.challenges = challenges;
     this.saveChallenges();
     this.notifyListeners();
   }

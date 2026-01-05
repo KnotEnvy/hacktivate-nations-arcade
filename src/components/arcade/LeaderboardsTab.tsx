@@ -8,7 +8,7 @@ import type { GameManifest } from '@/lib/types';
 import { formatNumber } from '@/lib/utils';
 import { isDefaultUnlockedGame, isTierUnlocked } from '@/lib/unlocks';
 
-type LeaderboardRow = Database['public']['Tables']['leaderboards_view']['Row'];
+type LeaderboardRow = Database['public']['Views']['leaderboards_view']['Row'];
 type Period = Database['public']['Enums']['leaderboard_period'];
 type DisplayRow = LeaderboardRow & { isPlaceholder?: boolean };
 
@@ -89,6 +89,23 @@ const buildPlaceholderRows = (gameId: string, period: Period): DisplayRow[] => {
   const seed = hashStringToSeed(`${gameId}:${period}:placeholders`);
   const rand = mulberry32(seed);
   const maxEntries = 25;
+  const now = new Date();
+  const toDateKey = (value: Date) => value.toISOString().slice(0, 10);
+  const weekStart = (() => {
+    const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const day = utc.getUTCDay();
+    const diff = (day + 6) % 7;
+    utc.setUTCDate(utc.getUTCDate() - diff);
+    return utc;
+  })();
+  const periodStart =
+    period === 'all_time'
+      ? '1970-01-01'
+      : period === 'daily'
+        ? toDateKey(now)
+        : period === 'weekly'
+          ? toDateKey(weekStart)
+          : toDateKey(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)));
 
   const baseMax =
     period === 'daily'
@@ -115,10 +132,11 @@ const buildPlaceholderRows = (gameId: string, period: Period): DisplayRow[] => {
       game_id: gameId,
       user_id: `npc-${seed}-${index}`,
       username: `${name}${suffix}`,
-      avatar_url: null,
+      avatar: null,
       score,
       rank: index + 1,
       period,
+      period_start: periodStart,
       created_at: null,
       isPlaceholder: true,
     });
@@ -487,15 +505,9 @@ export function LeaderboardsTab({
                         </div>
                       </div>
                       <div className="mt-3 flex items-center gap-3">
-                        {row.avatar_url ? (
-                          <div className="h-10 w-10 rounded-full overflow-hidden border border-white/10 bg-black/30">
-                            <img
-                              src={row.avatar_url}
-                              alt={row.username ?? 'Player'}
-                              className="h-full w-full object-cover"
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                            />
+                        {row.avatar ? (
+                          <div className="h-10 w-10 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-xl">
+                            {row.avatar}
                           </div>
                         ) : (
                           <div className="h-10 w-10 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-white font-bold">

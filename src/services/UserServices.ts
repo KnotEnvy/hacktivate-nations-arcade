@@ -226,6 +226,22 @@ export class UserService {
     localStorage.setItem('hacktivate-user-stats', JSON.stringify(this.stats));
   }
 
+  setProfile(profile: UserProfile, persist: boolean = true): void {
+    this.profile = { ...profile };
+    if (persist) {
+      this.saveUserData();
+    }
+    this.notifyListeners();
+  }
+
+  setStats(stats: UserStats, persist: boolean = true): void {
+    this.stats = { ...stats };
+    if (persist) {
+      this.saveUserData();
+    }
+    this.notifyListeners();
+  }
+
   updateProfile(updates: Partial<UserProfile>): void {
     this.profile = { ...this.profile, ...updates };
     this.profile.lastActiveAt = new Date();
