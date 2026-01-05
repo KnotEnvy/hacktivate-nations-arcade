@@ -1,3 +1,12 @@
+import {
+  ProceduralMusicEngine,
+  TRACK_DEFINITIONS,
+  GAME_TRACK_MAPPING,
+  getTracksForGame,
+  getHubTrack,
+  getAllTrackNames,
+} from './ProceduralMusicEngine';
+
 export type SoundName =
   | 'coin'
   | 'jump'
@@ -16,7 +25,43 @@ export type SoundName =
   | 'splash'
   | 'win'
   | 'laser';
-export type MusicName = 'hub_music' | 'game_music';
+
+// Legacy music names (still supported)
+export type LegacyMusicName = 'hub_music' | 'game_music';
+
+// Extended music names including all procedural tracks
+export type ExtendedMusicName =
+  | LegacyMusicName
+  // Hub variations
+  | 'hub_welcome'
+  | 'hub_ambient'
+  | 'hub_energetic'
+  // Action tracks
+  | 'action_intense'
+  | 'action_chase'
+  // Puzzle tracks
+  | 'puzzle_focus'
+  | 'puzzle_discovery'
+  // Arcade tracks
+  | 'arcade_retro'
+  | 'arcade_bounce'
+  // Casual tracks
+  | 'casual_chill'
+  | 'casual_playful'
+  // Epic tracks
+  | 'epic_heroic'
+  | 'epic_tension'
+  // Sports tracks
+  | 'sports_competitive'
+  | 'sports_victory'
+  // Rhythm tracks
+  | 'rhythm_beat'
+  | 'rhythm_groove'
+  // Space tracks
+  | 'space_exploration'
+  | 'space_battle';
+
+export type MusicName = LegacyMusicName | ExtendedMusicName;
 
 interface AudioOptions {
   volume?: number;
@@ -84,6 +129,16 @@ export class AudioManager {
   private reverbNode: ConvolverNode | null = null;
   private reverbGain: GainNode | null = null;
 
+  // New procedural music engine
+  private proceduralEngine: ProceduralMusicEngine | null = null;
+  private useProceduralEngine: boolean = true; // Toggle for new vs legacy system
+  private currentGameId: string | null = null;
+  private currentTrackVariant: 'primary' | 'secondary' = 'primary';
+
+  // Pause/resume state
+  private isPaused: boolean = false;
+  private pausedAt: number = 0;
+
   async init(): Promise<void> {
     let context: AudioContext | null = null;
     try {
@@ -115,6 +170,11 @@ export class AudioManager {
     this.masterGain.connect(this.context.destination);
     if (this.context.state === 'suspended') {
       await this.context.resume();
+    }
+
+    // Initialize the procedural music engine
+    if (this.context && this.masterGain) {
+      this.proceduralEngine = new ProceduralMusicEngine(this.context, this.masterGain);
     }
   }
 
@@ -806,6 +866,11 @@ export class AudioManager {
   stopMusic(fadeSeconds = 0): void {
     if (!this.context) return;
 
+    // Stop procedural engine if active
+    if (this.proceduralEngine && this.proceduralEngine.getIsPlaying()) {
+      this.proceduralEngine.stopTrack(fadeSeconds);
+    }
+
     // Clear the music loop
     if (this.musicIntervalId !== null) {
       clearInterval(this.musicIntervalId);
@@ -840,6 +905,7 @@ export class AudioManager {
 
     this.musicPlaying = false;
     this.currentMusicName = null;
+    this.currentGameId = null;
   }
 
   playMusic(name: MusicName, fadeSeconds = 0): void {
@@ -851,13 +917,375 @@ export class AudioManager {
 
     // Wait a bit for cleanup then start new music
     setTimeout(() => {
-      if (name === 'hub_music') {
+      // Check if this is a procedural track name
+      if (this.useProceduralEngine && this.proceduralEngine && TRACK_DEFINITIONS[name]) {
+        // Use new procedural engine for extended tracks
+        this.proceduralEngine.startTrack(name, fadeSeconds);
+        this.currentMusicName = name;
+        this.musicPlaying = true;
+      } else if (name === 'hub_music') {
+        // Legacy hub music
         this.startHubMusic(fadeSeconds);
-      } else {
+      } else if (name === 'game_music') {
+        // Legacy game music
         this.startGameMusic(fadeSeconds);
+      } else {
+        // Default to procedural engine if available
+        if (this.useProceduralEngine && this.proceduralEngine) {
+          this.proceduralEngine.startTrack('hub_welcome', fadeSeconds);
+          this.currentMusicName = 'hub_welcome';
+          this.musicPlaying = true;
+        } else {
+          this.startHubMusic(fadeSeconds);
+        }
       }
     }, 150);
   }
+
+  // ============= NEW PROCEDURAL MUSIC API =============
+
+  /**
+   * Play music for a specific game with automatic track selection
+   * Each game has 2 assigned tracks (primary and secondary)
+   */
+  playGameMusic(gameId: string, variant: 'primary' | 'secondary' = 'primary', fadeSeconds = 0.5): void {
+    if (!this.context || !this.masterGain) return;
+    if (this.muted) return;
+
+    this.currentGameId = gameId;
+    this.currentTrackVariant = variant;
+
+    const tracks = getTracksForGame(gameId);
+    const trackName = variant === 'primary' ?
+      Object.keys(TRACK_DEFINITIONS).find(k => TRACK_DEFINITIONS[k] === tracks.primary) || 'arcade_retro' :
+      Object.keys(TRACK_DEFINITIONS).find(k => TRACK_DEFINITIONS[k] === tracks.secondary) || 'arcade_bounce';
+
+    this.playMusic(trackName as MusicName, fadeSeconds);
+  }
+
+  /**
+   * Switch to the alternate track for the current game
+   */
+  switchGameTrack(): void {
+    if (!this.currentGameId) return;
+
+    const newVariant = this.currentTrackVariant === 'primary' ? 'secondary' : 'primary';
+    this.playGameMusic(this.currentGameId, newVariant, 0.3);
+  }
+
+  /**
+   * Play a random hub track variation
+   */
+  playRandomHubMusic(fadeSeconds = 0.5): void {
+    const hubTracks: MusicName[] = ['hub_welcome', 'hub_ambient', 'hub_energetic'];
+    const randomTrack = hubTracks[Math.floor(Math.random() * hubTracks.length)];
+    this.playMusic(randomTrack, fadeSeconds);
+  }
+
+  /**
+   * Set a seed for procedural generation (for reproducible music)
+   */
+  setMusicSeed(seed: number): void {
+    this.seed = seed;
+    if (this.proceduralEngine) {
+      this.proceduralEngine.setSeed(seed);
+    }
+  }
+
+  /**
+   * Get all available track names
+   */
+  getAvailableTracks(): string[] {
+    return getAllTrackNames();
+  }
+
+  /**
+   * Get the tracks assigned to a specific game
+   */
+  getGameTracks(gameId: string): { primary: string; secondary: string } {
+    return GAME_TRACK_MAPPING[gameId] || { primary: 'arcade_retro', secondary: 'arcade_bounce' };
+  }
+
+  /**
+   * Check if the procedural engine is active
+   */
+  isProceduralEngineActive(): boolean {
+    return this.useProceduralEngine && this.proceduralEngine !== null;
+  }
+
+  /**
+   * Toggle between procedural and legacy music systems
+   */
+  setUseProceduralEngine(use: boolean): void {
+    this.useProceduralEngine = use;
+  }
+
+  /**
+   * Get the currently playing track name
+   */
+  getCurrentTrackName(): string | null {
+    return this.currentMusicName;
+  }
+
+  /**
+   * Get detailed info about a track
+   */
+  getTrackInfo(trackName: string): {
+    name: string;
+    bpm: number;
+    mood: string;
+    scale: string;
+    intensity: number;
+  } | null {
+    const track = TRACK_DEFINITIONS[trackName];
+    if (!track) return null;
+    return {
+      name: track.name,
+      bpm: track.bpm,
+      mood: track.mood,
+      scale: track.scale,
+      intensity: track.intensity,
+    };
+  }
+
+  /**
+   * Get all tracks organized by category
+   */
+  getTracksByCategory(): Record<string, string[]> {
+    return {
+      'Hub/Menu': ['hub_welcome', 'hub_ambient', 'hub_energetic'],
+      'Action': ['action_intense', 'action_chase'],
+      'Puzzle': ['puzzle_focus', 'puzzle_discovery'],
+      'Arcade': ['arcade_retro', 'arcade_bounce'],
+      'Casual': ['casual_chill', 'casual_playful'],
+      'Epic': ['epic_heroic', 'epic_tension'],
+      'Sports': ['sports_competitive', 'sports_victory'],
+      'Rhythm': ['rhythm_beat', 'rhythm_groove'],
+      'Space': ['space_exploration', 'space_battle'],
+      'Legacy': ['hub_music', 'game_music'],
+    };
+  }
+
+  /**
+   * Play a track by name (for track browser)
+   */
+  playTrackByName(trackName: string, fadeSeconds = 0.5): void {
+    if (trackName === 'hub_music' || trackName === 'game_music') {
+      // Legacy tracks
+      this.setUseProceduralEngine(false);
+      this.playMusic(trackName as MusicName, fadeSeconds);
+    } else if (TRACK_DEFINITIONS[trackName]) {
+      // Procedural tracks
+      this.setUseProceduralEngine(true);
+      this.playMusic(trackName as MusicName, fadeSeconds);
+    }
+  }
+
+  /**
+   * Generate and play a custom track with given parameters
+   */
+  playCustomTrack(params: {
+    seed: number;
+    bpm?: number;
+    mood?: string;
+    intensity?: number;
+  }): void {
+    // Set the seed for reproducible generation
+    this.setMusicSeed(params.seed);
+
+    // Get target BPM and intensity
+    const targetBpm = params.bpm || 120;
+    const targetIntensity = params.intensity || 0.6;
+
+    // Track options by mood with their characteristics
+    const moodTrackOptions: Record<string, { tracks: string[]; bpmRange: [number, number]; intensityRange: [number, number] }> = {
+      'energetic': {
+        tracks: ['hub_energetic', 'sports_competitive', 'rhythm_beat'],
+        bpmRange: [115, 145],
+        intensityRange: [0.65, 0.85],
+      },
+      'chill': {
+        tracks: ['hub_ambient', 'casual_chill', 'space_exploration'],
+        bpmRange: [75, 100],
+        intensityRange: [0.3, 0.5],
+      },
+      'intense': {
+        tracks: ['action_intense', 'action_chase', 'space_battle'],
+        bpmRange: [140, 165],
+        intensityRange: [0.85, 0.95],
+      },
+      'focus': {
+        tracks: ['puzzle_focus', 'puzzle_discovery', 'casual_chill'],
+        bpmRange: [70, 95],
+        intensityRange: [0.35, 0.5],
+      },
+      'retro': {
+        tracks: ['arcade_retro', 'arcade_bounce', 'rhythm_groove'],
+        bpmRange: [115, 135],
+        intensityRange: [0.6, 0.75],
+      },
+      'mysterious': {
+        tracks: ['epic_tension', 'space_exploration', 'hub_ambient'],
+        bpmRange: [85, 105],
+        intensityRange: [0.5, 0.7],
+      },
+      'epic': {
+        tracks: ['epic_heroic', 'sports_victory', 'sports_competitive'],
+        bpmRange: [115, 140],
+        intensityRange: [0.7, 0.85],
+      },
+      'playful': {
+        tracks: ['casual_playful', 'puzzle_discovery', 'arcade_bounce'],
+        bpmRange: [95, 125],
+        intensityRange: [0.45, 0.65],
+      },
+    };
+
+    // Get options for mood or default to energetic
+    const options = moodTrackOptions[params.mood || 'energetic'] || moodTrackOptions['energetic'];
+
+    // Select track based on BPM and intensity preferences
+    // Use seeded random to pick from available tracks for that mood
+    const trackIndex = Math.abs(params.seed) % options.tracks.length;
+    let baseTrack = options.tracks[trackIndex];
+
+    // If target BPM is very different from mood's typical range, adjust selection
+    if (targetBpm < options.bpmRange[0] - 20) {
+      // User wants slower, try to find a chiller option
+      const slowOptions = moodTrackOptions['chill'] || moodTrackOptions['focus'];
+      baseTrack = slowOptions.tracks[trackIndex % slowOptions.tracks.length];
+    } else if (targetBpm > options.bpmRange[1] + 20) {
+      // User wants faster, try to find an intense option
+      const fastOptions = moodTrackOptions['intense'] || moodTrackOptions['energetic'];
+      baseTrack = fastOptions.tracks[trackIndex % fastOptions.tracks.length];
+    }
+
+    // Adjust based on intensity preference
+    if (targetIntensity > 0.8 && params.mood !== 'intense') {
+      // User wants high intensity, consider action tracks
+      const intenseOptions = moodTrackOptions['intense'];
+      if (Math.random() > 0.5) {
+        baseTrack = intenseOptions.tracks[trackIndex % intenseOptions.tracks.length];
+      }
+    } else if (targetIntensity < 0.4 && params.mood !== 'chill') {
+      // User wants low intensity, consider ambient tracks
+      const chillOptions = moodTrackOptions['chill'];
+      if (Math.random() > 0.5) {
+        baseTrack = chillOptions.tracks[trackIndex % chillOptions.tracks.length];
+      }
+    }
+
+    this.playTrackByName(baseTrack, 0.3);
+  }
+
+  /**
+   * Get the current seed
+   */
+  getCurrentSeed(): number {
+    return this.seed;
+  }
+
+  /**
+   * Pause currently playing music
+   */
+  pauseMusic(): void {
+    if (!this.context || this.isPaused || !this.musicPlaying) return;
+
+    this.isPaused = true;
+    this.pausedAt = this.context.currentTime;
+
+    // Pause the procedural engine if active
+    if (this.proceduralEngine && this.proceduralEngine.getIsPlaying()) {
+      this.proceduralEngine.pause();
+    }
+
+    // Pause legacy music loop
+    if (this.musicIntervalId !== null) {
+      clearInterval(this.musicIntervalId);
+      this.musicIntervalId = null;
+    }
+
+    // Fade out music gain quickly
+    if (this.musicGainNode) {
+      const now = this.context.currentTime;
+      this.musicGainNode.gain.setValueAtTime(this.musicGainNode.gain.value, now);
+      this.musicGainNode.gain.linearRampToValueAtTime(0.0001, now + 0.1);
+    }
+  }
+
+  /**
+   * Resume paused music
+   */
+  resumeMusic(): void {
+    if (!this.context || !this.isPaused) return;
+
+    this.isPaused = false;
+
+    // Resume the procedural engine if it was playing
+    if (this.proceduralEngine) {
+      this.proceduralEngine.resume();
+    }
+
+    // Restore music gain
+    if (this.musicGainNode) {
+      const now = this.context.currentTime;
+      const targetVolume = this.masterVolume * this.musicVolume * 0.6;
+      this.musicGainNode.gain.setValueAtTime(0.0001, now);
+      this.musicGainNode.gain.exponentialRampToValueAtTime(
+        Math.max(targetVolume, 0.0001),
+        now + 0.2
+      );
+    }
+
+    // Restart legacy music loop if needed
+    if (this.currentMusicName === 'hub_music' || this.currentMusicName === 'game_music') {
+      const bpm = this.currentMusicName === 'hub_music' ? 110 : 140;
+      const beatDuration = 60000 / bpm;
+
+      this.musicIntervalId = window.setInterval(() => {
+        if (!this.musicPlaying || !this.context || this.isPaused) return;
+        if (this.currentMusicName === 'hub_music') {
+          this.playHubBeat();
+        } else {
+          this.playGameBeat();
+        }
+        this.beatIndex++;
+        if (this.beatIndex >= 4) {
+          this.beatIndex = 0;
+          this.barIndex = (this.barIndex + 1) % (this.currentMusicName === 'hub_music' ? 4 : 8);
+        }
+      }, beatDuration);
+    }
+  }
+
+  /**
+   * Toggle pause/resume
+   */
+  togglePause(): boolean {
+    if (this.isPaused) {
+      this.resumeMusic();
+    } else {
+      this.pauseMusic();
+    }
+    return this.isPaused;
+  }
+
+  /**
+   * Check if music is paused
+   */
+  isMusicPaused(): boolean {
+    return this.isPaused;
+  }
+
+  /**
+   * Check if music is currently playing (not paused)
+   */
+  isMusicPlaying(): boolean {
+    return this.musicPlaying && !this.isPaused;
+  }
+
+  // Internal seed storage
+  private seed: number = Date.now();
 
   // ============= HUB MUSIC - Chill Synthwave =============
   private startHubMusic(fadeSeconds: number): void {
@@ -1903,8 +2331,13 @@ export class AudioManager {
   setMusicVolume(volume: number): void {
     this.musicVolume = Math.max(0, Math.min(1, volume));
     this.saveSettings();
+    // Update legacy music system
     if (this.currentMusic && !this.muted) {
       this.currentMusic.gain.gain.value = this.masterVolume * this.musicVolume;
+    }
+    // Update new music system gain node
+    if (this.musicGainNode && !this.muted) {
+      this.musicGainNode.gain.value = this.masterVolume * this.musicVolume * 0.6;
     }
   }
 

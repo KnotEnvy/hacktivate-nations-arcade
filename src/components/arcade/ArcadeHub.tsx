@@ -1,13 +1,13 @@
 ﻿// ===== src/components/arcade/ArcadeHub.tsx =====
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameModule } from '@/lib/types';
 import { gameLoader } from '@/games/registry';
 import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService, Challenge } from '@/services/ChallengeService';
 import { AchievementService } from '@/services/AchievementService';
-import { UserService } from '@/services/UserServices';
+import { UserService, UserStats } from '@/services/UserServices';
 import { AudioManager } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
 import { ThemedGameCanvas } from './ThemedGameCanvas';
@@ -83,6 +83,14 @@ export function ArcadeHub() {
   const [achievementService] = useState(new AchievementService());
   const [userService] = useState(new UserService());
   const [audioManager] = useState(new AudioManager());
+  const syncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const challengeSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isHydratingRef = useRef(false);
+  const hasHydratedRef = useRef(false);
+  const unlocksRef = useRef<{ tiers: number[]; games: string[] }>({
+    tiers: unlockedTiers,
+    games: unlockedGames,
+  });
   
   // Notifications
   const [notifications, setNotifications] = useState<Array<{
@@ -117,13 +125,79 @@ export function ArcadeHub() {
     profile,
     loading: authLoading,
     error: authError,
-    emailSent,
+    emailSentMode,
     authDisabled,
     signInWithEmail,
     signInWithPassword,
     signUpWithPassword,
     signOut,
   } = useSupabaseAuth();
+
+  useEffect(() => {
+    if (session && showAuthModal) {
+      setShowAuthModal(false);
+    }
+  }, [session, showAuthModal]);
+
+  const schedulePlayerSync = useCallback((overrides?: { unlockedTiers?: number[]; unlockedGames?: string[] }) => {
+    if (!supabaseService || !session) return;
+    const accessToken = session.access_token;
+    if (!accessToken || isHydratingRef.current) return;
+
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    syncTimeoutRef.current = window.setTimeout(() => {
+      const profileData = userService.getProfile();
+      const stats = userService.getStats();
+      const lastActiveAt =
+        profileData.lastActiveAt && profileData.lastActiveAt.getTime() > 0
+          ? profileData.lastActiveAt.toISOString()
+          : null;
+      const nextUnlockedTiers = overrides?.unlockedTiers ?? unlocksRef.current.tiers;
+      const nextUnlockedGames = overrides?.unlockedGames ?? unlocksRef.current.games;
+
+      void supabaseService
+        .upsertProfile(
+          {
+            id: session.user.id,
+            username: profileData.username,
+            avatar: profileData.avatar,
+          },
+          { accessToken }
+        )
+        .catch(error => console.warn('Supabase profile sync failed:', error));
+
+      void supabaseService
+        .upsertPlayerState(
+          {
+            userId: session.user.id,
+            level: profileData.level,
+            experience: profileData.experience,
+            totalPlayTime: profileData.totalPlayTime,
+            gamesPlayed: stats.gamesPlayed,
+            lastActiveAt,
+            unlockedTiers: nextUnlockedTiers,
+            unlockedGames: nextUnlockedGames,
+            stats,
+          },
+          { accessToken }
+        )
+        .catch(error => console.warn('Supabase player state sync failed:', error));
+    }, 600);
+  }, [session, supabaseService, userService]);
+
+  useEffect(() => {
+    unlocksRef.current = { tiers: unlockedTiers, games: unlockedGames };
+  }, [unlockedGames, unlockedTiers]);
+
+  const saveUnlockState = useCallback((tiers: number[], games: string[]) => {
+    setUnlockedTiers(tiers);
+    setUnlockedGames(games);
+    localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
+    schedulePlayerSync({ unlockedTiers: tiers, unlockedGames: games });
+  }, [schedulePlayerSync]);
 
   useEffect(() => {
     currencyService.init();
@@ -133,9 +207,9 @@ export function ArcadeHub() {
     
     // Initialize audio manager
     audioManager.init().then(() => {
-      // Start hub music after a brief delay
+      // Start hub music after a brief delay (random variation for freshness)
       setTimeout(() => {
-        audioManager.playMusic('hub_music', 3.0);
+        audioManager.playRandomHubMusic(3.0);
       }, 1000);
     });
 
@@ -146,6 +220,10 @@ export function ArcadeHub() {
       const delta = newCoins - lastCoins;
       lastCoins = newCoins;
       setCurrentCoins(newCoins);
+
+      if (isHydratingRef.current) {
+        return;
+      }
 
       // Update user profile
       userService.updateProfile({ totalCoins: newCoins });
@@ -195,6 +273,50 @@ export function ArcadeHub() {
     return unsubscribe;
   }, [challengeService]);
 
+  useEffect(() => {
+    if (!supabaseService || !session) return;
+    const accessToken = session.access_token;
+    if (!accessToken) {
+      console.warn('Supabase challenge sync skipped: missing access token.');
+      return;
+    }
+
+    const unsubscribe = challengeService.onChallengesChanged((next) => {
+      if (isHydratingRef.current) return;
+      if (challengeSyncTimeoutRef.current) {
+        clearTimeout(challengeSyncTimeoutRef.current);
+      }
+      challengeSyncTimeoutRef.current = window.setTimeout(() => {
+        void supabaseService
+          .upsertChallenges(
+            next.map(challenge => ({
+              userId: session.user.id,
+              challengeId: challenge.id,
+              title: challenge.title,
+              description: challenge.description,
+              type: challenge.type,
+              gameId: challenge.gameId ?? null,
+              target: challenge.target,
+              progress: challenge.progress,
+              reward: challenge.reward,
+              completedAt: challenge.completed ? new Date().toISOString() : null,
+              expiresAt: challenge.expiresAt.toISOString(),
+            })),
+            { accessToken }
+          )
+          .catch(error => console.warn('Supabase challenge sync failed:', error));
+      }, 500);
+    });
+
+    return () => {
+      unsubscribe();
+      if (challengeSyncTimeoutRef.current) {
+        clearTimeout(challengeSyncTimeoutRef.current);
+        challengeSyncTimeoutRef.current = null;
+      }
+    };
+  }, [challengeService, session, supabaseService]);
+
   // Create Supabase service on the client when signed in.
   useEffect(() => {
     let mounted = true;
@@ -222,25 +344,236 @@ export function ArcadeHub() {
     };
   }, [session]);
 
-  // Keep Supabase profile in sync with the local profile.
+  useEffect(() => {
+    hasHydratedRef.current = false;
+  }, [session?.user.id]);
+
+  // Hydrate local services from Supabase when a session is available.
   useEffect(() => {
     if (!supabaseService || !session) return;
-    const profileData = userService.getProfile();
     const accessToken = session.access_token;
     if (!accessToken) {
-      console.warn('Supabase profile sync skipped: missing access token.');
+      console.warn('Supabase hydration skipped: missing access token.');
       return;
     }
-    void supabaseService
-      .upsertProfile({
-        id: session.user.id,
-        username: profileData.username,
-        avatarUrl: profileData.avatar,
-      }, {
-        accessToken,
-      })
-      .catch(error => console.warn('Supabase profile sync failed:', error));
-  }, [session, supabaseService, userService]);
+    if (hasHydratedRef.current) return;
+
+    let active = true;
+    const hydrate = async () => {
+      isHydratingRef.current = true;
+      try {
+        const userId = session.user.id;
+        const [
+          profileRow,
+          playerStateRow,
+          walletRow,
+          achievementRows,
+          challengeRows,
+        ] = await Promise.all([
+          supabaseService.fetchProfile(userId, { accessToken }),
+          supabaseService.fetchPlayerState(userId, { accessToken }),
+          supabaseService.fetchWallet(userId, { accessToken }),
+          supabaseService.fetchAchievements(userId, { accessToken }),
+          supabaseService.fetchChallenges(userId, { accessToken }),
+        ]);
+
+        if (!active) return;
+
+        const localProfile = userService.getProfile();
+        const localStats = userService.getStats();
+        let nextProfile = { ...localProfile };
+        let nextStats: UserStats = { ...localStats };
+
+        if (profileRow) {
+          nextProfile = {
+            ...nextProfile,
+            username: profileRow.username || nextProfile.username,
+            avatar: profileRow.avatar ?? nextProfile.avatar,
+            joinedAt: profileRow.created_at ? new Date(profileRow.created_at) : nextProfile.joinedAt,
+          };
+        } else {
+          await supabaseService.upsertProfile(
+            {
+              id: userId,
+              username: nextProfile.username,
+              avatar: nextProfile.avatar,
+            },
+            { accessToken }
+          );
+        }
+
+        if (playerStateRow) {
+          const statsPayload =
+            playerStateRow.stats && typeof playerStateRow.stats === 'object'
+              ? (playerStateRow.stats as Partial<UserStats>)
+              : {};
+
+          nextStats = {
+            ...nextStats,
+            ...statsPayload,
+            gamesPlayed: playerStateRow.games_played,
+          };
+
+          nextProfile = {
+            ...nextProfile,
+            level: playerStateRow.level,
+            experience: playerStateRow.experience,
+            totalPlayTime: playerStateRow.total_play_time,
+            gamesPlayed: playerStateRow.games_played,
+            lastActiveAt: playerStateRow.last_active_at
+              ? new Date(playerStateRow.last_active_at)
+              : nextProfile.lastActiveAt,
+          };
+
+          const tiers = Array.from(new Set([0, ...(playerStateRow.unlocked_tiers ?? [])]));
+          const games = Array.from(
+            new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...(playerStateRow.unlocked_games ?? [])])
+          );
+          saveUnlockState(tiers, games);
+        } else {
+          await supabaseService.upsertPlayerState(
+            {
+              userId,
+              level: nextProfile.level,
+              experience: nextProfile.experience,
+              totalPlayTime: nextProfile.totalPlayTime,
+              gamesPlayed: nextStats.gamesPlayed,
+              lastActiveAt:
+                nextProfile.lastActiveAt && nextProfile.lastActiveAt.getTime() > 0
+                  ? nextProfile.lastActiveAt.toISOString()
+                  : null,
+              unlockedTiers,
+              unlockedGames,
+              stats: nextStats,
+            },
+            { accessToken }
+          );
+        }
+
+        if (walletRow) {
+          currencyService.setBalance(walletRow.balance);
+          nextProfile = { ...nextProfile, totalCoins: walletRow.balance };
+        } else {
+          await supabaseService.upsertWallet(
+            {
+              userId,
+              balance: currencyService.getCurrentCoins(),
+              lifetimeEarned: nextStats.coinsEarned,
+            },
+            { accessToken }
+          );
+        }
+
+        if (achievementRows.length > 0) {
+          achievementService.setUnlockedAchievements(
+            achievementRows.map(row => ({
+              id: row.achievement_id,
+              unlockedAt: row.unlocked_at,
+            }))
+          );
+          nextStats = { ...nextStats, achievementsUnlocked: achievementRows.length };
+        } else {
+          const localAchievementIds = achievementService.getUnlockedAchievementIds();
+          if (localAchievementIds.length > 0) {
+            await Promise.all(
+              localAchievementIds.map(achievementId =>
+                supabaseService.upsertAchievement(
+                  {
+                    userId,
+                    achievementId,
+                  },
+                  { accessToken }
+                )
+              )
+            );
+          }
+        }
+
+        if (challengeRows.length > 0) {
+          const mapped = challengeRows.map(row => ({
+            id: row.challenge_id,
+            title: row.title,
+            description: row.description,
+            type: row.type,
+            gameId: row.game_id ?? undefined,
+            target: row.target,
+            progress: row.progress,
+            reward: row.reward,
+            completed: !!row.completed_at || row.progress >= row.target,
+            expiresAt: new Date(row.expires_at),
+          }));
+          challengeService.setChallenges(mapped);
+          nextStats = {
+            ...nextStats,
+            challengesCompleted: mapped.filter(challenge => challenge.completed).length,
+          };
+        } else {
+          const localChallenges = challengeService.getChallenges();
+          if (localChallenges.length > 0) {
+            await supabaseService.upsertChallenges(
+              localChallenges.map(challenge => ({
+                userId,
+                challengeId: challenge.id,
+                title: challenge.title,
+                description: challenge.description,
+                type: challenge.type,
+                gameId: challenge.gameId ?? null,
+                target: challenge.target,
+                progress: challenge.progress,
+                reward: challenge.reward,
+                completedAt: challenge.completed ? new Date().toISOString() : null,
+                expiresAt: challenge.expiresAt.toISOString(),
+              })),
+              { accessToken }
+            );
+          }
+        }
+
+        userService.setProfile(nextProfile);
+        userService.setStats(nextStats);
+      } catch (error) {
+        console.warn('Supabase hydration failed:', error);
+      } finally {
+        isHydratingRef.current = false;
+        hasHydratedRef.current = true;
+      }
+    };
+
+    void hydrate();
+    return () => {
+      active = false;
+    };
+  }, [
+    achievementService,
+    challengeService,
+    currencyService,
+    saveUnlockState,
+    session,
+    supabaseService,
+    userService,
+  ]);
+
+  // Keep Supabase profile + player state in sync with local data.
+  useEffect(() => {
+    if (!supabaseService || !session) return;
+    if (!session.access_token) {
+      console.warn('Supabase sync skipped: missing access token.');
+      return;
+    }
+
+    schedulePlayerSync();
+    const unsubscribe = userService.onUserDataChanged(() => {
+      schedulePlayerSync();
+    });
+
+    return () => {
+      unsubscribe();
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+    };
+  }, [schedulePlayerSync, session, supabaseService, userService]);
 
   // Push wallet updates when coins change.
   useEffect(() => {
@@ -251,6 +584,7 @@ export function ArcadeHub() {
       return;
     }
     const unsubscribe = currencyService.onCoinsChanged(balance => {
+      if (isHydratingRef.current) return;
       const stats = userService.getStats();
       void supabaseService
         .upsertWallet({
@@ -284,8 +618,8 @@ export function ArcadeHub() {
           ? Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...parsed.games]))
           : Array.from(DEFAULT_UNLOCKED_GAME_IDS);
 
-        setUnlockedTiers(tiers.includes(0) ? tiers : [0, ...tiers]);
-        setUnlockedGames(games);
+        const normalizedTiers = tiers.includes(0) ? tiers : [0, ...tiers];
+        saveUnlockState(normalizedTiers, games);
 
         const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
         if (paidUnlocked > 0) {
@@ -308,9 +642,7 @@ export function ArcadeHub() {
         const legacyGames = AVAILABLE_GAMES.filter(g => tiers.includes(g.tier)).map(g => g.id);
         const games = Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...legacyGames]));
 
-        setUnlockedTiers(tiers);
-        setUnlockedGames(games);
-        localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
+        saveUnlockState(tiers, games);
 
         const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
         if (paidUnlocked > 0) {
@@ -323,14 +655,7 @@ export function ArcadeHub() {
         console.warn('Failed to migrate unlock tiers:', error);
       }
     }
-  }, [achievementService]);
-
-  const saveUnlockState = (tiers: number[], games: string[]) => {
-    setUnlockedTiers(tiers);
-    setUnlockedGames(games);
-    localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
-  };
-
+  }, [achievementService, saveUnlockState]);
 
   const handleGameSelect = async (gameId: string) => {
     try {
@@ -341,9 +666,9 @@ export function ArcadeHub() {
         setCurrentGame(game);
         setSelectedGameId(gameId);
         setShowHub(false);
-        
-        // Transition to game music
-        audioManager.playMusic('game_music', 2.0);
+
+        // Transition to game-specific procedural music
+        audioManager.playGameMusic(gameId, 'primary', 2.0);
         
         // Track game start
         const gamesPlayed = userService.getStats().gamesPlayed + 1;
@@ -394,9 +719,9 @@ export function ArcadeHub() {
     setCurrentGame(null);
     setSelectedGameId(null);
     setActiveTab('games');
-    
-    // Return to hub music
-    audioManager.playMusic('hub_music', 2.0);
+
+    // Return to hub music (random variation)
+    audioManager.playRandomHubMusic(2.0);
   };
 
   const handleChallengeComplete = useCallback(
@@ -597,35 +922,38 @@ export function ArcadeHub() {
       userService.updateStats({ achievementsUnlocked: current + newlyUnlocked.length });
     }
 
-    // Persist session + wallet to Supabase when available (non-blocking).
-     if (supabaseService && session) {
-       const accessToken = session.access_token;
-       if (!accessToken) {
-         console.warn('Supabase session sync skipped: missing access token.');
-         return;
-       }
-       void supabaseService
-         .recordGameSession({
-           userId: session.user.id,
-           gameId: selectedGameId,
-           score: gameData.score || 0,
-           durationMs: gameData.timePlayedMs || 0,
-           metadata: { ...gameData },
-         }, {
-           accessToken,
-         })
-         .catch(error => console.warn('Supabase session record failed:', error));
+    // Persist leaderboard + wallet to Supabase when available (non-blocking).
+    if (supabaseService && session) {
+      const accessToken = session.access_token;
+      if (!accessToken) {
+        console.warn('Supabase session sync skipped: missing access token.');
+        return;
+      }
+      void supabaseService
+        .recordLeaderboardScore(
+          {
+            gameId: selectedGameId,
+            score: gameData.score || 0,
+          },
+          {
+            accessToken,
+          }
+        )
+        .catch(error => console.warn('Supabase leaderboard sync failed:', error));
 
-       void supabaseService
-         .upsertWallet({
-           userId: session.user.id,
-           balance: currencyService.getCurrentCoins(),
-           lifetimeEarned: newStats.coinsEarned,
-         }, {
-           accessToken,
-         })
-         .catch(error => console.warn('Supabase wallet sync failed:', error));
-     }
+      void supabaseService
+        .upsertWallet(
+          {
+            userId: session.user.id,
+            balance: currencyService.getCurrentCoins(),
+            lifetimeEarned: newStats.coinsEarned,
+          },
+          {
+            accessToken,
+          }
+        )
+        .catch(error => console.warn('Supabase wallet sync failed:', error));
+    }
 
   };
 
@@ -1041,7 +1369,7 @@ export function ArcadeHub() {
         }
         loading={authLoading}
         error={authError}
-        emailSent={emailSent}
+        emailSentMode={emailSentMode}
       />
     </div>
   );
