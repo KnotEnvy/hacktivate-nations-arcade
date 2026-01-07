@@ -17,7 +17,7 @@ export function WelcomeBanner({ name, authenticated, onSignIn, onSignOut }: Welc
           <p className="text-sm text-gray-200 mt-1">
             {authenticated
               ? 'Your coins and achievements are ready to sync across devices.'
-              : 'Sign in to sync coins, achievements, and leaderboard entries across devices.'}
+              : 'Guest mode: progress saves locally on this device. Sign in to sync across devices.'}
           </p>
         </div>
         <div className="flex gap-2">

@@ -15,10 +15,13 @@ interface UseSupabaseAuthState {
   loading: boolean;
   error: string | null;
   emailSentMode: EmailSentMode;
+  pendingEmail: string | null;
   authDisabled: boolean;
   signInWithEmail: (email: string) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (email: string, password: string, username?: string) => Promise<void>;
+  resendEmail: (mode: Exclude<EmailSentMode, null>) => Promise<void>;
+  clearAuthMessages: () => void;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -29,6 +32,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [emailSentMode, setEmailSentMode] = useState<EmailSentMode>(null);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [authDisabled, setAuthDisabled] = useState(false);
   const supabaseRef = useRef<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
   const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
@@ -115,6 +119,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           if (!mounted) return;
           setSession(nextSession);
           setEmailSentMode(null);
+          setPendingEmail(null);
           if (nextSession) {
             syncProfile(nextSession);
           } else {
@@ -151,6 +156,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setLoading(true);
       setError(null);
       setEmailSentMode(null);
+      setPendingEmail(email);
       const { error: signInError } = await supabaseRef.current.auth.signInWithOtp({
         email,
         options: {
@@ -178,6 +184,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         return;
       }
       setEmailSentMode(null);
+      setPendingEmail(email);
       setLoading(true);
       setError(null);
       const { data, error: signInError } = await supabaseRef.current.auth.signInWithPassword({
@@ -208,6 +215,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         return;
       }
       setEmailSentMode(null);
+      setPendingEmail(email);
       setLoading(true);
       setError(null);
       const { data, error: signUpError } = await supabaseRef.current.auth.signUp({
@@ -226,6 +234,8 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         } else {
           if (!data.session) {
             setEmailSentMode('signup');
+          } else {
+            setPendingEmail(null);
           }
           if (data.session?.user) {
             activeUserIdRef.current = data.session.user.id;
@@ -240,6 +250,42 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     [loadProfile]
   );
 
+  const resendEmail = useCallback(
+    async (mode: Exclude<EmailSentMode, null>) => {
+      if (!supabaseRef.current) {
+        setError('Supabase not configured');
+        return;
+      }
+      if (!pendingEmail) {
+        setError('Email address is required to resend.');
+        return;
+      }
+      setLoading(true);
+      setError(null);
+      const redirectTo =
+        typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
+      const type = mode === 'magic' ? 'magiclink' : 'signup';
+      const { error: resendError } = await supabaseRef.current.auth.resend({
+        type,
+        email: pendingEmail,
+        options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+      });
+      if (resendError) {
+        setError(resendError.message);
+      } else {
+        setEmailSentMode(mode);
+      }
+      setLoading(false);
+    },
+    [pendingEmail]
+  );
+
+  const clearAuthMessages = useCallback(() => {
+    setEmailSentMode(null);
+    setError(null);
+    setPendingEmail(null);
+  }, []);
+
   const signOut = useCallback(async () => {
     if (!supabaseRef.current) return;
     setError(null);
@@ -248,6 +294,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     setSession(null);
     setProfile(null);
     setEmailSentMode(null);
+    setPendingEmail(null);
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -262,10 +309,13 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     loading,
     error,
     emailSentMode,
+    pendingEmail,
     authDisabled,
     signInWithEmail,
     signInWithPassword,
     signUpWithPassword,
+    resendEmail,
+    clearAuthMessages,
     signOut,
     refreshProfile,
   };

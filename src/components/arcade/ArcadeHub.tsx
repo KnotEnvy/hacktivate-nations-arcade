@@ -69,6 +69,19 @@ interface GameEndData {
   total_bricks_broken?: number;
 }
 
+const LOCAL_OWNER_KEY = 'hacktivate-session-owner';
+const LOCAL_OWNER_GUEST = 'guest';
+const LOCAL_STORAGE_KEYS = [
+  'hacktivate-unlocks-v2',
+  'hacktivate-unlocked-tiers',
+  'hacktivate-user-progress',
+  'hacktivate-user-profile',
+  'hacktivate-user-stats',
+  'hacktivate-achievements',
+  'hacktivate-challenges',
+  'hacktivate-coins',
+];
+
 export function ArcadeHub() {
   const [currentGame, setCurrentGame] = useState<GameModule | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
@@ -130,10 +143,13 @@ export function ArcadeHub() {
     loading: authLoading,
     error: authError,
     emailSentMode,
+    pendingEmail,
     authDisabled,
     signInWithEmail,
     signInWithPassword,
     signUpWithPassword,
+    resendEmail,
+    clearAuthMessages,
     signOut,
   } = useSupabaseAuth();
 
@@ -196,12 +212,35 @@ export function ArcadeHub() {
     unlocksRef.current = { tiers: unlockedTiers, games: unlockedGames };
   }, [unlockedGames, unlockedTiers]);
 
-  const saveUnlockState = useCallback((tiers: number[], games: string[]) => {
+  const saveUnlockState = useCallback((tiers: number[], games: string[], options?: { sync?: boolean }) => {
     setUnlockedTiers(tiers);
     setUnlockedGames(games);
     localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
-    schedulePlayerSync({ unlockedTiers: tiers, unlockedGames: games });
+    if (options?.sync !== false) {
+      schedulePlayerSync({ unlockedTiers: tiers, unlockedGames: games });
+    }
   }, [schedulePlayerSync]);
+
+  const resetLocalState = useCallback(() => {
+    const wasHydrating = isHydratingRef.current;
+    isHydratingRef.current = true;
+    LOCAL_STORAGE_KEYS.forEach(key => localStorage.removeItem(key));
+    currencyService.resetCoins();
+    saveUnlockState([0], Array.from(DEFAULT_UNLOCKED_GAME_IDS), { sync: false });
+    challengeService.init();
+    achievementService.init();
+    userService.init();
+    setChallenges(challengeService.getChallenges());
+    setCurrentCoins(0);
+    setNotifications([]);
+    isHydratingRef.current = wasHydrating;
+  }, [
+    achievementService,
+    challengeService,
+    currencyService,
+    saveUnlockState,
+    userService,
+  ]);
 
   useEffect(() => {
     currencyService.init();
@@ -351,6 +390,20 @@ export function ArcadeHub() {
   useEffect(() => {
     hasHydratedRef.current = false;
   }, [session?.user.id]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const nextOwner = session?.user.id ?? LOCAL_OWNER_GUEST;
+    const storedOwner = localStorage.getItem(LOCAL_OWNER_KEY);
+    const currentOwner = storedOwner ?? LOCAL_OWNER_GUEST;
+    if (!storedOwner) {
+      localStorage.setItem(LOCAL_OWNER_KEY, currentOwner);
+    }
+    if (currentOwner !== nextOwner) {
+      resetLocalState();
+      localStorage.setItem(LOCAL_OWNER_KEY, nextOwner);
+    }
+  }, [resetLocalState, session?.user.id]);
 
   // Hydrate local services from Supabase when a session is available.
   useEffect(() => {
@@ -974,26 +1027,7 @@ export function ArcadeHub() {
     
     if (!confirmed) return;
     
-    // Reset all services
-    currencyService.resetCoins();
-    saveUnlockState([0], Array.from(DEFAULT_UNLOCKED_GAME_IDS));
-    
-    // Clear all localStorage
-    localStorage.removeItem('hacktivate-unlocks-v2');
-    localStorage.removeItem('hacktivate-unlocked-tiers');
-    localStorage.removeItem('hacktivate-user-progress');
-    localStorage.removeItem('hacktivate-user-profile');
-    localStorage.removeItem('hacktivate-user-stats');
-    localStorage.removeItem('hacktivate-achievements');
-    localStorage.removeItem('hacktivate-challenges');
-    
-    // Reinitialize services
-    challengeService.init();
-    achievementService.init();
-    userService.init();
-    
-    setCurrentCoins(0);
-    setNotifications([]);
+    resetLocalState();
     
     alert('\u{1F3AE} All progress reset! Welcome back to the beginning.');
   };
@@ -1101,7 +1135,7 @@ export function ArcadeHub() {
           {!authDisabled ? (
             <div className="text-right">
               <div className="text-sm text-white font-semibold">
-                {session ? `Signed in as ${welcomeName}` : 'Guest mode'}
+                {session ? `Signed in as ${welcomeName}` : 'Guest mode (local save)'}
               </div>
               <div className="flex justify-end gap-2">
                 {session ? (
@@ -1371,9 +1405,12 @@ export function ArcadeHub() {
         onPasswordSignUp={(email, password, username) =>
           signUpWithPassword(email, password, username)
         }
+        onResendEmail={resendEmail}
+        onClearMessages={clearAuthMessages}
         loading={authLoading}
         error={authError}
         emailSentMode={emailSentMode}
+        pendingEmail={pendingEmail}
       />
     </div>
   );
