@@ -127,11 +127,11 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'frog-hop',
     title: 'Frog Hop',
-    thumbnail: '/games/coming-soon-thumb.svg',
+    thumbnail: '/games/frog-hop/frog-hop-thumb.svg',
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 120,
     tier: 2,
-    description: 'Coming soon!'
+    description: 'Guide your frog across busy roads and treacherous rivers! Dodge traffic, ride logs, avoid hungry crocs, and reach the lily pads!'
   },
   {
     id: 'platform-adventure',

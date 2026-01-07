@@ -52,6 +52,10 @@ gameLoader.registerGame('tower-builder', async () => {
   const { TowerBuilderGame } = await import('./tower-builder/TowerBuilderGame');
   return new TowerBuilderGame();
 });
+gameLoader.registerGame('frog-hop', async () => {
+  const { FrogHopGame } = await import('./frog-hop/FrogHopGame');
+  return new FrogHopGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {

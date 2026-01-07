@@ -1,0 +1,212 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Water gradient -->
+    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1E90FF"/>
+      <stop offset="100%" style="stop-color:#0066CC"/>
+    </linearGradient>
+    <!-- Road gradient -->
+    <linearGradient id="roadGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#444444"/>
+      <stop offset="100%" style="stop-color:#222222"/>
+    </linearGradient>
+    <!-- Grass gradient -->
+    <linearGradient id="grassGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#32CD32"/>
+      <stop offset="100%" style="stop-color:#228B22"/>
+    </linearGradient>
+    <!-- Frog body gradient -->
+    <radialGradient id="frogGrad" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#90EE90"/>
+      <stop offset="60%" style="stop-color:#32CD32"/>
+      <stop offset="100%" style="stop-color:#228B22"/>
+    </radialGradient>
+    <!-- Log gradient -->
+    <linearGradient id="logGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#A0522D"/>
+      <stop offset="50%" style="stop-color:#8B4513"/>
+      <stop offset="100%" style="stop-color:#5D4037"/>
+    </linearGradient>
+    <!-- Lily pad gradient -->
+    <radialGradient id="lilyGrad" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" style="stop-color:#4CAF50"/>
+      <stop offset="100%" style="stop-color:#1B5E1B"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background sky -->
+  <rect width="512" height="512" fill="#87CEEB"/>
+
+  <!-- Goal zone (top grass) -->
+  <rect x="0" y="0" width="512" height="100" fill="url(#grassGrad)"/>
+
+  <!-- Lily pads in goal zone -->
+  <g transform="translate(80, 50)">
+    <ellipse cx="0" cy="0" rx="35" ry="28" fill="url(#lilyGrad)"/>
+    <path d="M0,0 L-12,-28 L12,-28 Z" fill="#0066CC"/>
+  </g>
+  <g transform="translate(256, 50)">
+    <ellipse cx="0" cy="0" rx="35" ry="28" fill="url(#lilyGrad)"/>
+    <path d="M0,0 L-12,-28 L12,-28 Z" fill="#0066CC"/>
+  </g>
+  <g transform="translate(432, 50)">
+    <ellipse cx="0" cy="0" rx="35" ry="28" fill="url(#lilyGrad)"/>
+    <path d="M0,0 L-12,-28 L12,-28 Z" fill="#0066CC"/>
+  </g>
+
+  <!-- Water section -->
+  <rect x="0" y="100" width="512" height="150" fill="url(#waterGrad)"/>
+
+  <!-- Water waves -->
+  <path d="M0,130 Q30,120 60,130 T120,130 T180,130 T240,130 T300,130 T360,130 T420,130 T480,130 T512,130"
+        fill="none" stroke="#87CEEB" stroke-width="3" opacity="0.4"/>
+  <path d="M0,170 Q30,160 60,170 T120,170 T180,170 T240,170 T300,170 T360,170 T420,170 T480,170 T512,170"
+        fill="none" stroke="#87CEEB" stroke-width="3" opacity="0.4"/>
+  <path d="M0,210 Q30,200 60,210 T120,210 T180,210 T240,210 T300,210 T360,210 T420,210 T480,210 T512,210"
+        fill="none" stroke="#87CEEB" stroke-width="3" opacity="0.4"/>
+
+  <!-- Log on water -->
+  <g transform="translate(50, 140)">
+    <rect x="0" y="0" width="120" height="35" rx="8" fill="url(#logGrad)"/>
+    <ellipse cx="5" cy="17" rx="5" ry="15" fill="#5D4037"/>
+    <ellipse cx="115" cy="17" rx="5" ry="15" fill="#5D4037"/>
+    <line x1="25" y1="5" x2="30" y2="30" stroke="#5D4037" stroke-width="2" opacity="0.5"/>
+    <line x1="55" y1="5" x2="60" y2="30" stroke="#5D4037" stroke-width="2" opacity="0.5"/>
+    <line x1="85" y1="5" x2="90" y2="30" stroke="#5D4037" stroke-width="2" opacity="0.5"/>
+  </g>
+
+  <!-- Turtle group on water -->
+  <g transform="translate(320, 190)">
+    <!-- Turtle 1 -->
+    <ellipse cx="0" cy="0" rx="20" ry="18" fill="#556B2F"/>
+    <ellipse cx="0" cy="0" rx="12" ry="10" fill="none" stroke="#6B8E23" stroke-width="3"/>
+    <ellipse cx="18" cy="0" rx="6" ry="5" fill="#6B8E23"/>
+    <ellipse cx="-12" cy="-12" rx="8" ry="4" fill="#6B8E23" transform="rotate(-20)"/>
+    <ellipse cx="-12" cy="12" rx="8" ry="4" fill="#6B8E23" transform="rotate(20)"/>
+    <!-- Turtle 2 -->
+    <g transform="translate(50, 0)">
+      <ellipse cx="0" cy="0" rx="20" ry="18" fill="#556B2F"/>
+      <ellipse cx="0" cy="0" rx="12" ry="10" fill="none" stroke="#6B8E23" stroke-width="3"/>
+      <ellipse cx="18" cy="0" rx="6" ry="5" fill="#6B8E23"/>
+    </g>
+  </g>
+
+  <!-- Median grass strip -->
+  <rect x="0" y="250" width="512" height="40" fill="url(#grassGrad)"/>
+
+  <!-- Road section -->
+  <rect x="0" y="290" width="512" height="150" fill="url(#roadGrad)"/>
+
+  <!-- Road lane markings -->
+  <g fill="none" stroke="#FFD700" stroke-width="4" stroke-dasharray="30,20">
+    <line x1="0" y1="330" x2="512" y2="330"/>
+    <line x1="0" y1="370" x2="512" y2="370"/>
+    <line x1="0" y1="410" x2="512" y2="410"/>
+  </g>
+
+  <!-- Road edge lines -->
+  <line x1="0" y1="290" x2="512" y2="290" stroke="#FFD700" stroke-width="5"/>
+  <line x1="0" y1="440" x2="512" y2="440" stroke="#FFD700" stroke-width="5"/>
+
+  <!-- Red car -->
+  <g transform="translate(60, 305)">
+    <rect x="0" y="8" width="70" height="30" rx="5" fill="#E53935"/>
+    <rect x="15" y="2" width="40" height="16" rx="4" fill="#E53935"/>
+    <rect x="20" y="5" width="14" height="10" rx="2" fill="#81D4FA"/>
+    <rect x="38" y="5" width="12" height="10" rx="2" fill="#81D4FA"/>
+    <circle cx="15" cy="38" r="8" fill="#212121"/>
+    <circle cx="55" cy="38" r="8" fill="#212121"/>
+    <circle cx="68" cy="20" r="4" fill="#FFEB3B"/>
+  </g>
+
+  <!-- Blue car going left -->
+  <g transform="translate(350, 345)">
+    <rect x="0" y="8" width="65" height="28" rx="5" fill="#1E88E5"/>
+    <rect x="12" y="2" width="38" height="15" rx="4" fill="#1E88E5"/>
+    <rect x="17" y="5" width="12" height="9" rx="2" fill="#81D4FA"/>
+    <rect x="33" y="5" width="10" height="9" rx="2" fill="#81D4FA"/>
+    <circle cx="13" cy="36" r="7" fill="#212121"/>
+    <circle cx="52" cy="36" r="7" fill="#212121"/>
+    <circle cx="3" cy="18" r="4" fill="#FFEB3B"/>
+  </g>
+
+  <!-- Yellow truck -->
+  <g transform="translate(180, 380)">
+    <rect x="0" y="3" width="60" height="32" rx="3" fill="#5D4037"/>
+    <rect x="60" y="10" width="35" height="25" rx="4" fill="#795548"/>
+    <rect x="68" y="14" width="20" height="12" rx="2" fill="#81D4FA"/>
+    <circle cx="18" cy="35" r="9" fill="#212121"/>
+    <circle cx="48" cy="35" r="9" fill="#212121"/>
+    <circle cx="80" cy="35" r="9" fill="#212121"/>
+  </g>
+
+  <!-- Bottom grass (start zone) -->
+  <rect x="0" y="440" width="512" height="72" fill="url(#grassGrad)"/>
+
+  <!-- Grass blades -->
+  <g stroke="#1B5E1B" stroke-width="2">
+    <line x1="30" y1="512" x2="33" y2="495"/>
+    <line x1="60" y1="512" x2="58" y2="498"/>
+    <line x1="100" y1="512" x2="103" y2="493"/>
+    <line x1="150" y1="512" x2="148" y2="496"/>
+    <line x1="200" y1="512" x2="202" y2="494"/>
+    <line x1="250" y1="512" x2="248" y2="497"/>
+    <line x1="310" y1="512" x2="313" y2="495"/>
+    <line x1="370" y1="512" x2="368" y2="493"/>
+    <line x1="420" y1="512" x2="422" y2="496"/>
+    <line x1="470" y1="512" x2="468" y2="494"/>
+  </g>
+
+  <!-- Main Frog (hero) -->
+  <g transform="translate(256, 470)">
+    <!-- Back legs -->
+    <ellipse cx="-25" cy="15" rx="12" ry="18" fill="#32CD32" transform="rotate(-15)"/>
+    <ellipse cx="25" cy="15" rx="12" ry="18" fill="#32CD32" transform="rotate(15)"/>
+
+    <!-- Front legs -->
+    <ellipse cx="-18" cy="-10" rx="8" ry="12" fill="#32CD32" transform="rotate(-10)"/>
+    <ellipse cx="18" cy="-10" rx="8" ry="12" fill="#32CD32" transform="rotate(10)"/>
+
+    <!-- Body -->
+    <ellipse cx="0" cy="5" rx="28" ry="32" fill="url(#frogGrad)"/>
+
+    <!-- Spots -->
+    <ellipse cx="-10" cy="10" rx="6" ry="4" fill="#228B22" opacity="0.5"/>
+    <ellipse cx="12" cy="15" rx="5" ry="6" fill="#228B22" opacity="0.5"/>
+
+    <!-- Eyes -->
+    <circle cx="-14" cy="-22" r="12" fill="white"/>
+    <circle cx="14" cy="-22" r="12" fill="white"/>
+
+    <!-- Pupils -->
+    <circle cx="-12" cy="-22" r="6" fill="#222"/>
+    <circle cx="16" cy="-22" r="6" fill="#222"/>
+
+    <!-- Eye highlights -->
+    <circle cx="-15" cy="-25" r="3" fill="white"/>
+    <circle cx="13" cy="-25" r="3" fill="white"/>
+
+    <!-- Smile -->
+    <path d="M-12,5 Q0,15 12,5" fill="none" stroke="#228B22" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Title banner -->
+  <rect x="100" y="200" width="312" height="70" rx="10" fill="rgba(0,0,0,0.8)"/>
+  <text x="256" y="248" font-family="Arial, sans-serif" font-size="42" font-weight="bold" fill="#4CAF50" text-anchor="middle">FROG HOP</text>
+
+  <!-- Decorative elements -->
+  <!-- Coin -->
+  <g transform="translate(450, 130)">
+    <circle cx="0" cy="0" r="18" fill="#FFD700"/>
+    <circle cx="0" cy="0" r="14" fill="none" stroke="#B8860B" stroke-width="3"/>
+    <text x="0" y="6" font-family="Arial" font-size="18" font-weight="bold" fill="#B8860B" text-anchor="middle">$</text>
+  </g>
+
+  <!-- Arrow indicators -->
+  <g transform="translate(480, 320)" fill="#FFFFFF" opacity="0.6">
+    <polygon points="0,0 15,10 0,20"/>
+  </g>
+  <g transform="translate(32, 360)" fill="#FFFFFF" opacity="0.6">
+    <polygon points="15,0 0,10 15,20"/>
+  </g>
+</svg>
