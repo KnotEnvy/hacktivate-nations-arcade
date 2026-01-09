@@ -32,6 +32,29 @@ export const SCALES = {
   hungarian: [0, 2, 3, 6, 7, 8, 11],       // Dramatic, mysterious
   blues: [0, 3, 5, 6, 7, 10],              // Soulful
   chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], // Tension/transition
+
+  // NEW: Harmonic variations
+  harmonicMinor: [0, 2, 3, 5, 7, 8, 11],   // Classical dramatic, tension
+  melodicMinor: [0, 2, 3, 5, 7, 9, 11],    // Jazz, sophisticated ascending
+
+  // NEW: Symmetric scales
+  wholeTone: [0, 2, 4, 6, 8, 10],          // Dreamy, ethereal, no resolution
+  diminished: [0, 2, 3, 5, 6, 8, 9, 11],   // Tense, mysterious, symmetrical
+  augmented: [0, 3, 4, 7, 8, 11],          // Unusual, sci-fi, unstable
+
+  // NEW: World music scales
+  arabian: [0, 1, 4, 5, 7, 8, 11],         // Middle Eastern, exotic
+  egyptian: [0, 2, 5, 7, 10],              // Ancient, mystical
+  hirajoshi: [0, 2, 3, 7, 8],              // Japanese traditional, melancholic
+  insen: [0, 1, 5, 7, 10],                 // Japanese, contemplative
+
+  // NEW: Modern/experimental
+  prometheus: [0, 2, 4, 6, 9, 10],         // Scriabin's mystic chord, ethereal
+  enigmatic: [0, 1, 4, 6, 8, 10, 11],      // Mysterious, unpredictable
+
+  // NEW: Game-specific moods
+  darkSynth: [0, 1, 3, 5, 6, 8, 10],       // Cyberpunk, dark retro
+  spaceAmbient: [0, 2, 4, 7, 9, 11],       // Spacey, open, expansive
 };
 
 export type ScaleName = keyof typeof SCALES;
@@ -754,9 +777,139 @@ export class ProceduralMusicEngine {
   private delayNode: DelayNode | null = null;
   private delayFeedback: GainNode | null = null;
 
+  // Audio analyzer for visualizer
+  private analyserNode: AnalyserNode | null = null;
+  private frequencyData: Uint8Array | null = null;
+  private timeDomainData: Uint8Array | null = null;
+
+  // Instrument layer controls
+  private layerStates: {
+    bass: boolean;
+    drums: boolean;
+    melody: boolean;
+    chords: boolean;
+    arpeggio: boolean;
+    ambience: boolean;
+  } = {
+    bass: true,
+    drums: true,
+    melody: true,
+    chords: true,
+    arpeggio: true,
+    ambience: true,
+  };
+
+  // Volume control (0-1)
+  private volume: number = 1.0;
+  private baseGainLevel: number = 0.5; // Base gain level for music
+
   constructor(context: AudioContext, masterGain: GainNode) {
     this.context = context;
     this.masterGain = masterGain;
+
+    // Create analyzer node for visualizations
+    if (context) {
+      this.analyserNode = context.createAnalyser();
+      this.analyserNode.fftSize = 256;
+      this.analyserNode.smoothingTimeConstant = 0.8;
+      this.frequencyData = new Uint8Array(this.analyserNode.frequencyBinCount);
+      this.timeDomainData = new Uint8Array(this.analyserNode.frequencyBinCount);
+    }
+  }
+
+  // ============= AUDIO ANALYZER API =============
+
+  /**
+   * Get the AnalyserNode for external visualization
+   */
+  getAnalyserNode(): AnalyserNode | null {
+    return this.analyserNode;
+  }
+
+  /**
+   * Get current frequency data (0-255 values)
+   */
+  getFrequencyData(): Uint8Array {
+    if (this.analyserNode && this.frequencyData) {
+      this.analyserNode.getByteFrequencyData(this.frequencyData);
+      return this.frequencyData;
+    }
+    return new Uint8Array(128);
+  }
+
+  /**
+   * Get current time domain data (waveform, 0-255 values centered at 128)
+   */
+  getTimeDomainData(): Uint8Array {
+    if (this.analyserNode && this.timeDomainData) {
+      this.analyserNode.getByteTimeDomainData(this.timeDomainData);
+      return this.timeDomainData;
+    }
+    return new Uint8Array(128);
+  }
+
+  /**
+   * Get number of frequency bins
+   */
+  getFrequencyBinCount(): number {
+    return this.analyserNode?.frequencyBinCount || 128;
+  }
+
+  // ============= INSTRUMENT LAYER CONTROLS =============
+
+  /**
+   * Set the enabled state for a specific instrument layer
+   */
+  setLayerEnabled(layer: keyof typeof this.layerStates, enabled: boolean): void {
+    this.layerStates[layer] = enabled;
+  }
+
+  /**
+   * Toggle an instrument layer on/off
+   */
+  toggleLayer(layer: keyof typeof this.layerStates): boolean {
+    this.layerStates[layer] = !this.layerStates[layer];
+    return this.layerStates[layer];
+  }
+
+  /**
+   * Get the current state of all layers
+   */
+  getLayerStates(): typeof this.layerStates {
+    return { ...this.layerStates };
+  }
+
+  /**
+   * Check if a specific layer is enabled
+   */
+  isLayerEnabled(layer: keyof typeof this.layerStates): boolean {
+    return this.layerStates[layer];
+  }
+
+  /**
+   * Enable all layers
+   */
+  enableAllLayers(): void {
+    Object.keys(this.layerStates).forEach(key => {
+      this.layerStates[key as keyof typeof this.layerStates] = true;
+    });
+  }
+
+  /**
+   * Disable all layers (mute everything)
+   */
+  disableAllLayers(): void {
+    Object.keys(this.layerStates).forEach(key => {
+      this.layerStates[key as keyof typeof this.layerStates] = false;
+    });
+  }
+
+  /**
+   * Solo a specific layer (enable only that layer)
+   */
+  soloLayer(layer: keyof typeof this.layerStates): void {
+    this.disableAllLayers();
+    this.layerStates[layer] = true;
   }
 
   // Initialize with new seed
@@ -772,6 +925,27 @@ export class ProceduralMusicEngine {
   // Check if playing
   getIsPlaying(): boolean {
     return this.isPlaying;
+  }
+
+  // Set music volume (0-1)
+  setVolume(volume: number): void {
+    this.volume = Math.max(0, Math.min(1, volume));
+
+    // Update the music gain node if it exists
+    if (this.musicGainNode && this.context) {
+      const targetGain = this.baseGainLevel * this.volume;
+      // Smooth transition to avoid pops
+      this.musicGainNode.gain.setTargetAtTime(
+        Math.max(targetGain, 0.0001),
+        this.context.currentTime,
+        0.1 // Time constant for smooth transition
+      );
+    }
+  }
+
+  // Get current volume
+  getVolume(): number {
+    return this.volume;
   }
 
   // Start playing a track
@@ -802,15 +976,22 @@ export class ProceduralMusicEngine {
     // Generate initial phrase
     this.generateNewPhrase(track);
 
-    // Create music gain with fade-in
+    // Create music gain with fade-in (respecting current volume setting)
     this.musicGainNode = this.context.createGain();
-    const targetVolume = 0.5 * track.intensity;
+    const targetVolume = this.baseGainLevel * track.intensity * this.volume;
     this.musicGainNode.gain.setValueAtTime(0.0001, this.context.currentTime);
     this.musicGainNode.gain.exponentialRampToValueAtTime(
       Math.max(targetVolume, 0.0001),
       this.context.currentTime + fadeSeconds
     );
-    this.musicGainNode.connect(this.masterGain);
+
+    // Connect through analyser for visualization, then to master
+    if (this.analyserNode) {
+      this.musicGainNode.connect(this.analyserNode);
+      this.analyserNode.connect(this.masterGain);
+    } else {
+      this.musicGainNode.connect(this.masterGain);
+    }
 
     // Setup effects
     this.setupEffects(track.effects);
@@ -888,10 +1069,10 @@ export class ProceduralMusicEngine {
 
     this.isPaused = false;
 
-    // Fade back in
+    // Fade back in (respecting current volume setting)
     if (this.musicGainNode) {
       const now = this.context.currentTime;
-      const targetVolume = 0.5 * track.intensity;
+      const targetVolume = this.baseGainLevel * track.intensity * this.volume;
       this.musicGainNode.gain.setValueAtTime(0.0001, now);
       this.musicGainNode.gain.exponentialRampToValueAtTime(
         Math.max(targetVolume, 0.0001),
@@ -910,6 +1091,66 @@ export class ProceduralMusicEngine {
   // Check if paused
   getIsPaused(): boolean {
     return this.isPaused;
+  }
+
+  // Dynamic BPM override - change tempo in real-time
+  private currentBpmOverride: number | null = null;
+
+  /**
+   * Set a BPM override for the currently playing track
+   * Pass null to reset to the track's default BPM
+   */
+  setBpmOverride(bpm: number | null): void {
+    this.currentBpmOverride = bpm;
+
+    // If we're currently playing, restart the interval with new BPM
+    if (this.isPlaying && !this.isPaused && this.currentTrack) {
+      const track = TRACK_DEFINITIONS[this.currentTrack];
+      if (track) {
+        // Clear existing interval
+        if (this.intervalId !== null) {
+          clearInterval(this.intervalId);
+        }
+
+        // Calculate new beat duration
+        const effectiveBpm = bpm || track.bpm;
+        const beatDuration = 60000 / effectiveBpm;
+
+        // Restart with new tempo
+        this.intervalId = window.setInterval(() => {
+          if (!this.isPlaying || !this.context || this.isPaused) return;
+          this.playBeat(track);
+        }, beatDuration);
+      }
+    }
+  }
+
+  /**
+   * Get the current effective BPM (override or track default)
+   */
+  getEffectiveBpm(): number {
+    if (this.currentBpmOverride !== null) {
+      return this.currentBpmOverride;
+    }
+    if (this.currentTrack) {
+      const track = TRACK_DEFINITIONS[this.currentTrack];
+      return track?.bpm || 120;
+    }
+    return 120;
+  }
+
+  /**
+   * Get the BPM override value (null if using track default)
+   */
+  getBpmOverride(): number | null {
+    return this.currentBpmOverride;
+  }
+
+  /**
+   * Reset BPM to track's default
+   */
+  resetBpm(): void {
+    this.setBpmOverride(null);
   }
 
   // Setup audio effects
@@ -1008,26 +1249,38 @@ export class ProceduralMusicEngine {
 
     const now = this.context.currentTime;
 
-    // Play each instrument
+    // Play each instrument (respecting layer states)
     track.instruments.forEach(instrument => {
       switch (instrument.type) {
         case 'bass':
-          this.playBass(track, instrument, now);
+          if (this.layerStates.bass) {
+            this.playBass(track, instrument, now);
+          }
           break;
         case 'lead':
-          this.playLead(track, instrument, now);
+          if (this.layerStates.melody) {
+            this.playLead(track, instrument, now);
+          }
           break;
         case 'pad':
-          this.playPad(track, instrument, now);
+          if (this.layerStates.chords) {
+            this.playPad(track, instrument, now);
+          }
           break;
         case 'arp':
-          this.playArp(track, instrument, now);
+          if (this.layerStates.arpeggio) {
+            this.playArp(track, instrument, now);
+          }
           break;
         case 'drums':
-          this.playDrums(track, instrument, now);
+          if (this.layerStates.drums) {
+            this.playDrums(track, instrument, now);
+          }
           break;
         case 'fx':
-          this.playFx(track, instrument, now);
+          if (this.layerStates.ambience) {
+            this.playFx(track, instrument, now);
+          }
           break;
       }
     });

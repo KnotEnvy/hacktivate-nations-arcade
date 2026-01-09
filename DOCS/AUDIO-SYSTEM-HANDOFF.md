@@ -1,6 +1,6 @@
 # Hacktivate Nations Arcade - Procedural Audio System Handoff
 
-## Session Date: January 6, 2026
+## Session Date: January 8, 2026
 
 ---
 
@@ -11,6 +11,7 @@ When starting a new session about the audio system, read these key files in orde
 1. `src/services/ProceduralMusicEngine.ts` - Core music generation engine
 2. `src/services/AudioManager.ts` - Main audio API and sound effects
 3. `src/components/arcade/AudioSettings.tsx` - Audio UI with hidden Music Lab
+4. `src/data/Achievements.ts` - Music Lab achievements
 
 ---
 
@@ -24,10 +25,14 @@ The Hacktivate Nations Arcade features a **fully procedural audio system** that 
 AudioManager (Main Controller)
     ├── Sound Effects (17 synthesized sounds)
     ├── Legacy Music System (2 tracks: hub_music, game_music)
+    ├── Hub Music Auto-Rotation (automatic track changes)
     └── ProceduralMusicEngine (20 procedural tracks)
             ├── MelodyGenerator (seed-based melody creation)
             ├── SeededRandom (reproducible randomness)
-            └── Track Definitions (scales, chords, instruments)
+            ├── Track Definitions (scales, chords, instruments)
+            ├── AnalyserNode (real-time visualization)
+            ├── Layer Controls (toggle instruments)
+            └── Volume Control (independent music volume)
 ```
 
 ---
@@ -36,23 +41,50 @@ AudioManager (Main Controller)
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `src/services/ProceduralMusicEngine.ts` | Core procedural music generation | ~1440 |
-| `src/services/AudioManager.ts` | Main audio API, SFX, pause/resume | ~2340 |
-| `src/components/arcade/AudioSettings.tsx` | Audio UI + hidden Music Lab | ~720 |
+| `src/services/ProceduralMusicEngine.ts` | Core procedural music generation | ~1500 |
+| `src/services/AudioManager.ts` | Main audio API, SFX, rotation | ~2550 |
+| `src/components/arcade/AudioSettings.tsx` | Audio UI + hidden Music Lab | ~2100 |
+| `src/data/Achievements.ts` | Achievement definitions incl. Music Lab | ~300 |
 | `src/data/Games.ts` | Game manifest (25 games across 5 tiers) | ~250 |
 
 ---
 
 ## Procedural Music Engine Details
 
-### Musical Scales Available (12 total)
+### Musical Scales Available (24 total)
 
 ```typescript
 SCALES = {
+  // Classic Modes
   major, minor, dorian, phrygian, lydian, mixolydian,
-  majorPentatonic, minorPentatonic, japanese, hungarian, blues, chromatic
+
+  // Pentatonic & Blues
+  majorPentatonic, minorPentatonic, blues,
+
+  // Harmonic Variations (NEW)
+  harmonicMinor, melodicMinor,
+
+  // Symmetric & Experimental (NEW)
+  wholeTone, diminished, augmented, prometheus, enigmatic,
+
+  // World Music
+  japanese, hungarian, arabian, egyptian, hirajoshi, insen,
+
+  // Game-Specific (NEW)
+  darkSynth, spaceAmbient
 }
 ```
+
+### Scale Categories (for Lab UI)
+
+| Category | Scales | Character |
+|----------|--------|-----------|
+| Classic Modes | major, minor, dorian, phrygian, lydian, mixolydian | Traditional Western modes |
+| Pentatonic | majorPentatonic, minorPentatonic, blues | Simple, versatile |
+| Harmonic | harmonicMinor, melodicMinor | Dramatic, emotional |
+| Experimental | wholeTone, diminished, augmented, prometheus, enigmatic | Unusual, atmospheric |
+| World Music | japanese, hungarian, arabian, egyptian, hirajoshi, insen | Cultural flavors |
+| Game Vibes | darkSynth, spaceAmbient | Modern gaming aesthetics |
 
 ### Chord Progressions (18 total, by mood)
 
@@ -80,7 +112,7 @@ SCALES = {
 
 ### Game-to-Track Mapping
 
-Every game has 2 assigned tracks (primary + secondary). See `GAME_TRACK_MAPPING` in ProceduralMusicEngine.ts:484-520.
+Every game has 2 assigned tracks (primary + secondary). See `GAME_TRACK_MAPPING` in ProceduralMusicEngine.ts.
 
 Example:
 ```typescript
@@ -131,7 +163,24 @@ playCustomTrack(params: {
 stopMusic(fadeSeconds?: number): void
 ```
 
-### Pause/Resume (Added Jan 2026)
+### Hub Music Auto-Rotation (NEW)
+
+```typescript
+// Start automatic hub track rotation
+startHubMusicRotation(intervalMinutes?: number): void  // Default: 4 minutes
+
+// Stop rotation
+stopHubMusicRotation(): void
+
+// Check if rotation is active
+isHubRotationActive(): boolean
+
+// Change rotation interval
+setRotationInterval(minutes: number): void
+getRotationIntervalMinutes(): number
+```
+
+### Pause/Resume
 
 ```typescript
 pauseMusic(): void       // Pause current music
@@ -144,10 +193,47 @@ isMusicPlaying(): boolean // Check if playing (not paused)
 ### Volume Controls
 
 ```typescript
-setMasterVolume(volume: number): void  // 0-1
-setSfxVolume(volume: number): void     // 0-1
-setMusicVolume(volume: number): void   // 0-1
+setMasterVolume(volume: number): void  // 0-1, affects all audio
+setSfxVolume(volume: number): void     // 0-1, affects sound effects
+setMusicVolume(volume: number): void   // 0-1, affects music (including procedural)
 toggleMute(): boolean
+```
+
+### Live BPM Control (NEW)
+
+```typescript
+setBpmOverride(bpm: number | null): void  // Override current track BPM (60-200)
+getEffectiveBpm(): number                  // Get current effective BPM
+getBpmOverride(): number | null            // Get override value or null
+resetBpm(): void                           // Reset to track default
+```
+
+### Instrument Layer Controls (NEW)
+
+```typescript
+// Toggle a specific layer
+toggleLayer(layer: 'bass' | 'drums' | 'melody' | 'chords' | 'arpeggio' | 'ambience'): boolean
+
+// Set layer state directly
+setLayerEnabled(layer: string, enabled: boolean): void
+
+// Get all layer states
+getLayerStates(): { bass: boolean; drums: boolean; melody: boolean; chords: boolean; arpeggio: boolean; ambience: boolean }
+
+// Enable all layers
+enableAllLayers(): void
+
+// Solo a layer (mute all others)
+soloLayer(layer: string): void
+```
+
+### Audio Visualization (NEW)
+
+```typescript
+getAnalyserNode(): AnalyserNode | null     // Get Web Audio analyser node
+getFrequencyData(): Uint8Array              // Get frequency spectrum data
+getTimeDomainData(): Uint8Array             // Get waveform data
+getFrequencyBinCount(): number              // Get number of frequency bins
 ```
 
 ### Track Information
@@ -175,7 +261,35 @@ getCurrentSeed(): number
 
 Click the Audio Settings title **5 times** to unlock the secret Music Laboratory tab.
 
-### Features
+Unlocking awards the **"Lab Rat"** achievement!
+
+### Features Overview
+
+The Music Lab is divided into several sections:
+
+1. **Live Tools** (Lab Exclusive) - Real-time playback controls
+2. **Track Generator** - Create custom procedural music
+3. **Favorites System** - Save and load configurations
+4. **Share Codes** - Share creations with friends
+5. **Per-Game Music** - Customize music for each game
+
+### Live Tools (Lab Exclusive)
+
+Only visible in the Lab tab when music is playing:
+
+- **Visualizer** - Real-time waveform display
+  - Bars mode (frequency spectrum)
+  - Wave mode (time domain)
+  - Both mode (combined)
+- **Layers** - Toggle individual instruments
+  - Drums, Bass, Melody, Chords, Arpeggio, Ambience
+  - Click to toggle, button to enable all
+- **Tempo** - Live BPM override
+  - Slider from 60-200 BPM
+  - Changes take effect immediately
+  - Reset button to restore track default
+
+### Track Generator
 
 #### Simple Mode
 - **Seed Input** - Enter any number for reproducible music
@@ -186,10 +300,42 @@ Click the Audio Settings title **5 times** to unlock the secret Music Laboratory
 
 #### Advanced Mode (toggle)
 All Simple Mode features plus:
-- **Scale/Mode Selector** - 11 musical scales with emoji icons
+- **Scale/Mode Selector** - 24 musical scales organized by category
 - **Root Note Selector** - All 12 notes (C through B, including sharps)
 - **Configuration Display** - Shows current settings
 - **Enhanced Generate Button** - Shows key signature in button
+
+### Favorites System (NEW)
+
+- Save up to **20 favorite configurations**
+- Each favorite stores: seed, BPM, intensity, mood, scale, root note
+- Saved to localStorage (persists across sessions)
+- Click a favorite to load and auto-play
+- Delete unwanted favorites
+
+### Share Codes (NEW)
+
+Generate compact shareable codes in format: `HNA-XXXXX-XXXXXXXXX`
+
+Example: `HNA-2B3K9-120601405`
+
+Codes encode:
+- Seed (Base62 encoded)
+- BPM (60-200)
+- Intensity (0-100%)
+- Mood, Scale, Root Note (indexed)
+
+To share: Click share button, copy code
+To import: Paste code in import field, click Import
+
+### Per-Game Music (NEW)
+
+Assign custom music to specific games:
+- **Use Current** - Assign current Lab settings to a game
+- **Use Favorite** - Assign a saved favorite to a game
+- **Clear** - Reset to default game music
+
+When you start a customized game, your custom music plays instead of the default!
 
 ### Mood Options
 
@@ -204,49 +350,17 @@ All Simple Mode features plus:
 | Epic | ⚔️ | Grand, heroic | epic_heroic, sports_victory |
 | Playful | 🎈 | Fun, lighthearted | casual_playful, puzzle_discovery |
 
-### Scale Options (Advanced Mode)
-
-| Scale | Emoji | Musical Character |
-|-------|-------|-------------------|
-| Major | 🌞 | Bright, happy |
-| Minor | 🌙 | Sad, serious |
-| Dorian | 🎷 | Jazzy, sophisticated |
-| Phrygian | 🏜️ | Spanish/Middle Eastern |
-| Lydian | ✨ | Dreamy, floating |
-| Mixolydian | 🎸 | Bluesy, rock |
-| Major Pentatonic | 🎵 | Happy, simple |
-| Minor Pentatonic | 🎹 | Bluesy, versatile |
-| Japanese | 🎋 | Peaceful, zen |
-| Hungarian | 🎻 | Dramatic, mysterious |
-| Blues | 🎺 | Soulful |
-
 ---
 
-## Recent Changes (January 2026)
+## Music Lab Achievements (NEW)
 
-### Added Pause/Resume
-
-- `AudioManager.pauseMusic()` / `resumeMusic()` / `togglePause()`
-- `ProceduralMusicEngine.pause()` / `resume()`
-- Now Playing banner has pause/play button
-- Equalizer bars stop animating when paused
-- "PAUSED" indicator badge appears
-
-### Enhanced Music Laboratory
-
-- Added Simple/Advanced mode toggle
-- BPM slider (60-180)
-- Intensity slider (10%-100%)
-- Scale selector with 11 options
-- Root note selector (all 12 notes)
-- Configuration display panel
-- Enhanced generate button shows settings
-
-### Smart Track Selection
-
-- `playCustomTrack()` now uses BPM/intensity to select appropriate tracks
-- Cross-references user preferences with track characteristics
-- Uses seeded random for reproducible selection
+| ID | Title | Icon | Requirement |
+|----|-------|------|-------------|
+| music_lab_discoverer | Lab Rat | 🐀 | Discover the Music Laboratory |
+| music_creator | Music Creator | 🎵 | Generate 10 custom tracks |
+| music_collector | Music Collector | 💾 | Save 5 favorite configurations |
+| music_sharer | Music Sharer | 🔗 | Share your first creation |
+| music_customizer | Game DJ | 🎮 | Customize 5 games' music |
 
 ---
 
@@ -255,15 +369,24 @@ All Simple Mode features plus:
 Music triggers in `src/components/arcade/ArcadeHub.tsx`:
 
 ```typescript
-// Line 206 - Initial load
-audioManager.playRandomHubMusic(3.0);
+// Initial load - Start hub music with auto-rotation
+audioManager.startHubMusicRotation(4); // 4 minutes between changes
 
-// Line 665 - Game start
+// Game start - Stop rotation, play game music
+audioManager.stopHubMusicRotation();
 audioManager.playGameMusic(gameId, 'primary', 2.0);
 
-// Line 718 - Return to hub
-audioManager.playRandomHubMusic(2.0);
+// Return to hub - Restart rotation
+audioManager.startHubMusicRotation(4);
 ```
+
+### Auto-Rotation Behavior
+
+- Hub tracks rotate automatically every 4 minutes
+- Smooth 3-second crossfade between tracks
+- Never plays the same track twice in a row
+- Pauses during games, resumes on return to hub
+- Cycles through: `hub_welcome`, `hub_ambient`, `hub_energetic`
 
 ---
 
@@ -274,20 +397,53 @@ Run AudioManager tests:
 npm test
 ```
 
-All 21 AudioManager tests should pass.
+All AudioManager tests should pass.
 
 ---
 
-## Future Enhancement Ideas
+## Recent Changes (January 8, 2026)
 
-1. **Dynamic BPM Override** - Allow Lab to actually change track BPM in real-time
-2. **Save Favorite Configurations** - Let users save seed + settings combos
-3. **Share Seeds** - Generate shareable codes for Music Lab creations
-4. **Achievement Integration** - Unlock Lab as achievement reward
-5. **Per-Game Music Settings** - Let users assign custom tracks to games
-6. **Waveform Visualizer** - Add visual feedback in Lab
-7. **More Scales** - Add harmonic minor, whole tone, chromatic patterns
-8. **Layered Instruments** - Let users toggle individual instrument layers
+### Hub Music Auto-Rotation
+- Automatic track changes every 4 minutes in hub
+- Smooth crossfades between tracks
+- Smart selection avoids repeating same track
+- Stops when game starts, restarts on return
+
+### 12 New Musical Scales
+- Harmonic variations: harmonicMinor, melodicMinor
+- Symmetric: wholeTone, diminished, augmented
+- World music: arabian, egyptian, hirajoshi, insen
+- Experimental: prometheus, enigmatic
+- Game-specific: darkSynth, spaceAmbient
+
+### Live Tools (Lab Exclusive)
+- **Waveform Visualizer** - Canvas-based with bars/wave/both modes
+- **Live BPM Control** - Real-time tempo adjustment (60-200 BPM)
+- **Instrument Layers** - Toggle bass, drums, melody, chords, arpeggio, ambience
+
+### Favorites System
+- Save up to 20 configurations to localStorage
+- Load favorites with one click
+- Auto-plays when loaded
+
+### Shareable Codes
+- Compact HNA-XXXXX-XXXXXXXXX format
+- Base62 encoding for seeds
+- Copy to clipboard support
+- Import validation
+
+### Per-Game Music Customization
+- Assign custom music to 10 popular games
+- Use current Lab settings or saved favorites
+- Persists in localStorage
+
+### Achievement Integration
+- 5 new Music Lab achievements
+- Tracked automatically when using Lab features
+
+### Bug Fixes
+- Fixed music volume slider not affecting procedural music
+- Fixed equalizer bars not animating (Tailwind JIT issue)
 
 ---
 
@@ -306,13 +462,17 @@ All 21 AudioManager tests should pass.
 2. Create `play[Name]Sound()` private method
 3. Add case to `playSound()` switch statement
 
-### Modify Music Lab UI
+### Add a New Scale
 
-Edit `src/components/arcade/AudioSettings.tsx`:
-- Simple mode controls: Lines 567-633
-- Mood selector: Lines 636-664
-- Advanced controls (scale/key): Lines 666-738
-- Generate button: Lines 741-766
+1. Add intervals array to `SCALES` in ProceduralMusicEngine.ts
+2. Add display info to `SCALE_NAMES` in AudioSettings.tsx
+3. Assign to appropriate category
+
+### Add a Music Lab Achievement
+
+1. Add definition to `ACHIEVEMENTS` in Achievements.ts
+2. Add tracking call in AudioSettings.tsx handler
+3. Use `achievementService.checkAchievement(id, value)`
 
 ---
 
@@ -326,6 +486,7 @@ Edit `src/components/arcade/AudioSettings.tsx`:
 - `BiquadFilterNode` for frequency shaping
 - `ConvolverNode` for reverb effects
 - `DelayNode` for echo/delay effects
+- `AnalyserNode` for visualization data (NEW)
 
 ### Seeded Random
 
@@ -336,6 +497,16 @@ Uses Mulberry32 PRNG algorithm for reproducible randomness. Same seed always pro
 - Music loops run on `setInterval` (not requestAnimationFrame)
 - Nodes are cleaned up after stop/fade
 - Reverb impulse responses are generated once per track start
+- Visualizer uses requestAnimationFrame (pauses when hidden)
+- Layer states persist across tracks
+
+### localStorage Keys
+
+| Key | Purpose |
+|-----|---------|
+| `hacktivate_music_lab_favorites` | Saved favorite configurations |
+| `hacktivate_game_music_prefs` | Per-game music assignments |
+| `hacktivate_audio_settings` | Volume levels, mute state |
 
 ---
 
@@ -345,12 +516,31 @@ Uses Mulberry32 PRNG algorithm for reproducible randomness. Same seed always pro
 |---------|-------------|-------------------|
 | Track playback | AudioManager.ts | `playMusic()`, `playTrackByName()` |
 | Procedural generation | ProceduralMusicEngine.ts | `playBeat()`, `MelodyGenerator` |
+| Hub rotation | AudioManager.ts | `startHubMusicRotation()` |
 | UI controls | AudioSettings.tsx | Component state, handlers |
+| Live tools | AudioSettings.tsx | Live Tools section (Lab tab) |
+| Favorites | AudioSettings.tsx | `handleSaveFavorite()`, `handleLoadFavorite()` |
+| Share codes | AudioSettings.tsx | `generateShareCode()`, `parseShareCode()` |
 | Game integration | ArcadeHub.tsx | `playGameMusic()` calls |
 | Scale definitions | ProceduralMusicEngine.ts | `SCALES` constant |
 | Track definitions | ProceduralMusicEngine.ts | `TRACK_DEFINITIONS` constant |
+| Achievements | Achievements.ts | Music Lab achievement definitions |
+
+---
+
+## Future Enhancement Ideas
+
+All original enhancement ideas have been implemented! Potential future additions:
+
+1. **Audio Export** - Let users export their creations as audio files
+2. **Community Seeds** - Online sharing/browsing of popular seeds
+3. **Dynamic Soundscapes** - Ambient sounds that react to gameplay
+4. **Custom Chord Progressions** - Let users create their own progressions
+5. **MIDI Export** - Export melodies as MIDI files
+6. **Rhythm Editor** - Visual drum pattern editor
+7. **Preset Packs** - Downloadable mood/genre preset collections
 
 ---
 
 *Document created: January 6, 2026*
-*Last updated: January 6, 2026*
+*Last updated: January 8, 2026*

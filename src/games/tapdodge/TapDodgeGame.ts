@@ -1091,7 +1091,7 @@ export class TapDodgeGame extends BaseGame {
       { icon: '⏱️', label: 'Survival', value: `${stats.survivalTime.toFixed(1)}s`, color: '#22D3EE' },
       { icon: '💨', label: 'Near Misses', value: stats.nearMisses.toString(), color: '#60A5FA' },
       { icon: '🔥', label: 'Max Chain', value: `x${stats.maxChain}`, color: '#F97316' },
-      { icon: '🪙', label: 'Coins', value: stats.coinsCollected.toString(), color: '#FBBF24' },
+      { icon: '💰', label: 'Coins', value: stats.coinsCollected.toString(), color: '#FBBF24' },
       { icon: '💎', label: 'Gems', value: stats.gemsCollected.toString(), color: '#A855F7' },
       { icon: '🌡️', label: 'Max Fever', value: `Lv.${stats.maxFever}`, color: '#EC4899' }
     ];

@@ -37,7 +37,7 @@ export function CurrencyDisplay({ currencyService }: CurrencyDisplayProps) {
       }`}
     >
       <span className="mr-2" aria-hidden>
-        {'\u{1FA99}'}
+        {'\u{1F4B0}'}
       </span>
       <span className="font-mono" aria-label="Coins">
         {formatNumber(coins)}

@@ -250,9 +250,10 @@ export function ArcadeHub() {
     
     // Initialize audio manager
     audioManager.init().then(() => {
-      // Start hub music after a brief delay (random variation for freshness)
+      // Start hub music with auto-rotation after a brief delay
+      // Tracks will automatically change every 4 minutes for variety
       setTimeout(() => {
-        audioManager.playRandomHubMusic(3.0);
+        audioManager.startHubMusicRotation(4); // 4 minutes between track changes
       }, 1000);
     });
 
@@ -724,7 +725,8 @@ export function ArcadeHub() {
         setSelectedGameId(gameId);
         setShowHub(false);
 
-        // Transition to game-specific procedural music
+        // Stop hub rotation and transition to game-specific music
+        audioManager.stopHubMusicRotation();
         audioManager.playGameMusic(gameId, 'primary', 2.0);
         
         // Track game start
@@ -777,8 +779,8 @@ export function ArcadeHub() {
     setSelectedGameId(null);
     setActiveTab('games');
 
-    // Return to hub music (random variation)
-    audioManager.playRandomHubMusic(2.0);
+    // Return to hub music with auto-rotation
+    audioManager.startHubMusicRotation(4);
   };
 
   const handleChallengeComplete = useCallback(

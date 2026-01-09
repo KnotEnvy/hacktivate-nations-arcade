@@ -1,14 +1,16 @@
 // ===== src/components/arcade/AudioSettings.tsx =====
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioManager } from '@/services/AudioManager';
 import { SCALES } from '@/services/ProceduralMusicEngine';
+import { AchievementService } from '@/services/AchievementService';
 
 interface AudioSettingsProps {
   audioManager: AudioManager;
   isOpen: boolean;
   onClose: () => void;
+  achievementService?: AchievementService;
 }
 
 // Track mood icons and colors
@@ -23,23 +25,249 @@ const MOOD_CONFIG: Record<string, { icon: string; color: string; description: st
   playful: { icon: '🎈', color: 'text-pink-400', description: 'Fun, lighthearted' },
 };
 
-// Scale display names
-const SCALE_NAMES: Record<string, { name: string; emoji: string }> = {
-  major: { name: 'Major', emoji: '🌞' },
-  minor: { name: 'Minor', emoji: '🌙' },
-  dorian: { name: 'Dorian', emoji: '🎷' },
-  phrygian: { name: 'Phrygian', emoji: '🏜️' },
-  lydian: { name: 'Lydian', emoji: '✨' },
-  mixolydian: { name: 'Mixolydian', emoji: '🎸' },
-  majorPentatonic: { name: 'Major Penta', emoji: '🎵' },
-  minorPentatonic: { name: 'Minor Penta', emoji: '🎹' },
-  japanese: { name: 'Japanese', emoji: '🎋' },
-  hungarian: { name: 'Hungarian', emoji: '🎻' },
-  blues: { name: 'Blues', emoji: '🎺' },
+// Scale display names - organized by category
+const SCALE_NAMES: Record<string, { name: string; emoji: string; category: string }> = {
+  // Classic modes
+  major: { name: 'Major', emoji: '🌞', category: 'classic' },
+  minor: { name: 'Minor', emoji: '🌙', category: 'classic' },
+  dorian: { name: 'Dorian', emoji: '🎷', category: 'classic' },
+  phrygian: { name: 'Phrygian', emoji: '🏜️', category: 'classic' },
+  lydian: { name: 'Lydian', emoji: '✨', category: 'classic' },
+  mixolydian: { name: 'Mixolydian', emoji: '🎸', category: 'classic' },
+
+  // Pentatonic & Blues
+  majorPentatonic: { name: 'Major Penta', emoji: '🎵', category: 'pentatonic' },
+  minorPentatonic: { name: 'Minor Penta', emoji: '🎹', category: 'pentatonic' },
+  blues: { name: 'Blues', emoji: '🎺', category: 'pentatonic' },
+
+  // Harmonic variations
+  harmonicMinor: { name: 'Harmonic Min', emoji: '🎭', category: 'harmonic' },
+  melodicMinor: { name: 'Melodic Min', emoji: '🎼', category: 'harmonic' },
+
+  // Symmetric & experimental
+  wholeTone: { name: 'Whole Tone', emoji: '🌀', category: 'experimental' },
+  diminished: { name: 'Diminished', emoji: '⚡', category: 'experimental' },
+  augmented: { name: 'Augmented', emoji: '🔮', category: 'experimental' },
+  prometheus: { name: 'Prometheus', emoji: '🔥', category: 'experimental' },
+  enigmatic: { name: 'Enigmatic', emoji: '❓', category: 'experimental' },
+
+  // World music
+  japanese: { name: 'Japanese', emoji: '🎋', category: 'world' },
+  hungarian: { name: 'Hungarian', emoji: '🎻', category: 'world' },
+  arabian: { name: 'Arabian', emoji: '🕌', category: 'world' },
+  egyptian: { name: 'Egyptian', emoji: '🏛️', category: 'world' },
+  hirajoshi: { name: 'Hirajoshi', emoji: '🌸', category: 'world' },
+  insen: { name: 'Insen', emoji: '🍃', category: 'world' },
+
+  // Game-specific
+  darkSynth: { name: 'Dark Synth', emoji: '🖤', category: 'game' },
+  spaceAmbient: { name: 'Space', emoji: '🚀', category: 'game' },
+};
+
+// Scale category labels for advanced mode
+const SCALE_CATEGORIES: Record<string, { label: string; emoji: string }> = {
+  classic: { label: 'Classic Modes', emoji: '🎼' },
+  pentatonic: { label: 'Pentatonic', emoji: '🎵' },
+  harmonic: { label: 'Harmonic', emoji: '🎭' },
+  experimental: { label: 'Experimental', emoji: '🔮' },
+  world: { label: 'World Music', emoji: '🌍' },
+  game: { label: 'Game Vibes', emoji: '🎮' },
 };
 
 // Root note options
 const ROOT_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// ============= FAVORITES SYSTEM =============
+
+interface MusicFavorite {
+  id: string;
+  name: string;
+  seed: number;
+  bpm: number;
+  intensity: number;
+  mood: string;
+  scale: string;
+  rootNote: string;
+  createdAt: number;
+}
+
+const FAVORITES_STORAGE_KEY = 'hacktivate_music_lab_favorites';
+const MAX_FAVORITES = 20;
+
+// Load favorites from localStorage
+const loadFavorites = (): MusicFavorite[] => {
+  if (typeof window === 'undefined') return [];
+  try {
+    const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : [];
+  } catch {
+    return [];
+  }
+};
+
+// Save favorites to localStorage
+const saveFavoritesToStorage = (favorites: MusicFavorite[]): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(favorites.slice(0, MAX_FAVORITES)));
+  } catch {
+    // Storage full or unavailable
+  }
+};
+
+// Generate a unique ID
+const generateFavoriteId = (): string => {
+  return `fav_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+};
+
+// ============= PER-GAME MUSIC CUSTOMIZATION =============
+
+interface GameMusicPreference {
+  gameId: string;
+  type: 'track' | 'favorite' | 'custom';
+  trackName?: string;       // For type 'track'
+  favoriteId?: string;      // For type 'favorite'
+  customConfig?: {          // For type 'custom'
+    seed: number;
+    bpm: number;
+    mood: string;
+    scale: string;
+    rootNote: string;
+    intensity: number;
+  };
+}
+
+const GAME_MUSIC_PREFS_KEY = 'hacktivate_game_music_prefs';
+
+// Load game music preferences
+const loadGameMusicPrefs = (): Record<string, GameMusicPreference> => {
+  if (typeof window === 'undefined') return {};
+  try {
+    const stored = localStorage.getItem(GAME_MUSIC_PREFS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+};
+
+// Save game music preferences
+const saveGameMusicPrefs = (prefs: Record<string, GameMusicPreference>): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(GAME_MUSIC_PREFS_KEY, JSON.stringify(prefs));
+  } catch {
+    // Storage full or unavailable
+  }
+};
+
+// List of games for the selector (subset for UI)
+const GAME_LIST = [
+  { id: 'runner', name: 'Endless Runner', icon: '🏃' },
+  { id: 'snake', name: 'Snake', icon: '🐍' },
+  { id: 'breakout', name: 'Breakout', icon: '🧱' },
+  { id: 'minesweeper', name: 'Minesweeper', icon: '💣' },
+  { id: 'memory', name: 'Memory Match', icon: '🧠' },
+  { id: 'tetris', name: 'Tetris', icon: '🟦' },
+  { id: 'space_invaders', name: 'Space Invaders', icon: '👾' },
+  { id: 'pong', name: 'Pong', icon: '🏓' },
+  { id: 'sudoku', name: 'Sudoku', icon: '🔢' },
+  { id: 'crossword', name: 'Crossword', icon: '📝' },
+];
+
+// ============= SHAREABLE CODE SYSTEM =============
+
+// Indexed arrays for compact encoding
+const MOOD_KEYS = ['energetic', 'chill', 'intense', 'focus', 'retro', 'mysterious', 'epic', 'playful'];
+const SCALE_KEYS = [
+  'major', 'minor', 'dorian', 'phrygian', 'lydian', 'mixolydian',
+  'majorPentatonic', 'minorPentatonic', 'blues', 'harmonicMinor', 'melodicMinor',
+  'wholeTone', 'diminished', 'augmented', 'arabian', 'egyptian', 'hirajoshi',
+  'insen', 'prometheus', 'enigmatic', 'darkSynth', 'spaceAmbient', 'japanese', 'hungarian'
+];
+const NOTE_KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+// Base62 characters for compact encoding
+const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+
+// Encode a number to base62
+const toBase62 = (num: number): string => {
+  if (num === 0) return '0';
+  let result = '';
+  while (num > 0) {
+    result = BASE62[num % 62] + result;
+    num = Math.floor(num / 62);
+  }
+  return result;
+};
+
+// Decode base62 to number
+const fromBase62 = (str: string): number => {
+  let result = 0;
+  for (let i = 0; i < str.length; i++) {
+    result = result * 62 + BASE62.indexOf(str[i]);
+  }
+  return result;
+};
+
+interface ShareableConfig {
+  seed: number;
+  bpm: number;
+  intensity: number; // 0-100
+  moodIndex: number;
+  scaleIndex: number;
+  noteIndex: number;
+}
+
+// Generate a shareable code from config
+const generateShareCode = (config: ShareableConfig): string => {
+  // Pack data: seed (base62) + bpm (2 digits) + intensity (2 digits) + mood (1 digit) + scale (2 digits) + note (1 hex)
+  const seedCode = toBase62(config.seed);
+  const bpmCode = config.bpm.toString().padStart(3, '0');
+  const intensityCode = config.intensity.toString().padStart(2, '0');
+  const moodCode = config.moodIndex.toString(16);
+  const scaleCode = config.scaleIndex.toString(16).padStart(2, '0');
+  const noteCode = config.noteIndex.toString(16);
+
+  // Format: HNA-{seed}-{bpm}{intensity}{mood}{scale}{note}
+  const dataCode = `${bpmCode}${intensityCode}${moodCode}${scaleCode}${noteCode}`;
+  return `HNA-${seedCode}-${dataCode}`;
+};
+
+// Parse a shareable code to config
+const parseShareCode = (code: string): ShareableConfig | null => {
+  try {
+    // Remove whitespace and validate format
+    const cleaned = code.trim().toUpperCase();
+    if (!cleaned.startsWith('HNA-')) return null;
+
+    const parts = cleaned.split('-');
+    if (parts.length !== 3) return null;
+
+    const seedCode = parts[1];
+    const dataCode = parts[2];
+
+    if (dataCode.length < 9) return null;
+
+    const seed = fromBase62(seedCode);
+    const bpm = parseInt(dataCode.substring(0, 3), 10);
+    const intensity = parseInt(dataCode.substring(3, 5), 10);
+    const moodIndex = parseInt(dataCode.substring(5, 6), 16);
+    const scaleIndex = parseInt(dataCode.substring(6, 8), 16);
+    const noteIndex = parseInt(dataCode.substring(8, 9), 16);
+
+    // Validate ranges
+    if (isNaN(seed) || seed < 0) return null;
+    if (isNaN(bpm) || bpm < 60 || bpm > 200) return null;
+    if (isNaN(intensity) || intensity < 0 || intensity > 100) return null;
+    if (isNaN(moodIndex) || moodIndex < 0 || moodIndex >= MOOD_KEYS.length) return null;
+    if (isNaN(scaleIndex) || scaleIndex < 0 || scaleIndex >= SCALE_KEYS.length) return null;
+    if (isNaN(noteIndex) || noteIndex < 0 || noteIndex >= NOTE_KEYS.length) return null;
+
+    return { seed, bpm, intensity, moodIndex, scaleIndex, noteIndex };
+  } catch {
+    return null;
+  }
+};
 
 // Category icons
 const CATEGORY_ICONS: Record<string, string> = {
@@ -55,7 +283,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   'Legacy': '📼',
 };
 
-export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsProps) {
+export function AudioSettings({ audioManager, isOpen, onClose, achievementService }: AudioSettingsProps) {
   // Volume state
   const [masterVolume, setMasterVolume] = useState(0.7);
   const [sfxVolume, setSfxVolume] = useState(1.0);
@@ -85,6 +313,142 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
 
   // Playback state
   const [isPaused, setIsPaused] = useState(false);
+
+  // Real-time BPM override
+  const [liveBpmOverride, setLiveBpmOverride] = useState<number | null>(null);
+  const [showBpmControl, setShowBpmControl] = useState(false);
+
+  // Favorites system
+  const [favorites, setFavorites] = useState<MusicFavorite[]>([]);
+  const [showFavorites, setShowFavorites] = useState(false);
+  const [savingFavorite, setSavingFavorite] = useState(false);
+  const [favoriteName, setFavoriteName] = useState('');
+
+  // Share code system
+  const [showSharePanel, setShowSharePanel] = useState(false);
+  const [shareCode, setShareCode] = useState('');
+  const [importCode, setImportCode] = useState('');
+  const [importError, setImportError] = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
+
+  // Visualizer
+  const [showVisualizer, setShowVisualizer] = useState(false);
+  const [visualizerMode, setVisualizerMode] = useState<'bars' | 'wave' | 'both'>('bars');
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animationRef = useRef<number | null>(null);
+
+  // Instrument layers
+  const [showLayers, setShowLayers] = useState(false);
+  const [layerStates, setLayerStates] = useState({
+    bass: true,
+    drums: true,
+    melody: true,
+    chords: true,
+    arpeggio: true,
+    ambience: true,
+  });
+
+  // Per-game music customization
+  const [showGameMusic, setShowGameMusic] = useState(false);
+  const [gameMusicPrefs, setGameMusicPrefs] = useState<Record<string, GameMusicPreference>>({});
+  const [selectedGameForMusic, setSelectedGameForMusic] = useState<string>('');
+
+  // Load favorites and game music prefs on mount
+  useEffect(() => {
+    setFavorites(loadFavorites());
+    setGameMusicPrefs(loadGameMusicPrefs());
+  }, []);
+
+  // Visualizer animation loop
+  useEffect(() => {
+    if (!showVisualizer || !audioManager || isPaused) {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+      return;
+    }
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const draw = () => {
+      if (!showVisualizer || isPaused) return;
+
+      const frequencyData = audioManager.getFrequencyData();
+      const timeDomainData = audioManager.getTimeDomainData();
+
+      const width = canvas.width;
+      const height = canvas.height;
+
+      // Clear canvas with fade effect
+      ctx.fillStyle = 'rgba(17, 24, 39, 0.3)';
+      ctx.fillRect(0, 0, width, height);
+
+      if (visualizerMode === 'bars' || visualizerMode === 'both') {
+        // Draw frequency bars
+        const barCount = 32;
+        const barWidth = (width / barCount) - 2;
+        const step = Math.floor(frequencyData.length / barCount);
+
+        for (let i = 0; i < barCount; i++) {
+          const value = frequencyData[i * step];
+          const barHeight = (value / 255) * height * 0.8;
+
+          // Gradient color based on frequency
+          const hue = 280 - (i / barCount) * 60; // Purple to pink
+          ctx.fillStyle = `hsla(${hue}, 80%, 60%, 0.9)`;
+
+          const x = i * (barWidth + 2);
+          const y = height - barHeight;
+
+          // Rounded bars
+          ctx.beginPath();
+          ctx.roundRect(x, y, barWidth, barHeight, 3);
+          ctx.fill();
+        }
+      }
+
+      if (visualizerMode === 'wave' || visualizerMode === 'both') {
+        // Draw waveform
+        ctx.beginPath();
+        ctx.strokeStyle = visualizerMode === 'both' ? 'rgba(6, 182, 212, 0.7)' : 'rgba(168, 85, 247, 0.9)';
+        ctx.lineWidth = 2;
+
+        const sliceWidth = width / timeDomainData.length;
+        let x = 0;
+
+        for (let i = 0; i < timeDomainData.length; i++) {
+          const v = timeDomainData[i] / 128.0;
+          const y = (v * height) / 2;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+
+          x += sliceWidth;
+        }
+
+        ctx.lineTo(width, height / 2);
+        ctx.stroke();
+      }
+
+      animationRef.current = requestAnimationFrame(draw);
+    };
+
+    draw();
+
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [showVisualizer, audioManager, isPaused, visualizerMode]);
 
   // Load state from audio manager
   useEffect(() => {
@@ -118,13 +482,19 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
       setLabUnlocked(true);
       setShowLabIntro(true);
       audioManager?.playSound('unlock');
+
+      // Award the "Lab Rat" achievement
+      if (achievementService) {
+        achievementService.checkAchievement('music_lab_unlocked', 1);
+      }
+
       // Reset after showing intro
       setTimeout(() => setShowLabIntro(false), 3000);
     } else if (newCount < 5) {
       // Subtle feedback for clicks
       audioManager?.playSound('click');
     }
-  }, [titleClickCount, labUnlocked, audioManager]);
+  }, [titleClickCount, labUnlocked, audioManager, achievementService]);
 
   // Volume handlers
   const handleMasterVolumeChange = (value: number) => {
@@ -164,6 +534,292 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
     }
   };
 
+  // Real-time BPM change handler
+  const handleLiveBpmChange = (bpm: number) => {
+    setLiveBpmOverride(bpm);
+    audioManager?.setBpmOverride(bpm);
+  };
+
+  // Reset BPM to track default
+  const handleResetBpm = () => {
+    setLiveBpmOverride(null);
+    audioManager?.resetBpm();
+    audioManager?.playSound('click');
+  };
+
+  // ============= FAVORITES HANDLERS =============
+
+  // Save current config as favorite
+  const handleSaveFavorite = () => {
+    if (!favoriteName.trim()) return;
+
+    const newFavorite: MusicFavorite = {
+      id: generateFavoriteId(),
+      name: favoriteName.trim(),
+      seed: customSeed ? parseInt(customSeed) : Date.now(),
+      bpm: customBpm,
+      intensity: customIntensity,
+      mood: selectedMood,
+      scale: selectedScale,
+      rootNote: selectedRootNote,
+      createdAt: Date.now(),
+    };
+
+    const updatedFavorites = [newFavorite, ...favorites].slice(0, MAX_FAVORITES);
+    setFavorites(updatedFavorites);
+    saveFavoritesToStorage(updatedFavorites);
+
+    // Track achievement: Music Collector (favorites saved)
+    if (achievementService) {
+      achievementService.checkAchievement('music_lab_favorites', updatedFavorites.length);
+    }
+
+    audioManager?.playSound('success');
+    setSavingFavorite(false);
+    setFavoriteName('');
+  };
+
+  // Load a favorite configuration
+  const handleLoadFavorite = (favorite: MusicFavorite) => {
+    setCustomSeed(favorite.seed.toString());
+    setCustomBpm(favorite.bpm);
+    setCustomIntensity(favorite.intensity);
+    setSelectedMood(favorite.mood);
+    setSelectedScale(favorite.scale);
+    setSelectedRootNote(favorite.rootNote);
+
+    audioManager?.playSound('click');
+
+    // Optionally auto-play the loaded favorite
+    setTimeout(() => {
+      audioManager?.playCustomTrack({
+        seed: favorite.seed,
+        mood: favorite.mood,
+        bpm: favorite.bpm,
+        intensity: favorite.intensity,
+      });
+      setCurrentTrack(`custom_${favorite.mood}`);
+      setIsPaused(false);
+    }, 100);
+  };
+
+  // Delete a favorite
+  const handleDeleteFavorite = (id: string) => {
+    const updatedFavorites = favorites.filter(f => f.id !== id);
+    setFavorites(updatedFavorites);
+    saveFavoritesToStorage(updatedFavorites);
+    audioManager?.playSound('click');
+  };
+
+  // ============= GAME MUSIC PREFERENCE HANDLERS =============
+
+  // Assign current config to a game
+  const handleAssignCurrentToGame = (gameId: string) => {
+    const pref: GameMusicPreference = {
+      gameId,
+      type: 'custom',
+      customConfig: {
+        seed: customSeed ? parseInt(customSeed) : Date.now(),
+        bpm: customBpm,
+        mood: selectedMood,
+        scale: selectedScale,
+        rootNote: selectedRootNote,
+        intensity: customIntensity,
+      },
+    };
+
+    const updated = { ...gameMusicPrefs, [gameId]: pref };
+    setGameMusicPrefs(updated);
+    saveGameMusicPrefs(updated);
+
+    // Track achievement: Game DJ (games customized)
+    if (achievementService) {
+      achievementService.checkAchievement('music_lab_games_customized', Object.keys(updated).length);
+    }
+
+    audioManager?.playSound('success');
+  };
+
+  // Assign a favorite to a game
+  const handleAssignFavoriteToGame = (gameId: string, favoriteId: string) => {
+    const pref: GameMusicPreference = {
+      gameId,
+      type: 'favorite',
+      favoriteId,
+    };
+
+    const updated = { ...gameMusicPrefs, [gameId]: pref };
+    setGameMusicPrefs(updated);
+    saveGameMusicPrefs(updated);
+
+    // Track achievement: Game DJ (games customized)
+    if (achievementService) {
+      achievementService.checkAchievement('music_lab_games_customized', Object.keys(updated).length);
+    }
+
+    audioManager?.playSound('success');
+  };
+
+  // Assign a track to a game
+  const handleAssignTrackToGame = (gameId: string, trackName: string) => {
+    const pref: GameMusicPreference = {
+      gameId,
+      type: 'track',
+      trackName,
+    };
+
+    const updated = { ...gameMusicPrefs, [gameId]: pref };
+    setGameMusicPrefs(updated);
+    saveGameMusicPrefs(updated);
+
+    // Track achievement: Game DJ (games customized)
+    if (achievementService) {
+      achievementService.checkAchievement('music_lab_games_customized', Object.keys(updated).length);
+    }
+
+    audioManager?.playSound('success');
+  };
+
+  // Clear game preference (use default)
+  const handleClearGamePref = (gameId: string) => {
+    const updated = { ...gameMusicPrefs };
+    delete updated[gameId];
+    setGameMusicPrefs(updated);
+    saveGameMusicPrefs(updated);
+    audioManager?.playSound('click');
+  };
+
+  // Get a display name for a game's music preference
+  const getGamePrefDisplayName = (pref: GameMusicPreference): string => {
+    if (pref.type === 'track') {
+      return pref.trackName || 'Unknown Track';
+    } else if (pref.type === 'favorite') {
+      const fav = favorites.find(f => f.id === pref.favoriteId);
+      return fav?.name || 'Unknown Favorite';
+    } else if (pref.type === 'custom') {
+      return `Custom (${pref.customConfig?.mood || 'unknown'})`;
+    }
+    return 'Default';
+  };
+
+  // ============= LAYER CONTROL HANDLERS =============
+
+  // Toggle a layer on/off
+  const handleToggleLayer = (layer: keyof typeof layerStates) => {
+    const newState = audioManager?.toggleLayer(layer) ?? !layerStates[layer];
+    setLayerStates(prev => ({ ...prev, [layer]: newState }));
+    audioManager?.playSound('click');
+  };
+
+  // Solo a layer (enable only that one)
+  const handleSoloLayer = (layer: keyof typeof layerStates) => {
+    audioManager?.soloLayer(layer);
+    setLayerStates({
+      bass: layer === 'bass',
+      drums: layer === 'drums',
+      melody: layer === 'melody',
+      chords: layer === 'chords',
+      arpeggio: layer === 'arpeggio',
+      ambience: layer === 'ambience',
+    });
+    audioManager?.playSound('click');
+  };
+
+  // Enable all layers
+  const handleEnableAllLayers = () => {
+    audioManager?.enableAllLayers();
+    setLayerStates({
+      bass: true,
+      drums: true,
+      melody: true,
+      chords: true,
+      arpeggio: true,
+      ambience: true,
+    });
+    audioManager?.playSound('success');
+  };
+
+  // ============= SHARE CODE HANDLERS =============
+
+  // Generate share code from current config
+  const handleGenerateShareCode = () => {
+    const config: ShareableConfig = {
+      seed: customSeed ? parseInt(customSeed) : 0,
+      bpm: customBpm,
+      intensity: Math.round(customIntensity * 100),
+      moodIndex: MOOD_KEYS.indexOf(selectedMood),
+      scaleIndex: SCALE_KEYS.indexOf(selectedScale),
+      noteIndex: NOTE_KEYS.indexOf(selectedRootNote),
+    };
+
+    const code = generateShareCode(config);
+    setShareCode(code);
+    setShowSharePanel(true);
+
+    // Track achievement: Music Sharer (shared a code)
+    if (achievementService) {
+      achievementService.checkAchievement('music_lab_shared', 1);
+    }
+
+    audioManager?.playSound('success');
+  };
+
+  // Copy share code to clipboard
+  const handleCopyShareCode = async () => {
+    try {
+      await navigator.clipboard.writeText(shareCode);
+      setCodeCopied(true);
+      audioManager?.playSound('coin');
+      setTimeout(() => setCodeCopied(false), 2000);
+    } catch {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = shareCode;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  };
+
+  // Import config from share code
+  const handleImportShareCode = () => {
+    setImportError('');
+
+    const parsed = parseShareCode(importCode);
+    if (!parsed) {
+      setImportError('Invalid code. Please check and try again.');
+      audioManager?.playSound('error');
+      return;
+    }
+
+    // Apply the imported config
+    setCustomSeed(parsed.seed.toString());
+    setCustomBpm(parsed.bpm);
+    setCustomIntensity(parsed.intensity / 100);
+    setSelectedMood(MOOD_KEYS[parsed.moodIndex] || 'energetic');
+    setSelectedScale(SCALE_KEYS[parsed.scaleIndex] || 'minorPentatonic');
+    setSelectedRootNote(NOTE_KEYS[parsed.noteIndex] || 'A');
+
+    audioManager?.playSound('unlock');
+    setImportCode('');
+    setShowSharePanel(false);
+
+    // Auto-play the imported config
+    setTimeout(() => {
+      audioManager?.playCustomTrack({
+        seed: parsed.seed,
+        mood: MOOD_KEYS[parsed.moodIndex],
+        bpm: parsed.bpm,
+        intensity: parsed.intensity / 100,
+      });
+      setCurrentTrack(`custom_${MOOD_KEYS[parsed.moodIndex]}`);
+      setIsPaused(false);
+    }, 100);
+  };
+
   // Generate random seed
   const generateRandomSeed = () => {
     const seed = Math.floor(Math.random() * 999999999);
@@ -191,6 +847,12 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
     // Save to history
     if (!generatedSeeds.includes(seed)) {
       setGeneratedSeeds(prev => [seed, ...prev.slice(0, 4)]);
+    }
+
+    // Track achievement: Music Creator (tracks generated)
+    if (achievementService) {
+      const tracksGenerated = (generatedSeeds.length + 1);
+      achievementService.checkAchievement('music_lab_tracks_generated', tracksGenerated);
     }
 
     setIsGenerating(false);
@@ -286,7 +948,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
           )}
         </div>
 
-        {/* Now Playing Banner with Pause/Play */}
+        {/* Now Playing Banner - Simple version for all tabs */}
         {currentTrack && currentTrackInfo && (
           <div className="mb-4 p-3 bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-lg border border-purple-500/30">
             <div className="flex items-center justify-between">
@@ -294,7 +956,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                 {/* Pause/Play Button */}
                 <button
                   onClick={handlePauseToggle}
-                  className={`w-12 h-12 rounded-lg flex items-center justify-center transition-all transform hover:scale-105 ${
+                  className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all transform hover:scale-105 ${
                     isPaused
                       ? 'bg-green-600 hover:bg-green-500'
                       : 'bg-purple-600 hover:bg-purple-500'
@@ -302,9 +964,9 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                   title={isPaused ? 'Resume music' : 'Pause music'}
                 >
                   {isPaused ? (
-                    <span className="text-2xl">▶</span>
+                    <span className="text-xl">▶</span>
                   ) : (
-                    <span className="text-2xl">⏸</span>
+                    <span className="text-xl">⏸</span>
                   )}
                 </button>
                 <div>
@@ -317,23 +979,32 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                     )}
                   </div>
                   <div className="text-xs text-gray-400">
-                    {currentTrackInfo.bpm} BPM • {currentTrackInfo.scale} • {currentTrackInfo.mood}
+                    <span className={liveBpmOverride ? 'text-cyan-400 font-medium' : ''}>
+                      {liveBpmOverride || currentTrackInfo.bpm} BPM
+                    </span>
+                    {liveBpmOverride && <span className="text-cyan-400"> (live)</span>}
+                    {' • '}{currentTrackInfo.scale} • {currentTrackInfo.mood}
                   </div>
                 </div>
               </div>
               {/* Equalizer Bars - only animate when playing */}
               <div className="flex items-center gap-1">
-                {[0, 150, 300, 450].map((delay, i) => (
+                {[
+                  { delay: 0, height: 16, color: 'bg-purple-500' },
+                  { delay: 150, height: 24, color: 'bg-purple-400' },
+                  { delay: 300, height: 12, color: 'bg-purple-500' },
+                  { delay: 450, height: 20, color: 'bg-purple-400' },
+                ].map((bar, i) => (
                   <div
                     key={i}
                     className={`w-1 rounded transition-all ${
                       isPaused
-                        ? 'bg-gray-600 h-2'
-                        : `bg-purple-${i % 2 === 0 ? '500' : '400'} animate-pulse`
+                        ? 'bg-gray-600'
+                        : `${bar.color} animate-pulse`
                     }`}
                     style={{
-                      height: isPaused ? '8px' : `${[16, 24, 12, 20][i]}px`,
-                      animationDelay: isPaused ? '0ms' : `${delay}ms`
+                      height: isPaused ? '8px' : `${bar.height}px`,
+                      animationDelay: isPaused ? '0ms' : `${bar.delay}ms`
                     }}
                   />
                 ))}
@@ -428,7 +1099,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                     onClick={() => audioManager?.playSound('coin')}
                     className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white text-sm rounded-lg transition-colors"
                   >
-                    🪙 Coin
+                    💰 Coin
                   </button>
                   <button
                     onClick={() => audioManager?.playSound('jump')}
@@ -567,6 +1238,175 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                 </div>
               </div>
 
+              {/* ============= LIVE TOOLS SECTION (Lab Exclusive) ============= */}
+              {currentTrack && currentTrackInfo && (
+                <div className="p-3 bg-gradient-to-r from-cyan-900/30 to-purple-900/30 rounded-lg border border-cyan-500/30">
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-sm font-medium text-cyan-400 flex items-center gap-2">
+                      🎛️ Live Tools
+                      <span className="text-[10px] bg-cyan-600/30 px-2 py-0.5 rounded text-cyan-300">Lab Exclusive</span>
+                    </h5>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setShowVisualizer(!showVisualizer)}
+                        className={`px-2 py-1 text-xs rounded transition-colors ${
+                          showVisualizer
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        }`}
+                      >
+                        📊 Visualizer
+                      </button>
+                      <button
+                        onClick={() => setShowLayers(!showLayers)}
+                        className={`px-2 py-1 text-xs rounded transition-colors ${
+                          showLayers
+                            ? 'bg-amber-600 text-white'
+                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        }`}
+                      >
+                        🎚️ Layers
+                      </button>
+                      <button
+                        onClick={() => setShowBpmControl(!showBpmControl)}
+                        className={`px-2 py-1 text-xs rounded transition-colors ${
+                          showBpmControl
+                            ? 'bg-cyan-600 text-white'
+                            : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                        }`}
+                      >
+                        ⏱️ Tempo
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live BPM Control */}
+                  {showBpmControl && (
+                    <div className="mb-3 p-2 bg-gray-800/50 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-cyan-400 font-medium whitespace-nowrap">Live BPM:</span>
+                        <input
+                          type="range"
+                          min="60"
+                          max="200"
+                          step="5"
+                          value={liveBpmOverride || currentTrackInfo.bpm}
+                          onChange={(e) => handleLiveBpmChange(parseInt(e.target.value))}
+                          className="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-cyan"
+                        />
+                        <span className="text-cyan-400 font-mono text-sm w-12 text-right">
+                          {liveBpmOverride || currentTrackInfo.bpm}
+                        </span>
+                        {liveBpmOverride && (
+                          <button
+                            onClick={handleResetBpm}
+                            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 text-gray-300 rounded transition-colors"
+                            title="Reset to track default"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex justify-between text-[10px] text-gray-500 mt-1 px-1">
+                        <span>60 (Slow)</span>
+                        <span>130 (Normal)</span>
+                        <span>200 (Fast)</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Waveform Visualizer */}
+                  {showVisualizer && (
+                    <div className="mb-3 p-2 bg-gray-800/50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-purple-400 font-medium">Visualizer</span>
+                        <div className="flex gap-1">
+                          {(['bars', 'wave', 'both'] as const).map((mode) => (
+                            <button
+                              key={mode}
+                              onClick={() => setVisualizerMode(mode)}
+                              className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
+                                visualizerMode === mode
+                                  ? 'bg-purple-600 text-white'
+                                  : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                              }`}
+                            >
+                              {mode === 'bars' ? '📊' : mode === 'wave' ? '〰️' : '🎵'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <canvas
+                        ref={canvasRef}
+                        width={400}
+                        height={80}
+                        className="w-full h-20 bg-gray-900 rounded-lg border border-purple-500/30"
+                      />
+                      {isPaused && (
+                        <div className="text-center text-[10px] text-gray-500 mt-1">
+                          Resume music to see visualizer in action
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Instrument Layers */}
+                  {showLayers && (
+                    <div className="p-2 bg-gray-800/50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-amber-400 font-medium">Instrument Layers</span>
+                        <button
+                          onClick={handleEnableAllLayers}
+                          className="px-2 py-0.5 text-[10px] bg-amber-600 hover:bg-amber-500 text-white rounded transition-colors"
+                        >
+                          Enable All
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        {([
+                          { key: 'drums', label: 'Drums', icon: '🥁' },
+                          { key: 'bass', label: 'Bass', icon: '🎸' },
+                          { key: 'melody', label: 'Melody', icon: '🎹' },
+                          { key: 'chords', label: 'Chords', icon: '🎵' },
+                          { key: 'arpeggio', label: 'Arp', icon: '✨' },
+                          { key: 'ambience', label: 'Amb', icon: '🌊' },
+                        ] as const).map(({ key, label, icon }) => (
+                          <button
+                            key={key}
+                            onClick={() => handleToggleLayer(key)}
+                            className={`p-1.5 rounded-lg border transition-all text-center ${
+                              layerStates[key]
+                                ? 'bg-amber-600/30 border-amber-500/50'
+                                : 'bg-gray-800/50 border-gray-700 opacity-50'
+                            }`}
+                          >
+                            <span className="text-sm">{icon}</span>
+                            <div className="text-[10px] text-white">{label}</div>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-1.5 text-center">
+                        Click to toggle layers on/off
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Collapsed state hint */}
+                  {!showBpmControl && !showVisualizer && !showLayers && (
+                    <div className="text-xs text-gray-500 text-center">
+                      Click the buttons above to access live playback controls
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* No track playing hint */}
+              {(!currentTrack || !currentTrackInfo) && (
+                <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700 text-center">
+                  <div className="text-gray-500 text-sm">🎵 Generate a track to unlock Live Tools</div>
+                </div>
+              )}
+
               {/* Seed Input */}
               <div>
                 <label className="block text-white font-medium mb-2">
@@ -669,26 +1509,44 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
               {/* Advanced Controls */}
               {labMode === 'advanced' && (
                 <>
-                  {/* Scale Selector */}
+                  {/* Scale Selector - Organized by Category */}
                   <div>
                     <label className="block text-white font-medium mb-2">
                       🎼 Scale / Mode
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {Object.keys(SCALES).filter(s => SCALE_NAMES[s]).map((scale) => (
-                        <button
-                          key={scale}
-                          onClick={() => setSelectedScale(scale)}
-                          className={`p-2 rounded-lg text-center transition-all ${
-                            selectedScale === scale
-                              ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white ring-2 ring-purple-400'
-                              : 'bg-gray-800 hover:bg-gray-700 text-gray-200'
-                          }`}
-                        >
-                          <span className="text-lg">{SCALE_NAMES[scale]?.emoji}</span>
-                          <div className="text-xs font-medium mt-1">{SCALE_NAMES[scale]?.name}</div>
-                        </button>
-                      ))}
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+                      {Object.entries(SCALE_CATEGORIES).map(([category, { label, emoji }]) => {
+                        const scalesInCategory = Object.entries(SCALE_NAMES)
+                          .filter(([, info]) => info.category === category)
+                          .map(([key]) => key);
+
+                        if (scalesInCategory.length === 0) return null;
+
+                        return (
+                          <div key={category}>
+                            <div className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
+                              <span>{emoji}</span>
+                              <span>{label}</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-1.5">
+                              {scalesInCategory.map((scale) => (
+                                <button
+                                  key={scale}
+                                  onClick={() => setSelectedScale(scale)}
+                                  className={`p-1.5 rounded-lg text-center transition-all ${
+                                    selectedScale === scale
+                                      ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white ring-2 ring-purple-400'
+                                      : 'bg-gray-800 hover:bg-gray-700 text-gray-200'
+                                  }`}
+                                >
+                                  <span className="text-sm">{SCALE_NAMES[scale]?.emoji}</span>
+                                  <div className="text-[10px] font-medium">{SCALE_NAMES[scale]?.name}</div>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -741,32 +1599,118 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                 </>
               )}
 
-              {/* Generate Button */}
-              <button
-                onClick={handleGenerateTrack}
-                disabled={isGenerating}
-                className={`w-full py-4 rounded-xl font-bold text-lg transition-all ${
-                  isGenerating
-                    ? 'bg-gray-700 text-gray-400 cursor-wait'
-                    : 'bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-size-200 animate-gradient text-white hover:shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]'
-                }`}
-              >
-                {isGenerating ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <span className="animate-spin">🎵</span>
-                    Generating...
-                  </span>
-                ) : (
-                  <span className="flex items-center justify-center gap-2">
-                    ✨ Generate Music ✨
-                    {labMode === 'advanced' && (
-                      <span className="text-xs bg-white/20 px-2 py-0.5 rounded">
-                        {selectedRootNote} {SCALE_NAMES[selectedScale]?.name} @ {customBpm}bpm
-                      </span>
+              {/* Generate Button + Share Button */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleGenerateTrack}
+                  disabled={isGenerating}
+                  className={`flex-1 py-4 rounded-xl font-bold text-lg transition-all ${
+                    isGenerating
+                      ? 'bg-gray-700 text-gray-400 cursor-wait'
+                      : 'bg-gradient-to-r from-purple-600 via-pink-600 to-purple-600 bg-size-200 animate-gradient text-white hover:shadow-lg hover:shadow-purple-500/50 hover:scale-[1.02]'
+                  }`}
+                >
+                  {isGenerating ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <span className="animate-spin">🎵</span>
+                      Generating...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      ✨ Generate Music ✨
+                      {labMode === 'advanced' && (
+                        <span className="text-xs bg-white/20 px-2 py-0.5 rounded">
+                          {selectedRootNote} {SCALE_NAMES[selectedScale]?.name} @ {customBpm}bpm
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </button>
+                <button
+                  onClick={handleGenerateShareCode}
+                  className="px-4 py-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white transition-all hover:scale-105"
+                  title="Share this configuration"
+                >
+                  🔗
+                </button>
+              </div>
+
+              {/* ============= SHARE CODE PANEL ============= */}
+              {showSharePanel && (
+                <div className="p-4 bg-cyan-900/30 rounded-lg border border-cyan-500/30">
+                  <div className="flex items-center justify-between mb-3">
+                    <h5 className="text-white font-medium flex items-center gap-2">
+                      🔗 Share Your Music
+                    </h5>
+                    <button
+                      onClick={() => setShowSharePanel(false)}
+                      className="text-gray-400 hover:text-white transition-colors"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  {/* Generated Share Code */}
+                  {shareCode && (
+                    <div className="mb-4">
+                      <label className="block text-xs text-cyan-400 mb-1.5">Your Share Code:</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={shareCode}
+                          readOnly
+                          className="flex-1 px-3 py-2 bg-gray-800 border border-cyan-500/50 rounded-lg text-cyan-300 font-mono text-sm select-all"
+                          onClick={(e) => (e.target as HTMLInputElement).select()}
+                        />
+                        <button
+                          onClick={handleCopyShareCode}
+                          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            codeCopied
+                              ? 'bg-green-600 text-white'
+                              : 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                          }`}
+                        >
+                          {codeCopied ? '✓ Copied!' : '📋 Copy'}
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1.5">
+                        Share this code with friends to let them hear your creation!
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Import Share Code */}
+                  <div className="border-t border-cyan-500/20 pt-3">
+                    <label className="block text-xs text-cyan-400 mb-1.5">Import a Share Code:</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={importCode}
+                        onChange={(e) => {
+                          setImportCode(e.target.value);
+                          setImportError('');
+                        }}
+                        placeholder="Paste HNA-XXXXX-XXXXXXXXX code here..."
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-cyan-500 focus:outline-none font-mono text-sm"
+                      />
+                      <button
+                        onClick={handleImportShareCode}
+                        disabled={!importCode.trim()}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          importCode.trim()
+                            ? 'bg-cyan-600 hover:bg-cyan-500 text-white'
+                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Import
+                      </button>
+                    </div>
+                    {importError && (
+                      <p className="text-xs text-red-400 mt-1.5">{importError}</p>
                     )}
-                  </span>
-                )}
-              </button>
+                  </div>
+                </div>
+              )}
 
               {/* Recent Seeds */}
               {generatedSeeds.length > 0 && (
@@ -791,6 +1735,243 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                 </div>
               )}
 
+              {/* ============= FAVORITES SYSTEM UI ============= */}
+              <div className="border-t border-gray-700 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-white font-medium flex items-center gap-2">
+                    💾 Saved Favorites
+                    {favorites.length > 0 && (
+                      <span className="text-xs bg-purple-600/50 px-2 py-0.5 rounded-full">
+                        {favorites.length}
+                      </span>
+                    )}
+                  </label>
+                  <div className="flex gap-2">
+                    {!savingFavorite ? (
+                      <button
+                        onClick={() => setSavingFavorite(true)}
+                        className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-sm rounded-lg transition-colors flex items-center gap-1"
+                      >
+                        <span>➕</span> Save Current
+                      </button>
+                    ) : null}
+                    {favorites.length > 0 && (
+                      <button
+                        onClick={() => setShowFavorites(!showFavorites)}
+                        className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1 ${
+                          showFavorites
+                            ? 'bg-purple-600 text-white'
+                            : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                        }`}
+                      >
+                        {showFavorites ? '📂 Hide' : '📁 Show'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Save New Favorite Form */}
+                {savingFavorite && (
+                  <div className="p-3 bg-green-900/30 rounded-lg border border-green-500/30 mb-3">
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={favoriteName}
+                        onChange={(e) => setFavoriteName(e.target.value)}
+                        placeholder="Enter a name for this config..."
+                        className="flex-1 px-3 py-2 bg-gray-800 border border-gray-600 rounded-lg text-white placeholder-gray-500 focus:border-green-500 focus:outline-none text-sm"
+                        maxLength={30}
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleSaveFavorite}
+                        disabled={!favoriteName.trim()}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          favoriteName.trim()
+                            ? 'bg-green-600 hover:bg-green-500 text-white'
+                            : 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                        }`}
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setSavingFavorite(false);
+                          setFavoriteName('');
+                        }}
+                        className="px-3 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      Saving: Seed {customSeed || 'Random'} • {customBpm} BPM • {selectedMood} • {SCALE_NAMES[selectedScale]?.name || selectedScale}
+                    </div>
+                  </div>
+                )}
+
+                {/* Favorites List */}
+                {showFavorites && favorites.length > 0 && (
+                  <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar">
+                    {favorites.map((favorite) => (
+                      <div
+                        key={favorite.id}
+                        className="p-2.5 bg-gray-800/70 rounded-lg border border-gray-700 hover:border-purple-500/50 transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => handleLoadFavorite(favorite)}
+                            className="flex-1 text-left"
+                          >
+                            <div className="text-white font-medium text-sm flex items-center gap-2">
+                              <span>{MOOD_CONFIG[favorite.mood]?.icon || '🎵'}</span>
+                              {favorite.name}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-0.5">
+                              {favorite.bpm} BPM • {favorite.rootNote} {SCALE_NAMES[favorite.scale]?.name || favorite.scale} • {Math.round(favorite.intensity * 100)}%
+                            </div>
+                            <div className="text-xs text-gray-500 font-mono mt-0.5">
+                              Seed: {favorite.seed}
+                            </div>
+                          </button>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => handleLoadFavorite(favorite)}
+                              className="p-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors text-xs"
+                              title="Play this favorite"
+                            >
+                              ▶
+                            </button>
+                            <button
+                              onClick={() => handleDeleteFavorite(favorite.id)}
+                              className="p-1.5 bg-red-600/80 hover:bg-red-500 text-white rounded transition-colors text-xs"
+                              title="Delete this favorite"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {showFavorites && favorites.length === 0 && (
+                  <div className="text-center py-4 text-gray-500 text-sm">
+                    No favorites saved yet. Click "Save Current" to save your first configuration!
+                  </div>
+                )}
+              </div>
+
+              {/* ============= PER-GAME MUSIC CUSTOMIZATION UI ============= */}
+              <div className="border-t border-gray-700 pt-4">
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-white font-medium flex items-center gap-2">
+                    🎮 Per-Game Music
+                    {Object.keys(gameMusicPrefs).length > 0 && (
+                      <span className="text-xs bg-green-600/50 px-2 py-0.5 rounded-full">
+                        {Object.keys(gameMusicPrefs).length} customized
+                      </span>
+                    )}
+                  </label>
+                  <button
+                    onClick={() => setShowGameMusic(!showGameMusic)}
+                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors flex items-center gap-1 ${
+                      showGameMusic
+                        ? 'bg-green-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {showGameMusic ? '🎯 Hide' : '🎯 Setup'}
+                  </button>
+                </div>
+
+                {showGameMusic && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-400">
+                      Assign custom music to specific games. When you start a game, your custom music will play instead of the default!
+                    </p>
+
+                    {/* Game List */}
+                    <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                      {GAME_LIST.map((game) => {
+                        const pref = gameMusicPrefs[game.id];
+                        return (
+                          <div
+                            key={game.id}
+                            className={`p-3 rounded-lg border transition-all ${
+                              pref
+                                ? 'bg-green-900/30 border-green-500/30'
+                                : 'bg-gray-800/50 border-gray-700'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <span className="text-lg">{game.icon}</span>
+                                <div>
+                                  <div className="text-sm text-white font-medium">{game.name}</div>
+                                  {pref ? (
+                                    <div className="text-xs text-green-400">
+                                      Custom: {getGamePrefDisplayName(pref)}
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-gray-500">Using default music</div>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {!pref ? (
+                                  <>
+                                    <button
+                                      onClick={() => handleAssignCurrentToGame(game.id)}
+                                      className="px-2 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded transition-colors"
+                                      title="Assign current Lab settings"
+                                    >
+                                      Use Current
+                                    </button>
+                                    {favorites.length > 0 && (
+                                      <select
+                                        className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded border-none focus:outline-none cursor-pointer"
+                                        onChange={(e) => {
+                                          if (e.target.value) {
+                                            handleAssignFavoriteToGame(game.id, e.target.value);
+                                          }
+                                        }}
+                                        defaultValue=""
+                                      >
+                                        <option value="">+ Favorite</option>
+                                        {favorites.map((fav) => (
+                                          <option key={fav.id} value={fav.id}>
+                                            {fav.name}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </>
+                                ) : (
+                                  <button
+                                    onClick={() => handleClearGamePref(game.id)}
+                                    className="px-2 py-1 text-xs bg-red-600/80 hover:bg-red-500 text-white rounded transition-colors"
+                                    title="Remove custom music"
+                                  >
+                                    Clear
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <p className="text-[10px] text-gray-500 text-center">
+                      Custom game music is saved automatically and will play when you start each game!
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Lab Tips */}
               <div className="p-3 bg-gray-800/50 rounded-lg border border-gray-700">
                 <h5 className="text-sm font-medium text-purple-400 mb-2">💡 Lab Tips</h5>
@@ -805,6 +1986,7 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
                       <li>• <span className="text-purple-400">Japanese</span> scale for peaceful, zen vibes</li>
                     </>
                   )}
+                  <li>• Use <span className="text-green-400">Per-Game Music</span> to customize each game's soundtrack!</li>
                 </ul>
               </div>
             </div>
@@ -845,6 +2027,28 @@ export function AudioSettings({ audioManager, isOpen, onClose }: AudioSettingsPr
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 6px rgba(168, 85, 247, 0.5);
+        }
+        .slider-cyan::-webkit-slider-thumb {
+          appearance: none;
+          height: 16px;
+          width: 16px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #06b6d4, #0891b2);
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(6, 182, 212, 0.5);
+          transition: transform 0.1s;
+        }
+        .slider-cyan::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
+        }
+        .slider-cyan::-moz-range-thumb {
+          height: 16px;
+          width: 16px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #06b6d4, #0891b2);
+          cursor: pointer;
+          border: none;
+          box-shadow: 0 2px 6px rgba(6, 182, 212, 0.5);
         }
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;

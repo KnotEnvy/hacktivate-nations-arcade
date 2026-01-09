@@ -139,6 +139,14 @@ export class AudioManager {
   private isPaused: boolean = false;
   private pausedAt: number = 0;
 
+  // Auto-rotation for hub music
+  private autoRotationEnabled: boolean = false;
+  private autoRotationIntervalId: number | null = null;
+  private autoRotationIntervalMs: number = 4 * 60 * 1000; // 4 minutes default
+  private hubTrackIndex: number = 0;
+  private hubTracks: MusicName[] = ['hub_welcome', 'hub_ambient', 'hub_energetic'];
+  private lastPlayedHubTrack: string | null = null;
+
   async init(): Promise<void> {
     let context: AudioContext | null = null;
     try {
@@ -977,9 +985,94 @@ export class AudioManager {
    * Play a random hub track variation
    */
   playRandomHubMusic(fadeSeconds = 0.5): void {
-    const hubTracks: MusicName[] = ['hub_welcome', 'hub_ambient', 'hub_energetic'];
-    const randomTrack = hubTracks[Math.floor(Math.random() * hubTracks.length)];
+    const randomTrack = this.hubTracks[Math.floor(Math.random() * this.hubTracks.length)];
+    this.lastPlayedHubTrack = randomTrack;
     this.playMusic(randomTrack, fadeSeconds);
+  }
+
+  // ============= HUB MUSIC AUTO-ROTATION =============
+
+  /**
+   * Start auto-rotating through hub tracks
+   * @param intervalMinutes - Minutes between track changes (default: 4)
+   */
+  startHubMusicRotation(intervalMinutes: number = 4): void {
+    // Stop any existing rotation
+    this.stopHubMusicRotation();
+
+    this.autoRotationEnabled = true;
+    this.autoRotationIntervalMs = intervalMinutes * 60 * 1000;
+
+    // Play initial hub track if nothing is playing
+    if (!this.musicPlaying || !this.currentMusicName) {
+      this.playNextHubTrack(2.0);
+    } else {
+      // Track what's currently playing
+      this.lastPlayedHubTrack = this.currentMusicName;
+    }
+
+    // Set up the rotation interval
+    this.autoRotationIntervalId = window.setInterval(() => {
+      // Only rotate if we're still in hub mode (not playing a game)
+      if (this.autoRotationEnabled && !this.currentGameId && !this.isPaused) {
+        this.playNextHubTrack(3.0); // Longer crossfade for smoother transition
+      }
+    }, this.autoRotationIntervalMs);
+  }
+
+  /**
+   * Stop auto-rotating hub tracks
+   */
+  stopHubMusicRotation(): void {
+    this.autoRotationEnabled = false;
+    if (this.autoRotationIntervalId !== null) {
+      clearInterval(this.autoRotationIntervalId);
+      this.autoRotationIntervalId = null;
+    }
+  }
+
+  /**
+   * Play the next hub track in rotation (avoiding repeat of last track)
+   */
+  private playNextHubTrack(fadeSeconds: number = 2.0): void {
+    // Get available tracks excluding the last played one
+    const availableTracks = this.hubTracks.filter(
+      track => track !== this.lastPlayedHubTrack
+    );
+
+    // Pick a random track from available ones
+    const nextTrack = availableTracks.length > 0
+      ? availableTracks[Math.floor(Math.random() * availableTracks.length)]
+      : this.hubTracks[0]; // Fallback if only one track
+
+    this.lastPlayedHubTrack = nextTrack;
+    this.playMusic(nextTrack, fadeSeconds);
+  }
+
+  /**
+   * Check if hub music auto-rotation is active
+   */
+  isHubRotationActive(): boolean {
+    return this.autoRotationEnabled;
+  }
+
+  /**
+   * Set the rotation interval (in minutes)
+   */
+  setRotationInterval(minutes: number): void {
+    this.autoRotationIntervalMs = Math.max(1, minutes) * 60 * 1000;
+
+    // Restart rotation with new interval if active
+    if (this.autoRotationEnabled) {
+      this.startHubMusicRotation(minutes);
+    }
+  }
+
+  /**
+   * Get the current rotation interval in minutes
+   */
+  getRotationIntervalMinutes(): number {
+    return this.autoRotationIntervalMs / 60000;
   }
 
   /**
@@ -1183,6 +1276,138 @@ export class AudioManager {
    */
   getCurrentSeed(): number {
     return this.seed;
+  }
+
+  // ============= DYNAMIC BPM OVERRIDE =============
+
+  /**
+   * Set a BPM override for real-time tempo control
+   * Pass null to reset to track's default BPM
+   */
+  setBpmOverride(bpm: number | null): void {
+    if (this.proceduralEngine) {
+      this.proceduralEngine.setBpmOverride(bpm);
+    }
+  }
+
+  /**
+   * Get the current effective BPM (override or track default)
+   */
+  getEffectiveBpm(): number {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getEffectiveBpm();
+    }
+    return 120;
+  }
+
+  /**
+   * Get the BPM override value (null if using track default)
+   */
+  getBpmOverride(): number | null {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getBpmOverride();
+    }
+    return null;
+  }
+
+  /**
+   * Reset BPM to track's default
+   */
+  resetBpm(): void {
+    if (this.proceduralEngine) {
+      this.proceduralEngine.resetBpm();
+    }
+  }
+
+  // ============= AUDIO VISUALIZATION API =============
+
+  /**
+   * Get the AnalyserNode for external visualization
+   */
+  getAnalyserNode(): AnalyserNode | null {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getAnalyserNode();
+    }
+    return null;
+  }
+
+  /**
+   * Get current frequency data (0-255 values for each frequency bin)
+   */
+  getFrequencyData(): Uint8Array {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getFrequencyData();
+    }
+    return new Uint8Array(128);
+  }
+
+  /**
+   * Get current time domain data (waveform, 0-255 values centered at 128)
+   */
+  getTimeDomainData(): Uint8Array {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getTimeDomainData();
+    }
+    return new Uint8Array(128);
+  }
+
+  /**
+   * Get number of frequency bins
+   */
+  getFrequencyBinCount(): number {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getFrequencyBinCount();
+    }
+    return 128;
+  }
+
+  // ============= INSTRUMENT LAYER CONTROLS =============
+
+  /**
+   * Toggle an instrument layer on/off
+   */
+  toggleLayer(layer: 'bass' | 'drums' | 'melody' | 'chords' | 'arpeggio' | 'ambience'): boolean {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.toggleLayer(layer);
+    }
+    return false;
+  }
+
+  /**
+   * Set the enabled state for a specific instrument layer
+   */
+  setLayerEnabled(layer: 'bass' | 'drums' | 'melody' | 'chords' | 'arpeggio' | 'ambience', enabled: boolean): void {
+    if (this.proceduralEngine) {
+      this.proceduralEngine.setLayerEnabled(layer, enabled);
+    }
+  }
+
+  /**
+   * Get the current state of all layers
+   */
+  getLayerStates(): { bass: boolean; drums: boolean; melody: boolean; chords: boolean; arpeggio: boolean; ambience: boolean } {
+    if (this.proceduralEngine) {
+      return this.proceduralEngine.getLayerStates();
+    }
+    return { bass: true, drums: true, melody: true, chords: true, arpeggio: true, ambience: true };
+  }
+
+  /**
+   * Enable all layers
+   */
+  enableAllLayers(): void {
+    if (this.proceduralEngine) {
+      this.proceduralEngine.enableAllLayers();
+    }
+  }
+
+  /**
+   * Solo a specific layer (mute all others)
+   */
+  soloLayer(layer: 'bass' | 'drums' | 'melody' | 'chords' | 'arpeggio' | 'ambience'): void {
+    if (this.proceduralEngine) {
+      this.proceduralEngine.soloLayer(layer);
+    }
   }
 
   /**
@@ -2313,6 +2538,10 @@ export class AudioManager {
     if (this.currentMusic && !this.muted) {
       this.currentMusic.gain.gain.value = this.masterVolume * this.musicVolume;
     }
+    // Update procedural music engine volume
+    if (this.proceduralEngine && !this.muted) {
+      this.proceduralEngine.setVolume(this.masterVolume * this.musicVolume);
+    }
   }
 
   getMasterVolume(): number {
@@ -2335,9 +2564,13 @@ export class AudioManager {
     if (this.currentMusic && !this.muted) {
       this.currentMusic.gain.gain.value = this.masterVolume * this.musicVolume;
     }
-    // Update new music system gain node
+    // Update legacy music gain node
     if (this.musicGainNode && !this.muted) {
       this.musicGainNode.gain.value = this.masterVolume * this.musicVolume * 0.6;
+    }
+    // Update procedural music engine volume
+    if (this.proceduralEngine && !this.muted) {
+      this.proceduralEngine.setVolume(this.masterVolume * this.musicVolume);
     }
   }
 

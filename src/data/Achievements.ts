@@ -571,6 +571,58 @@ export const ACHIEVEMENTS: Achievement[] = [
         requirement: { type: 'consecutive_days', value: 7 },
         reward: 300,
         unlocked: false
+      },
+
+      // ============= MUSIC LAB SECRET ACHIEVEMENTS =============
+      {
+        id: 'music_lab_discoverer',
+        title: 'Lab Rat',
+        description: 'Discover the secret Music Laboratory',
+        icon: '🔬',
+        category: 'collection',
+        requirement: { type: 'music_lab_unlocked', value: 1 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'music_creator',
+        title: 'Music Creator',
+        description: 'Generate 10 custom tracks in the Music Lab',
+        icon: '🎵',
+        category: 'collection',
+        requirement: { type: 'music_lab_tracks_generated', value: 10 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'music_collector',
+        title: 'Music Collector',
+        description: 'Save 5 favorite configurations',
+        icon: '💾',
+        category: 'collection',
+        requirement: { type: 'music_lab_favorites', value: 5 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'music_sharer',
+        title: 'Music Sharer',
+        description: 'Share your first music creation',
+        icon: '🔗',
+        category: 'collection',
+        requirement: { type: 'music_lab_shared', value: 1 },
+        reward: 75,
+        unlocked: false
+      },
+      {
+        id: 'music_customizer',
+        title: 'Game DJ',
+        description: 'Customize music for 5 different games',
+        icon: '🎮',
+        category: 'collection',
+        requirement: { type: 'music_lab_games_customized', value: 5 },
+        reward: 200,
+        unlocked: false
       }
     ];
 

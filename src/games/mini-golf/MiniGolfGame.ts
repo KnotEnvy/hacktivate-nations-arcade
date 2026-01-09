@@ -643,7 +643,7 @@ export class MiniGolfGame extends BaseGame {
     // Coins earned this round
     ctx.fillStyle = '#FFD700';
     ctx.font = '14px Arial';
-    ctx.fillText(`🪙 ${this.coinsThisRound}`, this.canvas.width - 15, 48);
+    ctx.fillText(`💰 ${this.coinsThisRound}`, this.canvas.width - 15, 48);
     
     // ===== SCORECARD ON RIGHT SIDE =====
     this.renderScorecard(ctx);
@@ -1107,7 +1107,7 @@ export class MiniGolfGame extends BaseGame {
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 28px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`🪙 ${this.coinsThisRound} COINS EARNED! 🪙`, centerX, statStartY + rowSpacing * 2 + 80);
+    ctx.fillText(`💰 ${this.coinsThisRound} COINS EARNED! 💰`, centerX, statStartY + rowSpacing * 2 + 80);
     
     // Continue prompt at bottom
     ctx.fillStyle = '#ffffff';
@@ -1156,7 +1156,7 @@ export class MiniGolfGame extends BaseGame {
     // Coins earned
     ctx.fillStyle = '#FFD700';
     ctx.font = 'bold 22px Arial';
-    ctx.fillText(`🪙 ${this.coinsThisRound} Coins`, centerX, centerY + 90);
+    ctx.fillText(`💰 ${this.coinsThisRound} Coins`, centerX, centerY + 90);
     
     // Branding
     ctx.fillStyle = '#555555';

@@ -21,7 +21,7 @@ interface Cell {
 }
 
 type MinesweeperDifficulty = 'easy' | 'medium' | 'hard';
-type GameState = 'playing' | 'won' | 'lost';
+type GameState = 'playing' | 'won' | 'lost' | 'dying';
 type SmileyState = 'happy' | 'surprised' | 'cool' | 'dead';
 
 const DIFFICULTY_CONFIG: Record<
@@ -135,8 +135,10 @@ export class MinesweeperGame extends BaseGame {
   private screenShake!: ScreenShake;
   private cameraOffset = { x: 0, y: 0 };
 
-  // Victory state
+  // Victory/Death state
   private victoryConfettiSpawned = false;
+  private deathTimer = 0;
+  private readonly deathAnimationDuration = 2.0; // seconds to show death animation
 
   // Computed layout
   private get offsetX(): number {
@@ -156,7 +158,20 @@ export class MinesweeperGame extends BaseGame {
     this.screenShake = new ScreenShake();
     this.loadDifficulty();
     this.generateBoard();
+
+    // Prevent browser context menu on right-click
+    this.handleContextMenu = (e: Event) => e.preventDefault();
+    this.canvas.addEventListener('contextmenu', this.handleContextMenu);
   }
+
+  protected onDestroy(): void {
+    // Clean up event listener
+    if (this.handleContextMenu) {
+      this.canvas.removeEventListener('contextmenu', this.handleContextMenu);
+    }
+  }
+
+  private handleContextMenu?: (e: Event) => void;
 
   protected onRestart(): void {
     this.generateBoard();
@@ -216,6 +231,15 @@ export class MinesweeperGame extends BaseGame {
     if (this.gameState === 'won' && !this.victoryConfettiSpawned) {
       this.particles.createConfetti(this.canvas.width);
       this.victoryConfettiSpawned = true;
+    }
+
+    // Death animation timer
+    if (this.gameState === 'dying') {
+      this.deathTimer += dt;
+      if (this.deathTimer >= this.deathAnimationDuration) {
+        this.gameState = 'lost';
+        this.endGame();
+      }
     }
   }
 
@@ -361,12 +385,13 @@ export class MinesweeperGame extends BaseGame {
     }
 
     if (cell.mine) {
-      // Hit a mine
+      // Hit a mine - start death animation
       cell.revealed = true;
       cell.exploded = true;
       cell.revealProgress = 1;
-      this.gameState = 'lost';
+      this.gameState = 'dying';
       this.smileyState = 'dead';
+      this.deathTimer = 0;
 
       // Explosion effects
       const cellX = this.offsetX + col * this.cellSize + this.cellSize / 2;
@@ -375,9 +400,8 @@ export class MinesweeperGame extends BaseGame {
       this.screenShake.shake(15, 0.5);
       this.services.audio.playSound('collision');
 
-      // Reveal all mines
-      this.revealAllMines();
-      this.endGame();
+      // Reveal all mines with staggered animation
+      this.revealAllMinesAnimated();
       return;
     }
 
@@ -489,6 +513,40 @@ export class MinesweeperGame extends BaseGame {
         }
       }
     }
+  }
+
+  private revealAllMinesAnimated(): void {
+    // Collect all mines
+    const mines: Array<{ row: number; col: number }> = [];
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const cell = this.board[r][c];
+        if (cell.mine && !cell.revealed) {
+          mines.push({ row: r, col: c });
+        }
+      }
+    }
+
+    // Reveal mines with staggered timing
+    mines.forEach((mine, index) => {
+      setTimeout(() => {
+        const cell = this.board[mine.row]?.[mine.col];
+        if (cell && !cell.revealed) {
+          cell.revealed = true;
+          cell.revealProgress = 0; // Animate the reveal
+
+          // Small explosion for each mine
+          const cellX = this.offsetX + mine.col * this.cellSize + this.cellSize / 2;
+          const cellY = this.offsetY + mine.row * this.cellSize + this.cellSize / 2;
+          this.particles.createRevealDust(cellX, cellY, this.cellSize);
+
+          // Small shake for each mine
+          if (index % 3 === 0) {
+            this.screenShake.shake(3, 0.1);
+          }
+        }
+      }, index * 80); // 80ms between each mine reveal
+    });
   }
 
   private pointToCell(x: number, y: number): { row: number; col: number } {
