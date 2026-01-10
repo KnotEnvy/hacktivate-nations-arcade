@@ -4,9 +4,11 @@ import { GameManifest } from '@/lib/types';
 import { Vector2 } from '@/games/shared/utils/Vector2';
 import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
 import { ComboSystem } from './systems/ComboSystem';
+import { ParticleSystem } from './systems/ParticleSystem';
+import { ScreenShake } from './systems/ScreenShake';
 
 type BlockColor = 'red' | 'blue' | 'green' | 'yellow' | 'purple' | 'orange' | 'cyan';
-type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing';
+type GameState = 'playing' | 'paused' | 'gameOver' | 'lineClearing' | 'dying';
 
 interface Block {
   color: BlockColor;
@@ -67,9 +69,19 @@ export class BlockPuzzleGame extends BaseGame {
 
   private environmentSystem: EnvironmentSystem = new EnvironmentSystem();
   private comboSystem: ComboSystem = new ComboSystem();
+  private particleSystem: ParticleSystem = new ParticleSystem();
+  private screenShake: ScreenShake = new ScreenShake();
   private maxCombo: number = 0;
   private tetrisCount: number = 0;
   private themesEncountered: Set<EnvironmentTheme> = new Set();
+
+  // Death animation
+  private deathTimer: number = 0;
+  private readonly deathDuration: number = 2.0;
+
+  // Board position (used for particles)
+  private readonly boardX: number = 80;
+  private readonly boardY: number = 50;
   
   // Input handling
   private inputCooldown: { [key: string]: number } = {};
@@ -128,15 +140,28 @@ export class BlockPuzzleGame extends BaseGame {
   }
 
   protected onUpdate(dt: number): void {
+    // Update visual systems always
+    this.particleSystem.update(dt);
+    this.screenShake.update(dt);
+
     if (this.gameState === 'gameOver') return;
+
+    // Handle dying state
+    if (this.gameState === 'dying') {
+      this.deathTimer += dt;
+      if (this.deathTimer >= this.deathDuration) {
+        this.gameState = 'gameOver';
+        this.endGame();
+      }
+      return;
+    }
 
     const currentTime = Date.now();
 
     // Update timer for challenge mode
     this.timeRemaining -= dt;
     if (this.timeRemaining <= 0) {
-      this.gameState = 'gameOver';
-      this.endGame();
+      this.triggerGameOver();
       return;
     }
 
@@ -351,37 +376,57 @@ private rotatePiece(): boolean {
 
     private hardDrop(): void {
     if (!this.currentPiece) return;
-    
+
+    const startY = this.currentPiece.position.y;
     let dropDistance = 0;
     while (this.dropPiece()) {
         dropDistance++;
     }
-  
-    this.score += dropDistance * 2; 
+
+    this.score += dropDistance * 2;
+
+    // Visual effects for hard drop
+    if (dropDistance > 2 && this.currentPiece) {
+      const colors = this.environmentSystem.getBlockColors();
+      const color = colors[this.currentPiece.color];
+      const x = this.boardX + (this.currentPiece.position.x + 1) * this.blockSize;
+      const y = this.boardY + this.currentPiece.position.y * this.blockSize;
+      this.particleSystem.createHardDropTrail(x, y, dropDistance * this.blockSize, color);
+      this.screenShake.shake(3, 0.1);
+    }
+
     this.services.audio.playSound('click');
     }
 
   private lockPiece(): void {
     if (!this.currentPiece) return;
-    
+
+    const colors = this.environmentSystem.getBlockColors();
+    const pieceColor = colors[this.currentPiece.color];
+
     // Place piece on board
     for (let r = 0; r < this.currentPiece.shape.length; r++) {
       for (let c = 0; c < this.currentPiece.shape[r].length; c++) {
         if (this.currentPiece.shape[r][c]) {
-          const boardX = this.currentPiece.position.x + c;
-          const boardY = this.currentPiece.position.y + r;
-          
-          if (boardY >= 0 && boardY < this.boardHeight && 
-              boardX >= 0 && boardX < this.boardWidth) {
-            this.board[boardY][boardX] = {
+          const bx = this.currentPiece.position.x + c;
+          const by = this.currentPiece.position.y + r;
+
+          if (by >= 0 && by < this.boardHeight &&
+              bx >= 0 && bx < this.boardWidth) {
+            this.board[by][bx] = {
               color: this.currentPiece.color,
               locked: true
             };
+
+            // Lock burst effect for each block
+            const x = this.boardX + bx * this.blockSize + this.blockSize / 2;
+            const y = this.boardY + by * this.blockSize + this.blockSize / 2;
+            this.particleSystem.createLockBurst(x, y, pieceColor);
           }
         }
       }
     }
-    
+
     this.services.audio.playSound('click');
     
     // Check for completed lines
@@ -410,10 +455,30 @@ private rotatePiece(): boolean {
     this.clearingLines = lines;
     this.clearAnimationTime = 0;
     this.gameState = 'lineClearing';
-    
+
+    const colors = this.environmentSystem.getBlockColors();
+    const colorValues = Object.values(colors);
+
+    // Create line clear particles for each line
+    for (const row of lines) {
+      this.particleSystem.createLineClearExplosion(
+        this.boardX,
+        this.boardY,
+        row,
+        this.boardWidth,
+        this.blockSize,
+        colorValues
+      );
+    }
+
+    // Screen shake based on lines cleared
+    const shakeIntensity = lines.length === 4 ? 10 : lines.length * 2;
+    this.screenShake.shake(shakeIntensity, 0.2 + lines.length * 0.05);
+
     // Play sound based on number of lines
     if (lines.length === 4) {
       this.services.audio.playSound('powerup'); // Tetris!
+      this.particleSystem.createTetrisCelebration(this.canvas.width, this.canvas.height);
     } else {
       this.services.audio.playSound('coin');
     }
@@ -451,7 +516,23 @@ private rotatePiece(): boolean {
     if (this.comboSystem.getCombo() > this.maxCombo) {
       this.maxCombo = this.comboSystem.getCombo();
     }
-    this.pickups += linesCount; // Lines cleared count as pickups for currency
+    this.pickups += linesCount;
+
+    // Score popup
+    const popupX = this.boardX + (this.boardWidth * this.blockSize) / 2;
+    const popupY = this.boardY + this.clearingLines[0] * this.blockSize;
+    const popupText = linesCount === 4 ? `TETRIS! +${lineScore}` :
+                      multiplier > 1 ? `${linesCount}x COMBO! +${lineScore}` :
+                      `+${lineScore}`;
+    const popupColor = linesCount === 4 ? '#FBBF24' :
+                       linesCount >= 3 ? '#10B981' :
+                       multiplier > 1 ? '#8B5CF6' : '#FFFFFF';
+
+    if (linesCount === 4 || multiplier > 1) {
+      this.particleSystem.addLargeScorePopup(popupX, popupY, popupText, popupColor);
+    } else {
+      this.particleSystem.addScorePopup(popupX, popupY, popupText, popupColor);
+    }
     
     // Level up every 10 lines
     this.level = Math.floor(this.linesCleared / 10) + 1;
@@ -470,87 +551,131 @@ private rotatePiece(): boolean {
     this.hasSwappedThisTurn = false;
     this.currentPiece = this.nextPiece;
     this.nextPiece = this.generateRandomPiece();
-    
+
     if (this.currentPiece) {
       this.currentPiece.position = new Vector2(
         Math.floor(this.boardWidth / 2) - 1,
         0
       );
-      
+
       // Check game over
       if (!this.isValidPosition(this.currentPiece.shape, this.currentPiece.position)) {
-        this.gameState = 'gameOver';
-        this.services.audio.playSound('game_over');
-        this.endGame();
+        this.triggerGameOver();
       }
     }
   }
 
+  private triggerGameOver(): void {
+    this.gameState = 'dying';
+    this.deathTimer = 0;
+    this.services.audio.playSound('game_over');
+
+    // Game over explosion effect
+    this.particleSystem.createGameOverExplosion(
+      this.boardX,
+      this.boardY,
+      this.boardWidth,
+      this.boardHeight,
+      this.blockSize
+    );
+    this.screenShake.shake(12, 0.5);
+  }
+
   protected onRender(ctx: CanvasRenderingContext2D): void {
+    const shake = this.screenShake.getOffset();
+
+    ctx.save();
+    ctx.translate(shake.x, shake.y);
+
     // Clear background with theme gradient
     this.environmentSystem.drawBackground(
       ctx,
       this.canvas.width,
       this.canvas.height
     );
-    
-    // Draw board background
-    const boardX = 80; // adjust for smaller block size
-    const boardY = 50;
+
+    // Draw board background with subtle glow
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.5)';
+    ctx.shadowBlur = 20;
     ctx.fillStyle = this.environmentSystem.getBoardColor();
-    ctx.fillRect(boardX, boardY, this.boardWidth * this.blockSize, this.boardHeight * this.blockSize);
+    ctx.fillRect(this.boardX, this.boardY, this.boardWidth * this.blockSize, this.boardHeight * this.blockSize);
+    ctx.restore();
+
     ctx.strokeStyle = this.environmentSystem.getGridColor();
     ctx.lineWidth = 1;
     
     // Draw grid
     for (let x = 0; x <= this.boardWidth; x++) {
       ctx.beginPath();
-      ctx.moveTo(boardX + x * this.blockSize, boardY);
-      ctx.lineTo(boardX + x * this.blockSize, boardY + this.boardHeight * this.blockSize);
+      ctx.moveTo(this.boardX + x * this.blockSize, this.boardY);
+      ctx.lineTo(this.boardX + x * this.blockSize, this.boardY + this.boardHeight * this.blockSize);
       ctx.stroke();
     }
-    
+
     for (let y = 0; y <= this.boardHeight; y++) {
       ctx.beginPath();
-      ctx.moveTo(boardX, boardY + y * this.blockSize);
-      ctx.lineTo(boardX + this.boardWidth * this.blockSize, boardY + y * this.blockSize);
+      ctx.moveTo(this.boardX, this.boardY + y * this.blockSize);
+      ctx.lineTo(this.boardX + this.boardWidth * this.blockSize, this.boardY + y * this.blockSize);
       ctx.stroke();
     }
-    
+
     // Draw locked blocks
     for (let row = 0; row < this.boardHeight; row++) {
       for (let col = 0; col < this.boardWidth; col++) {
         const block = this.board[row][col];
         if (block) {
-          const x = boardX + col * this.blockSize;
-          const y = boardY + row * this.blockSize;
-          
+          const x = this.boardX + col * this.blockSize;
+          const y = this.boardY + row * this.blockSize;
+
           // Flash effect for clearing lines
           let alpha = 1.0;
           if (this.clearingLines.includes(row)) {
             alpha = 0.5 + 0.5 * Math.sin(this.clearAnimationTime * 0.02);
           }
-          
+
           this.drawBlock(ctx, x, y, block.color, alpha);
         }
       }
     }
-    
+
     // Draw current falling piece
-    if (this.currentPiece && this.gameState !== 'gameOver') {
-      this.drawPiece(ctx, this.currentPiece, boardX, boardY);
+    if (this.currentPiece && this.gameState !== 'gameOver' && this.gameState !== 'dying') {
+      this.drawPiece(ctx, this.currentPiece, this.boardX, this.boardY);
     }
-    
+
     // Draw ghost piece (preview of where piece will land)
     if (this.currentPiece && this.gameState === 'playing') {
-      this.drawGhostPiece(ctx, boardX, boardY);
+      this.drawGhostPiece(ctx, this.boardX, this.boardY);
     }
-    
+
     // Draw next piece preview
     this.drawNextPiece(ctx);
-    
+
     // Draw UI
     this.drawUI(ctx);
+
+    // Render particles on top
+    this.particleSystem.render(ctx);
+
+    // Death overlay
+    if (this.gameState === 'dying') {
+      const alpha = Math.min(0.7, this.deathTimer / this.deathDuration);
+      ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+      ctx.fillStyle = '#EF4444';
+      ctx.font = 'bold 32px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '18px Arial';
+      ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 35);
+      ctx.fillText(`Lines: ${this.linesCleared} | Level: ${this.level}`, this.canvas.width / 2, this.canvas.height / 2 + 60);
+    }
+
+    ctx.restore();
   }
 
   private drawBlock(ctx: CanvasRenderingContext2D, x: number, y: number, color: BlockColor, alpha: number = 1.0): void {
@@ -687,7 +812,7 @@ private rotatePiece(): boolean {
   }
 
   protected onRestart(): void {
-    this.board = Array(this.boardHeight).fill(null).map(() => 
+    this.board = Array(this.boardHeight).fill(null).map(() =>
       Array(this.boardWidth).fill(null)
     );
     this.currentPiece = this.generateRandomPiece();
@@ -705,7 +830,10 @@ private rotatePiece(): boolean {
     this.environmentSystem.updateTheme(this.level);
     this.tetrisCount = 0;
     this.themesEncountered = new Set([this.environmentSystem.getCurrentTheme()]);
-    
+    this.deathTimer = 0;
+    this.particleSystem.clear();
+    this.screenShake.stop();
+
     if (this.currentPiece) {
       this.currentPiece.position = new Vector2(
         Math.floor(this.boardWidth / 2) - 1,
@@ -727,7 +855,7 @@ private rotatePiece(): boolean {
   }
 
   isGameOver(): boolean {
-    return this.gameState === 'gameOver';
+    return this.gameState === 'gameOver' || this.gameState === 'dying';
   }
 
   protected onGameEnd(finalScore: any): void {
