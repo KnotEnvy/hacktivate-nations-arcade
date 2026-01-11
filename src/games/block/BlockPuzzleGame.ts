@@ -1,6 +1,6 @@
 // src/games/puzzle/BlockPuzzleGame.ts
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
+import { GameManifest } from '@/lib/types'
 import { Vector2 } from '@/games/shared/utils/Vector2';
 import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
 import { ComboSystem } from './systems/ComboSystem';
