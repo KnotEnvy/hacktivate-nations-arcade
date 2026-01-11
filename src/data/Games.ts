@@ -96,13 +96,13 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
 },
   {
-    id: 'bubble-pop',
+    id: 'bubble',
     title: 'Bubble Pop',
-    thumbnail: '/games/coming-soon-thumb.svg',
-    inputSchema: ['touch'],
-    assetBudgetKB: 100,
+    thumbnail: '/games/bubble/bubble-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
+    assetBudgetKB: 50,
     tier: 1,
-    description: 'Coming soon!'
+    description: 'Pop bubbles by matching 3 or more! Chain combos and use power-ups to clear the board!'
   },
 
   // Tier 2

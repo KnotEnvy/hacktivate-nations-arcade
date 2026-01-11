@@ -541,6 +541,151 @@ export const ACHIEVEMENTS: Achievement[] = [
         unlocked: false
       },
 
+      // Bubble Pop Achievements
+      {
+        id: 'bubble_first_pop',
+        title: 'Pop Star',
+        description: 'Pop your first bubble in Bubble Pop',
+        icon: '🫧',
+        gameId: 'bubble',
+        category: 'progression',
+        requirement: { type: 'bubbles_popped', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'bubble_popper',
+        title: 'Bubble Popper',
+        description: 'Pop 50 bubbles in Bubble Pop',
+        icon: '💥',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'bubbles_popped', value: 50 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'bubble_master_popper',
+        title: 'Master Popper',
+        description: 'Pop 200 bubbles in a single game',
+        icon: '🌟',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'bubbles_popped', value: 200 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'bubble_combo_starter',
+        title: 'Combo Starter',
+        description: 'Achieve a 5x combo in Bubble Pop',
+        icon: '🔥',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'max_combo', value: 5 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'bubble_combo_master',
+        title: 'Combo Master',
+        description: 'Achieve a 10x combo in Bubble Pop',
+        icon: '⚡',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'max_combo', value: 10 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'bubble_chain_reaction',
+        title: 'Chain Reaction',
+        description: 'Create a 5-chain cascade',
+        icon: '🔗',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'max_chain', value: 5 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'bubble_fever_mode',
+        title: 'Fever Mode',
+        description: 'Reach Fever level 3 in Bubble Pop',
+        icon: '🌡️',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'max_fever', value: 3 },
+        reward: 175,
+        unlocked: false
+      },
+      {
+        id: 'bubble_fever_max',
+        title: 'Maximum Fever',
+        description: 'Reach maximum Fever level in Bubble Pop',
+        icon: '🔥',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'max_fever', value: 5 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'bubble_powerup_user',
+        title: 'Power Up!',
+        description: 'Use 5 power-ups in Bubble Pop',
+        icon: '💣',
+        gameId: 'bubble',
+        category: 'collection',
+        requirement: { type: 'powerups_used', value: 5 },
+        reward: 125,
+        unlocked: false
+      },
+      {
+        id: 'bubble_sharpshooter',
+        title: 'Sharpshooter',
+        description: 'Achieve 80% accuracy in a game',
+        icon: '🎯',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'accuracy', value: 80 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'bubble_perfect_clear',
+        title: 'Perfect Clear',
+        description: 'Clear all bubbles from the board',
+        icon: '✨',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'perfect_clears', value: 1 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'bubble_score_beginner',
+        title: 'Bubble Scorer',
+        description: 'Score 5,000 points in Bubble Pop',
+        icon: '🔢',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'score', value: 5000 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'bubble_score_expert',
+        title: 'Bubble Expert',
+        description: 'Score 25,000 points in Bubble Pop',
+        icon: '🏆',
+        gameId: 'bubble',
+        category: 'skill',
+        requirement: { type: 'score', value: 25000 },
+        reward: 300,
+        unlocked: false
+      },
+
       // Cross-Game Meta Achievements
       {
         id: 'game_explorer',
