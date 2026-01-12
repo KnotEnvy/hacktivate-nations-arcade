@@ -687,6 +687,50 @@ export class BubbleGrid {
       }
     }
 
+    // FALLBACK: If no neighbor position found, search nearby rows for any valid empty position
+    // This handles edge cases like wall bounces where the bubble lands between grid positions
+    if (!bestPos) {
+      bestPos = this.findNearestEmptyPosition(x, y, collidedRow);
+    }
+
+    return bestPos;
+  }
+
+  /**
+   * Find the nearest empty position to a given screen coordinate
+   * Searches a wider area when the normal neighbor search fails
+   */
+  private findNearestEmptyPosition(
+    x: number,
+    y: number,
+    nearRow: number
+  ): { gridX: number; gridY: number } | null {
+    let bestDist = Infinity;
+    let bestPos: { gridX: number; gridY: number } | null = null;
+
+    // Search rows near the collision point (±2 rows)
+    const startRow = Math.max(0, nearRow - 2);
+    const endRow = Math.min(this.config.rows - 1, nearRow + 2);
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = 0; col < this.getColsForRow(row); col++) {
+        // Skip occupied positions
+        if (this.grid[row]?.[col] !== null) continue;
+
+        // Must have an adjacent bubble (except row 0)
+        if (row > 0 && !this.hasAdjacentBubble(col, row)) continue;
+
+        const pos = this.getScreenPosition(col, row);
+        const dist = Math.sqrt((x - pos.x) ** 2 + (y - pos.y) ** 2);
+
+        // Only consider positions within reasonable distance
+        if (dist < this.config.bubbleSize * 2.5 && dist < bestDist) {
+          bestDist = dist;
+          bestPos = { gridX: col, gridY: row };
+        }
+      }
+    }
+
     return bestPos;
   }
 

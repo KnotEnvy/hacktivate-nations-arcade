@@ -100,6 +100,15 @@ export class BubblePopGame extends BaseGame {
   private recapTimer: number = 0;
   private showingRecap: boolean = false;
 
+  // Score popups
+  private scorePopups: { x: number; y: number; score: number; life: number; maxLife: number }[] = [];
+
+  // Ambient particle timer
+  private ambientTimer: number = 0;
+
+  // Last fever level for pulse effects
+  private lastFeverLevel: number = 0;
+
   protected onInit(): void {
     // Calculate grid offset to center it
     this.gridOffsetX = (this.canvas.width - this.GRID_COLS * this.BUBBLE_SIZE) / 2;
@@ -156,6 +165,9 @@ export class BubblePopGame extends BaseGame {
     this.processingDelay = 0;
     this.showingRecap = false;
     this.recapTimer = 0;
+    this.scorePopups = [];
+    this.ambientTimer = 0;
+    this.lastFeverLevel = 0;
 
     // Reset stats
     this.stats = {
@@ -223,6 +235,33 @@ export class BubblePopGame extends BaseGame {
     this.particles.update(dt);
     this.screenShake.update(dt);
     this.backgroundSystem.update(dt);
+    this.updateScorePopups(dt);
+
+    // Ambient particles (subtle background bubbles)
+    this.ambientTimer += dt;
+    if (this.ambientTimer > 0.8 && this.gameState === 'playing') {
+      this.ambientTimer = 0;
+      this.particles.createAmbientBubble(this.canvas.width, this.canvas.height);
+    }
+
+    // Fever level change pulse
+    const currentFeverLevel = this.feverSystem.getLevel();
+    if (currentFeverLevel > this.lastFeverLevel && currentFeverLevel > 0) {
+      this.particles.createFeverPulse(this.canvas.width, this.canvas.height, currentFeverLevel);
+      this.screenShake.shake(3 + currentFeverLevel, 0.15);
+    }
+    this.lastFeverLevel = currentFeverLevel;
+
+    // Danger zone warning - subtle continuous shake when critical
+    if (this.gameState === 'playing') {
+      const lowestY = this.grid.getLowestBubbleY();
+      const dangerZoneStart = this.DANGER_LINE_Y - 150;
+      const dangerLevel = Math.max(0, Math.min(1, (lowestY - dangerZoneStart) / 150));
+
+      if (dangerLevel > 0.7 && Math.sin(this.gameTime * 15) > 0.8) {
+        this.screenShake.shake(2 + dangerLevel * 3, 0.1);
+      }
+    }
 
     // Handle ready countdown
     if (this.gameState === 'ready') {
@@ -403,6 +442,10 @@ export class BubblePopGame extends BaseGame {
     const result = this.grid.addBubble(bubble);
     this.shooter.clearShootingBubble();
 
+    // Landing dust effect
+    const landPos = this.grid.getScreenPosition(snapPos.gridX, snapPos.gridY);
+    this.particles.createLandingDust(landPos.x, landPos.y);
+
     // Handle power-up effects
     if (result.powerUpTriggered) {
       this.handlePowerUpEffect(result.powerUpTriggered, bubble);
@@ -453,6 +496,19 @@ export class BubblePopGame extends BaseGame {
       this.stats.maxFever = this.feverSystem.getMaxLevelReached();
     }
 
+    // Calculate center of matches for score popup
+    let centerX = 0, centerY = 0;
+    for (const bubble of result.matches) {
+      centerX += bubble.x;
+      centerY += bubble.y;
+    }
+    centerX /= matchCount;
+    centerY /= matchCount;
+
+    // Create score popup
+    this.addScorePopup(centerX, centerY, totalScore);
+    this.particles.createScorePopup(centerX, centerY, totalScore);
+
     // Pop particles
     for (const bubble of result.matches) {
       if (bubble.color) {
@@ -470,6 +526,11 @@ export class BubblePopGame extends BaseGame {
       );
     }
 
+    // Big match bonus (5+ bubbles)
+    if (matchCount >= 5) {
+      this.particles.createPerfectShot(centerX, centerY);
+    }
+
     // Cascade bonus
     if (result.orphans.length > 0) {
       const cascadeBonus = result.orphans.length * 50 * feverMultiplier;
@@ -482,9 +543,33 @@ export class BubblePopGame extends BaseGame {
           this.particles.createCascade(orphan.x, orphan.y, orphan.color);
         }
       }
+
+      // Add cascade score popup
+      if (result.orphans.length > 0) {
+        const cascadeCenter = result.orphans[Math.floor(result.orphans.length / 2)];
+        this.addScorePopup(cascadeCenter.x, cascadeCenter.y + 30, Math.floor(cascadeBonus));
+      }
     }
 
     this.services.audio.playSound('coin');
+  }
+
+  private addScorePopup(x: number, y: number, score: number): void {
+    this.scorePopups.push({
+      x,
+      y,
+      score,
+      life: 1.2,
+      maxLife: 1.2
+    });
+  }
+
+  private updateScorePopups(dt: number): void {
+    this.scorePopups = this.scorePopups.filter(popup => {
+      popup.life -= dt;
+      popup.y -= 40 * dt; // Float upward
+      return popup.life > 0;
+    });
   }
 
   private handlePowerUpEffect(type: PowerUpType, bubble: Bubble): void {
@@ -573,8 +658,11 @@ export class BubblePopGame extends BaseGame {
     // Game area
     this.backgroundSystem.renderGameArea(ctx, this.gridOffsetY + this.grid.ceilingOffset);
 
-    // Danger zone indicator
-    this.backgroundSystem.renderDangerZone(ctx, this.DANGER_LINE_Y);
+    // Danger zone indicator - calculate danger level based on lowest bubble
+    const lowestY = this.grid.getLowestBubbleY();
+    const dangerZoneStart = this.DANGER_LINE_Y - 150; // Start warning 150px above danger line
+    const dangerLevel = Math.max(0, Math.min(1, (lowestY - dangerZoneStart) / 150));
+    this.backgroundSystem.renderDangerZone(ctx, this.DANGER_LINE_Y, dangerLevel);
 
     // Shooter area
     this.backgroundSystem.renderShooterArea(ctx);
@@ -588,7 +676,43 @@ export class BubblePopGame extends BaseGame {
     // Particles
     this.particles.render(ctx);
 
+    // Score popups
+    this.renderScorePopups(ctx);
+
     ctx.restore();
+  }
+
+  private renderScorePopups(ctx: CanvasRenderingContext2D): void {
+    for (const popup of this.scorePopups) {
+      const progress = 1 - popup.life / popup.maxLife;
+      const alpha = popup.life / popup.maxLife;
+      const scale = 1 + progress * 0.3;
+
+      ctx.save();
+      ctx.translate(popup.x, popup.y);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = alpha;
+
+      // Score text with glow
+      const scoreText = `+${popup.score}`;
+      ctx.font = 'bold 20px Arial';
+      ctx.textAlign = 'center';
+
+      // Glow
+      ctx.shadowColor = popup.score >= 500 ? '#FBBF24' : popup.score >= 200 ? '#22C55E' : '#FFFFFF';
+      ctx.shadowBlur = 10;
+
+      // Outline
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 3;
+      ctx.strokeText(scoreText, 0, 0);
+
+      // Fill
+      ctx.fillStyle = popup.score >= 500 ? '#FBBF24' : popup.score >= 200 ? '#22C55E' : '#FFFFFF';
+      ctx.fillText(scoreText, 0, 0);
+
+      ctx.restore();
+    }
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
@@ -621,33 +745,85 @@ export class BubblePopGame extends BaseGame {
   }
 
   private renderReadyScreen(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('BUBBLE POP', this.canvas.width / 2, this.canvas.height / 2 - 50);
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+    const time = this.gameTime;
 
-    ctx.font = '20px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText('Match 3+ bubbles to pop them!', this.canvas.width / 2, this.canvas.height / 2);
+    // Animated decorative bubbles
+    const bubbleColors = ['#EF4444', '#3B82F6', '#22C55E', '#FBBF24', '#A855F7', '#F97316'];
+    for (let i = 0; i < 6; i++) {
+      const angle = (time * 0.5 + i * Math.PI / 3);
+      const radius = 120 + Math.sin(time * 2 + i) * 10;
+      const bx = cx + Math.cos(angle) * radius;
+      const by = cy - 30 + Math.sin(angle) * radius * 0.4;
+      const size = 20 + Math.sin(time * 3 + i * 2) * 5;
 
-    if (this.readyTimer > 0) {
-      ctx.font = 'bold 36px Arial';
-      ctx.fillStyle = '#FBBF24';
-      ctx.fillText(`${Math.ceil(this.readyTimer)}`, this.canvas.width / 2, this.canvas.height / 2 + 60);
-    } else {
-      ctx.font = '24px Arial';
-      ctx.fillStyle = '#22C55E';
-      ctx.fillText('Tap or Press SPACE to start!', this.canvas.width / 2, this.canvas.height / 2 + 60);
+      ctx.save();
+      ctx.globalAlpha = 0.7;
+
+      // Bubble gradient
+      const gradient = ctx.createRadialGradient(bx - size * 0.3, by - size * 0.3, 0, bx, by, size);
+      gradient.addColorStop(0, '#FFFFFF');
+      gradient.addColorStop(0.3, bubbleColors[i]);
+      gradient.addColorStop(1, bubbleColors[i]);
+
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(bx, by, size, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Shine
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.beginPath();
+      ctx.arc(bx - size * 0.25, by - size * 0.25, size * 0.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
 
-    // Controls hint
+    // Title with glow
+    ctx.save();
+    ctx.shadowColor = '#A855F7';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 52px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText('BUBBLE POP', cx, cy - 50);
+    ctx.restore();
+
+    // Subtitle
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#94A3B8';
+    ctx.fillText('Match 3+ bubbles to pop them!', cx, cy + 5);
+
+    // Countdown or start prompt
+    if (this.readyTimer > 0) {
+      const countdownScale = 1 + Math.sin(time * 10) * 0.1;
+      ctx.save();
+      ctx.translate(cx, cy + 70);
+      ctx.scale(countdownScale, countdownScale);
+      ctx.font = 'bold 48px Arial';
+      ctx.fillStyle = '#FBBF24';
+      ctx.shadowColor = '#FBBF24';
+      ctx.shadowBlur = 15;
+      ctx.fillText(`${Math.ceil(this.readyTimer)}`, 0, 0);
+      ctx.restore();
+    } else {
+      const pulseAlpha = 0.7 + Math.sin(time * 4) * 0.3;
+      ctx.globalAlpha = pulseAlpha;
+      ctx.font = 'bold 24px Arial';
+      ctx.fillStyle = '#22C55E';
+      ctx.fillText('Tap or Press SPACE to start!', cx, cy + 70);
+      ctx.globalAlpha = 1;
+    }
+
+    // Controls hint with icons
     ctx.font = '14px Arial';
     ctx.fillStyle = '#64748B';
-    ctx.fillText('Move: Arrow Keys / Touch', this.canvas.width / 2, this.canvas.height - 80);
-    ctx.fillText('Shoot: Space / Tap | Swap: Down Arrow', this.canvas.width / 2, this.canvas.height - 60);
+    ctx.fillText('🎮 Arrow Keys / Touch to aim', cx, this.canvas.height - 80);
+    ctx.fillText('🎯 Space / Tap to shoot  |  ⬇️ Swap bubbles', cx, this.canvas.height - 55);
   }
 
   private renderPlayingUI(ctx: CanvasRenderingContext2D): void {
@@ -668,11 +844,27 @@ export class BubblePopGame extends BaseGame {
     // Ceiling descent warning
     const timeToDescend = this.ceilingDescentInterval - this.ceilingDescentTimer;
     if (timeToDescend <= 5 && !this.isFrozen) {
-      const pulse = Math.sin(this.gameTime * 8) > 0;
-      ctx.fillStyle = pulse ? '#EF4444' : '#FCA5A5';
-      ctx.font = 'bold 14px Arial';
+      const urgency = 1 - (timeToDescend / 5); // 0 to 1 as time runs out
+      const pulse = Math.sin(this.gameTime * (10 + urgency * 10));
+      const pulseScale = 1 + pulse * 0.1 * urgency;
+
+      ctx.save();
+      ctx.translate(this.canvas.width / 2, this.canvas.height - 110);
+      ctx.scale(pulseScale, pulseScale);
+
+      // Glow effect
+      if (urgency > 0.5) {
+        ctx.shadowColor = '#EF4444';
+        ctx.shadowBlur = 10 + urgency * 15;
+      }
+
+      ctx.fillStyle = pulse > 0 ? '#EF4444' : '#FCA5A5';
+      ctx.font = `bold ${14 + urgency * 4}px Arial`;
       ctx.textAlign = 'center';
-      ctx.fillText(`Ceiling in ${timeToDescend.toFixed(1)}s!`, this.canvas.width / 2, this.canvas.height - 110);
+
+      const warningText = timeToDescend <= 2 ? 'CEILING DROPPING!' : `Ceiling in ${timeToDescend.toFixed(1)}s!`;
+      ctx.fillText(warningText, 0, 0);
+      ctx.restore();
     }
 
     // Bubble count
@@ -690,36 +882,108 @@ export class BubblePopGame extends BaseGame {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+    const time = this.gameTime;
+
+    // Animated broken bubbles falling
+    for (let i = 0; i < 8; i++) {
+      const x = cx + (i - 3.5) * 50;
+      const yOffset = Math.sin(time * 2 + i) * 10;
+      const y = cy - 100 + yOffset + (time % 2) * 20;
+      const alpha = 0.3 + Math.sin(time + i) * 0.1;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#4B5563';
+      ctx.beginPath();
+      ctx.arc(x, y, 15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Title with shake effect
+    ctx.save();
+    const shakeX = Math.sin(time * 20) * 2;
+    ctx.shadowColor = '#EF4444';
+    ctx.shadowBlur = 25;
     ctx.fillStyle = '#EF4444';
-    ctx.font = 'bold 48px Arial';
+    ctx.font = 'bold 52px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2 - 40);
+    ctx.fillText('GAME OVER', cx + shakeX, cy - 40);
+    ctx.restore();
 
+    // Score with glow
+    ctx.save();
+    ctx.shadowColor = '#FFFFFF';
+    ctx.shadowBlur = 10;
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 32px Arial';
-    ctx.fillText(`Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
+    ctx.font = 'bold 36px Arial';
+    ctx.fillText(`Score: ${this.score.toLocaleString()}`, cx, cy + 25);
+    ctx.restore();
 
-    ctx.font = '18px Arial';
+    // Pulsing continue prompt
+    const pulseAlpha = 0.6 + Math.sin(time * 4) * 0.4;
+    ctx.globalAlpha = pulseAlpha;
+    ctx.font = '20px Arial';
     ctx.fillStyle = '#94A3B8';
-    ctx.fillText('Press SPACE to continue', this.canvas.width / 2, this.canvas.height / 2 + 80);
+    ctx.fillText('Press SPACE to continue', cx, cy + 90);
+    ctx.globalAlpha = 1;
   }
 
   private renderVictory(ctx: CanvasRenderingContext2D): void {
     ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+    const time = this.gameTime;
+
+    // Celebratory bubbles rising
+    for (let i = 0; i < 10; i++) {
+      const x = cx + (i - 4.5) * 40;
+      const yBase = cy + 150;
+      const yOffset = ((time * 50 + i * 30) % 300);
+      const y = yBase - yOffset;
+      const size = 12 + Math.sin(time * 3 + i) * 4;
+      const hue = (i * 36 + time * 50) % 360;
+
+      ctx.save();
+      ctx.globalAlpha = 1 - yOffset / 300;
+      ctx.fillStyle = `hsl(${hue}, 80%, 60%)`;
+      ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Title with rainbow glow
+    ctx.save();
+    const hue = (time * 100) % 360;
+    ctx.shadowColor = `hsl(${hue}, 80%, 60%)`;
+    ctx.shadowBlur = 30;
     ctx.fillStyle = '#FBBF24';
-    ctx.font = 'bold 48px Arial';
+    ctx.font = 'bold 56px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText('VICTORY!', this.canvas.width / 2, this.canvas.height / 2 - 40);
+    ctx.fillText('VICTORY!', cx, cy - 40);
+    ctx.restore();
 
+    // Score with glow
+    ctx.save();
+    ctx.shadowColor = '#FBBF24';
+    ctx.shadowBlur = 15;
     ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 32px Arial';
-    ctx.fillText(`Score: ${this.score}`, this.canvas.width / 2, this.canvas.height / 2 + 20);
+    ctx.font = 'bold 40px Arial';
+    ctx.fillText(`${this.score.toLocaleString()}`, cx, cy + 30);
+    ctx.restore();
 
-    ctx.font = '18px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText('Press SPACE to continue', this.canvas.width / 2, this.canvas.height / 2 + 80);
+    // Pulsing continue prompt
+    const pulseAlpha = 0.6 + Math.sin(time * 4) * 0.4;
+    ctx.globalAlpha = pulseAlpha;
+    ctx.font = '20px Arial';
+    ctx.fillStyle = '#22C55E';
+    ctx.fillText('Press SPACE to continue', cx, cy + 90);
+    ctx.globalAlpha = 1;
   }
 
   private renderRecap(ctx: CanvasRenderingContext2D): void {

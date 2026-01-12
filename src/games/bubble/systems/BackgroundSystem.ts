@@ -191,12 +191,18 @@ export class BackgroundSystem {
     ctx.fillRect(0, gridOffsetY - 10, this.canvasWidth, 10);
   }
 
-  public renderDangerZone(ctx: CanvasRenderingContext2D, y: number): void {
-    // Pulsing danger line
-    const pulse = Math.sin(this.time * 8) * 0.3 + 0.7;
+  public renderDangerZone(ctx: CanvasRenderingContext2D, y: number, dangerLevel: number = 0): void {
+    // dangerLevel: 0 = safe, 0.5 = getting close, 1.0 = critical
+    const basePulse = Math.sin(this.time * 8) * 0.3 + 0.7;
+    const urgencyPulse = Math.sin(this.time * (12 + dangerLevel * 8)) * 0.4 + 0.6;
+    const pulse = dangerLevel > 0.3 ? urgencyPulse : basePulse;
 
-    ctx.strokeStyle = `rgba(239, 68, 68, ${pulse})`;
-    ctx.lineWidth = 3;
+    // More intense line when in danger
+    const lineAlpha = 0.5 + dangerLevel * 0.5;
+    const lineWidth = 3 + dangerLevel * 4;
+
+    ctx.strokeStyle = `rgba(239, 68, 68, ${pulse * lineAlpha})`;
+    ctx.lineWidth = lineWidth;
     ctx.setLineDash([10, 5]);
     ctx.beginPath();
     ctx.moveTo(0, y);
@@ -204,12 +210,57 @@ export class BackgroundSystem {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Warning gradient above line
-    const warningGradient = ctx.createLinearGradient(0, y - 50, 0, y);
+    // Warning gradient above line - larger and more intense when in danger
+    const gradientHeight = 50 + dangerLevel * 100;
+    const warningGradient = ctx.createLinearGradient(0, y - gradientHeight, 0, y);
     warningGradient.addColorStop(0, 'transparent');
-    warningGradient.addColorStop(1, `rgba(239, 68, 68, ${pulse * 0.2})`);
+    warningGradient.addColorStop(1, `rgba(239, 68, 68, ${pulse * (0.2 + dangerLevel * 0.4)})`);
     ctx.fillStyle = warningGradient;
-    ctx.fillRect(0, y - 50, this.canvasWidth, 50);
+    ctx.fillRect(0, y - gradientHeight, this.canvasWidth, gradientHeight);
+
+    // Critical danger effects
+    if (dangerLevel > 0.5) {
+      // Pulsing screen vignette
+      const vignetteAlpha = (dangerLevel - 0.5) * 2 * pulse * 0.3;
+      const vignetteGradient = ctx.createRadialGradient(
+        this.canvasWidth / 2, this.canvasHeight / 2, this.canvasHeight * 0.3,
+        this.canvasWidth / 2, this.canvasHeight / 2, this.canvasHeight * 0.8
+      );
+      vignetteGradient.addColorStop(0, 'transparent');
+      vignetteGradient.addColorStop(1, `rgba(239, 68, 68, ${vignetteAlpha})`);
+      ctx.fillStyle = vignetteGradient;
+      ctx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
+
+      // Edge warning bars
+      const barAlpha = (dangerLevel - 0.5) * 2 * pulse * 0.6;
+      ctx.fillStyle = `rgba(239, 68, 68, ${barAlpha})`;
+      ctx.fillRect(0, 0, 8, this.canvasHeight);
+      ctx.fillRect(this.canvasWidth - 8, 0, 8, this.canvasHeight);
+
+      // Warning triangles at top
+      if (dangerLevel > 0.7) {
+        const triangleAlpha = (dangerLevel - 0.7) * 3.33 * pulse;
+        ctx.fillStyle = `rgba(239, 68, 68, ${triangleAlpha})`;
+        for (let i = 0; i < 5; i++) {
+          const tx = this.canvasWidth * (0.1 + i * 0.2);
+          const ty = 30 + Math.sin(this.time * 10 + i) * 5;
+          ctx.beginPath();
+          ctx.moveTo(tx, ty);
+          ctx.lineTo(tx - 15, ty - 25);
+          ctx.lineTo(tx + 15, ty - 25);
+          ctx.closePath();
+          ctx.fill();
+
+          // Exclamation mark
+          ctx.fillStyle = `rgba(255, 255, 255, ${triangleAlpha * 0.8})`;
+          ctx.fillRect(tx - 2, ty - 20, 4, 10);
+          ctx.beginPath();
+          ctx.arc(tx, ty - 6, 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = `rgba(239, 68, 68, ${triangleAlpha})`;
+        }
+      }
+    }
   }
 
   public renderShooterArea(ctx: CanvasRenderingContext2D): void {
