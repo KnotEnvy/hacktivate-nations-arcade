@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <linearGradient id="laneGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#C4A35A"/>
+      <stop offset="50%" style="stop-color:#DFC07A"/>
+      <stop offset="100%" style="stop-color:#C4A35A"/>
+    </linearGradient>
+    <linearGradient id="ballGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B0000"/>
+      <stop offset="50%" style="stop-color:#600000"/>
+      <stop offset="100%" style="stop-color:#300000"/>
+    </linearGradient>
+    <linearGradient id="pinGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FFFFFF"/>
+      <stop offset="70%" style="stop-color:#E8E8E8"/>
+      <stop offset="100%" style="stop-color:#CCCCCC"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" fill="#1a1a2e"/>
+
+  <!-- Lane -->
+  <rect x="50" y="20" width="100" height="160" fill="url(#laneGrad)" rx="3"/>
+
+  <!-- Lane gutters -->
+  <rect x="50" y="20" width="15" height="160" fill="#2a2a2a"/>
+  <rect x="135" y="20" width="15" height="160" fill="#2a2a2a"/>
+
+  <!-- Lane lines -->
+  <line x1="75" y1="20" x2="75" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+  <line x1="85" y1="20" x2="85" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+  <line x1="95" y1="20" x2="95" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+  <line x1="105" y1="20" x2="105" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+  <line x1="115" y1="20" x2="115" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+  <line x1="125" y1="20" x2="125" y2="180" stroke="#8B4513" stroke-width="0.5" opacity="0.3"/>
+
+  <!-- Pins - Row 1 (1 pin) -->
+  <ellipse cx="100" cy="40" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="100" cy="37" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+
+  <!-- Pins - Row 2 (2 pins) -->
+  <ellipse cx="90" cy="55" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="90" cy="52" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="110" cy="55" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="110" cy="52" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+
+  <!-- Pins - Row 3 (3 pins) -->
+  <ellipse cx="80" cy="70" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="80" cy="67" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="100" cy="70" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="100" cy="67" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="120" cy="70" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="120" cy="67" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+
+  <!-- Pins - Row 4 (4 pins) -->
+  <ellipse cx="70" cy="85" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="70" cy="82" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="90" cy="85" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="90" cy="82" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="110" cy="85" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="110" cy="82" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+  <ellipse cx="130" cy="85" rx="6" ry="8" fill="url(#pinGrad)" stroke="#999" stroke-width="0.5"/>
+  <ellipse cx="130" cy="82" rx="4" ry="2" fill="none" stroke="#CC0000" stroke-width="1.5"/>
+
+  <!-- Arrow markers -->
+  <polygon points="85,120 82,128 85,126 88,128" fill="#8B0000"/>
+  <polygon points="100,120 97,128 100,126 103,128" fill="#8B0000"/>
+  <polygon points="115,120 112,128 115,126 118,128" fill="#8B0000"/>
+
+  <!-- Bowling ball -->
+  <circle cx="100" cy="155" r="14" fill="url(#ballGrad)"/>
+  <circle cx="100" cy="155" r="14" fill="none" stroke="#200000" stroke-width="1"/>
+  <!-- Ball finger holes -->
+  <circle cx="98" cy="150" r="2" fill="#1a0000"/>
+  <circle cx="104" cy="152" r="2" fill="#1a0000"/>
+  <circle cx="100" cy="158" r="2" fill="#1a0000"/>
+  <!-- Ball shine -->
+  <circle cx="94" cy="149" r="3" fill="rgba(255,255,255,0.3)"/>
+
+  <!-- Strike text -->
+  <text x="100" y="195" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#FFD700" text-anchor="middle">STRIKE!</text>
+</svg>

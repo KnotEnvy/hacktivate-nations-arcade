@@ -60,6 +60,10 @@ gameLoader.registerGame('bubble', async () => {
   const { BubblePopGame } = await import('./bubble/BubblePopGame');
   return new BubblePopGame();
 });
+gameLoader.registerGame('bowling', async () => {
+  const { BowlingGame } = await import('./bowling/BowlingGame');
+  return new BowlingGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {

@@ -107,6 +107,15 @@ export const AVAILABLE_GAMES: GameManifest[] = [
 
   // Tier 2
   {
+    id: 'bowling',
+    title: 'Retro Strike',
+    thumbnail: '/games/bowling/bowling-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
+    assetBudgetKB: 100,
+    tier: 2,
+    description: 'Master the lanes with physics-based bowling! Features realistic pin action, oil patterns, and classic 10-frame scoring.'
+  },
+  {
     id: 'space',
     title: 'Space Shooter',
     thumbnail: '/games/space/space-thumb.svg',

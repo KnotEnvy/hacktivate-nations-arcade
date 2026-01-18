@@ -24,7 +24,11 @@ export type SoundName =
   | 'hole'
   | 'splash'
   | 'win'
-  | 'laser';
+  | 'laser'
+  // Bowling-specific sounds
+  | 'pin_hit'
+  | 'pin_scatter'
+  | 'gutter';
 
 // Legacy music names (still supported)
 export type LegacyMusicName = 'hub_music' | 'game_music';
@@ -261,6 +265,15 @@ export class AudioManager {
         break;
       case 'laser':
         this.playLaserSound(volume, now);
+        break;
+      case 'pin_hit':
+        this.playPinHitSound(volume, now);
+        break;
+      case 'pin_scatter':
+        this.playPinScatterSound(volume, now);
+        break;
+      case 'gutter':
+        this.playGutterSound(volume, now);
         break;
       default:
         // Fallback for any unknown sounds - simple beep
@@ -851,6 +864,168 @@ export class AudioManager {
     highGain.connect(this.masterGain!);
     high.start(now);
     high.stop(now + 0.08);
+  }
+
+  // Pin Hit: Satisfying crack/clatter when ball hits pins
+  private playPinHitSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    // Sharp crack/impact transient
+    const crack = ctx.createOscillator();
+    const crackGain = ctx.createGain();
+    crack.type = 'square';
+    crack.frequency.setValueAtTime(2000, now);
+    crack.frequency.exponentialRampToValueAtTime(800, now + 0.02);
+    crackGain.gain.setValueAtTime(volume * 0.5, now);
+    crackGain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+    crack.connect(crackGain);
+    crackGain.connect(this.masterGain!);
+    crack.start(now);
+    crack.stop(now + 0.04);
+
+    // Wooden impact body
+    const body = ctx.createOscillator();
+    const bodyGain = ctx.createGain();
+    body.type = 'triangle';
+    body.frequency.setValueAtTime(350, now);
+    body.frequency.exponentialRampToValueAtTime(150, now + 0.1);
+    bodyGain.gain.setValueAtTime(volume * 0.6, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    body.connect(bodyGain);
+    bodyGain.connect(this.masterGain!);
+    body.start(now);
+    body.stop(now + 0.18);
+
+    // Noise burst for clatter texture
+    const noiseBuffer = this.createNoiseBuffer(0.12);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const noiseGain = ctx.createGain();
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'bandpass';
+    noiseFilter.frequency.setValueAtTime(3000, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(1500, now + 0.08);
+    noiseFilter.Q.value = 2;
+    noiseGain.gain.setValueAtTime(volume * 0.4, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+
+    // Secondary resonance (pin ringing)
+    const ring = ctx.createOscillator();
+    const ringGain = ctx.createGain();
+    ring.type = 'sine';
+    ring.frequency.value = 880;
+    ringGain.gain.setValueAtTime(volume * 0.15, now + 0.02);
+    ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    ring.connect(ringGain);
+    ringGain.connect(this.masterGain!);
+    ring.start(now + 0.02);
+    ring.stop(now + 0.25);
+  }
+
+  // Pin Scatter: Pins falling and clattering sound
+  private playPinScatterSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    // Multiple pin impacts with slight delays
+    const pinHitTimes = [0, 0.05, 0.12, 0.18, 0.25];
+    const pinFreqs = [300, 350, 280, 320, 250];
+
+    pinHitTimes.forEach((delay, i) => {
+      const t = now + delay;
+
+      // Individual pin knock
+      const knock = ctx.createOscillator();
+      const knockGain = ctx.createGain();
+      knock.type = 'triangle';
+      knock.frequency.setValueAtTime(pinFreqs[i], t);
+      knock.frequency.exponentialRampToValueAtTime(pinFreqs[i] * 0.5, t + 0.08);
+      knockGain.gain.setValueAtTime(volume * (0.3 - i * 0.04), t);
+      knockGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+      knock.connect(knockGain);
+      knockGain.connect(this.masterGain!);
+      knock.start(t);
+      knock.stop(t + 0.12);
+
+      // Small noise burst for each knock
+      if (i < 3) {
+        const clatter = ctx.createOscillator();
+        const clatterGain = ctx.createGain();
+        clatter.type = 'square';
+        clatter.frequency.setValueAtTime(1200 + i * 200, t);
+        clatter.frequency.exponentialRampToValueAtTime(400, t + 0.04);
+        clatterGain.gain.setValueAtTime(volume * 0.15, t);
+        clatterGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        clatter.connect(clatterGain);
+        clatterGain.connect(this.masterGain!);
+        clatter.start(t);
+        clatter.stop(t + 0.06);
+      }
+    });
+
+    // Rolling/rumble undertone as pins settle
+    const rumble = ctx.createOscillator();
+    const rumbleGain = ctx.createGain();
+    rumble.type = 'sine';
+    rumble.frequency.setValueAtTime(80, now);
+    rumble.frequency.exponentialRampToValueAtTime(50, now + 0.4);
+    rumbleGain.gain.setValueAtTime(volume * 0.25, now);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    rumble.connect(rumbleGain);
+    rumbleGain.connect(this.masterGain!);
+    rumble.start(now);
+    rumble.stop(now + 0.5);
+  }
+
+  // Gutter: Disappointed thud/drop sound
+  private playGutterSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    // Deep thud
+    const thud = ctx.createOscillator();
+    const thudGain = ctx.createGain();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(120, now);
+    thud.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+    thudGain.gain.setValueAtTime(volume * 0.6, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    thud.connect(thudGain);
+    thudGain.connect(this.masterGain!);
+    thud.start(now);
+    thud.stop(now + 0.35);
+
+    // Muffled impact noise
+    const noiseBuffer = this.createNoiseBuffer(0.15);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const noiseGain = ctx.createGain();
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(800, now);
+    noiseFilter.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+    noiseGain.gain.setValueAtTime(volume * 0.35, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+
+    // Sad descending tone (minor feel)
+    const sad = ctx.createOscillator();
+    const sadGain = ctx.createGain();
+    sad.type = 'triangle';
+    sad.frequency.setValueAtTime(220, now + 0.1);
+    sad.frequency.exponentialRampToValueAtTime(165, now + 0.3);
+    sadGain.gain.setValueAtTime(0, now + 0.1);
+    sadGain.gain.linearRampToValueAtTime(volume * 0.2, now + 0.12);
+    sadGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    sad.connect(sadGain);
+    sadGain.connect(this.masterGain!);
+    sad.start(now + 0.1);
+    sad.stop(now + 0.4);
   }
 
   // Fallback for unknown sounds

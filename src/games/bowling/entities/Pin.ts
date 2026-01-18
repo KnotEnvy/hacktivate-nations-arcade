@@ -1,0 +1,434 @@
+// ===== src/games/bowling/entities/Pin.ts =====
+// Bowling pin with realistic physics - proper mass, inertia, and settling
+
+export interface PinState {
+  standing: boolean;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  rotation: number;      // Visual rotation when falling
+  rotationVel: number;   // Angular velocity
+  fallDirection: number; // Direction pin is falling (radians)
+}
+
+export class Pin {
+  // Position (center of pin base)
+  x: number;
+  y: number;
+
+  // Velocity
+  vx: number = 0;
+  vy: number = 0;
+
+  // Pin dimensions (top-down view approximation)
+  width: number = 12;
+  height: number = 20;
+  radius: number = 6; // Collision radius
+
+  // Physics - realistic bowling pin mass (~3.5 pounds)
+  mass: number = 3.5;
+
+  // Moment of inertia for rotation (approximated)
+  inertia: number = 2.5;
+
+  // State
+  standing: boolean = true;
+  knocked: boolean = false;
+
+  // Visual rotation when falling
+  rotation: number = 0;
+  rotationVel: number = 0;
+  fallProgress: number = 0; // 0 = standing, 1 = fully fallen
+  fallDirection: number = 0; // Direction pin falls (radians)
+
+  // Original position for reset
+  originalX: number;
+  originalY: number;
+
+  // Pin number (1-10)
+  pinNumber: number;
+
+  // Hit flash effect
+  hitFlash: number = 0;
+
+  // Settling timer - pins settle after impact
+  private settleTimer: number = 0;
+  private readonly SETTLE_TIME: number = 2.0; // Seconds before fully settled
+
+  // Pin deck boundaries (set by physics system)
+  private deckMinX: number = 0;
+  private deckMaxX: number = 500;
+  private deckMinY: number = 0;
+  private deckMaxY: number = 200;
+
+  // Friction coefficients - pins slide and interact
+  private readonly SLIDE_FRICTION = 0.94;  // Moderate friction - pins slide nicely
+  private readonly ANGULAR_DAMPING = 0.90; // Smooth rotation damping
+
+  constructor(x: number, y: number, pinNumber: number) {
+    this.x = x;
+    this.y = y;
+    this.originalX = x;
+    this.originalY = y;
+    this.pinNumber = pinNumber;
+  }
+
+  // Set pin deck boundaries (pins should mostly stay in this area)
+  setDeckBounds(minX: number, maxX: number, minY: number, maxY: number): void {
+    this.deckMinX = minX;
+    this.deckMaxX = maxX;
+    this.deckMinY = minY;
+    this.deckMaxY = maxY;
+  }
+
+  update(dt: number): void {
+    if (!this.standing) {
+      // Update falling animation - fall quickly
+      this.fallProgress = Math.min(1, this.fallProgress + dt * 5);
+
+      // Update rotation (very limited)
+      this.rotation += this.rotationVel * dt;
+
+      // Dampen rotation aggressively
+      this.rotationVel *= Math.pow(this.ANGULAR_DAMPING, dt * 60);
+
+      // Clamp rotation velocity to prevent wild spinning
+      if (Math.abs(this.rotationVel) > 3) {
+        this.rotationVel = Math.sign(this.rotationVel) * 3;
+      }
+
+      // Move pin while falling/sliding
+      this.x += this.vx * dt;
+      this.y += this.vy * dt;
+
+      // Apply strong friction
+      const frictionMultiplier = Math.pow(this.SLIDE_FRICTION, dt * 60);
+      this.vx *= frictionMultiplier;
+      this.vy *= frictionMultiplier;
+
+      // Constrain pins to deck area
+      this.constrainToDeck();
+
+      // Track settling
+      const speed = this.getSpeed();
+      if (speed < 8 && Math.abs(this.rotationVel) < 1) {
+        this.settleTimer += dt;
+      } else {
+        this.settleTimer = Math.max(0, this.settleTimer - dt * 0.3);
+      }
+
+      // Stop when slow enough - be more aggressive about stopping
+      if (speed < 5 && Math.abs(this.rotationVel) < 0.5 && this.fallProgress >= 0.8) {
+        this.vx = 0;
+        this.vy = 0;
+        this.rotationVel = 0;
+        this.fallProgress = 1;
+      }
+    }
+
+    // Fade hit flash
+    if (this.hitFlash > 0) {
+      this.hitFlash -= dt * 5;
+    }
+  }
+
+  // Constrain pins to deck area - pins bounce off walls!
+  private constrainToDeck(): void {
+    const padding = this.radius;
+    const bounceRestitution = 0.65; // Good bounce off walls - pins can ricochet into others!
+
+    // Left boundary - bounce back
+    if (this.x < this.deckMinX + padding) {
+      this.x = this.deckMinX + padding;
+      if (this.vx < 0) {
+        this.vx = -this.vx * bounceRestitution;
+        // Add slight random deflection for natural feel
+        this.vy += (Math.random() - 0.5) * Math.abs(this.vx) * 0.2;
+      }
+    }
+    // Right boundary - bounce back
+    if (this.x > this.deckMaxX - padding) {
+      this.x = this.deckMaxX - padding;
+      if (this.vx > 0) {
+        this.vx = -this.vx * bounceRestitution;
+        this.vy += (Math.random() - 0.5) * Math.abs(this.vx) * 0.2;
+      }
+    }
+    // Top boundary (back wall) - bounce back
+    if (this.y < this.deckMinY + padding) {
+      this.y = this.deckMinY + padding;
+      if (this.vy < 0) {
+        this.vy = -this.vy * bounceRestitution;
+        this.vx += (Math.random() - 0.5) * Math.abs(this.vy) * 0.2;
+      }
+    }
+    // Bottom boundary (toward foul line) - softer bounce
+    if (this.y > this.deckMaxY - padding) {
+      this.y = this.deckMaxY - padding;
+      if (this.vy > 0) {
+        this.vy = -this.vy * bounceRestitution * 0.5; // Softer bounce toward player
+      }
+    }
+  }
+
+  // Check if pin has been displaced enough to fall
+  checkFall(): void {
+    if (!this.standing) return;
+
+    const dx = this.x - this.originalX;
+    const dy = this.y - this.originalY;
+    const displacement = Math.sqrt(dx * dx + dy * dy);
+
+    // Pin falls if displaced more than half its radius
+    if (displacement > this.radius * 0.5) {
+      this.knockDown(dx, dy);
+    }
+  }
+
+  knockDown(dx: number, dy: number): void {
+    if (!this.standing) return;
+
+    this.standing = false;
+    this.knocked = true;
+
+    // Calculate fall direction from displacement/velocity
+    if (Math.abs(this.vx) > 1 || Math.abs(this.vy) > 1) {
+      // Fall in the direction the pin is moving
+      this.fallDirection = Math.atan2(this.vy, this.vx);
+    } else if (dx !== 0 || dy !== 0) {
+      this.fallDirection = Math.atan2(dy, dx);
+    } else {
+      this.fallDirection = Math.random() * Math.PI * 2;
+    }
+
+    // Set minimal rotation - fallen pins shouldn't spin wildly
+    const impactSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    this.rotationVel = Math.min(2, impactSpeed * 0.01) * (this.vx > 0 ? 1 : -1);
+
+    this.hitFlash = 1;
+    this.settleTimer = 0;
+  }
+
+  // Apply impulse from collision - billiard-style momentum transfer
+  applyImpulse(ix: number, iy: number): void {
+    // Apply linear impulse (momentum = impulse / mass)
+    this.vx += ix / this.mass;
+    this.vy += iy / this.mass;
+
+    // Cap velocity for good pin action (not too far, not too slow)
+    const maxVel = 220; // Balanced speed
+    const speed = this.getSpeed();
+    if (speed > maxVel) {
+      const scale = maxVel / speed;
+      this.vx *= scale;
+      this.vy *= scale;
+    }
+
+    // Add rotation based on impact - makes pins tumble realistically
+    const impactMagnitude = Math.sqrt(ix * ix + iy * iy);
+    if (impactMagnitude > 15) {
+      // Rotation based on impact direction and magnitude
+      const rotationImpulse = (impactMagnitude * 0.006) / this.inertia;
+      // Cross product gives rotation direction
+      this.rotationVel += rotationImpulse * Math.sign(ix * this.vy - iy * this.vx + 0.1);
+    }
+  }
+
+  // Apply angular impulse (for spin transfer from ball)
+  applyAngularImpulse(angularImpulse: number): void {
+    this.rotationVel += angularImpulse / this.inertia;
+  }
+
+  getSpeed(): number {
+    return Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+  }
+
+  isStopped(): boolean {
+    const speed = this.getSpeed();
+    const angularSpeed = Math.abs(this.rotationVel);
+
+    if (this.standing) {
+      return speed < 1;
+    }
+
+    // Fallen pin is stopped when slow and has settled
+    return speed < 2 && angularSpeed < 0.2 && this.fallProgress >= 0.95;
+  }
+
+  // Check if pin is fully settled (for longer wait times)
+  isFullySettled(): boolean {
+    return this.isStopped() && (this.standing || this.settleTimer > this.SETTLE_TIME * 0.5);
+  }
+
+  render(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    if (this.standing) {
+      // Standing pin - top-down view
+      this.renderStandingPin(ctx);
+    } else {
+      // Falling/fallen pin
+      this.renderFallenPin(ctx);
+    }
+
+    ctx.restore();
+  }
+
+  private renderStandingPin(ctx: CanvasRenderingContext2D): void {
+    // Shadow
+    ctx.beginPath();
+    ctx.ellipse(2, 2, this.width * 0.5, this.height * 0.3, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.fill();
+
+    // Pin body (top-down oval shape)
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
+
+    // Gradient for 3D effect
+    const gradient = ctx.createRadialGradient(
+      -this.width * 0.15,
+      -this.height * 0.1,
+      0,
+      0,
+      0,
+      this.width * 0.5
+    );
+    gradient.addColorStop(0, '#ffffff');
+    gradient.addColorStop(0.6, '#f5f5f5');
+    gradient.addColorStop(1, '#d0d0d0');
+
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Red stripes (neck area - shown as lines)
+    ctx.strokeStyle = '#CC0000';
+    ctx.lineWidth = 2;
+
+    // Two red stripes
+    ctx.beginPath();
+    ctx.ellipse(0, -this.height * 0.15, this.width * 0.35, this.height * 0.08, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.ellipse(0, -this.height * 0.05, this.width * 0.38, this.height * 0.08, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Outline
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = '#999999';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    // Highlight
+    ctx.beginPath();
+    ctx.ellipse(-this.width * 0.15, -this.height * 0.1, this.width * 0.12, this.height * 0.08, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.fill();
+
+    // Hit flash overlay
+    if (this.hitFlash > 0) {
+      ctx.beginPath();
+      ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 0, ${this.hitFlash * 0.5})`;
+      ctx.fill();
+    }
+  }
+
+  private renderFallenPin(ctx: CanvasRenderingContext2D): void {
+    // Rotate to show fall direction
+    ctx.rotate(this.fallDirection);
+
+    // Simple fallen pin - elongated shape lying on its side
+    // No extreme scaling that causes distortion
+    const pinLength = this.height * 0.9;
+    const pinWidth = this.width * 0.4;
+
+    // Shadow under fallen pin
+    ctx.beginPath();
+    ctx.ellipse(pinLength * 0.3, 4, pinLength * 0.5, pinWidth * 0.6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.fill();
+
+    // Pin body - simple capsule/rounded rectangle shape
+    ctx.beginPath();
+    // Draw rounded rectangle for pin lying on side
+    const x = -pinWidth * 0.5;
+    const y = -pinWidth;
+    const w = pinLength;
+    const h = pinWidth * 2;
+    const r = pinWidth * 0.8;
+
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+
+    // Fill with gradient
+    const gradient = ctx.createLinearGradient(x, y, x, y + h);
+    gradient.addColorStop(0, '#e8e8e8');
+    gradient.addColorStop(0.3, '#ffffff');
+    gradient.addColorStop(0.7, '#f0f0f0');
+    gradient.addColorStop(1, '#c0c0c0');
+
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Red stripe in middle
+    ctx.fillStyle = '#CC0000';
+    ctx.fillRect(pinLength * 0.3, -pinWidth * 0.15, pinLength * 0.15, pinWidth * 0.3);
+
+    // Outline
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.strokeStyle = '#999999';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  reset(): void {
+    this.x = this.originalX;
+    this.y = this.originalY;
+    this.vx = 0;
+    this.vy = 0;
+    this.standing = true;
+    this.knocked = false;
+    this.rotation = 0;
+    this.rotationVel = 0;
+    this.fallProgress = 0;
+    this.fallDirection = 0;
+    this.hitFlash = 0;
+    this.settleTimer = 0;
+  }
+
+  getState(): PinState {
+    return {
+      standing: this.standing,
+      x: this.x,
+      y: this.y,
+      vx: this.vx,
+      vy: this.vy,
+      rotation: this.rotation,
+      rotationVel: this.rotationVel,
+      fallDirection: this.fallDirection
+    };
+  }
+}

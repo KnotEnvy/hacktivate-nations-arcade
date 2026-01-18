@@ -768,6 +768,158 @@ export const ACHIEVEMENTS: Achievement[] = [
         requirement: { type: 'music_lab_games_customized', value: 5 },
         reward: 200,
         unlocked: false
+      },
+
+      // ============= BOWLING ACHIEVEMENTS =============
+      // Beginner Achievements
+      {
+        id: 'bowling_first_strike',
+        title: 'First Strike',
+        description: 'Get your first strike',
+        icon: '🎳',
+        gameId: 'bowling',
+        category: 'progression',
+        requirement: { type: 'strikes', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'bowling_first_spare',
+        title: 'First Spare',
+        description: 'Convert your first spare',
+        icon: '🎳',
+        gameId: 'bowling',
+        category: 'progression',
+        requirement: { type: 'spares', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'bowling_lane_debut',
+        title: 'Lane Debut',
+        description: 'Complete your first bowling game',
+        icon: '🎳',
+        gameId: 'bowling',
+        category: 'progression',
+        requirement: { type: 'totalScore', value: 1 },
+        reward: 25,
+        unlocked: false
+      },
+
+      // Skill Achievements
+      {
+        id: 'bowling_double_trouble',
+        title: 'Double Trouble',
+        description: 'Get 2 strikes in a row',
+        icon: '🔥',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'maxConsecutiveStrikes', value: 2 },
+        reward: 75,
+        unlocked: false
+      },
+      {
+        id: 'bowling_turkey',
+        title: 'Turkey',
+        description: 'Get 3 strikes in a row',
+        icon: '🦃',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'maxConsecutiveStrikes', value: 3 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'bowling_clean_game',
+        title: 'Clean Game',
+        description: 'Complete a game with no open frames (all strikes or spares)',
+        icon: '✨',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'cleanFrames', value: 10 },
+        reward: 300,
+        unlocked: false
+      },
+
+      // Score Milestone Achievements
+      {
+        id: 'bowling_century_club',
+        title: 'Century Club',
+        description: 'Score 100+ points in a single game',
+        icon: '💯',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'totalScore', value: 100 },
+        reward: 75,
+        unlocked: false
+      },
+      {
+        id: 'bowling_150_club',
+        title: '150 Club',
+        description: 'Score 150+ points in a single game',
+        icon: '🏅',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'totalScore', value: 150 },
+        reward: 125,
+        unlocked: false
+      },
+      {
+        id: 'bowling_200_club',
+        title: '200 Club',
+        description: 'Score 200+ points in a single game',
+        icon: '🥈',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'totalScore', value: 200 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'bowling_high_roller',
+        title: 'High Roller',
+        description: 'Score 250+ points in a single game',
+        icon: '🥇',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'totalScore', value: 250 },
+        reward: 350,
+        unlocked: false
+      },
+      {
+        id: 'bowling_perfect_game',
+        title: 'Perfect Game',
+        description: 'Score a perfect 300!',
+        icon: '👑',
+        gameId: 'bowling',
+        category: 'skill',
+        requirement: { type: 'totalScore', value: 300 },
+        reward: 1000,
+        unlocked: false
+      },
+
+      // Fun/Negative Achievements
+      {
+        id: 'bowling_gutter_ball',
+        title: 'Gutter Ball',
+        description: 'Get a gutter ball (everyone starts somewhere!)',
+        icon: '😅',
+        gameId: 'bowling',
+        category: 'gameplay',
+        requirement: { type: 'gutterBalls', value: 1 },
+        reward: 10,
+        unlocked: false
+      },
+      {
+        id: 'bowling_gutter_master',
+        title: 'Gutter Master',
+        description: 'Get 5 gutter balls in one game (ouch!)',
+        icon: '🕳️',
+        gameId: 'bowling',
+        category: 'gameplay',
+        requirement: { type: 'gutterBalls', value: 5 },
+        reward: 25,
+        unlocked: false
       }
     ];
 
