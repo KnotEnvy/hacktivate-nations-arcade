@@ -1215,6 +1215,9 @@ export class BowlingGame extends BaseGame {
   }
 
   restart(): void {
+    // IMPORTANT: Call parent restart to reset isRunning flag
+    super.restart();
+
     this.scoreSystem.reset();
     this.totalStrikes = 0;
     this.totalSpares = 0;
