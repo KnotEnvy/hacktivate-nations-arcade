@@ -24,7 +24,7 @@ export class Pin {
   // Pin dimensions (top-down view approximation)
   width: number = 12;
   height: number = 20;
-  radius: number = 6; // Collision radius
+  radius: number = 8; // Collision radius - increased for better chain reactions
 
   // Physics - realistic bowling pin mass (~3.5 pounds)
   mass: number = 3.5;
@@ -36,11 +36,25 @@ export class Pin {
   standing: boolean = true;
   knocked: boolean = false;
 
-  // Visual rotation when falling
+  // Visual rotation when falling - ENHANCED for Wii-style tumbling
   rotation: number = 0;
   rotationVel: number = 0;
   fallProgress: number = 0; // 0 = standing, 1 = fully fallen
   fallDirection: number = 0; // Direction pin falls (radians)
+
+  // NEW: Wii-style wobble before falling
+  wobbleAmount: number = 0;  // 0-1 intensity of wobble
+  wobblePhase: number = 0;   // Current phase of wobble animation
+  isWobbling: boolean = false;
+  wobbleTimer: number = 0;
+
+  // NEW: Air-time simulation - pins "pop up" briefly
+  airTime: number = 0;       // Time in air
+  airHeight: number = 0;     // Visual height off ground
+  peakAirHeight: number = 0; // Maximum air height reached
+
+  // NEW: Velocity-based visual effects
+  impactIntensity: number = 0; // For flash/stretch effects
 
   // Original position for reset
   originalX: number;
@@ -62,9 +76,9 @@ export class Pin {
   private deckMinY: number = 0;
   private deckMaxY: number = 200;
 
-  // Friction coefficients - pins slide and interact
-  private readonly SLIDE_FRICTION = 0.94;  // Moderate friction - pins slide nicely
-  private readonly ANGULAR_DAMPING = 0.90; // Smooth rotation damping
+  // Friction coefficients - tuned for satisfying Wii-style action
+  private readonly SLIDE_FRICTION = 0.92;  // Slightly less friction - pins slide further
+  private readonly ANGULAR_DAMPING = 0.85; // Less damping - more visible rotation
 
   constructor(x: number, y: number, pinNumber: number) {
     this.x = x;
@@ -83,26 +97,61 @@ export class Pin {
   }
 
   update(dt: number): void {
-    if (!this.standing) {
-      // Update falling animation - fall quickly
-      this.fallProgress = Math.min(1, this.fallProgress + dt * 5);
+    // Update impact intensity fade
+    if (this.impactIntensity > 0) {
+      this.impactIntensity -= dt * 3;
+    }
 
-      // Update rotation (very limited)
+    // Handle wobble animation for standing pins that got bumped
+    if (this.isWobbling && this.standing) {
+      this.wobbleTimer += dt;
+      this.wobblePhase += dt * 25; // Fast wobble frequency
+      this.wobbleAmount *= 0.92; // Decay wobble
+
+      // Stop wobbling when it's minimal
+      if (this.wobbleAmount < 0.01) {
+        this.isWobbling = false;
+        this.wobbleAmount = 0;
+      }
+    }
+
+    if (!this.standing) {
+      // Update air-time simulation - pins "pop up" before falling
+      if (this.airTime > 0) {
+        this.airTime -= dt;
+        // Parabolic arc for air height
+        const airProgress = 1 - (this.airTime / 0.4); // 0.4s total air time
+        if (airProgress < 0.5) {
+          // Rising
+          this.airHeight = this.peakAirHeight * (airProgress * 2);
+        } else {
+          // Falling
+          this.airHeight = this.peakAirHeight * (1 - (airProgress - 0.5) * 2);
+        }
+        this.airHeight = Math.max(0, this.airHeight);
+      } else {
+        this.airHeight = 0;
+      }
+
+      // Update falling animation - SLOWER for more dramatic tumbling
+      this.fallProgress = Math.min(1, this.fallProgress + dt * 2.0);
+
+      // Update rotation - allow MORE rotation for Wii-style tumbling
       this.rotation += this.rotationVel * dt;
 
-      // Dampen rotation aggressively
+      // Dampen rotation (but less aggressively for visible tumbling)
       this.rotationVel *= Math.pow(this.ANGULAR_DAMPING, dt * 60);
 
-      // Clamp rotation velocity to prevent wild spinning
-      if (Math.abs(this.rotationVel) > 3) {
-        this.rotationVel = Math.sign(this.rotationVel) * 3;
+      // Higher rotation cap - pins can tumble visibly
+      if (Math.abs(this.rotationVel) > 12) {
+        this.rotationVel = Math.sign(this.rotationVel) * 12;
       }
 
       // Move pin while falling/sliding
       this.x += this.vx * dt;
       this.y += this.vy * dt;
 
-      // Apply strong friction
+      // Apply friction (slightly reduced for more sliding)
       const frictionMultiplier = Math.pow(this.SLIDE_FRICTION, dt * 60);
       this.vx *= frictionMultiplier;
       this.vy *= frictionMultiplier;
@@ -119,7 +168,7 @@ export class Pin {
       }
 
       // Stop when slow enough - be more aggressive about stopping
-      if (speed < 5 && Math.abs(this.rotationVel) < 0.5 && this.fallProgress >= 0.8) {
+      if (speed < 5 && Math.abs(this.rotationVel) < 0.5 && this.fallProgress >= 0.8 && this.airTime <= 0) {
         this.vx = 0;
         this.vy = 0;
         this.rotationVel = 0;
@@ -172,7 +221,7 @@ export class Pin {
     }
   }
 
-  // Check if pin has been displaced enough to fall
+  // Check if pin has been displaced enough to fall OR start wobbling
   checkFall(): void {
     if (!this.standing) return;
 
@@ -184,6 +233,18 @@ export class Pin {
     if (displacement > this.radius * 0.5) {
       this.knockDown(dx, dy);
     }
+    // Pin wobbles if slightly displaced (Wii-style near-miss effect)
+    else if (displacement > this.radius * 0.15 && !this.isWobbling) {
+      this.startWobble(displacement / this.radius);
+    }
+  }
+
+  // NEW: Start wobble animation (pin was bumped but didn't fall)
+  startWobble(intensity: number): void {
+    this.isWobbling = true;
+    this.wobbleAmount = Math.min(1, intensity * 2);
+    this.wobblePhase = 0;
+    this.wobbleTimer = 0;
   }
 
   knockDown(dx: number, dy: number): void {
@@ -191,6 +252,8 @@ export class Pin {
 
     this.standing = false;
     this.knocked = true;
+    this.isWobbling = false;
+    this.wobbleAmount = 0;
 
     // Calculate fall direction from displacement/velocity
     if (Math.abs(this.vx) > 1 || Math.abs(this.vy) > 1) {
@@ -202,9 +265,21 @@ export class Pin {
       this.fallDirection = Math.random() * Math.PI * 2;
     }
 
-    // Set minimal rotation - fallen pins shouldn't spin wildly
+    // ENHANCED: More dramatic rotation for Wii-style tumbling
     const impactSpeed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
-    this.rotationVel = Math.min(2, impactSpeed * 0.01) * (this.vx > 0 ? 1 : -1);
+    // Higher base rotation + speed-based bonus
+    this.rotationVel = (2 + impactSpeed * 0.04) * (Math.random() > 0.5 ? 1 : -1);
+    // Add some randomness for natural feel
+    this.rotationVel += (Math.random() - 0.5) * 2;
+
+    // NEW: Calculate air-time based on impact speed (pins "pop up")
+    if (impactSpeed > 30) {
+      this.airTime = Math.min(0.4, impactSpeed * 0.002); // Up to 0.4 seconds air time
+      this.peakAirHeight = Math.min(20, impactSpeed * 0.08); // Up to 20 pixel lift
+    }
+
+    // Set impact intensity for visual effects
+    this.impactIntensity = Math.min(1, impactSpeed / 150);
 
     this.hitFlash = 1;
     this.settleTimer = 0;
@@ -263,9 +338,17 @@ export class Pin {
 
   render(ctx: CanvasRenderingContext2D): void {
     ctx.save();
-    ctx.translate(this.x, this.y);
+
+    // Apply air height offset for fallen pins that are "in the air"
+    const airOffset = this.airHeight;
+    ctx.translate(this.x, this.y - airOffset);
 
     if (this.standing) {
+      // Apply wobble rotation for standing pins
+      if (this.isWobbling && this.wobbleAmount > 0) {
+        const wobbleAngle = Math.sin(this.wobblePhase) * this.wobbleAmount * 0.15;
+        ctx.rotate(wobbleAngle);
+      }
       // Standing pin - top-down view
       this.renderStandingPin(ctx);
     } else {
@@ -339,18 +422,22 @@ export class Pin {
   }
 
   private renderFallenPin(ctx: CanvasRenderingContext2D): void {
-    // Rotate to show fall direction
-    ctx.rotate(this.fallDirection);
+    // Add visual rotation based on tumbling
+    ctx.rotate(this.fallDirection + this.rotation * 0.3);
 
     // Simple fallen pin - elongated shape lying on its side
-    // No extreme scaling that causes distortion
     const pinLength = this.height * 0.9;
     const pinWidth = this.width * 0.4;
 
-    // Shadow under fallen pin
+    // Velocity-based stretch effect for fast-moving pins
+    const speed = this.getSpeed();
+    const stretchFactor = 1 + Math.min(0.3, speed * 0.001);
+
+    // Shadow - offset more when pin is in the air
+    const shadowOffset = 4 + this.airHeight * 0.5;
     ctx.beginPath();
-    ctx.ellipse(pinLength * 0.3, 4, pinLength * 0.5, pinWidth * 0.6, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+    ctx.ellipse(pinLength * 0.3, shadowOffset, pinLength * 0.5, pinWidth * 0.6, 0, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.25 - this.airHeight * 0.01})`;
     ctx.fill();
 
     // Pin body - simple capsule/rounded rectangle shape
@@ -417,6 +504,15 @@ export class Pin {
     this.fallDirection = 0;
     this.hitFlash = 0;
     this.settleTimer = 0;
+    // Reset new Wii-style properties
+    this.wobbleAmount = 0;
+    this.wobblePhase = 0;
+    this.isWobbling = false;
+    this.wobbleTimer = 0;
+    this.airTime = 0;
+    this.airHeight = 0;
+    this.peakAirHeight = 0;
+    this.impactIntensity = 0;
   }
 
   getState(): PinState {

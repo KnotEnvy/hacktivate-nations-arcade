@@ -22,7 +22,7 @@ import { PhysicsSystem, CollisionEvent } from './systems/PhysicsSystem';
 import { ScoreSystem, ScoreResult } from './systems/ScoreSystem';
 import { ParticleSystem } from './systems/ParticleSystem';
 
-type GamePhase = 'setup' | 'aiming' | 'rolling' | 'settling' | 'scoring' | 'nextFrame' | 'stats' | 'complete';
+type GamePhase = 'setup' | 'aiming' | 'rolling' | 'settling' | 'scoring' | 'pinReset' | 'nextFrame' | 'stats' | 'complete';
 
 export class BowlingGame extends BaseGame {
   manifest: GameManifest = {
@@ -57,10 +57,25 @@ export class BowlingGame extends BaseGame {
   private readonly KEY_REPEAT_DELAY = 0.15; // seconds between key repeats
 
   // Visual effects
-  private screenShake: { x: number; y: number; intensity: number } = { x: 0, y: 0, intensity: 0 };
+  private screenShake: { x: number; y: number; intensity: number; angle: number } = { x: 0, y: 0, intensity: 0, angle: 0 };
   private messageText: string = '';
   private messageTimer: number = 0;
   private celebrationTimer: number = 0;
+
+  // NEW: Slow-motion effect for dramatic moments
+  private slowMotionTimer: number = 0;
+  private slowMotionScale: number = 1; // 1 = normal speed, 0.3 = slow
+
+  // NEW: Track pins knocked during current roll for real-time feedback
+  private pinsKnockedThisRoll: number = 0;
+  private firstPinHitThisRoll: boolean = false;
+
+  // NEW: Pin setter animation state
+  private pinSetterY: number = -100; // Y position of pin setter mechanism
+  private pinSetterPhase: 'descending' | 'sweeping' | 'ascending' | 'done' = 'done';
+  private pinSetterTimer: number = 0;
+  private fallenPinPositions: { x: number; y: number; rotation: number }[] = []; // Store fallen pin positions for sweep
+  private standingPinNumbers: number[] = []; // Which pins to reset after sweep
 
   // Game stats
   private totalStrikes: number = 0;
@@ -68,8 +83,8 @@ export class BowlingGame extends BaseGame {
   private gutterBalls: number = 0;
   private maxConsecutiveStrikes: number = 0;
 
-  // Constants
-  private readonly MAX_BALL_SPEED = 600;
+  // Constants - TUNED for better pin physics
+  private readonly MAX_BALL_SPEED = 180; // Reduced from 600 for realistic feel
   private readonly SETTLE_TIMEOUT = 3; // Max seconds to wait for settling
 
   protected renderBaseHud: boolean = false;
@@ -302,6 +317,12 @@ export class BowlingGame extends BaseGame {
 
     this.phase = 'aiming';
     this.settleTimer = 0;
+
+    // Reset per-roll tracking
+    this.pinsKnockedThisRoll = 0;
+    this.firstPinHitThisRoll = false;
+    this.slowMotionTimer = 0;
+    this.slowMotionScale = 1;
   }
 
   private showMessage(text: string, duration: number): void {
@@ -315,14 +336,28 @@ export class BowlingGame extends BaseGame {
     if (this.celebrationTimer > 0) this.celebrationTimer -= dt;
     this.phaseTimer += dt;
 
-    // Update screen shake
+    // Update screen shake - enhanced with directional component
     if (this.screenShake.intensity > 0) {
-      this.screenShake.x = (Math.random() - 0.5) * this.screenShake.intensity * 10;
-      this.screenShake.y = (Math.random() - 0.5) * this.screenShake.intensity * 10;
-      this.screenShake.intensity *= 0.9;
+      const shakeAngle = this.screenShake.angle + (Math.random() - 0.5) * 0.5;
+      this.screenShake.x = Math.cos(shakeAngle) * this.screenShake.intensity * 12;
+      this.screenShake.y = Math.sin(shakeAngle) * this.screenShake.intensity * 12;
+      this.screenShake.intensity *= 0.88;
       if (this.screenShake.intensity < 0.01) {
-        this.screenShake = { x: 0, y: 0, intensity: 0 };
+        this.screenShake = { x: 0, y: 0, intensity: 0, angle: 0 };
       }
+    }
+
+    // Update slow-motion effect
+    if (this.slowMotionTimer > 0) {
+      this.slowMotionTimer -= dt;
+      // Ease in and out of slow motion
+      if (this.slowMotionTimer > 0.3) {
+        this.slowMotionScale = 0.25; // Full slow-mo
+      } else {
+        this.slowMotionScale = 0.25 + (0.3 - this.slowMotionTimer) / 0.3 * 0.75; // Ease out
+      }
+    } else {
+      this.slowMotionScale = 1;
     }
 
     // Update particles
@@ -349,6 +384,9 @@ export class BowlingGame extends BaseGame {
         break;
       case 'scoring':
         this.updateScoring(dt);
+        break;
+      case 'pinReset':
+        this.updatePinReset(dt);
         break;
       case 'nextFrame':
         this.updateNextFrame(dt);
@@ -378,16 +416,19 @@ export class BowlingGame extends BaseGame {
   private updateAiming(dt: number): void {
     // Update ball position to match aim indicator during positioning
     if (this.aimIndicator.getPhase() === 'positioning' ||
-        this.aimIndicator.getPhase() === 'aiming' ||
-        this.aimIndicator.getPhase() === 'power' ||
-        this.aimIndicator.getPhase() === 'spin') {
+      this.aimIndicator.getPhase() === 'aiming' ||
+      this.aimIndicator.getPhase() === 'power' ||
+      this.aimIndicator.getPhase() === 'spin') {
       this.ball.x = this.aimIndicator.getBallX();
     }
   }
 
   private updateRolling(dt: number): void {
+    // Apply slow-motion scaling to delta time
+    const effectiveDt = dt * this.slowMotionScale;
+
     // Run physics
-    const events = this.physics.update(this.ball, this.pins, dt);
+    const events = this.physics.update(this.ball, this.pins, effectiveDt);
 
     // Process collision events
     for (const event of events) {
@@ -410,14 +451,17 @@ export class BowlingGame extends BaseGame {
   }
 
   private updateSettling(dt: number): void {
+    // Apply slow-motion scaling
+    const effectiveDt = dt * this.slowMotionScale;
+
     // Continue physics while pins settle
-    const events = this.physics.update(this.ball, this.pins, dt);
+    const events = this.physics.update(this.ball, this.pins, effectiveDt);
 
     for (const event of events) {
       this.handleCollisionEvent(event);
     }
 
-    this.settleTimer += dt;
+    this.settleTimer += dt; // Use real dt for timeout
 
     // Check if settled or timeout
     if (this.physics.isSettled(this.ball, this.pins) || this.settleTimer > this.SETTLE_TIMEOUT) {
@@ -430,8 +474,12 @@ export class BowlingGame extends BaseGame {
     // Small delay before showing score
     if (this.phaseTimer < 0.5) return;
 
-    // Determine which pins were knocked
-    const knockedPins = this.pins.map(pin => !pin.standing);
+    // Determine which pins were knocked - indexed by PIN NUMBER (1-10 -> 0-9)
+    // IMPORTANT: Must use pinNumber as index, not array position
+    const knockedPins = new Array(10).fill(false);
+    for (const pin of this.pins) {
+      knockedPins[pin.pinNumber - 1] = !pin.standing;
+    }
 
     // Record the roll
     const result = this.scoreSystem.recordRoll(knockedPins);
@@ -446,9 +494,116 @@ export class BowlingGame extends BaseGame {
       this.phase = 'nextFrame';
       this.phaseTimer = 0;
     } else {
-      // Second roll - setup for spare attempt
-      this.setupFrame();
+      // Second roll - start pin setter animation
+      this.startPinResetAnimation();
     }
+  }
+
+  // Start the pin setter animation for second ball
+  private startPinResetAnimation(): void {
+    // Store positions of fallen pins for sweep animation
+    this.fallenPinPositions = [];
+    this.standingPinNumbers = [];
+
+    for (const pin of this.pins) {
+      if (!pin.standing) {
+        this.fallenPinPositions.push({ x: pin.x, y: pin.y, rotation: pin.rotation });
+      } else {
+        this.standingPinNumbers.push(pin.pinNumber);
+      }
+    }
+
+    // Start animation
+    this.pinSetterY = -100;
+    this.pinSetterPhase = 'descending';
+    this.pinSetterTimer = 0;
+    this.phase = 'pinReset';
+    this.phaseTimer = 0;
+
+    // Play mechanical sound
+    this.services?.audio?.playSound?.('pin_scatter');
+  }
+
+  private updatePinReset(dt: number): void {
+    this.pinSetterTimer += dt;
+    const targetY = this.lane.pinDeckY + 50; // Where pin setter stops
+
+    switch (this.pinSetterPhase) {
+      case 'descending':
+        // Pin setter comes down
+        this.pinSetterY += 400 * dt; // Speed of descent
+        if (this.pinSetterY >= targetY) {
+          this.pinSetterY = targetY;
+          this.pinSetterPhase = 'sweeping';
+          this.pinSetterTimer = 0;
+          // Clear fallen pins from display
+          for (const pin of this.pins) {
+            if (!pin.standing) {
+              // Move fallen pins off-screen (swept away)
+              pin.x = -100;
+              pin.y = -100;
+            }
+          }
+          this.services?.audio?.playSound?.('bounce');
+        }
+        break;
+
+      case 'sweeping':
+        // Brief pause while pins are "swept"
+        if (this.pinSetterTimer > 0.4) {
+          this.pinSetterPhase = 'ascending';
+          this.pinSetterTimer = 0;
+          // Reset standing pins to original positions
+          const pinPositions = this.lane.getPinPositions();
+          for (const pin of this.pins) {
+            if (this.standingPinNumbers.includes(pin.pinNumber)) {
+              const originalPos = pinPositions.find(p => p.pinNumber === pin.pinNumber);
+              if (originalPos) {
+                pin.x = originalPos.x;
+                pin.y = originalPos.y;
+                pin.vx = 0;
+                pin.vy = 0;
+                pin.rotation = 0;
+                pin.rotationVel = 0;
+              }
+            }
+          }
+        }
+        break;
+
+      case 'ascending':
+        // Pin setter goes back up
+        this.pinSetterY -= 400 * dt;
+        if (this.pinSetterY <= -100) {
+          this.pinSetterY = -100;
+          this.pinSetterPhase = 'done';
+          // Now actually setup for second ball
+          this.setupFrameAfterPinReset();
+        }
+        break;
+    }
+  }
+
+  // Setup frame after pin reset animation completes
+  private setupFrameAfterPinReset(): void {
+    // Get start position from lane
+    const startPos = this.lane.getBallStartPosition();
+    this.ball.reset(startPos.x, startPos.y);
+
+    // Reset aim indicator
+    this.aimIndicator.initialize(this.lane.x, this.lane.width, this.lane.height);
+    this.aimIndicator.setBallY(startPos.y);
+
+    this.phase = 'aiming';
+    this.settleTimer = 0;
+
+    // Reset per-roll tracking
+    this.pinsKnockedThisRoll = 0;
+    this.firstPinHitThisRoll = false;
+    this.slowMotionTimer = 0;
+    this.slowMotionScale = 1;
+
+    this.showMessage('2nd Ball', 1);
   }
 
   private updateNextFrame(dt: number): void {
@@ -461,8 +616,30 @@ export class BowlingGame extends BaseGame {
   private handleCollisionEvent(event: CollisionEvent): void {
     switch (event.type) {
       case 'ball-pin':
+        // Enhanced impact effects
         this.particles.emitPinImpact(event.position.x, event.position.y, event.intensity);
-        this.screenShake.intensity = Math.max(this.screenShake.intensity, event.intensity * 0.5);
+
+        // Add shockwave on big impacts
+        if (event.intensity > 0.6) {
+          this.particles.emitShockwave(event.position.x, event.position.y, event.intensity);
+        }
+
+        // Directional screen shake based on collision
+        this.screenShake.angle = Math.atan2(this.ball.vy, this.ball.vx);
+        this.screenShake.intensity = Math.max(this.screenShake.intensity, event.intensity * 0.6);
+
+        // Track pins hit for slow-mo trigger
+        this.pinsKnockedThisRoll++;
+
+        // Trigger slow-motion on first big impact (potential strike)
+        if (!this.firstPinHitThisRoll && event.intensity > 0.6) {
+          this.firstPinHitThisRoll = true;
+          // Only trigger slow-mo on first ball (potential strike)
+          if (this.scoreSystem.getCurrentRoll() === 0) {
+            this.slowMotionTimer = 0.5; // Half second of slow-mo
+          }
+        }
+
         // Use pin_hit for satisfying crack/clatter sound
         this.services?.audio?.playSound?.('pin_hit');
         // If high intensity collision, also play pin scatter for dramatic effect
@@ -472,7 +649,8 @@ export class BowlingGame extends BaseGame {
         break;
       case 'pin-pin':
         if (event.intensity > 0.3) {
-          this.particles.emit(event.position.x, event.position.y, 3, '#C4A35A', 'debris');
+          // Use splinter particles for pin-pin collisions too
+          this.particles.emit(event.position.x, event.position.y, 4, '#D4A574', 'splinter');
           // Use bounce for lighter pin-pin collisions
           this.services?.audio?.playSound?.('bounce');
         }
@@ -597,10 +775,106 @@ export class BowlingGame extends BaseGame {
     // Render particles
     this.particles.render(ctx);
 
+    // Render pin setter mechanism (during pinReset phase)
+    if (this.phase === 'pinReset' && this.pinSetterPhase !== 'done') {
+      this.renderPinSetter(ctx);
+    }
+
     ctx.restore();
 
     // Render UI (not affected by shake)
     this.renderGameUI(ctx);
+  }
+
+  private renderPinSetter(ctx: CanvasRenderingContext2D): void {
+    const laneCenter = this.lane.x + this.lane.width / 2;
+    const setterWidth = this.lane.width - 20;
+    const setterHeight = 80;
+
+    ctx.save();
+
+    // Draw cables/supports going up from setter
+    ctx.strokeStyle = '#444444';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(laneCenter - setterWidth / 2 + 10, this.pinSetterY);
+    ctx.lineTo(laneCenter - setterWidth / 2 + 10, this.lane.y - 20);
+    ctx.moveTo(laneCenter + setterWidth / 2 - 10, this.pinSetterY);
+    ctx.lineTo(laneCenter + setterWidth / 2 - 10, this.lane.y - 20);
+    ctx.stroke();
+
+    // Main setter body - metallic gradient
+    const gradient = ctx.createLinearGradient(0, this.pinSetterY, 0, this.pinSetterY + setterHeight);
+    gradient.addColorStop(0, '#666666');
+    gradient.addColorStop(0.3, '#888888');
+    gradient.addColorStop(0.5, '#aaaaaa');
+    gradient.addColorStop(0.7, '#888888');
+    gradient.addColorStop(1, '#555555');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(laneCenter - setterWidth / 2, this.pinSetterY, setterWidth, setterHeight);
+
+    // Edge highlights
+    ctx.strokeStyle = '#cccccc';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(laneCenter - setterWidth / 2, this.pinSetterY);
+    ctx.lineTo(laneCenter + setterWidth / 2, this.pinSetterY);
+    ctx.stroke();
+
+    // Darker bottom edge
+    ctx.strokeStyle = '#333333';
+    ctx.beginPath();
+    ctx.moveTo(laneCenter - setterWidth / 2, this.pinSetterY + setterHeight);
+    ctx.lineTo(laneCenter + setterWidth / 2, this.pinSetterY + setterHeight);
+    ctx.stroke();
+
+    // Pin holder slots (the circular holes that hold pins)
+    ctx.fillStyle = '#222222';
+    const slotRadius = 8;
+    const slotY = this.pinSetterY + setterHeight - 15;
+
+    // Draw slots in triangle formation matching pin positions
+    const slotSpacing = 18;
+    // Back row (4)
+    for (let i = -1.5; i <= 1.5; i++) {
+      ctx.beginPath();
+      ctx.arc(laneCenter + i * slotSpacing, slotY - 45, slotRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Row 3 (3)
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.arc(laneCenter + i * slotSpacing, slotY - 27, slotRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Row 2 (2)
+    for (let i = -0.5; i <= 0.5; i++) {
+      ctx.beginPath();
+      ctx.arc(laneCenter + i * slotSpacing, slotY - 9, slotRadius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Front row (1 - head pin)
+    ctx.beginPath();
+    ctx.arc(laneCenter, slotY + 9, slotRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Add warning stripes
+    ctx.fillStyle = '#FFD700';
+    ctx.globalAlpha = 0.3;
+    const stripeWidth = 6;
+    for (let x = laneCenter - setterWidth / 2; x < laneCenter + setterWidth / 2; x += stripeWidth * 2) {
+      ctx.fillRect(x, this.pinSetterY + 2, stripeWidth, 8);
+    }
+    ctx.globalAlpha = 1;
+
+    // Glow effect when sweeping
+    if (this.pinSetterPhase === 'sweeping') {
+      ctx.fillStyle = 'rgba(255, 200, 100, 0.3)';
+      ctx.fillRect(laneCenter - setterWidth / 2 - 5, this.pinSetterY + setterHeight - 5, setterWidth + 10, 15);
+    }
+
+    ctx.restore();
   }
 
   private renderGameUI(ctx: CanvasRenderingContext2D): void {
@@ -953,6 +1227,16 @@ export class BowlingGame extends BaseGame {
     this.celebrationTimer = 0;
     this.particles.clear();
     this.keysPressed.clear();
+
+    // Reset slow-motion state
+    this.slowMotionTimer = 0;
+    this.slowMotionScale = 1;
+    this.pinsKnockedThisRoll = 0;
+    this.firstPinHitThisRoll = false;
+
+    // Reset visual effects
+    this.screenShake = { x: 0, y: 0, intensity: 0, angle: 0 };
+    this.phaseTimer = 0;
 
     this.setupFrame();
     this.showMessage('Frame 1 - Good Luck!', 2);

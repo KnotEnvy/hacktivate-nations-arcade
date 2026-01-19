@@ -10,15 +10,18 @@ interface Particle {
   maxLife: number;
   size: number;
   color: string;
-  type: 'spark' | 'debris' | 'smoke' | 'star' | 'ring';
+  type: 'spark' | 'debris' | 'smoke' | 'star' | 'ring' | 'splinter' | 'shockwave' | 'dust';
   rotation: number;
   rotationSpeed: number;
   gravity: number;
+  // NEW: Additional properties for enhanced effects
+  scaleX?: number;  // For stretched particles
+  scaleY?: number;
 }
 
 export class ParticleSystem {
   private particles: Particle[] = [];
-  private readonly MAX_PARTICLES = 200;
+  private readonly MAX_PARTICLES = 350; // Increased for more dramatic effects
 
   update(dt: number): void {
     for (let i = this.particles.length - 1; i >= 0; i--) {
@@ -69,6 +72,15 @@ export class ParticleSystem {
           break;
         case 'ring':
           this.renderRing(ctx, p, size, alpha);
+          break;
+        case 'splinter':
+          this.renderSplinter(ctx, p, size, alpha);
+          break;
+        case 'shockwave':
+          this.renderShockwave(ctx, p, size, alpha);
+          break;
+        case 'dust':
+          this.renderDust(ctx, p, size, alpha);
           break;
       }
 
@@ -137,6 +149,61 @@ export class ParticleSystem {
     ctx.stroke();
   }
 
+  // NEW: Wood splinter - elongated tumbling piece
+  private renderSplinter(ctx: CanvasRenderingContext2D, p: Particle, size: number, alpha: number): void {
+    const length = size * 2.5;
+    const width = size * 0.4;
+
+    // Gradient for wood look
+    const gradient = ctx.createLinearGradient(-length / 2, 0, length / 2, 0);
+    gradient.addColorStop(0, '#8B7355');
+    gradient.addColorStop(0.5, '#D4A574');
+    gradient.addColorStop(1, '#A0826D');
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, length / 2, width / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Highlight edge
+    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.3})`;
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+  }
+
+  // NEW: Expanding shockwave ring
+  private renderShockwave(ctx: CanvasRenderingContext2D, p: Particle, size: number, alpha: number): void {
+    // Outer ring
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    const gradient = ctx.createRadialGradient(0, 0, size * 0.8, 0, 0, size);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    gradient.addColorStop(0.7, `rgba(255, 255, 255, ${alpha * 0.4})`);
+    gradient.addColorStop(1, `rgba(255, 200, 100, ${alpha * 0.2})`);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+
+    // Inner bright ring
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.9, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(255, 255, 200, ${alpha * 0.6})`;
+    ctx.lineWidth = 2 + size * 0.03;
+    ctx.stroke();
+  }
+
+  // NEW: Dust puff
+  private renderDust(ctx: CanvasRenderingContext2D, p: Particle, size: number, alpha: number): void {
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, size);
+    gradient.addColorStop(0, `rgba(180, 160, 130, ${alpha * 0.6})`);
+    gradient.addColorStop(0.5, `rgba(160, 140, 110, ${alpha * 0.3})`);
+    gradient.addColorStop(1, 'rgba(140, 120, 100, 0)');
+
+    ctx.beginPath();
+    ctx.arc(0, 0, size, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+  }
+
   // Emit particles at a position
   emit(x: number, y: number, count: number, color: string, type: Particle['type']): void {
     for (let i = 0; i < count && this.particles.length < this.MAX_PARTICLES; i++) {
@@ -160,15 +227,71 @@ export class ParticleSystem {
     }
   }
 
-  // Pin impact effect
+  // Pin impact effect - ENHANCED for Wii-style satisfaction
   emitPinImpact(x: number, y: number, intensity: number): void {
-    const count = Math.floor(5 + intensity * 10);
+    const count = Math.floor(6 + intensity * 12);
 
-    // Wood debris
-    this.emit(x, y, count, '#C4A35A', 'debris');
+    // Wood splinters flying out
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 80 + Math.random() * 180 * intensity;
 
-    // Sparks
-    this.emit(x, y, Math.floor(count / 2), '#FFD700', 'spark');
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 60 * intensity, // Upward bias
+        life: 0.4 + Math.random() * 0.5,
+        maxLife: 0.9,
+        size: 2 + Math.random() * 4,
+        color: '#D4A574',
+        type: 'splinter',
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 20, // Fast tumble
+        gravity: 250
+      });
+    }
+
+    // Bright sparks on high intensity hits
+    if (intensity > 0.5) {
+      this.emit(x, y, Math.floor(count / 2), '#FFF8DC', 'spark');
+    }
+
+    // Dust cloud at impact point
+    for (let i = 0; i < 3; i++) {
+      this.particles.push({
+        x: x + (Math.random() - 0.5) * 15,
+        y: y + (Math.random() - 0.5) * 15,
+        vx: (Math.random() - 0.5) * 30,
+        vy: -10 - Math.random() * 20,
+        life: 0.3 + Math.random() * 0.3,
+        maxLife: 0.6,
+        size: 12 + Math.random() * 10,
+        color: '#B8A080',
+        type: 'dust',
+        rotation: 0,
+        rotationSpeed: 0,
+        gravity: -15 // Rises slowly
+      });
+    }
+  }
+
+  // NEW: Shockwave effect for big impacts
+  emitShockwave(x: number, y: number, intensity: number): void {
+    this.particles.push({
+      x,
+      y,
+      vx: 0,
+      vy: 0,
+      life: 0.3,
+      maxLife: 0.3,
+      size: 5 + intensity * 60, // Expands based on intensity
+      color: '#FFFFFF',
+      type: 'shockwave',
+      rotation: 0,
+      rotationSpeed: 0,
+      gravity: 0
+    });
   }
 
   // Strike celebration

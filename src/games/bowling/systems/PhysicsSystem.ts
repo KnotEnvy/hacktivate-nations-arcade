@@ -18,12 +18,12 @@ export class PhysicsSystem {
   // Physics constants - ARCADE bowling physics (satisfying pin action)
   // Ball dominates pins but loses some energy
   private readonly BALL_PIN_RESTITUTION = 0.85;  // Good bounce for pins
-  private readonly PIN_PIN_RESTITUTION = 0.85;   // Pins bounce off each other well (billiard-like)
+  private readonly PIN_PIN_RESTITUTION = 0.9;    // Pins bounce off each other well (billiard-like)
   private readonly MIN_COLLISION_SPEED = 2;       // Minimum speed to register collision
 
-  // Momentum transfer - tuned for satisfying feel
-  private readonly BALL_VELOCITY_RETENTION = 0.88; // Ball loses ~12% velocity per pin hit
-  private readonly PIN_IMPULSE_MULTIPLIER = 2.0;   // Pins scatter nicely but not too far
+  // Momentum transfer - tuned for WII-STYLE satisfying feel
+  private readonly BALL_VELOCITY_RETENTION = 0.85; // Ball loses ~15% velocity per pin hit
+  private readonly PIN_IMPULSE_MULTIPLIER = 2.8;   // Bigger scatter for dramatic effect
 
   // Substep configuration for accurate collision detection
   private readonly MAX_SUBSTEPS = 8;
@@ -242,13 +242,26 @@ export class PhysicsSystem {
         ball.vy *= this.BALL_VELOCITY_RETENTION;
 
         // PIN gets pushed AWAY from ball (in direction of normal vector)
-        // Scale based on ball speed for satisfying impact
+        // With lower ball speeds (max 180), use simpler proportional scaling
+        // Add more SIDEWAYS scatter so pins hit neighbors instead of just flying back
         const impactForce = ballSpeed * this.PIN_IMPULSE_MULTIPLIER;
 
-        // Pin velocity = momentum transfer + some of ball's direction
-        // This creates natural pin scatter in the direction the ball was going
-        pin.vx = nx * impactForce * 0.6 + ball.vx * 0.4;
-        pin.vy = ny * impactForce * 0.6 + ball.vy * 0.4;
+        // More sideways scatter based on where ball hit the pin
+        // This helps create chain reactions and wall bounces
+        const sidewaysForce = nx * impactForce * 0.7; // Push to side based on hit angle
+        const backwardForce = ball.vy * 0.5; // Some backward motion from ball direction
+
+        pin.vx = sidewaysForce + ball.vx * 0.2;
+        pin.vy = backwardForce + ny * impactForce * 0.3;
+
+        // Cap pin velocity to prevent tunneling through other pins
+        const maxPinVel = 175;
+        const pinSpeed = Math.sqrt(pin.vx * pin.vx + pin.vy * pin.vy);
+        if (pinSpeed > maxPinVel) {
+          const scale = maxPinVel / pinSpeed;
+          pin.vx *= scale;
+          pin.vy *= scale;
+        }
 
         // Transfer ball spin to pin - creates angled deflection
         if (Math.abs(ball.spin) > 0.1) {
@@ -350,25 +363,25 @@ export class PhysicsSystem {
               }
             }
 
-            // Low threshold - pins knock each other down easily
-            const knockdownThreshold = 6;
+            // Low threshold - pins knock each other down EASILY for chain reactions
+            const knockdownThreshold = 4;
 
             // Fallen/moving pin knocks down standing pin
             if (pinB.standing && !pinA.standing && impactSpeed > knockdownThreshold) {
               pinB.knockDown(nx, ny);
-              // Give knocked pin velocity in collision direction
-              pinB.vx += nx * impactSpeed * 0.6;
-              pinB.vy += ny * impactSpeed * 0.6;
+              // Give knocked pin velocity in collision direction + boost
+              pinB.vx += nx * impactSpeed * 0.7;
+              pinB.vy += ny * impactSpeed * 0.7;
             }
             if (pinA.standing && !pinB.standing && impactSpeed > knockdownThreshold) {
               pinA.knockDown(-nx, -ny);
-              pinA.vx -= nx * impactSpeed * 0.6;
-              pinA.vy -= ny * impactSpeed * 0.6;
+              pinA.vx -= nx * impactSpeed * 0.7;
+              pinA.vy -= ny * impactSpeed * 0.7;
             }
 
             // Even standing pins can knock each other if hit hard enough
-            if (pinA.standing && pinB.standing && impactSpeed > 15) {
-              // Both get knocked - rare but dramatic
+            if (pinA.standing && pinB.standing && impactSpeed > 12) {
+              // Both get knocked - dramatic chain effect
               pinA.knockDown(-nx, -ny);
               pinB.knockDown(nx, ny);
             }
