@@ -24,7 +24,7 @@ export class Pin {
   // Pin dimensions (top-down view approximation)
   width: number = 12;
   height: number = 20;
-  radius: number = 8; // Collision radius - increased for better chain reactions
+  radius: number = 10; // Collision radius - taller to prevent flying over
 
   // Physics - realistic bowling pin mass (~3.5 pounds)
   mass: number = 3.5;
@@ -76,9 +76,9 @@ export class Pin {
   private deckMinY: number = 0;
   private deckMaxY: number = 200;
 
-  // Friction coefficients - tuned for satisfying Wii-style action
-  private readonly SLIDE_FRICTION = 0.92;  // Slightly less friction - pins slide further
-  private readonly ANGULAR_DAMPING = 0.85; // Less damping - more visible rotation
+  // Friction coefficients - tuned for Wii-style rolling action
+  private readonly SLIDE_FRICTION = 0.975; // Very low friction - pins slide far
+  private readonly ANGULAR_DAMPING = 0.92; // Less damping - pins keep spinning longer
 
   constructor(x: number, y: number, pinNumber: number) {
     this.x = x;
@@ -151,24 +151,35 @@ export class Pin {
       this.x += this.vx * dt;
       this.y += this.vy * dt;
 
-      // Apply friction (slightly reduced for more sliding)
+      // Apply friction (reduced for more rolling/sliding)
       const frictionMultiplier = Math.pow(this.SLIDE_FRICTION, dt * 60);
       this.vx *= frictionMultiplier;
       this.vy *= frictionMultiplier;
 
+      // ROLLING PHYSICS: Pin rotation should be driven by velocity
+      // This makes pins look like they're rolling rather than sliding
+      const speed = this.getSpeed();
+      if (speed > 3 && this.fallProgress > 0.5) {
+        // Calculate rolling rotation based on velocity direction and speed
+        // The faster the pin moves, the faster it should rotate
+        const targetRotVel = speed * 0.08 * Math.sign(this.vx + 0.01); // Roll direction based on movement
+        // Blend current rotation towards rolling rotation
+        this.rotationVel = this.rotationVel * 0.9 + targetRotVel * 0.1;
+      }
+
       // Constrain pins to deck area
       this.constrainToDeck();
 
-      // Track settling
-      const speed = this.getSpeed();
-      if (speed < 8 && Math.abs(this.rotationVel) < 1) {
+      // Track settling - use the recalculated speed
+      const currentSpeed = this.getSpeed();
+      if (currentSpeed < 6 && Math.abs(this.rotationVel) < 0.8) {
         this.settleTimer += dt;
       } else {
         this.settleTimer = Math.max(0, this.settleTimer - dt * 0.3);
       }
 
-      // Stop when slow enough - be more aggressive about stopping
-      if (speed < 5 && Math.abs(this.rotationVel) < 0.5 && this.fallProgress >= 0.8 && this.airTime <= 0) {
+      // Stop when VERY slow - lower thresholds for more rolling
+      if (currentSpeed < 2 && Math.abs(this.rotationVel) < 0.2 && this.fallProgress >= 0.9 && this.airTime <= 0) {
         this.vx = 0;
         this.vy = 0;
         this.rotationVel = 0;
