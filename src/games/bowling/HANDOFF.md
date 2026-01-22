@@ -1,44 +1,60 @@
 # Retro Strike Bowling - Development Handoff
 
-## Project Overview
+## Project Status: Beta Ready ✅
 
-**Game:** Retro Strike Bowling - A Tier 2 physics-based bowling game for HacktivateNations Arcade
-**Status:** Beta quality - Physics polished with Wii-style effects, visual juice added
+**Game:** Retro Strike Bowling - A Tier 2 physics-based bowling game  
+**Last Updated:** January 2026
 
-## Recent Enhancements (v2.0 - Wii-Style Polish)
+---
 
-### Pin Physics Improvements
+## Recent Enhancements
 
-- **Wobble animation** - Pins wobble when nearly hit (near-miss feedback)
-- **Air-time simulation** - Pins briefly "pop up" before falling on hard hits
-- **Enhanced tumbling** - More dramatic rotation (up to 12 rad/s vs previous 3)
-- **Slower fall animation** - Falls at dt*2.0 instead of dt*5 for visibility
-- **Better chain reactions** - Knockdown threshold lowered (4 vs 6)
+### Wii-Style Pin Physics
+
+| Feature | Description |
+|---------|-------------|
+| **Rolling Physics** | Pins rotate based on velocity - looks like rolling, not sliding |
+| **Wobble Animation** | Near-miss pins wobble before settling |
+| **Increased Collision Radius** | Pins now 10px radius (prevents flying over) |
+| **Lower Friction** | `SLIDE_FRICTION = 0.975` - pins slide much further |
+| **Chain Reactions** | Knockdown threshold lowered to 4 for easier chains |
+
+### Pin Setter Animation
+
+- Mechanical descend/sweep/ascend animation between rolls
+- Metallic visual with cables, pin slots, warning stripes
+- Properly handles 10th frame bonus roll resets
 
 ### Visual Effects
 
-- **Wood splinter particles** - Tumbling elongated wood pieces on impacts
-- **Shockwave effect** - Expanding ring on high-intensity (>0.6) collisions
-- **Dust clouds** - Rising dust puffs at impact points
-- **Slow-motion** - 0.5s slow-mo on first big hit (potential strikes)
-- **Directional screen shake** - Shake direction follows ball velocity
+- Wood splinter particles on impacts
+- Shockwave rings on high-intensity collisions
+- Slow-motion moment on first big hit (potential strikes)
+- Directional screen shake follows ball velocity
 
-### Physics Constants (PhysicsSystem.ts)
+### 10th Frame Logic
 
-```typescript
-PIN_PIN_RESTITUTION = 0.9     // Up from 0.85 - bouncier pins
-BALL_VELOCITY_RETENTION = 0.85 // Down from 0.88 - ball loses more energy  
-PIN_IMPULSE_MULTIPLIER = 2.8   // Up from 2.0 - bigger scatter
-knockdownThreshold = 4         // Down from 6 - easier chain reactions
-```
+- Proper pin reset for strikes/spares (all 10 pins return)
+- Correct roll numbering ("2nd Ball" / "3rd Ball")
+- Uses ScoreSystem's standingPins for accurate state
 
-### Pin Constants (Pin.ts)
+---
+
+## Key Physics Constants
 
 ```typescript
-SLIDE_FRICTION = 0.92     // Down from 0.94 - pins slide further
-ANGULAR_DAMPING = 0.85    // Down from 0.90 - more visible rotation
-rotationVel cap = 12      // Up from 3 - allows tumbling
-airTime max = 0.4s        // NEW - pins pop up briefly
+// PhysicsSystem.ts
+PIN_IMPULSE_MULTIPLIER = 2.8    // Scatter force
+BALL_VELOCITY_RETENTION = 0.85  // Ball energy loss per pin
+knockdownThreshold = 4          // Chain reaction sensitivity
+
+// Pin.ts
+radius = 10                     // Collision radius (px)
+SLIDE_FRICTION = 0.975          // Very low - pins slide far
+ANGULAR_DAMPING = 0.92          // Rotation decay
+
+// BowlingGame.ts
+MAX_BALL_SPEED = 180           // Max ball velocity
 ```
 
 ---
@@ -47,40 +63,63 @@ airTime max = 0.4s        // NEW - pins pop up briefly
 
 ```
 src/games/bowling/
-├── BowlingGame.ts          # Main game class (slow-mo, shockwaves)
+├── BowlingGame.ts          # Main game, pin setter animation
 ├── entities/
-│   ├── Ball.ts             # Bowling ball with spin/hook
-│   ├── Pin.ts              # Pin physics, wobble, air-time
+│   ├── Ball.ts             # Ball physics, spin, hook
+│   ├── Pin.ts              # Pin physics, wobble, rolling
 │   ├── Lane.ts             # Lane layout, oil patterns
-│   └── AimIndicator.ts     # Click-power-click input UI
+│   └── AimIndicator.ts     # 4-phase input UI
 ├── systems/
-│   ├── PhysicsSystem.ts    # Collision physics (enhanced chain reactions)
-│   ├── ScoreSystem.ts      # 10-frame bowling scoring
-│   └── ParticleSystem.ts   # Effects (splinters, shockwaves, dust)
-└── HANDOFF.md              # This file
+│   ├── PhysicsSystem.ts    # Collision handling
+│   ├── ScoreSystem.ts      # 10-frame scoring
+│   └── ParticleSystem.ts   # Visual effects
+└── HANDOFF.md
 ```
 
-## Input System
-
-4-phase click sequence:
-
-1. **POSITION** - A/D or arrows to move ball
-2. **AIM** - Click to lock oscillating aim angle
-3. **POWER** - Click to lock power meter
-4. **SPIN** - Click for Left/Straight/Right hook
+---
 
 ## Commands
 
 ```bash
 npm run dev          # Start dev server
-npm run type-check   # Check TypeScript
+npm run type-check   # TypeScript validation
 npm run build        # Production build
 ```
 
-## Next Steps (Potential Future Work)
+---
 
-- [ ] Add pin velocity trails for fast-moving pins
-- [ ] Camera zoom towards pins on big impacts  
-- [ ] Animated "STRIKE!" text with scale effect
-- [ ] Escalating audio intensity based on pin count
-- [ ] Pin clatter sounds during settling phase
+## Future Build Ideas 💡
+
+### Gameplay Enhancements
+
+- [ ] **Multiple Ball Types** - Different weights/colors with varying physics
+- [ ] **Skill Shots** - Bonus points for Brooklyn strikes, washouts
+- [ ] **Trick Shots Mode** - Split challenges, specific pin targets
+- [ ] **Tournament Mode** - Multiple games tracking, leaderboards
+
+### Visual Polish
+
+- [ ] **Ball Customization** - Unlockable skins, patterns, trails
+- [ ] **Lane Themes** - Neon, retro arcade, cosmic bowling
+- [ ] **Crowd Reactions** - Background cheers/groans based on rolls
+- [ ] **Camera Zoom** - Follow ball into pins on big hits
+
+### Physics & Realism
+
+- [ ] **Oil Pattern Editor** - Custom patterns for advanced players
+- [ ] **Ball Spin Visualization** - Show rotation during travel
+- [ ] **Pin Action Replays** - Slow-mo replay of strike attempts
+- [ ] **Detailed Split Detection** - Named splits (7-10, 4-6-7-10, etc.)
+
+### Multiplayer & Social
+
+- [ ] **Local 2-4 Player** - Turn-based multiplayer
+- [ ] **Online Leaderboards** - Daily/weekly high scores
+- [ ] **Ghost Replays** - Race against saved throws
+- [ ] **Challenge Friends** - Share specific frames to beat
+
+### Accessibility
+
+- [ ] **Aim Assist Mode** - Visual trajectory prediction
+- [ ] **One-Click Mode** - Simplified controls for younger players
+- [ ] **Colorblind Options** - Pin/UI color adjustments

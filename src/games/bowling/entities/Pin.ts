@@ -76,9 +76,9 @@ export class Pin {
   private deckMinY: number = 0;
   private deckMaxY: number = 200;
 
-  // Friction coefficients - tuned for Wii-style rolling action
-  private readonly SLIDE_FRICTION = 0.975; // Very low friction - pins slide far
-  private readonly ANGULAR_DAMPING = 0.92; // Less damping - pins keep spinning longer
+  // Friction coefficients - balanced for satisfying but realistic physics
+  private readonly SLIDE_FRICTION = 0.955; // More friction - pins slow down faster
+  private readonly ANGULAR_DAMPING = 0.90; // More damping - pins settle quicker
 
   constructor(x: number, y: number, pinNumber: number) {
     this.x = x;
@@ -240,12 +240,12 @@ export class Pin {
     const dy = this.y - this.originalY;
     const displacement = Math.sqrt(dx * dx + dy * dy);
 
-    // Pin falls if displaced more than half its radius
-    if (displacement > this.radius * 0.5) {
+    // Pin falls if displaced more than 70% of its radius (more stable than before)
+    if (displacement > this.radius * 0.7) {
       this.knockDown(dx, dy);
     }
-    // Pin wobbles if slightly displaced (Wii-style near-miss effect)
-    else if (displacement > this.radius * 0.15 && !this.isWobbling) {
+    // Pin wobbles if displaced 20-70% of radius (wider wobble zone for near-misses)
+    else if (displacement > this.radius * 0.2 && !this.isWobbling) {
       this.startWobble(displacement / this.radius);
     }
   }
@@ -371,37 +371,56 @@ export class Pin {
   }
 
   private renderStandingPin(ctx: CanvasRenderingContext2D): void {
-    // Shadow
+    // Enhanced shadow with soft edge
+    ctx.save();
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
     ctx.beginPath();
-    ctx.ellipse(2, 2, this.width * 0.5, this.height * 0.3, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.ellipse(2, 2, this.width * 0.45, this.height * 0.28, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
     ctx.fill();
+    ctx.restore();
 
-    // Pin body (top-down oval shape)
+    // Pin body (top-down oval shape) - glossy white
     ctx.beginPath();
     ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
 
-    // Gradient for 3D effect
+    // Premium 3D gradient for glossy effect
     const gradient = ctx.createRadialGradient(
-      -this.width * 0.15,
-      -this.height * 0.1,
+      -this.width * 0.2,
+      -this.height * 0.15,
       0,
       0,
       0,
-      this.width * 0.5
+      this.width * 0.6
     );
     gradient.addColorStop(0, '#ffffff');
-    gradient.addColorStop(0.6, '#f5f5f5');
-    gradient.addColorStop(1, '#d0d0d0');
+    gradient.addColorStop(0.25, '#fefefe');
+    gradient.addColorStop(0.5, '#f8f8f8');
+    gradient.addColorStop(0.75, '#e8e8e8');
+    gradient.addColorStop(1, '#c8c8c8');
 
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Red stripes (neck area - shown as lines)
-    ctx.strokeStyle = '#CC0000';
-    ctx.lineWidth = 2;
+    // Glossy outer ring
+    ctx.beginPath();
+    ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(180, 180, 190, 0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
 
-    // Two red stripes
+    // Red stripes (neck area) - brighter and more visible
+    ctx.strokeStyle = '#DD1111';
+    ctx.lineWidth = 2.5;
+
+    // Two red stripes with glow
+    ctx.save();
+    ctx.shadowColor = '#ff3333';
+    ctx.shadowBlur = 3;
+
     ctx.beginPath();
     ctx.ellipse(0, -this.height * 0.15, this.width * 0.35, this.height * 0.08, 0, 0, Math.PI * 2);
     ctx.stroke();
@@ -409,26 +428,36 @@ export class Pin {
     ctx.beginPath();
     ctx.ellipse(0, -this.height * 0.05, this.width * 0.38, this.height * 0.08, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
 
-    // Outline
+    // Primary specular highlight
     ctx.beginPath();
-    ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
-    ctx.strokeStyle = '#999999';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Highlight
-    ctx.beginPath();
-    ctx.ellipse(-this.width * 0.15, -this.height * 0.1, this.width * 0.12, this.height * 0.08, 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+    ctx.ellipse(-this.width * 0.18, -this.height * 0.12, this.width * 0.14, this.height * 0.1, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
     ctx.fill();
 
-    // Hit flash overlay
+    // Secondary smaller highlight
+    ctx.beginPath();
+    ctx.ellipse(-this.width * 0.08, -this.height * 0.06, this.width * 0.06, this.height * 0.04, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.65)';
+    ctx.fill();
+
+    // Hit flash overlay - enhanced with glow
     if (this.hitFlash > 0) {
+      ctx.save();
+      ctx.shadowColor = '#ffff00';
+      ctx.shadowBlur = 10 * this.hitFlash;
       ctx.beginPath();
       ctx.ellipse(0, 0, this.width * 0.5, this.height * 0.4, 0, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(255, 255, 0, ${this.hitFlash * 0.5})`;
+      ctx.fillStyle = `rgba(255, 255, 100, ${this.hitFlash * 0.6})`;
       ctx.fill();
+
+      // White hot center
+      ctx.beginPath();
+      ctx.ellipse(0, 0, this.width * 0.3, this.height * 0.24, 0, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(255, 255, 255, ${this.hitFlash * 0.4})`;
+      ctx.fill();
+      ctx.restore();
     }
   }
 

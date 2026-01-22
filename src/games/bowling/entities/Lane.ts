@@ -158,17 +158,17 @@ export class Lane {
   // Check if position is in lane bounds (entire area)
   isInBounds(x: number, y: number): boolean {
     return x >= this.x &&
-           x <= this.x + this.width &&
-           y >= this.y &&
-           y <= this.y + this.height;
+      x <= this.x + this.width &&
+      y >= this.y &&
+      y <= this.y + this.height;
   }
 
   // Check if position is on playable lane surface
   isOnLaneSurface(x: number, y: number): boolean {
     return x >= this.laneLeft &&
-           x <= this.laneRight &&
-           y >= this.y &&
-           y <= this.y + this.height;
+      x <= this.laneRight &&
+      y >= this.y &&
+      y <= this.y + this.height;
   }
 
   // Get ball start position (BOTTOM of screen, in approach area)
@@ -255,57 +255,80 @@ export class Lane {
   }
 
   private renderGutter(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, side: 'left' | 'right'): void {
-    // Deep gutter channel
+    // Deep gutter channel with metallic gradient
     const gutterGradient = ctx.createLinearGradient(x, 0, x + width, 0);
 
     if (side === 'left') {
-      gutterGradient.addColorStop(0, '#0a0a0a');
-      gutterGradient.addColorStop(0.3, '#1a1a1a');
-      gutterGradient.addColorStop(0.7, '#252525');
-      gutterGradient.addColorStop(1, '#1a1a1a');
+      gutterGradient.addColorStop(0, '#080808');
+      gutterGradient.addColorStop(0.2, '#151520');
+      gutterGradient.addColorStop(0.5, '#1a1a25');
+      gutterGradient.addColorStop(0.8, '#151520');
+      gutterGradient.addColorStop(1, '#101015');
     } else {
-      gutterGradient.addColorStop(0, '#1a1a1a');
-      gutterGradient.addColorStop(0.3, '#252525');
-      gutterGradient.addColorStop(0.7, '#1a1a1a');
-      gutterGradient.addColorStop(1, '#0a0a0a');
+      gutterGradient.addColorStop(0, '#101015');
+      gutterGradient.addColorStop(0.2, '#151520');
+      gutterGradient.addColorStop(0.5, '#1a1a25');
+      gutterGradient.addColorStop(0.8, '#151520');
+      gutterGradient.addColorStop(1, '#080808');
     }
 
     ctx.fillStyle = gutterGradient;
     ctx.fillRect(x, y, width, height);
 
     // Gutter depth shadow
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
     if (side === 'left') {
-      ctx.fillRect(x + width - 4, y, 4, height);
+      ctx.fillRect(x + width - 5, y, 5, height);
     } else {
-      ctx.fillRect(x, y, 4, height);
+      ctx.fillRect(x, y, 5, height);
     }
 
-    // Subtle gutter shine
-    ctx.fillStyle = 'rgba(60, 60, 70, 0.3)';
+    // LED edge lighting effect (cyan glow)
+    const edgeX = side === 'left' ? x + width - 2 : x + 1;
+
+    // Outer glow
+    ctx.save();
+    ctx.shadowColor = '#00ffff';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = 'rgba(0, 255, 255, 0.3)';
+    ctx.fillRect(edgeX, y, 2, height);
+    ctx.restore();
+
+    // Core LED line
+    const ledGradient = ctx.createLinearGradient(0, y, 0, y + height);
+    ledGradient.addColorStop(0, 'rgba(0, 200, 255, 0.6)');
+    ledGradient.addColorStop(0.5, 'rgba(0, 255, 255, 0.8)');
+    ledGradient.addColorStop(1, 'rgba(0, 200, 255, 0.6)');
+    ctx.fillStyle = ledGradient;
+    ctx.fillRect(edgeX, y, 2, height);
+
+    // Metallic highlight strip
+    ctx.fillStyle = 'rgba(80, 80, 100, 0.25)';
     if (side === 'left') {
-      ctx.fillRect(x + 5, y, 2, height);
+      ctx.fillRect(x + 6, y, 2, height);
     } else {
-      ctx.fillRect(x + width - 7, y, 2, height);
+      ctx.fillRect(x + width - 8, y, 2, height);
     }
   }
 
   private renderLaneSurface(ctx: CanvasRenderingContext2D): void {
-    // Base lane wood color with gradient
+    // Base lane wood color with enhanced gradient for depth
     const laneGradient = ctx.createLinearGradient(this.laneLeft, 0, this.laneRight, 0);
-    laneGradient.addColorStop(0, '#C49A6C');
-    laneGradient.addColorStop(0.15, '#D4AA7C');
-    laneGradient.addColorStop(0.3, '#DEBC8A');
-    laneGradient.addColorStop(0.5, '#E8C898');
-    laneGradient.addColorStop(0.7, '#DEBC8A');
-    laneGradient.addColorStop(0.85, '#D4AA7C');
-    laneGradient.addColorStop(1, '#C49A6C');
+    laneGradient.addColorStop(0, '#B8864E');
+    laneGradient.addColorStop(0.1, '#C89860');
+    laneGradient.addColorStop(0.25, '#D8A870');
+    laneGradient.addColorStop(0.4, '#E8BC85');
+    laneGradient.addColorStop(0.5, '#F0C890');
+    laneGradient.addColorStop(0.6, '#E8BC85');
+    laneGradient.addColorStop(0.75, '#D8A870');
+    laneGradient.addColorStop(0.9, '#C89860');
+    laneGradient.addColorStop(1, '#B8864E');
 
     ctx.fillStyle = laneGradient;
     ctx.fillRect(this.laneLeft, this.y, this.laneWidth, this.height);
 
-    // Wood grain lines (vertical boards)
-    ctx.strokeStyle = 'rgba(139, 90, 43, 0.12)';
+    // Wood grain lines (vertical boards) - enhanced contrast
+    ctx.strokeStyle = 'rgba(120, 70, 30, 0.18)';
     ctx.lineWidth = 1;
     const boardWidth = 8;
     for (let gx = this.laneLeft + boardWidth; gx < this.laneRight; gx += boardWidth) {
@@ -315,8 +338,8 @@ export class Lane {
       ctx.stroke();
     }
 
-    // Subtle wood knots (decorative)
-    ctx.fillStyle = 'rgba(139, 90, 43, 0.08)';
+    // Subtle wood knots (decorative) - more visible
+    ctx.fillStyle = 'rgba(120, 70, 30, 0.12)';
     const knotPositions = [
       { x: this.laneLeft + 30, y: this.y + 150 },
       { x: this.laneRight - 40, y: this.y + 280 },
@@ -328,6 +351,23 @@ export class Lane {
       ctx.ellipse(knot.x, knot.y, 4, 6, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+
+    // Center lane highlight strip (glossy effect)
+    const centerX = this.laneLeft + this.laneWidth / 2;
+    const highlightGradient = ctx.createLinearGradient(centerX - 15, 0, centerX + 15, 0);
+    highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    highlightGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.12)');
+    highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = highlightGradient;
+    ctx.fillRect(centerX - 15, this.y, 30, this.height);
+
+    // Glossy top reflection overlay
+    const glossGradient = ctx.createLinearGradient(0, this.y, 0, this.y + 80);
+    glossGradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+    glossGradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.05)');
+    glossGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = glossGradient;
+    ctx.fillRect(this.laneLeft, this.y, this.laneWidth, 80);
   }
 
   private renderPinDeck(ctx: CanvasRenderingContext2D): void {
@@ -347,35 +387,56 @@ export class Lane {
 
   private renderOilZone(ctx: CanvasRenderingContext2D): void {
     // Oil zone: from pin deck down to oilEndY
-    // Creates a subtle blue-ish sheen where oil is applied
+    // Creates an iridescent sheen where oil is applied
     const oilTop = this.pinDeckY + this.pinDeckHeight;
     const oilHeight = this.pattern.oilEndY - oilTop;
 
     if (oilHeight > 0) {
+      // Main oil gradient with enhanced colors
       const oilGradient = ctx.createLinearGradient(0, oilTop, 0, this.pattern.oilEndY);
-      oilGradient.addColorStop(0, 'rgba(180, 200, 230, 0.12)');
-      oilGradient.addColorStop(0.5, 'rgba(180, 200, 230, 0.08)');
-      oilGradient.addColorStop(0.8, 'rgba(180, 200, 230, 0.04)');
+      oilGradient.addColorStop(0, 'rgba(160, 200, 240, 0.15)');
+      oilGradient.addColorStop(0.3, 'rgba(180, 210, 255, 0.12)');
+      oilGradient.addColorStop(0.6, 'rgba(170, 220, 250, 0.08)');
+      oilGradient.addColorStop(0.85, 'rgba(180, 200, 230, 0.04)');
       oilGradient.addColorStop(1, 'rgba(180, 200, 230, 0)');
 
       ctx.fillStyle = oilGradient;
       ctx.fillRect(this.laneLeft, oilTop, this.laneWidth, oilHeight);
 
-      // Oil zone edge indicator (subtle line where oil ends)
-      ctx.strokeStyle = 'rgba(100, 120, 150, 0.15)';
+      // Iridescent shimmer streaks
+      ctx.save();
+      const streakCount = 5;
+      for (let i = 0; i < streakCount; i++) {
+        const streakX = this.laneLeft + (this.laneWidth / (streakCount + 1)) * (i + 1);
+        const shimmerGrad = ctx.createLinearGradient(0, oilTop, 0, this.pattern.oilEndY);
+        shimmerGrad.addColorStop(0, 'rgba(200, 220, 255, 0.08)');
+        shimmerGrad.addColorStop(0.5, 'rgba(180, 240, 255, 0.12)');
+        shimmerGrad.addColorStop(1, 'rgba(200, 220, 255, 0)');
+        ctx.fillStyle = shimmerGrad;
+        ctx.fillRect(streakX - 3, oilTop, 6, oilHeight);
+      }
+      ctx.restore();
+
+      // Oil zone edge indicator (subtle glowing line where oil ends)
+      ctx.save();
+      ctx.shadowColor = 'rgba(100, 180, 255, 0.5)';
+      ctx.shadowBlur = 4;
+      ctx.strokeStyle = 'rgba(100, 160, 200, 0.25)';
       ctx.lineWidth = 1;
-      ctx.setLineDash([5, 5]);
+      ctx.setLineDash([8, 4]);
       ctx.beginPath();
       ctx.moveTo(this.laneLeft + 10, this.pattern.oilEndY);
       ctx.lineTo(this.laneRight - 10, this.pattern.oilEndY);
       ctx.stroke();
       ctx.setLineDash([]);
+      ctx.restore();
     }
   }
 
   private renderArrows(ctx: CanvasRenderingContext2D): void {
-    // Arrows point UP toward the pins for aiming reference
-    ctx.fillStyle = '#8B0000'; // Dark red
+    // Neon arrows point UP toward the pins for aiming reference
+    const neonColor = '#ff00aa'; // Hot pink/magenta
+    const glowColor = 'rgba(255, 0, 170, 0.6)';
 
     for (let i = 0; i < this.arrows.length; i++) {
       const arrow = this.arrows[i];
@@ -385,46 +446,108 @@ export class Lane {
       ctx.translate(arrow.x, arrow.y);
 
       // Arrow pointing UP (toward top of screen / pins)
-      const size = isCenter ? 1.3 : 1;
-      ctx.beginPath();
-      ctx.moveTo(0, -10 * size);           // Top point (toward pins)
-      ctx.lineTo(-6 * size, 4 * size);     // Bottom left
-      ctx.lineTo(-2 * size, 2 * size);     // Inner left
-      ctx.lineTo(-2 * size, 10 * size);    // Tail bottom left
-      ctx.lineTo(2 * size, 10 * size);     // Tail bottom right
-      ctx.lineTo(2 * size, 2 * size);      // Inner right
-      ctx.lineTo(6 * size, 4 * size);      // Bottom right
-      ctx.closePath();
+      const size = isCenter ? 1.4 : 1;
+
+      // Define arrow path
+      const drawArrow = () => {
+        ctx.beginPath();
+        ctx.moveTo(0, -10 * size);           // Top point (toward pins)
+        ctx.lineTo(-6 * size, 4 * size);     // Bottom left
+        ctx.lineTo(-2 * size, 2 * size);     // Inner left
+        ctx.lineTo(-2 * size, 10 * size);    // Tail bottom left
+        ctx.lineTo(2 * size, 10 * size);     // Tail bottom right
+        ctx.lineTo(2 * size, 2 * size);      // Inner right
+        ctx.lineTo(6 * size, 4 * size);      // Bottom right
+        ctx.closePath();
+      };
+
+      // Outer glow effect
+      ctx.shadowColor = neonColor;
+      ctx.shadowBlur = isCenter ? 12 : 8;
+      drawArrow();
+      ctx.fillStyle = glowColor;
+      ctx.fill();
+
+      // Core neon fill
+      ctx.shadowBlur = 4;
+      drawArrow();
+      ctx.fillStyle = neonColor;
+      ctx.fill();
+
+      // Inner highlight for 3D effect
+      ctx.shadowBlur = 0;
+      drawArrow();
+      const innerGrad = ctx.createLinearGradient(0, -10 * size, 0, 10 * size);
+      innerGrad.addColorStop(0, 'rgba(255, 150, 220, 0.8)');
+      innerGrad.addColorStop(0.5, 'rgba(255, 100, 200, 0.4)');
+      innerGrad.addColorStop(1, 'rgba(255, 50, 150, 0.6)');
+      ctx.fillStyle = innerGrad;
       ctx.fill();
 
       ctx.restore();
     }
 
-    // Range finder dots between arrows
-    ctx.fillStyle = 'rgba(139, 0, 0, 0.5)';
+    // Neon range finder dots between arrows
+    ctx.save();
+    ctx.shadowColor = neonColor;
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = 'rgba(255, 0, 170, 0.8)';
     const arrowY = this.arrows[0].y;
     for (let i = 0; i < this.arrows.length - 1; i++) {
       const midX = (this.arrows[i].x + this.arrows[i + 1].x) / 2;
       ctx.beginPath();
-      ctx.arc(midX, arrowY, 2, 0, Math.PI * 2);
+      ctx.arc(midX, arrowY, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
   }
 
   private renderFoulLine(ctx: CanvasRenderingContext2D): void {
-    // Solid foul line
-    ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(this.laneLeft - 2, this.foulLineY - 3, this.laneWidth + 4, 6);
+    // Solid foul line base
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(this.laneLeft - 2, this.foulLineY - 4, this.laneWidth + 4, 8);
 
-    // Red indicator lights on foul line (aesthetic)
-    ctx.fillStyle = '#550000';
-    const lightSpacing = 25;
+    // Metallic edge highlights
+    ctx.fillStyle = 'rgba(80, 80, 90, 0.6)';
+    ctx.fillRect(this.laneLeft - 2, this.foulLineY - 4, this.laneWidth + 4, 1);
+    ctx.fillStyle = 'rgba(30, 30, 35, 0.8)';
+    ctx.fillRect(this.laneLeft - 2, this.foulLineY + 3, this.laneWidth + 4, 1);
+
+    // Active red LED indicator lights on foul line
+    const lightSpacing = 22;
     const centerX = this.x + this.width / 2;
+
+    ctx.save();
     for (let i = -3; i <= 3; i++) {
+      const lightX = centerX + i * lightSpacing;
+
+      // LED glow
+      ctx.shadowColor = '#ff2200';
+      ctx.shadowBlur = 8;
       ctx.beginPath();
-      ctx.arc(centerX + i * lightSpacing, this.foulLineY, 3, 0, Math.PI * 2);
+      ctx.arc(lightX, this.foulLineY, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 50, 0, 0.6)';
+      ctx.fill();
+
+      // LED core
+      ctx.shadowBlur = 3;
+      ctx.beginPath();
+      ctx.arc(lightX, this.foulLineY, 3, 0, Math.PI * 2);
+      const ledGrad = ctx.createRadialGradient(lightX - 1, this.foulLineY - 1, 0, lightX, this.foulLineY, 3);
+      ledGrad.addColorStop(0, '#ff6644');
+      ledGrad.addColorStop(0.5, '#ff3311');
+      ledGrad.addColorStop(1, '#cc0000');
+      ctx.fillStyle = ledGrad;
+      ctx.fill();
+
+      // LED highlight
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(lightX - 1, this.foulLineY - 1, 1, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 200, 150, 0.8)';
       ctx.fill();
     }
+    ctx.restore();
   }
 
   private renderApproachArea(ctx: CanvasRenderingContext2D): void {
@@ -450,24 +573,48 @@ export class Lane {
   }
 
   private renderApproachDots(ctx: CanvasRenderingContext2D): void {
-    // Approach dots for positioning
-    ctx.fillStyle = '#333333';
+    // Approach dots for positioning with subtle glow
+    ctx.save();
 
     for (const dot of this.approachDots) {
+      // Outer glow
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 4;
       ctx.beginPath();
       ctx.arc(dot.x, dot.y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(60, 30, 50, 0.9)';
+      ctx.fill();
+
+      // Inner dot
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(dot.x, dot.y, 2.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 100, 180, 0.4)';
       ctx.fill();
     }
 
-    // Center dot is larger
+    // Center dot is larger and more prominent
     const centerX = this.x + this.width / 2;
     const centerDots = this.approachDots.filter(d => Math.abs(d.x - centerX) < 2);
-    ctx.fillStyle = '#1a1a1a';
+
     for (const dot of centerDots) {
+      // Larger glow for center
+      ctx.shadowColor = '#ff00aa';
+      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(dot.x, dot.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(80, 20, 60, 0.95)';
+      ctx.fill();
+
+      // Bright inner core
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.arc(dot.x, dot.y, 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 80, 160, 0.6)';
       ctx.fill();
     }
+
+    ctx.restore();
   }
 
   // Render reflection layer (called after ball/pins for reflection effect)

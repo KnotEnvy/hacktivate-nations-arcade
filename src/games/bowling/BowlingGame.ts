@@ -501,15 +501,21 @@ export class BowlingGame extends BaseGame {
 
   // Start the pin setter animation for second ball
   private startPinResetAnimation(): void {
+    // Get standing pins from SCORE SYSTEM (important for 10th frame)
+    // After a strike/spare in 10th frame, ScoreSystem resets standingPins to all true
+    const scoreSystemStandingPins = this.scoreSystem.getStandingPins();
+
     // Store positions of fallen pins for sweep animation
     this.fallenPinPositions = [];
     this.standingPinNumbers = [];
 
     for (const pin of this.pins) {
-      if (!pin.standing) {
-        this.fallenPinPositions.push({ x: pin.x, y: pin.y, rotation: pin.rotation });
-      } else {
+      // A pin should be reset if the ScoreSystem says it's standing
+      if (scoreSystemStandingPins[pin.pinNumber - 1]) {
         this.standingPinNumbers.push(pin.pinNumber);
+      } else {
+        // This pin was knocked and stays knocked
+        this.fallenPinPositions.push({ x: pin.x, y: pin.y, rotation: pin.rotation });
       }
     }
 
@@ -553,19 +559,16 @@ export class BowlingGame extends BaseGame {
         if (this.pinSetterTimer > 0.4) {
           this.pinSetterPhase = 'ascending';
           this.pinSetterTimer = 0;
-          // Reset standing pins to original positions
-          const pinPositions = this.lane.getPinPositions();
+          // Reset pins that should be standing (based on ScoreSystem)
+          // This properly handles 10th frame strikes/spares where ALL pins reset
           for (const pin of this.pins) {
             if (this.standingPinNumbers.includes(pin.pinNumber)) {
-              const originalPos = pinPositions.find(p => p.pinNumber === pin.pinNumber);
-              if (originalPos) {
-                pin.x = originalPos.x;
-                pin.y = originalPos.y;
-                pin.vx = 0;
-                pin.vy = 0;
-                pin.rotation = 0;
-                pin.rotationVel = 0;
-              }
+              // Use pin.reset() to fully restore standing state
+              pin.reset();
+            } else {
+              // Move knocked pins off-screen
+              pin.x = -100;
+              pin.y = -100;
             }
           }
         }
@@ -603,7 +606,10 @@ export class BowlingGame extends BaseGame {
     this.slowMotionTimer = 0;
     this.slowMotionScale = 1;
 
-    this.showMessage('2nd Ball', 1);
+    // Show correct ball number (handles 10th frame 2nd/3rd balls)
+    const rollNum = this.scoreSystem.getCurrentRoll() + 1;
+    const suffix = rollNum === 2 ? '2nd' : '3rd';
+    this.showMessage(`${suffix} Ball`, 1);
   }
 
   private updateNextFrame(dt: number): void {
@@ -938,37 +944,96 @@ export class BowlingGame extends BaseGame {
     const phases: InputPhase[] = ['positioning', 'aiming', 'power', 'spin'];
     const phaseLabels = ['POSITION', 'AIM', 'POWER', 'SPIN'];
 
-    const indicatorY = this.canvas.height - 30;
-    const indicatorWidth = 80;
-    const totalWidth = phases.length * indicatorWidth + (phases.length - 1) * 10;
+    const indicatorY = this.canvas.height - 32;
+    const indicatorWidth = 85;
+    const indicatorHeight = 28;
+    const totalWidth = phases.length * indicatorWidth + (phases.length - 1) * 12;
     const startX = (this.canvas.width - totalWidth) / 2 - 60;
+    const cornerRadius = 6;
 
     for (let i = 0; i < phases.length; i++) {
-      const x = startX + i * (indicatorWidth + 10);
+      const x = startX + i * (indicatorWidth + 12);
       const isActive = phases[i] === phase;
       const isComplete = phases.indexOf(phase) > i || phase === 'ready';
 
-      // Background
-      ctx.fillStyle = isActive ? 'rgba(255, 215, 0, 0.8)' : (isComplete ? 'rgba(76, 175, 80, 0.6)' : 'rgba(100, 100, 100, 0.6)');
-      ctx.fillRect(x, indicatorY - 20, indicatorWidth, 25);
+      ctx.save();
 
-      // Border
-      ctx.strokeStyle = isActive ? '#FFD700' : (isComplete ? '#4CAF50' : '#666');
-      ctx.lineWidth = isActive ? 2 : 1;
-      ctx.strokeRect(x, indicatorY - 20, indicatorWidth, 25);
+      // Arcade button shadow/depth
+      ctx.beginPath();
+      ctx.roundRect(x + 2, indicatorY - indicatorHeight / 2 + 2, indicatorWidth, indicatorHeight, cornerRadius);
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.fill();
+
+      // Button base with gradient
+      ctx.beginPath();
+      ctx.roundRect(x, indicatorY - indicatorHeight / 2, indicatorWidth, indicatorHeight, cornerRadius);
+
+      if (isActive) {
+        // Active phase - golden glow
+        ctx.shadowColor = '#FFD700';
+        ctx.shadowBlur = 12;
+        const activeGrad = ctx.createLinearGradient(0, indicatorY - indicatorHeight / 2, 0, indicatorY + indicatorHeight / 2);
+        activeGrad.addColorStop(0, '#FFE55C');
+        activeGrad.addColorStop(0.3, '#FFD700');
+        activeGrad.addColorStop(0.7, '#CCAA00');
+        activeGrad.addColorStop(1, '#997700');
+        ctx.fillStyle = activeGrad;
+      } else if (isComplete) {
+        // Complete phase - green LED style
+        const completeGrad = ctx.createLinearGradient(0, indicatorY - indicatorHeight / 2, 0, indicatorY + indicatorHeight / 2);
+        completeGrad.addColorStop(0, '#5CAF50');
+        completeGrad.addColorStop(0.5, '#4CAF50');
+        completeGrad.addColorStop(1, '#388E3C');
+        ctx.fillStyle = completeGrad;
+      } else {
+        // Inactive phase - dark metallic
+        const inactiveGrad = ctx.createLinearGradient(0, indicatorY - indicatorHeight / 2, 0, indicatorY + indicatorHeight / 2);
+        inactiveGrad.addColorStop(0, '#555555');
+        inactiveGrad.addColorStop(0.5, '#444444');
+        inactiveGrad.addColorStop(1, '#333333');
+        ctx.fillStyle = inactiveGrad;
+      }
+      ctx.fill();
+
+      // 3D beveled edge
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.roundRect(x, indicatorY - indicatorHeight / 2, indicatorWidth, indicatorHeight, cornerRadius);
+      ctx.strokeStyle = isActive ? 'rgba(255, 255, 200, 0.6)' : (isComplete ? 'rgba(150, 255, 150, 0.4)' : 'rgba(100, 100, 100, 0.5)');
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Top highlight bevel
+      ctx.beginPath();
+      ctx.roundRect(x + 2, indicatorY - indicatorHeight / 2 + 2, indicatorWidth - 4, indicatorHeight / 2 - 2, [cornerRadius - 1, cornerRadius - 1, 0, 0]);
+      ctx.fillStyle = isActive ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)';
+      ctx.fill();
 
       // Label
-      ctx.fillStyle = isActive ? '#000' : '#fff';
-      ctx.font = isActive ? 'bold 12px Arial' : '11px Arial';
+      ctx.fillStyle = isActive ? '#1a1a00' : '#ffffff';
+      ctx.font = isActive ? 'bold 11px Arial' : '10px Arial';
       ctx.textAlign = 'center';
-      ctx.fillText(phaseLabels[i], x + indicatorWidth / 2, indicatorY - 3);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(phaseLabels[i], x + indicatorWidth / 2, indicatorY);
 
-      // Checkmark for completed phases
+      // LED indicator dot for completed phases
       if (isComplete && !isActive) {
-        ctx.fillStyle = '#4CAF50';
-        ctx.font = 'bold 14px Arial';
-        ctx.fillText('✓', x + indicatorWidth - 12, indicatorY - 3);
+        ctx.beginPath();
+        ctx.arc(x + indicatorWidth - 10, indicatorY - indicatorHeight / 2 + 8, 4, 0, Math.PI * 2);
+        ctx.shadowColor = '#00ff00';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = '#00ff00';
+        ctx.fill();
+
+        // LED highlight
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        ctx.arc(x + indicatorWidth - 11, indicatorY - indicatorHeight / 2 + 7, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fill();
       }
+
+      ctx.restore();
     }
   }
 
@@ -984,20 +1049,37 @@ export class BowlingGame extends BaseGame {
     const cardWidth = 260;
     const cardHeight = 480;
 
-    // Background
-    ctx.fillStyle = 'rgba(20, 40, 20, 0.95)';
+    // CRT-style retro green background
+    const bgGrad = ctx.createLinearGradient(cardX, cardY, cardX, cardY + cardHeight);
+    bgGrad.addColorStop(0, 'rgba(15, 35, 15, 0.98)');
+    bgGrad.addColorStop(0.5, 'rgba(20, 45, 20, 0.98)');
+    bgGrad.addColorStop(1, 'rgba(12, 30, 12, 0.98)');
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
 
-    // Border
+    // Neon gold border with glow
+    ctx.save();
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 8;
     ctx.strokeStyle = '#D4AF37';
     ctx.lineWidth = 2;
     ctx.strokeRect(cardX, cardY, cardWidth, cardHeight);
+    ctx.restore();
 
-    // Title
-    ctx.fillStyle = '#D4AF37';
-    ctx.font = 'bold 14px Arial';
+    // Inner border accent
+    ctx.strokeStyle = 'rgba(212, 175, 55, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cardX + 3, cardY + 3, cardWidth - 6, cardHeight - 6);
+
+    // Title with LED glow
+    ctx.save();
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 15px Arial';
     ctx.textAlign = 'center';
     ctx.fillText('SCORECARD', cardX + cardWidth / 2, cardY + 25);
+    ctx.restore();
 
     // Frame boxes
     const startX = cardX + 10;

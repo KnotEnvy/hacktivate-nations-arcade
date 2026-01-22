@@ -186,26 +186,51 @@ export class BowlingBall {
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    // Render trail
-    if (this.trail.length > 2) {
+    const speed = this.getSpeed();
+
+    // Render neon glow trail when moving
+    if (this.trail.length > 2 && speed > 20) {
       ctx.save();
+
+      // Outer glow trail
       for (let i = 0; i < this.trail.length - 1; i++) {
         const point = this.trail[i];
-        const size = this.radius * 0.6 * (i / this.trail.length);
+        const progress = i / this.trail.length;
+        const size = this.radius * 0.8 * progress;
+
+        // Neon magenta glow
+        ctx.shadowColor = '#ff0066';
+        ctx.shadowBlur = 8 * point.alpha;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 50, 100, ${point.alpha * 0.4})`;
+        ctx.fill();
+      }
+
+      // Inner trail core
+      ctx.shadowBlur = 0;
+      for (let i = 0; i < this.trail.length - 1; i++) {
+        const point = this.trail[i];
+        const progress = i / this.trail.length;
+        const size = this.radius * 0.4 * progress;
 
         ctx.beginPath();
         ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(40, 40, 40, ${point.alpha * 0.3})`;
+        ctx.fillStyle = `rgba(120, 20, 40, ${point.alpha * 0.5})`;
         ctx.fill();
       }
       ctx.restore();
     }
 
-    // Shadow
+    // Enhanced shadow with glow when fast
     ctx.save();
+    if (speed > 80) {
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+      ctx.shadowBlur = 6;
+    }
     ctx.beginPath();
-    ctx.arc(this.x + 3, this.y + 3, this.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.arc(this.x + 3, this.y + 4, this.radius * 0.95, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
     ctx.fill();
     ctx.restore();
 
@@ -214,65 +239,122 @@ export class BowlingBall {
     ctx.translate(this.x, this.y);
     ctx.rotate(this.rotation);
 
-    // Ball gradient (deep red/maroon bowling ball)
+    // Ball base gradient (deep maroon with richer colors)
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
 
     const gradient = ctx.createRadialGradient(
-      -this.radius * 0.3,
-      -this.radius * 0.3,
+      -this.radius * 0.35,
+      -this.radius * 0.35,
       0,
       0,
       0,
       this.radius
     );
-    gradient.addColorStop(0, '#8B0000');
-    gradient.addColorStop(0.5, '#600000');
-    gradient.addColorStop(1, '#300000');
+    gradient.addColorStop(0, '#a01020');
+    gradient.addColorStop(0.3, '#801010');
+    gradient.addColorStop(0.6, '#580808');
+    gradient.addColorStop(1, '#280404');
 
     ctx.fillStyle = gradient;
     ctx.fill();
 
-    // Finger holes (3 holes in triangle pattern)
-    ctx.fillStyle = '#1a0000';
-    const holeRadius = this.radius * 0.15;
+    // Swirl/marble pattern overlay
+    ctx.save();
+    ctx.globalCompositeOperation = 'overlay';
+
+    // Swirl band 1
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 0.7, -0.5, 1.2);
+    ctx.strokeStyle = 'rgba(180, 40, 60, 0.4)';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+
+    // Swirl band 2
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius * 0.5, 1.8, 3.5);
+    ctx.strokeStyle = 'rgba(200, 60, 80, 0.35)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    ctx.restore();
+
+    // Glossy rim highlight
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius - 1, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255, 100, 100, 0.25)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // Finger holes (3 holes in triangle pattern) - deeper look
+    const holeRadius = this.radius * 0.14;
     const holeOffset = this.radius * 0.35;
+
+    // Hole shadow/depth
+    ctx.fillStyle = '#0a0000';
 
     // Top hole
     ctx.beginPath();
+    ctx.arc(0, -holeOffset, holeRadius + 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(0, -holeOffset, holeRadius, 0, Math.PI * 2);
+    const holeGrad = ctx.createRadialGradient(0, -holeOffset, 0, 0, -holeOffset, holeRadius);
+    holeGrad.addColorStop(0, '#000000');
+    holeGrad.addColorStop(1, '#1a0505');
+    ctx.fillStyle = holeGrad;
     ctx.fill();
 
     // Bottom left hole
     ctx.beginPath();
+    ctx.arc(-holeOffset * 0.7, holeOffset * 0.5, holeRadius + 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#0a0000';
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(-holeOffset * 0.7, holeOffset * 0.5, holeRadius, 0, Math.PI * 2);
+    ctx.fillStyle = holeGrad;
     ctx.fill();
 
     // Bottom right hole
     ctx.beginPath();
+    ctx.arc(holeOffset * 0.7, holeOffset * 0.5, holeRadius + 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#0a0000';
+    ctx.fill();
+    ctx.beginPath();
     ctx.arc(holeOffset * 0.7, holeOffset * 0.5, holeRadius, 0, Math.PI * 2);
+    ctx.fillStyle = holeGrad;
     ctx.fill();
 
-    // Highlight shine
+    // Primary specular highlight
     ctx.beginPath();
-    ctx.arc(-this.radius * 0.3, -this.radius * 0.3, this.radius * 0.25, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    ctx.ellipse(-this.radius * 0.32, -this.radius * 0.32, this.radius * 0.28, this.radius * 0.2, -0.4, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.fill();
+
+    // Secondary highlight
+    ctx.beginPath();
+    ctx.ellipse(-this.radius * 0.15, -this.radius * 0.2, this.radius * 0.1, this.radius * 0.08, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.35)';
     ctx.fill();
 
     ctx.restore();
 
-    // Spin indicator (small arrow showing hook direction)
-    if (Math.abs(this.spin) > 0.1 && this.getSpeed() > 50) {
+    // Spin indicator (small arrow showing hook direction) - with glow
+    if (Math.abs(this.spin) > 0.1 && speed > 50) {
       ctx.save();
-      ctx.translate(this.x, this.y - this.radius - 8);
+      ctx.translate(this.x, this.y - this.radius - 10);
 
       const arrowDir = this.spin > 0 ? 1 : -1;
-      ctx.fillStyle = this.spin > 0 ? '#FF6B6B' : '#6B9FFF';
+      const arrowColor = this.spin > 0 ? '#FF6B6B' : '#6B9FFF';
+
+      ctx.shadowColor = arrowColor;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = arrowColor;
 
       ctx.beginPath();
-      ctx.moveTo(arrowDir * 8, 0);
-      ctx.lineTo(0, -4);
-      ctx.lineTo(0, 4);
+      ctx.moveTo(arrowDir * 10, 0);
+      ctx.lineTo(0, -5);
+      ctx.lineTo(0, 5);
       ctx.closePath();
       ctx.fill();
 

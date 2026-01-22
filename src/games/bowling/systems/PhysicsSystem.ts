@@ -15,15 +15,15 @@ export interface CollisionEvent {
 export class PhysicsSystem {
   private lane: Lane;
 
-  // Physics constants - ARCADE bowling physics (satisfying pin action)
-  // Ball dominates pins but loses some energy
-  private readonly BALL_PIN_RESTITUTION = 0.85;  // Good bounce for pins
-  private readonly PIN_PIN_RESTITUTION = 0.9;    // Pins bounce off each other well (billiard-like)
+  // Physics constants - BALANCED bowling physics (satisfying but realistic)
+  // Ball dominates pins but loses meaningful energy
+  private readonly BALL_PIN_RESTITUTION = 0.80;  // Good bounce for pins
+  private readonly PIN_PIN_RESTITUTION = 0.75;   // Realistic pin-pin bounce (less billiard-like)
   private readonly MIN_COLLISION_SPEED = 2;       // Minimum speed to register collision
 
-  // Momentum transfer - tuned for WII-STYLE satisfying feel
-  private readonly BALL_VELOCITY_RETENTION = 0.85; // Ball loses ~15% velocity per pin hit
-  private readonly PIN_IMPULSE_MULTIPLIER = 2.8;   // Bigger scatter for dramatic effect
+  // Momentum transfer - tuned for satisfying but not automatic strikes
+  private readonly BALL_VELOCITY_RETENTION = 0.78; // Ball loses ~22% velocity per pin hit
+  private readonly PIN_IMPULSE_MULTIPLIER = 2.0;   // Moderate scatter for realistic feel
 
   // Substep configuration for accurate collision detection
   private readonly MAX_SUBSTEPS = 8;
@@ -248,11 +248,16 @@ export class PhysicsSystem {
 
         // More sideways scatter based on where ball hit the pin
         // This helps create chain reactions and wall bounces
+        // FIX: Use absolute impact force in direction away from ball (nx, ny is already normalized)
+        // Pins should scatter with equal force regardless of left/right direction
         const sidewaysForce = nx * impactForce * 0.7; // Push to side based on hit angle
-        const backwardForce = ball.vy * 0.5; // Some backward motion from ball direction
+        const forwardForce = ny * impactForce * 0.5;  // Push in y-direction based on angle
+        const ballMomentumX = ball.vx * 0.3;          // More ball momentum transfer
+        const ballMomentumY = ball.vy * 0.4;          // Ball's forward momentum
 
-        pin.vx = sidewaysForce + ball.vx * 0.2;
-        pin.vy = backwardForce + ny * impactForce * 0.3;
+        // Pin velocity = direction away from ball + ball's momentum
+        pin.vx = sidewaysForce + ballMomentumX;
+        pin.vy = forwardForce + ballMomentumY;
 
         // Cap pin velocity to prevent tunneling through other pins
         const maxPinVel = 175;
@@ -292,14 +297,18 @@ export class PhysicsSystem {
     for (let i = 0; i < pins.length; i++) {
       const pinA = pins[i];
 
-      // Skip if pin A is completely stopped and standing
-      if (pinA.isStopped() && pinA.standing) continue;
-
       for (let j = i + 1; j < pins.length; j++) {
         const pinB = pins[j];
 
-        // Skip if both pins are stopped and standing
-        if (pinA.isStopped() && pinA.standing && pinB.isStopped() && pinB.standing) continue;
+        // FIX: Only skip if BOTH pins are completely stopped and standing
+        // The old code skipped the entire inner loop when pinA was stopped+standing,
+        // which caused asymmetric behavior: collisions were missed when a moving pin 
+        // (higher index like pin 5) flew toward a standing pin (lower index like pin 4)
+        const pinAStopped = pinA.isStopped() && pinA.standing;
+        const pinBStopped = pinB.isStopped() && pinB.standing;
+
+        // Skip only if both are stopped - otherwise one might hit the other!
+        if (pinAStopped && pinBStopped) continue;
 
         const dx = pinB.x - pinA.x;
         const dy = pinB.y - pinA.y;
@@ -332,14 +341,21 @@ export class PhysicsSystem {
             const impactSpeed = Math.max(speedA, speedB, combinedSpeed * 0.5);
 
             // Calculate collision impulse along normal
+            // relVelNormal > 0 means pins are approaching, < 0 means separating
             const relVelNormal = (pinA.vx - pinB.vx) * nx + (pinA.vy - pinB.vy) * ny;
 
-            // Only process if actually colliding (not separating)
-            if (relVelNormal < 0 || overlap > 0.5) {
-              // Momentum transfer with restitution
-              const impulse = Math.abs(relVelNormal) * this.PIN_PIN_RESTITUTION;
+            // FIX: Always process collision if there's overlap - don't skip based on velocity direction
+            // This fixes asymmetric behavior where pins flying left didn't hit properly
+            // The overlap check alone is sufficient - if objects overlap, they need to be pushed apart
+            const shouldProcessCollision = overlap > 0.1 || Math.abs(relVelNormal) > 2;
 
-              // Pin A gets pushed back, Pin B gets pushed forward
+            if (shouldProcessCollision) {
+              // Momentum transfer with restitution
+              // Use max of relative velocity and a minimum based on speeds to ensure transfer happens
+              const effectiveRelVel = Math.max(Math.abs(relVelNormal), impactSpeed * 0.3);
+              const impulse = effectiveRelVel * this.PIN_PIN_RESTITUTION;
+
+              // Pin A gets pushed back (opposite of normal), Pin B gets pushed forward (along normal)
               pinA.vx -= nx * impulse * 0.5;
               pinA.vy -= ny * impulse * 0.5;
               pinB.vx += nx * impulse * 0.5;
@@ -347,14 +363,14 @@ export class PhysicsSystem {
 
               // Additional push based on who's moving faster
               if (speedA > speedB * 1.5) {
-                // A is much faster - transfer more to B
+                // A is much faster - transfer momentum to B (push B in normal direction)
                 const boost = impactSpeed * 0.4;
                 pinB.vx += nx * boost;
                 pinB.vy += ny * boost;
                 pinA.vx *= 0.7;
                 pinA.vy *= 0.7;
               } else if (speedB > speedA * 1.5) {
-                // B is much faster - transfer more to A
+                // B is much faster - transfer momentum to A (push A opposite to normal)
                 const boost = impactSpeed * 0.4;
                 pinA.vx -= nx * boost;
                 pinA.vy -= ny * boost;
@@ -363,25 +379,25 @@ export class PhysicsSystem {
               }
             }
 
-            // Low threshold - pins knock each other down EASILY for chain reactions
-            const knockdownThreshold = 4;
+            // Moderate threshold - pins need real momentum to knock each other down
+            const knockdownThreshold = 10;
 
             // Fallen/moving pin knocks down standing pin
             if (pinB.standing && !pinA.standing && impactSpeed > knockdownThreshold) {
               pinB.knockDown(nx, ny);
-              // Give knocked pin velocity in collision direction + boost
-              pinB.vx += nx * impactSpeed * 0.7;
-              pinB.vy += ny * impactSpeed * 0.7;
+              // Give knocked pin velocity in collision direction (reduced boost)
+              pinB.vx += nx * impactSpeed * 0.5;
+              pinB.vy += ny * impactSpeed * 0.5;
             }
             if (pinA.standing && !pinB.standing && impactSpeed > knockdownThreshold) {
               pinA.knockDown(-nx, -ny);
-              pinA.vx -= nx * impactSpeed * 0.7;
-              pinA.vy -= ny * impactSpeed * 0.7;
+              pinA.vx -= nx * impactSpeed * 0.5;
+              pinA.vy -= ny * impactSpeed * 0.5;
             }
 
-            // Even standing pins can knock each other if hit hard enough
-            if (pinA.standing && pinB.standing && impactSpeed > 12) {
-              // Both get knocked - dramatic chain effect
+            // Standing pins need significant force to knock each other
+            if (pinA.standing && pinB.standing && impactSpeed > 22) {
+              // Both get knocked - only on hard chain collisions
               pinA.knockDown(-nx, -ny);
               pinB.knockDown(nx, ny);
             }
