@@ -15,11 +15,51 @@ export interface ScoreResult {
   isStrike: boolean;
   isSpare: boolean;
   isSplit: boolean;
+  splitName: string | null;  // Specific split name (e.g., "7-10 Split", "Greek Church")
   isGutter: boolean;
   frameComplete: boolean;
   gameComplete: boolean;
   bonusMessage: string | null;
 }
+
+// Famous bowling splits - key is sorted pin numbers joined by '-'
+const NAMED_SPLITS: { [key: string]: string } = {
+  // The infamous splits
+  '7-10': '7-10 Split',           // The hardest split in bowling!
+  '4-6': '4-6 Split',             // Center split
+  '4-6-7-10': 'Greek Church',     // Classic difficult split
+  '4-6-7-9-10': 'Greek Church',   // Variant
+  '3-6-7-10': 'Big Four',         // Very difficult
+  '2-4-6-7-10': 'Big Five',       // Extremely rare
+
+  // Baby splits (easier)
+  '2-7': 'Baby Split',
+  '3-10': 'Baby Split',
+
+  // Corner splits
+  '5-7': 'Kresge Split',
+  '5-10': 'Kresge Split',
+  '5-7-10': 'Sour Apple',
+
+  // Washouts (technically not splits but notable)
+  '1-2-10': 'Washout',
+  '1-3-7': 'Washout',
+  '1-2-4-10': 'Washout',
+  '1-3-6-7': 'Washout',
+
+  // Other named splits
+  '4-7-10': 'Bucket Split',
+  '6-7-10': 'Bucket Split',
+  '2-7-10': 'Cincinnati',
+  '3-7-10': 'Cincinnati',
+  '4-9': 'Sleeper Split',
+  '6-7': '6-7 Split',
+  '4-10': '4-10 Split',
+  '2-8-10': 'Christmas Tree',
+  '3-7-9': 'Christmas Tree',
+  '4-7-9-10': 'Picket Fence',
+  '6-7-8-10': 'Picket Fence'
+};
 
 export class ScoreSystem {
   private frames: FrameScore[] = [];
@@ -71,6 +111,7 @@ export class ScoreSystem {
     let isStrike = false;
     let isSpare = false;
     let isSplit = false;
+    let splitName: string | null = null;
     let isGutter = pinsKnocked === 0 && this.currentRoll === 0;
     let frameComplete = false;
     let gameComplete = false;
@@ -110,7 +151,9 @@ export class ScoreSystem {
         }
       } else {
         // Check for split (head pin down, gap between remaining pins)
-        isSplit = this.checkForSplit();
+        const splitResult = this.checkForSplit();
+        isSplit = splitResult.isSplit;
+        splitName = splitResult.splitName;
         this.currentRoll = 1;
         this.consecutiveStrikes = 0;
       }
@@ -195,6 +238,7 @@ export class ScoreSystem {
       isStrike,
       isSpare,
       isSplit,
+      splitName,
       isGutter,
       frameComplete,
       gameComplete,
@@ -202,19 +246,18 @@ export class ScoreSystem {
     };
   }
 
-  // Check if current pin configuration is a split
-  private checkForSplit(): boolean {
+  // Check if current pin configuration is a split and return its name
+  private checkForSplit(): { isSplit: boolean; splitName: string | null } {
     // Split: head pin (pin 1) is down, and remaining pins have a gap
-    if (this.standingPins[0]) return false; // Head pin still standing
+    if (this.standingPins[0]) return { isSplit: false, splitName: null }; // Head pin still standing
 
     const standing = this.standingPins
-      .map((s, i) => s ? i : -1)
-      .filter(i => i >= 0);
+      .map((s, i) => s ? i + 1 : -1)  // Convert to 1-based pin numbers
+      .filter(i => i >= 1);
 
-    if (standing.length < 2) return false;
+    if (standing.length < 2) return { isSplit: false, splitName: null };
 
-    // Check for gaps (simplified - just check if non-adjacent pins remain)
-    // Pin adjacency map
+    // Pin adjacency map (1-based pin numbers)
     const adjacent: { [key: number]: number[] } = {
       1: [2, 3],
       2: [1, 4, 5],
@@ -228,18 +271,29 @@ export class ScoreSystem {
       10: [6, 9]
     };
 
-    // Check if any two standing pins are non-adjacent
-    for (let i = 0; i < standing.length; i++) {
+    // Check if any two standing pins are non-adjacent (defines a split)
+    let hasGap = false;
+    for (let i = 0; i < standing.length && !hasGap; i++) {
       for (let j = i + 1; j < standing.length; j++) {
-        const pinA = standing[i] + 1; // Convert to 1-based
-        const pinB = standing[j] + 1;
-        if (!adjacent[pinA]?.includes(pinB)) {
-          return true; // Found non-adjacent pins = split
+        if (!adjacent[standing[i]]?.includes(standing[j])) {
+          hasGap = true;
+          break;
         }
       }
     }
 
-    return false;
+    if (!hasGap) return { isSplit: false, splitName: null };
+
+    // It's a split! Try to find its name
+    const key = standing.sort((a, b) => a - b).join('-');
+    const name = NAMED_SPLITS[key];
+
+    if (name) {
+      return { isSplit: true, splitName: name };
+    } else {
+      // Generic split name with pin numbers
+      return { isSplit: true, splitName: `${key} Split` };
+    }
   }
 
   // Calculate cumulative scores
@@ -363,9 +417,9 @@ export class ScoreSystem {
 
   isGameComplete(): boolean {
     return this.currentFrame >= 10 ||
-           (this.currentFrame === 9 &&
-            this.frames[9].roll2 !== null &&
-            !this.frames[9].isStrike &&
-            !this.frames[9].isSpare);
+      (this.currentFrame === 9 &&
+        this.frames[9].roll2 !== null &&
+        !this.frames[9].isStrike &&
+        !this.frames[9].isSpare);
   }
 }

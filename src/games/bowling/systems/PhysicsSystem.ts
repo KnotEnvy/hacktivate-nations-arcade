@@ -15,15 +15,15 @@ export interface CollisionEvent {
 export class PhysicsSystem {
   private lane: Lane;
 
-  // Physics constants - BALANCED bowling physics (satisfying but realistic)
-  // Ball dominates pins but loses meaningful energy
-  private readonly BALL_PIN_RESTITUTION = 0.80;  // Good bounce for pins
-  private readonly PIN_PIN_RESTITUTION = 0.75;   // Realistic pin-pin bounce (less billiard-like)
+  // Physics constants - CHALLENGING bowling physics (realistic difficulty)
+  // Ball loses significant energy through pin deck
+  private readonly BALL_PIN_RESTITUTION = 0.70;  // Moderate bounce for pins
+  private readonly PIN_PIN_RESTITUTION = 0.65;   // Realistic pin-pin bounce
   private readonly MIN_COLLISION_SPEED = 2;       // Minimum speed to register collision
 
-  // Momentum transfer - tuned for satisfying but not automatic strikes
-  private readonly BALL_VELOCITY_RETENTION = 0.78; // Ball loses ~22% velocity per pin hit
-  private readonly PIN_IMPULSE_MULTIPLIER = 2.0;   // Moderate scatter for realistic feel
+  // Momentum transfer - tuned for REALISTIC challenging gameplay
+  private readonly BALL_VELOCITY_RETENTION = 0.58; // Ball loses ~42% velocity per pin hit (realistic)
+  private readonly PIN_IMPULSE_MULTIPLIER = 1.0;   // Reduced scatter - need precise pocket hits
 
   // Substep configuration for accurate collision detection
   private readonly MAX_SUBSTEPS = 8;
@@ -227,12 +227,12 @@ export class PhysicsSystem {
         const nx = dx / dist;
         const ny = dy / dist;
 
-        // IMPORTANT: Ball plows through - barely moves, pin gets pushed away
-        // Separate objects - push pin away in direction of normal
-        ball.x -= nx * overlap * 0.05;  // Ball barely moves
-        ball.y -= ny * overlap * 0.05;
-        pin.x += nx * overlap * 1.0;    // Pin gets fully pushed away
-        pin.y += ny * overlap * 1.0;
+        // Ball deflects through pin deck - realistic momentum exchange
+        // Separate objects - both move based on mass ratio
+        ball.x -= nx * overlap * 0.20;  // Ball deflects noticeably (realistic)
+        ball.y -= ny * overlap * 0.20;
+        pin.x += nx * overlap * 0.85;   // Pin gets pushed away
+        pin.y += ny * overlap * 0.85;
 
         // Get ball's velocity for impact calculation
         const ballSpeed = ball.getSpeed();
@@ -260,7 +260,7 @@ export class PhysicsSystem {
         pin.vy = forwardForce + ballMomentumY;
 
         // Cap pin velocity to prevent tunneling through other pins
-        const maxPinVel = 175;
+        const maxPinVel = 130; // Reduced - pins don't fly as far (realistic)
         const pinSpeed = Math.sqrt(pin.vx * pin.vx + pin.vy * pin.vy);
         if (pinSpeed > maxPinVel) {
           const scale = maxPinVel / pinSpeed;
@@ -379,25 +379,25 @@ export class PhysicsSystem {
               }
             }
 
-            // Moderate threshold - pins need real momentum to knock each other down
-            const knockdownThreshold = 10;
+            // Higher threshold - pins need solid momentum to knock each other down
+            const knockdownThreshold = 22; // Higher - chain reactions require solid momentum
 
             // Fallen/moving pin knocks down standing pin
             if (pinB.standing && !pinA.standing && impactSpeed > knockdownThreshold) {
               pinB.knockDown(nx, ny);
               // Give knocked pin velocity in collision direction (reduced boost)
-              pinB.vx += nx * impactSpeed * 0.5;
-              pinB.vy += ny * impactSpeed * 0.5;
+              pinB.vx += nx * impactSpeed * 0.4;
+              pinB.vy += ny * impactSpeed * 0.4;
             }
             if (pinA.standing && !pinB.standing && impactSpeed > knockdownThreshold) {
               pinA.knockDown(-nx, -ny);
-              pinA.vx -= nx * impactSpeed * 0.5;
-              pinA.vy -= ny * impactSpeed * 0.5;
+              pinA.vx -= nx * impactSpeed * 0.4;
+              pinA.vy -= ny * impactSpeed * 0.4;
             }
 
-            // Standing pins need significant force to knock each other
-            if (pinA.standing && pinB.standing && impactSpeed > 22) {
-              // Both get knocked - only on hard chain collisions
+            // Standing pins need very hard hits to knock each other
+            if (pinA.standing && pinB.standing && impactSpeed > 30) {
+              // Both get knocked - only on very hard chain collisions
               pinA.knockDown(-nx, -ny);
               pinB.knockDown(nx, ny);
             }

@@ -76,9 +76,9 @@ export class Pin {
   private deckMinY: number = 0;
   private deckMaxY: number = 200;
 
-  // Friction coefficients - balanced for satisfying but realistic physics
-  private readonly SLIDE_FRICTION = 0.955; // More friction - pins slow down faster
-  private readonly ANGULAR_DAMPING = 0.90; // More damping - pins settle quicker
+  // Friction coefficients - tuned for REALISTIC challenging physics
+  private readonly SLIDE_FRICTION = 0.91;  // Higher friction - pins slow down faster
+  private readonly ANGULAR_DAMPING = 0.88; // More damping - pins settle fast
 
   constructor(x: number, y: number, pinNumber: number) {
     this.x = x;
@@ -196,7 +196,7 @@ export class Pin {
   // Constrain pins to deck area - pins bounce off walls!
   private constrainToDeck(): void {
     const padding = this.radius;
-    const bounceRestitution = 0.65; // Good bounce off walls - pins can ricochet into others!
+    const bounceRestitution = 0.50; // Reduced wall bounce - less ricochet chaos
 
     // Left boundary - bounce back
     if (this.x < this.deckMinX + padding) {
@@ -240,12 +240,12 @@ export class Pin {
     const dy = this.y - this.originalY;
     const displacement = Math.sqrt(dx * dx + dy * dy);
 
-    // Pin falls if displaced more than 70% of its radius (more stable than before)
-    if (displacement > this.radius * 0.7) {
+    // Pin falls if displaced more than 85% of its radius (very stable)
+    if (displacement > this.radius * 0.85) {
       this.knockDown(dx, dy);
     }
-    // Pin wobbles if displaced 20-70% of radius (wider wobble zone for near-misses)
-    else if (displacement > this.radius * 0.2 && !this.isWobbling) {
+    // Pin wobbles if displaced 25-85% of radius (wide wobble zone)
+    else if (displacement > this.radius * 0.25 && !this.isWobbling) {
       this.startWobble(displacement / this.radius);
     }
   }

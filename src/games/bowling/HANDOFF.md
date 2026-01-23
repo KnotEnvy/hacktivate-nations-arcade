@@ -43,15 +43,18 @@
 ## Key Physics Constants
 
 ```typescript
-// PhysicsSystem.ts
-PIN_IMPULSE_MULTIPLIER = 2.8    // Scatter force
-BALL_VELOCITY_RETENTION = 0.85  // Ball energy loss per pin
-knockdownThreshold = 4          // Chain reaction sensitivity
+// PhysicsSystem.ts - REALISTIC difficulty (Jan 2026)
+PIN_IMPULSE_MULTIPLIER = 1.0    // Reduced scatter for precision
+BALL_VELOCITY_RETENTION = 0.58  // Ball loses ~42% velocity per pin
+knockdownThreshold = 22         // Higher - chain reactions need momentum
+maxPinVel = 130                 // Pins don't fly as far
+Ball deflection = 0.20          // Ball deflects visibly through deck
 
 // Pin.ts
 radius = 10                     // Collision radius (px)
-SLIDE_FRICTION = 0.975          // Very low - pins slide far
-ANGULAR_DAMPING = 0.92          // Rotation decay
+SLIDE_FRICTION = 0.91           // Higher friction - pins slow faster
+ANGULAR_DAMPING = 0.88          // Rotation decay
+bounceRestitution = 0.50        // Reduced wall bounce
 
 // BowlingGame.ts
 MAX_BALL_SPEED = 180           // Max ball velocity
@@ -109,7 +112,7 @@ npm run build        # Production build
 - [ ] **Oil Pattern Editor** - Custom patterns for advanced players
 - [ ] **Ball Spin Visualization** - Show rotation during travel
 - [ ] **Pin Action Replays** - Slow-mo replay of strike attempts
-- [ ] **Detailed Split Detection** - Named splits (7-10, 4-6-7-10, etc.)
+- [x] **Detailed Split Detection** - Named splits (7-10, Greek Church, etc.) ✅
 
 ### Multiplayer & Social
 

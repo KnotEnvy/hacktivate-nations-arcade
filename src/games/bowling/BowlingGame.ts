@@ -706,10 +706,18 @@ export class BowlingGame extends BaseGame {
     else if (result.isGutter) {
       this.showMessage('Gutter Ball!', 1.5);
     }
-    // SPLIT - detected after first ball, but only show message if significant
-    // (Don't overwhelm player with "Split!" on easy leaves)
-    else if (result.isSplit && result.pinsKnocked >= 5) {
-      this.showMessage('Split!', 1.5);
+    // SPLIT - detected after first ball, show the specific split name
+    // Display for any recognized split pattern
+    else if (result.isSplit && result.splitName) {
+      // Famous/difficult splits get extra emphasis
+      const isFamousSplit = ['7-10 Split', 'Greek Church', 'Big Four', 'Big Five'].includes(result.splitName);
+      if (isFamousSplit) {
+        this.showMessage(`${result.splitName}!`, 2.5);
+        this.screenShake.intensity = 0.3; // Dramatic shake for famous splits
+        this.services?.audio?.playSound?.('bounce');
+      } else {
+        this.showMessage(result.splitName, 1.5);
+      }
     }
     // Show pins knocked for normal throws (second ball, not spare)
     else if (result.frameComplete && !result.isStrike && !result.isSpare && result.pinsKnocked > 0) {
