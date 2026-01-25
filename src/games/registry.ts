@@ -64,9 +64,14 @@ gameLoader.registerGame('bowling', async () => {
   const { BowlingGame } = await import('./bowling/BowlingGame');
   return new BowlingGame();
 });
+gameLoader.registerGame('platform-adventure', async () => {
+  const { PlatformGame } = await import('./platform-adventure/PlatformGame');
+  return new PlatformGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {
 //   const { PuzzleGame } = await import('./puzzle/PuzzleGame');
 //   return new PuzzleGame();
 // });
+

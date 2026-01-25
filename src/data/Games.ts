@@ -87,14 +87,14 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     description: 'Stack blocks with precision timing! Build the tallest tower you can!'
   },
   {
-  id: 'mini-golf',
-  title: 'Mini Golf',
-  thumbnail: '/games/mini-golf/mini-golf-thumb.svg',
-  inputSchema: ['keyboard', 'touch'],
-  assetBudgetKB: 90,
-  tier: 1,
-  description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
-},
+    id: 'mini-golf',
+    title: 'Mini Golf',
+    thumbnail: '/games/mini-golf/mini-golf-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
+    assetBudgetKB: 90,
+    tier: 1,
+    description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
+  },
   {
     id: 'bubble',
     title: 'Bubble Pop',
@@ -144,12 +144,12 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   },
   {
     id: 'platform-adventure',
-    title: 'Platform Adventure',
-    thumbnail: '/games/coming-soon-thumb.svg',
-    inputSchema: ['keyboard'],
+    title: 'Crystal Caverns',
+    thumbnail: '/games/platform-adventure/platform-adventure-thumb.svg',
+    inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 130,
     tier: 2,
-    description: 'Coming soon!'
+    description: 'A Prince of Persia-style adventure! Master sword combat, dodge deadly traps, and race against time to find the legendary Golden Owl!'
   },
   {
     id: 'speed-racer',
