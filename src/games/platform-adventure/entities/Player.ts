@@ -167,11 +167,13 @@ export class Player {
     }
 
     tryAttack(): boolean {
-        if (!this.hasSword || this.state === 'attack') return false;
-        if (!this.canMove()) return false;
+        // Must have sword and not already attacking
+        if (!this.hasSword) return false;
+        if (this.state === 'attack' || this.state === 'block' ||
+            this.state === 'hurt' || this.state === 'dying' || this.state === 'dead') return false;
 
         this.state = 'attack';
-        this.attackTimer = 0.3;
+        this.attackTimer = 0.35;
         this.animTimer = 0;
         // Create hitbox in front
         this.attackHitbox = {
@@ -307,15 +309,18 @@ export class Player {
         // Arms
         ctx.fillStyle = '#ffcc99';
         if (this.state === 'attack') {
-            ctx.fillRect(20, 16, 18, 4);
+            // Extended arm thrust forward
+            ctx.fillRect(20, 14, 20, 4);
         } else if (this.state === 'block') {
-            ctx.fillRect(18, 8, 4, 16);
+            // Arm raised to block
+            ctx.fillRect(18, 6, 4, 18);
         } else if (this.state === 'run') {
             const phase = this.animFrame * Math.PI / 2;
             const off = Math.sin(phase) * 3;
             ctx.fillRect(0, 16 - off, 4, 10);
             ctx.fillRect(20, 16 + off, 4, 10);
         } else {
+            // Idle arms at sides
             ctx.fillRect(0, 16, 4, 10);
             ctx.fillRect(20, 16, 4, 10);
         }
@@ -335,17 +340,28 @@ export class Player {
 
         // Sword
         if (this.hasSword) {
-            ctx.fillStyle = '#aabbcc';
+            ctx.fillStyle = '#c0d0e0'; // Bright steel color
             if (this.state === 'attack') {
-                ctx.fillRect(24, 16, 16, 2);
+                // Sword thrust forward - long blade
+                ctx.fillRect(28, 14, 20, 3);
+                // Blade tip
+                ctx.fillRect(46, 13, 4, 5);
             } else if (this.state === 'block') {
-                ctx.fillRect(20, 4, 2, 18);
+                // Sword held vertically for defense
+                ctx.fillRect(20, 2, 3, 22);
             } else {
-                ctx.fillRect(22, 20, 12, 2);
+                // Sword held at ready (diagonal)
+                ctx.fillRect(22, 18, 14, 2);
             }
-            // Hilt
-            ctx.fillStyle = '#664422';
-            ctx.fillRect(20, 18, 4, 5);
+            // Hilt/guard
+            ctx.fillStyle = '#886633';
+            if (this.state === 'attack') {
+                ctx.fillRect(24, 12, 5, 8);
+            } else if (this.state === 'block') {
+                ctx.fillRect(18, 22, 8, 4);
+            } else {
+                ctx.fillRect(20, 16, 5, 6);
+            }
         }
     }
 
