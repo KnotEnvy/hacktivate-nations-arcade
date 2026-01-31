@@ -33,10 +33,25 @@ export class Player {
     public attackHitbox: { x: number, y: number, w: number, h: number } | null = null;
     private attackTimer: number = 0;
     private blockTimer: number = 0;
+    private hurtTimer: number = 0;
 
     // Animation (public for debug)
     public animTimer: number = 0;
     private animFrame: number = 0;
+    private readonly ANIM = {
+        idleFrames: 4,
+        idleDuration: 2.0,
+        runFrames: 6,
+        runDuration: 0.6,
+        jumpFrames: 3,
+        jumpDuration: 0.6,
+        attackFrames: 5,
+        attackDuration: 0.35,
+        blockFrames: 3,
+        blockDuration: 0.4,
+        hurtFrames: 3,
+        hurtDuration: 0.5,
+    };
 
     // Health
     public health: number = 3;
@@ -62,23 +77,31 @@ export class Player {
         if (this.invulnTimer > 0) this.invulnTimer -= dt;
         if (this.attackTimer > 0) this.attackTimer -= dt;
         if (this.blockTimer > 0) this.blockTimer -= dt;
+        if (this.hurtTimer > 0) this.hurtTimer -= dt;
         this.animTimer += dt;
 
         // Handle attack state exit
         if (this.state === 'attack' && this.attackTimer <= 0) {
             this.attackHitbox = null;
             this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.animTimer = 0;
         }
 
         // Handle block state exit
         if (this.state === 'block' && this.blockTimer <= 0) {
             this.isBlocking = false;
             this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.animTimer = 0;
         }
 
         // Handle dying
         if (this.state === 'dying' && this.animTimer > 1) {
             this.state = 'dead';
+        }
+
+        if (this.state === 'hurt' && this.hurtTimer <= 0) {
+            this.state = this.hasSword ? 'combat_idle' : (this.isGrounded ? 'idle' : 'fall');
+            this.animTimer = 0;
         }
 
         // Apply gravity when not grounded
@@ -91,10 +114,45 @@ export class Player {
         this.x += this.vx * dt;
         this.y += this.vy * dt;
 
-        // Update animation frame for running
-        if (this.state === 'run' && this.animTimer > 0.1) {
-            this.animTimer = 0;
-            this.animFrame = (this.animFrame + 1) % 4;
+        this.updateAnimationFrame();
+    }
+
+    private updateAnimationFrame(): void {
+        switch (this.state) {
+            case 'idle':
+            case 'combat_idle': {
+                const frameDuration = this.ANIM.idleDuration / this.ANIM.idleFrames;
+                this.animFrame = Math.floor((this.animTimer / frameDuration) % this.ANIM.idleFrames);
+                break;
+            }
+            case 'run': {
+                const frameDuration = this.ANIM.runDuration / this.ANIM.runFrames;
+                this.animFrame = Math.floor((this.animTimer / frameDuration) % this.ANIM.runFrames);
+                break;
+            }
+            case 'jump':
+            case 'fall': {
+                const frameDuration = this.ANIM.jumpDuration / this.ANIM.jumpFrames;
+                this.animFrame = Math.min(this.ANIM.jumpFrames - 1, Math.floor(this.animTimer / frameDuration));
+                break;
+            }
+            case 'attack': {
+                const frameDuration = this.ANIM.attackDuration / this.ANIM.attackFrames;
+                this.animFrame = Math.min(this.ANIM.attackFrames - 1, Math.floor(this.animTimer / frameDuration));
+                break;
+            }
+            case 'block': {
+                const frameDuration = this.ANIM.blockDuration / this.ANIM.blockFrames;
+                this.animFrame = Math.min(this.ANIM.blockFrames - 1, Math.floor(this.animTimer / frameDuration));
+                break;
+            }
+            case 'hurt': {
+                const frameDuration = this.ANIM.hurtDuration / this.ANIM.hurtFrames;
+                this.animFrame = Math.min(this.ANIM.hurtFrames - 1, Math.floor(this.animTimer / frameDuration));
+                break;
+            }
+            default:
+                break;
         }
     }
 
@@ -105,6 +163,7 @@ export class Player {
             this.facingRight = false;
             if (this.isGrounded && this.state !== 'run') {
                 this.state = 'run';
+                this.animTimer = 0;
             }
         }
     }
@@ -115,6 +174,7 @@ export class Player {
             this.facingRight = true;
             if (this.isGrounded && this.state !== 'run') {
                 this.state = 'run';
+                this.animTimer = 0;
             }
         }
     }
@@ -123,6 +183,7 @@ export class Player {
         this.vx = 0;
         if (this.isGrounded && this.state === 'run') {
             this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.animTimer = 0;
         }
     }
 
@@ -131,6 +192,7 @@ export class Player {
             this.vy = -this.JUMP_VELOCITY;
             this.isGrounded = false;
             this.state = 'jump';
+            this.animTimer = 0;
         }
     }
 
@@ -146,6 +208,7 @@ export class Player {
             this.vy = 0;
             if (this.state === 'jump' || this.state === 'fall') {
                 this.state = this.hasSword ? 'combat_idle' : 'idle';
+                this.animTimer = 0;
             }
         }
     }
@@ -155,6 +218,7 @@ export class Player {
         if (this.isGrounded && this.state !== 'jump') {
             this.isGrounded = false;
             this.state = 'fall';
+            this.animTimer = 0;
         }
     }
 
@@ -163,6 +227,7 @@ export class Player {
         if (this.canMove()) {
             this.hasSword = !this.hasSword;
             this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.animTimer = 0;
         }
     }
 
@@ -196,9 +261,15 @@ export class Player {
         return true;
     }
 
-    takeDamage(amount: number = 1): boolean {
-        if (this.invulnTimer > 0 || this.isBlocking) return false;
+    takeDamage(amount: number = 1, ignoreBlock: boolean = false): boolean {
+        if (this.invulnTimer > 0) return false;
+        if (this.isBlocking && !ignoreBlock) return false;
         if (this.state === 'dying' || this.state === 'dead') return false;
+
+        if (ignoreBlock && this.isBlocking) {
+            this.isBlocking = false;
+            this.blockTimer = 0;
+        }
 
         this.health -= amount;
         this.invulnTimer = 1.5;
@@ -210,6 +281,8 @@ export class Player {
         }
 
         this.state = 'hurt';
+        this.animTimer = 0;
+        this.hurtTimer = 0.4;
         return false;
     }
 
@@ -242,6 +315,7 @@ export class Player {
         this.attackHitbox = null;
         this.attackTimer = 0;
         this.blockTimer = 0;
+        this.hurtTimer = 0;
     }
 
     setCheckpoint(x: number, y: number): void {
@@ -273,6 +347,8 @@ export class Player {
 
     private drawSprite(ctx: CanvasRenderingContext2D): void {
         const isDead = this.state === 'dying' || this.state === 'dead';
+        const isIdle = this.state === 'idle' || this.state === 'combat_idle';
+        const idleBob = isIdle ? Math.sin((this.animFrame / this.ANIM.idleFrames) * Math.PI * 2) * 2 : 0;
 
         if (isDead) {
             // Fallen body
@@ -286,81 +362,100 @@ export class Player {
         // Legs
         ctx.fillStyle = '#333';
         if (this.state === 'run') {
-            const phase = this.animFrame * Math.PI / 2;
+            const phase = (this.animFrame / this.ANIM.runFrames) * Math.PI * 2;
             const off = Math.sin(phase) * 5;
             ctx.fillRect(6, 32 + off, 5, 14 - Math.abs(off));
             ctx.fillRect(13, 32 - off, 5, 14 - Math.abs(off));
         } else if (this.state === 'jump' || this.state === 'fall') {
-            ctx.fillRect(6, 30, 5, 16);
-            ctx.fillRect(13, 34, 5, 12);
+            if (this.animFrame <= 0) {
+                ctx.fillRect(6, 28, 5, 14);
+                ctx.fillRect(13, 30, 5, 12);
+            } else if (this.animFrame === 1) {
+                ctx.fillRect(6, 30, 5, 14);
+                ctx.fillRect(13, 30, 5, 14);
+            } else {
+                ctx.fillRect(6, 32, 5, 16);
+                ctx.fillRect(13, 34, 5, 12);
+            }
         } else {
-            ctx.fillRect(6, 32, 5, 16);
-            ctx.fillRect(13, 32, 5, 16);
+            ctx.fillRect(6, 32 + idleBob, 5, 16);
+            ctx.fillRect(13, 32 + idleBob, 5, 16);
         }
 
         // Torso
         ctx.fillStyle = this.state === 'hurt' ? '#aa4444' : '#4466aa';
-        ctx.fillRect(4, 14, 16, 18);
+        ctx.fillRect(4, 14 + idleBob, 16, 18);
 
         // Belt
         ctx.fillStyle = '#664422';
-        ctx.fillRect(4, 31, 16, 2);
+        ctx.fillRect(4, 31 + idleBob, 16, 2);
 
         // Arms
         ctx.fillStyle = '#ffcc99';
         if (this.state === 'attack') {
-            // Extended arm thrust forward
-            ctx.fillRect(20, 14, 20, 4);
+            if (this.animFrame <= 1) {
+                // Windup
+                ctx.fillRect(16, 16 + idleBob, 10, 4);
+            } else {
+                // Strike + hold
+                ctx.fillRect(20, 14 + idleBob, 20, 4);
+            }
         } else if (this.state === 'block') {
             // Arm raised to block
-            ctx.fillRect(18, 6, 4, 18);
+            const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
+            ctx.fillRect(18, 6 + raise + idleBob, 4, 18);
         } else if (this.state === 'run') {
-            const phase = this.animFrame * Math.PI / 2;
+            const phase = (this.animFrame / this.ANIM.runFrames) * Math.PI * 2;
             const off = Math.sin(phase) * 3;
-            ctx.fillRect(0, 16 - off, 4, 10);
-            ctx.fillRect(20, 16 + off, 4, 10);
+            ctx.fillRect(0, 16 - off + idleBob, 4, 10);
+            ctx.fillRect(20, 16 + off + idleBob, 4, 10);
         } else {
             // Idle arms at sides
-            ctx.fillRect(0, 16, 4, 10);
-            ctx.fillRect(20, 16, 4, 10);
+            ctx.fillRect(0, 16 + idleBob, 4, 10);
+            ctx.fillRect(20, 16 + idleBob, 4, 10);
         }
 
         // Head
         ctx.fillStyle = '#ffcc99';
-        ctx.fillRect(6, 0, 12, 14);
+        ctx.fillRect(6, 0 + idleBob, 12, 14);
 
         // Hair
         ctx.fillStyle = '#4a3020';
-        ctx.fillRect(6, 0, 12, 4);
-        ctx.fillRect(4, 2, 4, 5);
+        ctx.fillRect(6, 0 + idleBob, 12, 4);
+        ctx.fillRect(4, 2 + idleBob, 4, 5);
 
         // Eye
         ctx.fillStyle = '#000';
-        ctx.fillRect(14, 6, 2, 2);
+        ctx.fillRect(14, 6 + idleBob, 2, 2);
 
         // Sword
         if (this.hasSword) {
             ctx.fillStyle = '#c0d0e0'; // Bright steel color
             if (this.state === 'attack') {
-                // Sword thrust forward - long blade
-                ctx.fillRect(28, 14, 20, 3);
-                // Blade tip
-                ctx.fillRect(46, 13, 4, 5);
+                if (this.animFrame <= 1) {
+                    ctx.fillRect(22, 16 + idleBob, 10, 2);
+                } else {
+                    // Sword thrust forward - long blade
+                    ctx.fillRect(28, 14 + idleBob, 20, 3);
+                    // Blade tip
+                    ctx.fillRect(46, 13 + idleBob, 4, 5);
+                }
             } else if (this.state === 'block') {
                 // Sword held vertically for defense
-                ctx.fillRect(20, 2, 3, 22);
+                const raise = this.animFrame === 0 ? 6 : this.animFrame === 1 ? 2 : 8;
+                ctx.fillRect(20, 2 + raise + idleBob, 3, 22);
             } else {
                 // Sword held at ready (diagonal)
-                ctx.fillRect(22, 18, 14, 2);
+                ctx.fillRect(22, 18 + idleBob, 14, 2);
             }
             // Hilt/guard
             ctx.fillStyle = '#886633';
             if (this.state === 'attack') {
-                ctx.fillRect(24, 12, 5, 8);
+                ctx.fillRect(24, 12 + idleBob, 5, 8);
             } else if (this.state === 'block') {
-                ctx.fillRect(18, 22, 8, 4);
+                ctx.fillRect(18, 22 + idleBob, 8, 4);
             } else {
-                ctx.fillRect(20, 16, 5, 6);
+                ctx.fillRect(20, 16 + idleBob, 5, 6);
             }
         }
     }
