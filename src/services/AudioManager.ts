@@ -25,6 +25,17 @@ export type SoundName =
   | 'splash'
   | 'win'
   | 'laser'
+  // Platform adventure sounds
+  | 'footstep_stone'
+  | 'land'
+  | 'sword_draw'
+  | 'sword_sheathe'
+  | 'sword_swing'
+  | 'sword_clash'
+  | 'switch_click'
+  | 'gate_open'
+  | 'hurt_grunt'
+  | 'death_cry'
   // Bowling-specific sounds
   | 'pin_hit'
   | 'pin_scatter'
@@ -266,6 +277,36 @@ export class AudioManager {
       case 'laser':
         this.playLaserSound(volume, now);
         break;
+      case 'footstep_stone':
+        this.playFootstepStoneSound(volume, now);
+        break;
+      case 'land':
+        this.playLandSound(volume, now);
+        break;
+      case 'sword_draw':
+        this.playSwordDrawSound(volume, now);
+        break;
+      case 'sword_sheathe':
+        this.playSwordSheatheSound(volume, now);
+        break;
+      case 'sword_swing':
+        this.playSwordSwingSound(volume, now);
+        break;
+      case 'sword_clash':
+        this.playSwordClashSound(volume, now);
+        break;
+      case 'switch_click':
+        this.playSwitchClickSound(volume, now);
+        break;
+      case 'gate_open':
+        this.playGateOpenSound(volume, now);
+        break;
+      case 'hurt_grunt':
+        this.playHurtGruntSound(volume, now);
+        break;
+      case 'death_cry':
+        this.playDeathCrySound(volume, now);
+        break;
       case 'pin_hit':
         this.playPinHitSound(volume, now);
         break;
@@ -461,6 +502,252 @@ export class AudioManager {
     thumpGain.connect(this.masterGain!);
     thump.start(now);
     thump.stop(now + 0.18);
+  }
+
+  private playFootstepStoneSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const noiseBuffer = this.createNoiseBuffer(0.08);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(800, now);
+    filter.Q.setValueAtTime(0.9, now);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(volume * 0.18, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+    noise.stop(now + 0.08);
+
+    const thump = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(140, now);
+    thump.frequency.exponentialRampToValueAtTime(80, now + 0.08);
+    thumpGain.gain.setValueAtTime(volume * 0.2, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    thump.connect(thumpGain);
+    thumpGain.connect(this.masterGain!);
+    thump.start(now);
+    thump.stop(now + 0.14);
+  }
+
+  private playLandSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const noiseBuffer = this.createNoiseBuffer(0.12);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(1800, now);
+    filter.frequency.exponentialRampToValueAtTime(300, now + 0.12);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(volume * 0.35, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+    noise.stop(now + 0.14);
+
+    const thump = ctx.createOscillator();
+    const thumpGain = ctx.createGain();
+    thump.type = 'sine';
+    thump.frequency.setValueAtTime(180, now);
+    thump.frequency.exponentialRampToValueAtTime(60, now + 0.14);
+    thumpGain.gain.setValueAtTime(volume * 0.45, now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    thump.connect(thumpGain);
+    thumpGain.connect(this.masterGain!);
+    thump.start(now);
+    thump.stop(now + 0.2);
+  }
+
+  private playSwordDrawSound(volume: number, now: number): void {
+    const ctx = this.context!;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(350, now);
+    osc.frequency.exponentialRampToValueAtTime(1200, now + 0.08);
+    gain.gain.setValueAtTime(volume * 0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(now);
+    osc.stop(now + 0.14);
+  }
+
+  private playSwordSheatheSound(volume: number, now: number): void {
+    const ctx = this.context!;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1200, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.08);
+    gain.gain.setValueAtTime(volume * 0.25, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(now);
+    osc.stop(now + 0.14);
+  }
+
+  private playSwordSwingSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const noiseBuffer = this.createNoiseBuffer(0.12);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(1200, now);
+    filter.frequency.exponentialRampToValueAtTime(600, now + 0.12);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(volume * 0.22, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+    noise.stop(now + 0.14);
+  }
+
+  private playSwordClashSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const ping = ctx.createOscillator();
+    const pingGain = ctx.createGain();
+    ping.type = 'square';
+    ping.frequency.setValueAtTime(1400, now);
+    ping.frequency.exponentialRampToValueAtTime(600, now + 0.08);
+    pingGain.gain.setValueAtTime(volume * 0.3, now);
+    pingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+    ping.connect(pingGain);
+    pingGain.connect(this.masterGain!);
+    ping.start(now);
+    ping.stop(now + 0.14);
+
+    const noiseBuffer = this.createNoiseBuffer(0.08);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(1200, now);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(volume * 0.2, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now);
+    noise.stop(now + 0.1);
+  }
+
+  private playSwitchClickSound(volume: number, now: number): void {
+    this.playClickSound(volume, now);
+  }
+
+  private playGateOpenSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const rumble = ctx.createOscillator();
+    const rumbleGain = ctx.createGain();
+    rumble.type = 'sine';
+    rumble.frequency.setValueAtTime(140, now);
+    rumble.frequency.exponentialRampToValueAtTime(70, now + 0.3);
+    rumbleGain.gain.setValueAtTime(volume * 0.35, now);
+    rumbleGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    rumble.connect(rumbleGain);
+    rumbleGain.connect(this.masterGain!);
+    rumble.start(now);
+    rumble.stop(now + 0.4);
+
+    const clang = ctx.createOscillator();
+    const clangGain = ctx.createGain();
+    clang.type = 'triangle';
+    clang.frequency.setValueAtTime(520, now + 0.05);
+    clangGain.gain.setValueAtTime(0, now + 0.05);
+    clangGain.gain.linearRampToValueAtTime(volume * 0.25, now + 0.06);
+    clangGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    clang.connect(clangGain);
+    clangGain.connect(this.masterGain!);
+    clang.start(now + 0.05);
+    clang.stop(now + 0.22);
+  }
+
+  private playHurtGruntSound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(260, now);
+    osc.frequency.exponentialRampToValueAtTime(180, now + 0.12);
+    gain.gain.setValueAtTime(volume * 0.35, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(now);
+    osc.stop(now + 0.2);
+
+    const breath = ctx.createOscillator();
+    const breathGain = ctx.createGain();
+    breath.type = 'triangle';
+    breath.frequency.setValueAtTime(520, now);
+    breath.frequency.exponentialRampToValueAtTime(320, now + 0.1);
+    breathGain.gain.setValueAtTime(volume * 0.18, now + 0.02);
+    breathGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    breath.connect(breathGain);
+    breathGain.connect(this.masterGain!);
+    breath.start(now + 0.02);
+    breath.stop(now + 0.18);
+  }
+
+  private playDeathCrySound(volume: number, now: number): void {
+    const ctx = this.context!;
+
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(420, now);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.35);
+    gain.gain.setValueAtTime(volume * 0.45, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(now);
+    osc.stop(now + 0.45);
+
+    const noiseBuffer = this.createNoiseBuffer(0.25);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(900, now + 0.05);
+    filter.Q.setValueAtTime(0.8, now + 0.05);
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(volume * 0.18, now + 0.05);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    noise.connect(filter);
+    filter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(now + 0.05);
+    noise.stop(now + 0.32);
   }
 
   // Game Over: Descending sad melody

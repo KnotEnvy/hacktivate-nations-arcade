@@ -16,6 +16,22 @@ export type GuardState =
 
 export type GuardType = 'recruit' | 'soldier' | 'veteran' | 'captain' | 'shadow';
 
+// Type-specific color schemes for visual distinction
+const GUARD_COLORS: Record<GuardType, {
+    armor: string;
+    armorHurt: string;
+    helmet: string;
+    visor: string;
+    sword: string;
+    accent?: string;
+}> = {
+    recruit:  { armor: '#aa3333', armorHurt: '#ff6666', helmet: '#333333', visor: '#1a1a1a', sword: '#888899' },
+    soldier:  { armor: '#aa3333', armorHurt: '#ff6666', helmet: '#333333', visor: '#1a1a1a', sword: '#888899' },
+    veteran:  { armor: '#993333', armorHurt: '#ff5555', helmet: '#2a2a2a', visor: '#1a1a1a', sword: '#9999aa' },
+    captain:  { armor: '#882222', armorHurt: '#ff4444', helmet: '#222222', visor: '#110011', sword: '#ccbb88', accent: '#ffcc00' },
+    shadow:   { armor: '#220033', armorHurt: '#6600aa', helmet: '#110022', visor: '#330044', sword: '#4400ff', accent: '#8800ff' },
+};
+
 export interface GuardSense {
     playerX: number;
     playerY: number;
@@ -87,7 +103,12 @@ export class Guard {
     private blockedByPlayerCount: number = 0;
     private rallyActive: boolean = false;
     private shadowPhase: 1 | 2 | 3 | 0 = 0;
+    private previousShadowPhase: 1 | 2 | 3 | 0 = 0;
     private chargeDirection: number = 1;
+
+    // Callbacks for boss events
+    onPhaseChange?: (newPhase: number, guard: Guard) => void;
+    onDeath?: (guard: Guard) => void;
 
     // AI timers
     private stateTimer: number = 0;
@@ -132,9 +153,14 @@ export class Guard {
         const inAttackRange = distToPlayer < this.attackRange && sameLevel;
         const heardPlayer = sense.playerNoise && distToPlayer < this.hearingRange;
         const healthPercent = this.health / this.maxHealth;
-        this.shadowPhase = this.type === 'shadow'
+        const newShadowPhase = this.type === 'shadow'
             ? (healthPercent > 0.7 ? 1 : healthPercent > 0.3 ? 2 : 3)
             : 0;
+        if (newShadowPhase !== this.shadowPhase && this.shadowPhase !== 0 && newShadowPhase !== 0) {
+            this.onPhaseChange?.(newShadowPhase, this);
+        }
+        this.previousShadowPhase = this.shadowPhase;
+        this.shadowPhase = newShadowPhase;
         this.rallyActive = (this.type === 'captain' || this.type === 'shadow') && healthPercent < 0.3;
 
         // Face player when aware
@@ -576,6 +602,7 @@ export class Guard {
 
         if (this.health <= 0) {
             this.setState('dying');
+            this.onDeath?.(this);
         } else {
             this.setState('stunned');
         }
@@ -606,6 +633,19 @@ export class Guard {
         const isDying = this.state === 'dying';
         const isMoving = this.state === 'patrol' || this.state === 'alert' || this.state === 'suspicious' ||
             this.state === 'retreating' || (this.state === 'combat_ready' && this.advanceTimer > 0);
+        const colors = GUARD_COLORS[this.type];
+        const isCaptain = this.type === 'captain';
+        const isShadow = this.type === 'shadow';
+
+        // Shadow glow effect (drawn first, behind everything)
+        if (isShadow) {
+            ctx.save();
+            ctx.shadowColor = colors.accent ?? '#8800ff';
+            ctx.shadowBlur = 15 + Math.sin(this.animTimer * 4) * 5;
+            ctx.fillStyle = 'rgba(136, 0, 255, 0.3)';
+            ctx.fillRect(-4, -4, 32, 56);
+            ctx.restore();
+        }
 
         // Legs
         ctx.fillStyle = '#2a2a2a';
@@ -620,16 +660,27 @@ export class Guard {
             ctx.fillRect(14, 34, 6, 14);
         }
 
-        // Torso (red armor)
-        ctx.fillStyle = isHurt ? '#ff6666' : '#aa3333';
+        // Torso (type-specific armor color)
+        ctx.fillStyle = isHurt ? colors.armorHurt : colors.armor;
         if (isDying) {
             ctx.fillRect(0, 36, 24, 8);
         } else {
             ctx.fillRect(4, 14, 16, 20);
         }
 
+        // Captain gold shoulder pauldrons
+        if (isCaptain && !isDying && colors.accent) {
+            ctx.fillStyle = colors.accent;
+            ctx.fillRect(0, 12, 6, 8);  // Left pauldron
+            ctx.fillRect(18, 12, 6, 8); // Right pauldron
+            // Pauldron highlights
+            ctx.fillStyle = '#ffe066';
+            ctx.fillRect(1, 13, 2, 3);
+            ctx.fillRect(19, 13, 2, 3);
+        }
+
         // Arms
-        ctx.fillStyle = '#aa3333';
+        ctx.fillStyle = colors.armor;
         if (this.state === 'attacking') {
             ctx.fillRect(20, 16, 16, 4);
         } else if (this.state === 'blocking') {
@@ -643,24 +694,59 @@ export class Guard {
         }
 
         // Helmet
-        ctx.fillStyle = '#333333';
+        ctx.fillStyle = colors.helmet;
         if (isDying) {
             ctx.fillRect(0, 28, 10, 8);
         } else {
             ctx.fillRect(4, 0, 16, 14);
-            ctx.fillStyle = '#1a1a1a';
+            ctx.fillStyle = colors.visor;
             ctx.fillRect(12, 4, 6, 6); // Visor
+
+            // Captain red plume
+            if (isCaptain) {
+                ctx.fillStyle = '#cc2222';
+                ctx.fillRect(8, -8, 4, 10);  // Plume base
+                ctx.fillRect(6, -12, 8, 6);  // Plume top
+                ctx.fillStyle = '#ff4444';
+                ctx.fillRect(7, -10, 2, 4);  // Plume highlight
+            }
+
+            // Captain gold crest on helmet
+            if (isCaptain && colors.accent) {
+                ctx.fillStyle = colors.accent;
+                ctx.fillRect(6, 0, 12, 3);  // Gold band at top
+            }
         }
 
-        // Sword
-        ctx.fillStyle = '#888899';
+        // Sword (type-specific color, captain has larger sword when attacking)
+        ctx.fillStyle = colors.sword;
         if (this.state === 'attacking') {
-            ctx.fillRect(36, 14, 20, 3);
+            if (isCaptain) {
+                // Captain's larger sword
+                ctx.fillRect(36, 12, 26, 5);
+                // Gold hilt
+                ctx.fillStyle = colors.accent ?? '#ffcc00';
+                ctx.fillRect(32, 10, 6, 9);
+            } else if (isShadow) {
+                // Shadow's glowing blade
+                ctx.save();
+                ctx.shadowColor = colors.accent ?? '#8800ff';
+                ctx.shadowBlur = 8;
+                ctx.fillRect(36, 14, 24, 3);
+                ctx.restore();
+            } else {
+                ctx.fillRect(36, 14, 20, 3);
+            }
         } else if (this.state === 'blocking') {
             // Shield up
             ctx.fillRect(22, 4, 4, 18);
         } else if (!isDying) {
-            ctx.fillRect(22, 20, 14, 2);
+            if (isCaptain) {
+                // Captain's sheathed sword is larger
+                ctx.fillRect(22, 18, 18, 3);
+            } else {
+                ctx.fillRect(22, 20, 14, 2);
+            }
         }
     }
 

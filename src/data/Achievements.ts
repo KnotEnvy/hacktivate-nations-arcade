@@ -920,6 +920,158 @@ export const ACHIEVEMENTS: Achievement[] = [
         requirement: { type: 'gutterBalls', value: 5 },
         reward: 25,
         unlocked: false
+      },
+
+      // ============= CRYSTAL CAVERNS (PLATFORM ADVENTURE) ACHIEVEMENTS =============
+      // Combat Achievements
+      {
+        id: 'caverns_first_blood',
+        title: 'First Blood',
+        description: 'Defeat your first guard in Crystal Caverns',
+        icon: '⚔️',
+        gameId: 'platform-adventure',
+        category: 'progression',
+        requirement: { type: 'guards_defeated', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'caverns_captain_slayer',
+        title: 'Captain Slayer',
+        description: 'Defeat the Captain boss',
+        icon: '🛡️',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'captain_defeated', value: 1 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'caverns_shadow_slayer',
+        title: 'Shadow Slayer',
+        description: 'Defeat the Shadow Guardian',
+        icon: '👤',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'shadow_defeated', value: 1 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'caverns_parry_master',
+        title: 'Parry Master',
+        description: 'Block 50 attacks total in Crystal Caverns',
+        icon: '🛡️',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'blocks_total', value: 50 },
+        reward: 150,
+        unlocked: false
+      },
+
+      // Collection Achievements
+      {
+        id: 'caverns_owl_finder',
+        title: 'Owl Finder',
+        description: 'Find the Golden Owl and complete the game',
+        icon: '🦉',
+        gameId: 'platform-adventure',
+        category: 'progression',
+        requirement: { type: 'owl_found', value: 1 },
+        reward: 500,
+        unlocked: false
+      },
+      {
+        id: 'caverns_collector',
+        title: 'Gem Collector',
+        description: 'Collect 100 gems total in Crystal Caverns',
+        icon: '💎',
+        gameId: 'platform-adventure',
+        category: 'collection',
+        requirement: { type: 'gems_collected', value: 100 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'caverns_completionist',
+        title: 'Completionist',
+        description: 'Collect all gems in a level',
+        icon: '✨',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'all_gems_level', value: 1 },
+        reward: 100,
+        unlocked: false
+      },
+
+      // Skill Achievements
+      {
+        id: 'caverns_flawless',
+        title: 'Flawless',
+        description: 'Complete a level without taking damage',
+        icon: '💫',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'flawless_level', value: 1 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'caverns_speedrunner',
+        title: 'Speedrunner',
+        description: 'Complete the entire game in under 8 minutes',
+        icon: '⚡',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'speedrun_complete', value: 1 },
+        reward: 400,
+        unlocked: false
+      },
+      {
+        id: 'caverns_time_lord',
+        title: 'Time Lord',
+        description: 'Finish a level with 60+ seconds remaining',
+        icon: '⏰',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'time_bonus', value: 1 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'caverns_pacifist',
+        title: 'Pacifist',
+        description: 'Complete Level 1 without drawing your sword',
+        icon: '🕊️',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'pacifist_level1', value: 1 },
+        reward: 200,
+        unlocked: false
+      },
+
+      // Score Achievements
+      {
+        id: 'caverns_high_scorer',
+        title: 'Cave Explorer',
+        description: 'Score 5,000 points in Crystal Caverns',
+        icon: '🏆',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'score', value: 5000 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'caverns_master',
+        title: 'Cavern Master',
+        description: 'Score 15,000 points in Crystal Caverns',
+        icon: '👑',
+        gameId: 'platform-adventure',
+        category: 'skill',
+        requirement: { type: 'score', value: 15000 },
+        reward: 300,
+        unlocked: false
       }
     ];
 

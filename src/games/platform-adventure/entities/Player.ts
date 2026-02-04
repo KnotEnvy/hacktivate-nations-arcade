@@ -187,13 +187,13 @@ export class Player {
         }
     }
 
-    jump(): void {
-        if (this.canMove() && this.isGrounded) {
-            this.vy = -this.JUMP_VELOCITY;
-            this.isGrounded = false;
-            this.state = 'jump';
-            this.animTimer = 0;
-        }
+    jump(): boolean {
+        if (!this.canMove() || !this.isGrounded) return false;
+        this.vy = -this.JUMP_VELOCITY;
+        this.isGrounded = false;
+        this.state = 'jump';
+        this.animTimer = 0;
+        return true;
     }
 
     private canMove(): boolean {

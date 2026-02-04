@@ -8,8 +8,30 @@ import { Guard, GuardSense, GuardType } from './entities/Guard';
 import { Collectible } from './entities/Collectible';
 import { Trap } from './entities/Trap';
 import { ALL_LEVELS, LevelDefinition, getTileAt, findPlayerSpawn, findDoorPosition } from './levels/LevelData';
+import { STORY_BY_LEVEL, StoryEvent } from './levels/StoryData';
 
-type GameState = 'menu' | 'playing' | 'level_intro' | 'level_complete' | 'victory' | 'game_over';
+type GameState = 'menu' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over';
+
+// Enhanced scoring system
+const SCORING = {
+    GEM_VALUE: 100,           // up from 50
+    TIME_VALUE: 10,           // per second remaining
+    SPEED_THRESHOLD: 60,      // seconds for speed bonus
+    SPEED_MULTIPLIER: 2,
+    NO_HIT_BONUS: 500,
+    GUARD_KILL: 200,          // up from 100
+    PERFECT_BLOCK: 50,
+    COUNTER_ATTACK: 100,
+};
+
+// Leaderboard interface
+interface LeaderboardEntry {
+    name: string;
+    score: number;
+    timeRemaining: number;
+    deaths: number;
+    date: number;
+}
 
 type Particle = {
     x: number;
@@ -152,12 +174,63 @@ export class PlatformGame extends BaseGame {
     private shakeOffsetX: number = 0;
     private shakeOffsetY: number = 0;
     private particles: Particle[] = [];
+    private footstepTimer: number = 0;
+
+    // Boss battle
+    private activeBoss: Guard | null = null;
+    private bossHealthBarTimer: number = 0;
+    private bannerText: string = '';
+    private bannerTimer: number = 0;
+    private bannerDuration: number = 0;
+    private timeScale: number = 1.0;
+    private slowmoTimer: number = 0;
+    private phaseFlashTimer: number = 0;
+
+    // Music state
+    private musicState: 'none' | 'exploration' | 'boss' | 'victory' = 'none';
+
+    // Boss-locked door (Level 3)
+    private doorLocked: boolean = false;
 
     // Stats
     private gemsCollected: number = 0;
     private guardsDefeated: number = 0;
     private deaths: number = 0;
     private foundOwl: boolean = false;
+    private levelStory: StoryEvent[] = [];
+    private storyQueue: StoryEvent[] = [];
+    private activeStory: StoryEvent | null = null;
+    private storySeen: Set<string> = new Set();
+
+    // Level stats for scoring
+    private levelDamagesTaken: number = 0;
+    private levelPerfectBlocks: number = 0;
+    private levelCounterAttacks: number = 0;
+    private swordEverDrawn: boolean = false;
+    private levelStartTime: number = 0;
+    private totalGemsInLevel: number = 0;
+    private levelGemsCollected: number = 0;
+    private gameStartTime: number = 0;
+
+    // Achievement tracking (uses platform AchievementService)
+    private totalBlocksEver: number = 0;
+    private totalGemsEver: number = 0;
+    private achievementToast: { name: string; timer: number } | null = null;
+    private readonly STATS_KEY = 'crystal-caverns-stats';
+
+    // Leaderboard system
+    private leaderboard: LeaderboardEntry[] = [];
+    private readonly LEADERBOARD_KEY = 'crystal-caverns-leaderboard';
+    private enteringName: boolean = false;
+    private playerName: string = '';
+    private nameInputChars: string[] = ['A', 'A', 'A'];
+    private nameInputIndex: number = 0;
+    private hasEnteredName: boolean = false;
+    private nameInputUpWasPressed: boolean = false;
+    private nameInputDownWasPressed: boolean = false;
+    private nameInputLeftWasPressed: boolean = false;
+    private nameInputRightWasPressed: boolean = false;
+    private nameInputActionWasPressed: boolean = false;
 
     // Input state for edge detection
     private swordKeyWasPressed: boolean = false;
@@ -166,7 +239,17 @@ export class PlatformGame extends BaseGame {
 
     protected onInit(): void {
         this.player = new Player(100, 200);
+        this.loadPersistentStats();
+        this.loadLeaderboard();
+        this.gameStartTime = Date.now();
         this.loadLevel(0);
+    }
+
+    protected endGame(): void {
+        // Stop music before ending game
+        this.services?.audio?.stopMusic?.(1.0);
+        this.musicState = 'none';
+        super.endGame();
     }
 
     private loadLevel(levelIndex: number): void {
@@ -187,6 +270,7 @@ export class PlatformGame extends BaseGame {
         this.torches = [];
         const guardSpawns: Array<{ x: number; y: number }> = [];
         let owlPosition: { x: number; y: number } | null = null;
+        let gemCount = 0;
         this.particles = [];
         this.hitStopTimer = 0;
         this.shakeTimer = 0;
@@ -194,6 +278,28 @@ export class PlatformGame extends BaseGame {
         this.shakeIntensity = 0;
         this.shakeOffsetX = 0;
         this.shakeOffsetY = 0;
+        this.footstepTimer = 0;
+        this.activeBoss = null;
+        this.bossHealthBarTimer = 0;
+        this.bannerText = '';
+        this.bannerTimer = 0;
+        this.bannerDuration = 0;
+        this.timeScale = 1.0;
+        this.slowmoTimer = 0;
+        this.phaseFlashTimer = 0;
+        this.levelStory = STORY_BY_LEVEL[this.currentLevel] ?? [];
+        this.storyQueue = this.levelStory.filter((event) => event.trigger.type === 'level_start');
+        this.activeStory = null;
+        this.storySeen = new Set();
+
+        // Reset level stats
+        this.levelDamagesTaken = 0;
+        this.levelPerfectBlocks = 0;
+        this.levelCounterAttacks = 0;
+        this.swordEverDrawn = false;
+        this.levelStartTime = Date.now();
+        this.levelGemsCollected = 0;
+        this.totalGemsInLevel = gemCount;
 
         // Parse level tiles for entities
         for (let y = 0; y < this.level.height; y++) {
@@ -215,6 +321,7 @@ export class PlatformGame extends BaseGame {
                         break;
                     case 'gem':
                         this.collectibles.push(new Collectible(px + 16, py + 16, 'gem'));
+                        gemCount++;
                         break;
                     case 'time':
                         this.collectibles.push(new Collectible(px + 16, py + 16, 'time'));
@@ -298,8 +405,21 @@ export class PlatformGame extends BaseGame {
         guardSpawns.forEach((spawn, index) => {
             const type = index === captainIndex ? 'captain' : index === shadowIndex ? 'shadow' : baseGuardType;
             const groundY = this.getGuardGroundY(spawn.x, spawn.y);
-            this.guards.push(new Guard(spawn.x, groundY, 3, type));
+            const guard = new Guard(spawn.x, groundY, 3, type);
+
+            // Register boss callbacks
+            if (type === 'captain' || type === 'shadow') {
+                guard.onDeath = (g) => this.onBossDefeat(g);
+                if (type === 'shadow') {
+                    guard.onPhaseChange = (phase, g) => this.onShadowPhaseChange(phase, g);
+                }
+            }
+
+            this.guards.push(guard);
         });
+
+        // Lock door on Level 3 until Captain is defeated
+        this.doorLocked = this.currentLevel === 2 && captainIndex !== -1;
 
         // Spawn player
         const spawn = findPlayerSpawn(this.level);
@@ -340,6 +460,9 @@ export class PlatformGame extends BaseGame {
             case 'level_intro':
                 this.updateLevelIntro(dt);
                 break;
+            case 'story':
+                this.updateStory(dt);
+                break;
             case 'playing':
                 this.updatePlaying(dt);
                 break;
@@ -365,7 +488,16 @@ export class PlatformGame extends BaseGame {
     private updateLevelIntro(dt: number): void {
         this.stateTimer += dt;
         if (this.stateTimer > 2) {
-            this.gameState = 'playing';
+            if (this.storyQueue.length > 0) {
+                this.beginStory(this.storyQueue.shift()!);
+            } else {
+                this.gameState = 'playing';
+                // Start exploration music when gameplay begins
+                if (this.musicState === 'none') {
+                    this.services?.audio?.playMusic?.('epic_tension', 2.0);
+                    this.musicState = 'exploration';
+                }
+            }
         }
     }
 
@@ -385,8 +517,8 @@ export class PlatformGame extends BaseGame {
         // Update timer
         this.timeRemaining -= safeDt;
         if (this.timeRemaining <= 0) {
-            this.gameState = 'game_over';
-            this.stateTimer = 0;
+            this.timeRemaining = 0;
+            this.endGame();
             return;
         }
 
@@ -401,13 +533,19 @@ export class PlatformGame extends BaseGame {
         // Handle sword toggle (edge triggered)
         if (shiftKey && !this.swordKeyWasPressed) {
             this.player.toggleSword();
+            if (this.player.hasSword) {
+                this.swordEverDrawn = true;
+            }
+            this.services?.audio?.playSound?.(this.player.hasSword ? 'sword_draw' : 'sword_sheathe');
         }
         this.swordKeyWasPressed = shiftKey;
 
         // Handle combat
         if (this.player.hasSword) {
             if (action) {
-                this.player.tryAttack();
+                if (this.player.tryAttack()) {
+                    this.services?.audio?.playSound?.('sword_swing');
+                }
             } else if (ctrlKey) {
                 this.player.tryBlock();
             }
@@ -422,16 +560,26 @@ export class PlatformGame extends BaseGame {
             this.player.stopMoving();
         }
 
+        const wasGrounded = this.player.isGrounded;
+
         // Handle jump
         if (up) {
-            this.player.jump();
+            if (this.player.jump()) {
+                this.services?.audio?.playSound?.('jump');
+            }
         }
 
         // Update player physics
-        this.player.update(safeDt);
+        this.player.update(safeDt * this.timeScale);
 
         // Collision detection
         this.handlePlayerCollision();
+
+        if (!wasGrounded && this.player.isGrounded) {
+            this.services?.audio?.playSound?.('land');
+        }
+
+        this.updateFootsteps(safeDt);
 
         // Update guards
         const playerAttacking = this.player.state === 'attack' && this.player.attackHitbox !== null;
@@ -446,12 +594,17 @@ export class PlatformGame extends BaseGame {
             playerHasSword: this.player.hasSword,
         };
         for (const guard of this.guards) {
-            guard.update(safeDt, guardSense);
+            guard.update(safeDt * this.timeScale, guardSense);
         }
+
+        // Boss detection and update
+        this.updateBossState();
+        this.updateSlowmo(safeDt);
+        this.updateBanner(safeDt);
 
         // Update traps
         for (const trap of this.traps) {
-            trap.update(safeDt, this.player.centerX, this.player.feetY);
+            trap.update(safeDt * this.timeScale, this.player.centerX, this.player.feetY);
         }
 
         // Update collectibles
@@ -465,10 +618,19 @@ export class PlatformGame extends BaseGame {
         this.checkCollectibles();
         this.checkSwitches();
         this.updateGates(safeDt);
+        this.checkStoryTriggers();
+        if (this.gameState === 'story') {
+            return;
+        }
         this.checkDoor();
 
         // Update particles
-        this.updateParticles(safeDt);
+        this.updateParticles(safeDt * this.timeScale);
+
+        // Update achievement toast timer
+        if (this.achievementToast && this.achievementToast.timer > 0) {
+            this.achievementToast.timer -= safeDt;
+        }
 
         // Check death
         if (this.player.state === 'dead') {
@@ -546,7 +708,10 @@ export class PlatformGame extends BaseGame {
 
         // Deadly tile check (falling into pit)
         if (this.player.y > this.level.height * TILE_SIZE) {
-            this.player.die();
+            if (this.player.state !== 'dying' && this.player.state !== 'dead') {
+                this.player.die();
+                this.services?.audio?.playSound?.('death_cry');
+            }
         }
     }
 
@@ -561,19 +726,21 @@ export class PlatformGame extends BaseGame {
                     ph.y < guard.bottom && ph.y + ph.h > guard.top) {
                     if (guard.isBlocking) {
                         // Blocked!
-                        this.services?.audio?.playSound?.('collision');
+                        this.services?.audio?.playSound?.('sword_clash');
                         this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5);
                         this.triggerHitStop(0.02);
                         this.triggerScreenShake(3, 0.08);
                     } else {
                         guard.takeDamage();
                         this.services?.audio?.playSound?.('hit');
+                        this.services?.audio?.playSound?.('hurt_grunt');
                         this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
                         this.triggerHitStop(0.03);
                         this.triggerScreenShake(6, 0.12);
                         if (!guard.isAlive) {
                             this.guardsDefeated++;
-                            this.score += 100;
+                            this.score += SCORING.GUARD_KILL;
+                            this.services?.audio?.playSound?.('death_cry');
                             this.spawnDeathBurst(guard.centerX, guard.y + guard.height * 0.5);
                         }
                     }
@@ -589,17 +756,24 @@ export class PlatformGame extends BaseGame {
             if (gh.x < this.player.right && gh.x + gh.w > this.player.left &&
                 gh.y < this.player.bottom && gh.y + gh.h > this.player.top) {
                 if (this.player.isBlocking && !guard.attackIgnoresBlock) {
-                    this.services?.audio?.playSound?.('collision');
+                    this.services?.audio?.playSound?.('sword_clash');
                     guard.onAttackBlocked();
                     this.spawnSwordClash(this.player.centerX, this.player.centerY);
                     this.triggerHitStop(0.02);
                     this.triggerScreenShake(3, 0.08);
+                    // Track perfect block and award points
+                    this.levelPerfectBlocks++;
+                    this.totalBlocksEver++;
+                    this.score += SCORING.PERFECT_BLOCK;
                 } else {
-                    this.player.takeDamage(guard.attackDamage, guard.attackIgnoresBlock);
+                    const died = this.player.takeDamage(guard.attackDamage, guard.attackIgnoresBlock);
                     this.services?.audio?.playSound?.('hit');
+                    this.services?.audio?.playSound?.(died ? 'death_cry' : 'hurt_grunt');
                     this.spawnBloodBurst(this.player.centerX, this.player.centerY);
                     this.triggerHitStop(0.03 * guard.attackDamage);
                     this.triggerScreenShake(7, 0.14);
+                    // Track damage taken
+                    this.levelDamagesTaken++;
                 }
             }
         }
@@ -612,8 +786,9 @@ export class PlatformGame extends BaseGame {
             // Simple bounding box check
             if (this.player.right > trap.left && this.player.left < trap.right &&
                 this.player.bottom > trap.top && this.player.top < trap.bottom) {
-                this.player.takeDamage(3); // Traps are deadly!
+                const died = this.player.takeDamage(3); // Traps are deadly!
                 this.services?.audio?.playSound?.('hit');
+                this.services?.audio?.playSound?.(died ? 'death_cry' : 'hurt_grunt');
                 this.spawnBloodBurst(this.player.centerX, this.player.centerY);
                 this.triggerHitStop(0.04);
                 this.triggerScreenShake(10, 0.18);
@@ -640,7 +815,9 @@ export class PlatformGame extends BaseGame {
                         break;
                     case 'gem':
                         this.gemsCollected++;
-                        this.score += 50;
+                        this.levelGemsCollected++;
+                        this.totalGemsEver++;
+                        this.score += SCORING.GEM_VALUE;
                         this.services?.audio?.playSound?.('coin');
                         break;
                     case 'time':
@@ -650,10 +827,21 @@ export class PlatformGame extends BaseGame {
                         break;
                     case 'owl':
                         this.foundOwl = true;
+                        // Calculate final level bonus
+                        const finalBonus = this.calculateLevelBonus();
+                        this.score += finalBonus;
+                        this.score += 1000; // Owl bonus
+                        // Check all achievements
+                        this.checkAchievements();
+                        this.checkVictoryAchievements();
                         this.gameState = 'victory';
                         this.stateTimer = 0;
-                        this.score += 1000;
                         this.services?.audio?.playSound?.('success');
+                        // Play victory music if not already playing
+                        if (this.musicState !== 'victory') {
+                            this.services?.audio?.playMusic?.('epic_heroic', 0.5);
+                            this.musicState = 'victory';
+                        }
                         break;
                 }
             }
@@ -665,7 +853,7 @@ export class PlatformGame extends BaseGame {
         for (const switchTile of this.switches) {
             const isPressed = this.isPlayerOnSwitch(switchTile);
             if (isPressed && !switchTile.pressed) {
-                this.services?.audio?.playSound?.('click');
+                this.services?.audio?.playSound?.('switch_click');
             }
             switchTile.pressed = switchTile.pressed || isPressed;
 
@@ -679,7 +867,7 @@ export class PlatformGame extends BaseGame {
                 openedGate = true;
             }
             if (openedGate) {
-                this.services?.audio?.playSound?.('unlock');
+                this.services?.audio?.playSound?.('gate_open');
             }
         }
     }
@@ -691,6 +879,19 @@ export class PlatformGame extends BaseGame {
             if (gate.openProgress === target) continue;
             const direction = gate.open ? 1 : -1;
             gate.openProgress = Math.max(0, Math.min(1, gate.openProgress + direction * speed * dt));
+        }
+    }
+
+    private updateFootsteps(dt: number): void {
+        if (!this.player.isGrounded || this.player.state !== 'run' || Math.abs(this.player.vx) < 1) {
+            this.footstepTimer = 0;
+            return;
+        }
+
+        this.footstepTimer -= dt;
+        if (this.footstepTimer <= 0) {
+            this.services?.audio?.playSound?.('footstep_stone');
+            this.footstepTimer = 0.32;
         }
     }
 
@@ -752,15 +953,174 @@ export class PlatformGame extends BaseGame {
         const door = findDoorPosition(this.level);
         if (!door) return;
 
+        // Block if door is locked (Captain must be defeated first)
+        if (this.doorLocked) return;
+
         if (this.player.centerX >= door.x && this.player.centerX < door.x + TILE_SIZE &&
             this.player.feetY >= door.y && this.player.feetY < door.y + TILE_SIZE) {
             // Level complete!
             if (this.currentLevel < ALL_LEVELS.length - 1) {
+                // Calculate and award level bonus
+                const bonus = this.calculateLevelBonus();
+                this.score += bonus;
+
+                // Check achievements before transitioning
+                this.checkAchievements();
+
                 this.gameState = 'level_complete';
                 this.stateTimer = 0;
                 this.services?.audio?.playSound?.('success');
             }
         }
+    }
+
+    private calculateLevelBonus(): number {
+        let bonus = 0;
+        const levelTime = (Date.now() - this.levelStartTime) / 1000;
+
+        // Time bonus: points per second remaining
+        bonus += Math.floor(this.timeRemaining * SCORING.TIME_VALUE);
+
+        // Speed bonus: 2x multiplier if completed in under 60 seconds
+        if (levelTime < SCORING.SPEED_THRESHOLD) {
+            bonus *= SCORING.SPEED_MULTIPLIER;
+        }
+
+        // No-hit bonus: 500 points if no damage taken this level
+        if (this.levelDamagesTaken === 0) {
+            bonus += SCORING.NO_HIT_BONUS;
+        }
+
+        // Perfect blocks bonus
+        bonus += this.levelPerfectBlocks * SCORING.PERFECT_BLOCK;
+
+        // Completionist bonus: all gems collected
+        if (this.totalGemsInLevel > 0 && this.levelGemsCollected >= this.totalGemsInLevel) {
+            bonus += 250; // Bonus for collecting all gems
+        }
+
+        return bonus;
+    }
+
+    // ===== ACHIEVEMENT SYSTEM (uses platform AchievementService) =====
+
+    private loadPersistentStats(): void {
+        try {
+            const saved = localStorage.getItem(this.STATS_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                this.totalBlocksEver = parsed.totalBlocksEver ?? 0;
+                this.totalGemsEver = parsed.totalGemsEver ?? 0;
+            }
+        } catch {
+            // Use defaults
+        }
+    }
+
+    private savePersistentStats(): void {
+        try {
+            localStorage.setItem(this.STATS_KEY, JSON.stringify({
+                totalBlocksEver: this.totalBlocksEver,
+                totalGemsEver: this.totalGemsEver,
+            }));
+        } catch {
+            // Silently fail
+        }
+    }
+
+    private trackAchievement(type: string, value: number): void {
+        const unlocked = this.services?.achievements?.trackGameSpecificStat?.(
+            'platform-adventure',
+            type,
+            value
+        );
+        // Show toast for any newly unlocked achievements
+        if (unlocked && unlocked.length > 0) {
+            for (const achievement of unlocked) {
+                this.achievementToast = { name: achievement.title, timer: 3 };
+                this.services?.audio?.playSound?.('unlock');
+            }
+        }
+        this.savePersistentStats();
+    }
+
+    private checkAchievements(): void {
+        // Track game stats for achievements
+        this.trackAchievement('guards_defeated', this.guardsDefeated);
+        this.trackAchievement('blocks_total', this.totalBlocksEver);
+        this.trackAchievement('gems_collected', this.totalGemsEver);
+        this.trackAchievement('score', this.score);
+
+        // Flawless: Complete level without damage
+        if (this.levelDamagesTaken === 0) {
+            this.trackAchievement('flawless_level', 1);
+        }
+
+        // Time Lord: Finish with 60+ seconds remaining
+        if (this.timeRemaining >= 60) {
+            this.trackAchievement('time_bonus', 1);
+        }
+
+        // Completionist: All gems in a level
+        if (this.totalGemsInLevel > 0 && this.levelGemsCollected >= this.totalGemsInLevel) {
+            this.trackAchievement('all_gems_level', 1);
+        }
+
+        // Pacifist: Complete Level 1 without drawing sword
+        if (this.currentLevel === 0 && !this.swordEverDrawn) {
+            this.trackAchievement('pacifist_level1', 1);
+        }
+    }
+
+    private checkVictoryAchievements(): void {
+        // Owl Finder: Find the Golden Owl
+        if (this.foundOwl) {
+            this.trackAchievement('owl_found', 1);
+        }
+
+        // Speedrunner: Complete game in under 8 minutes
+        const totalGameTime = (Date.now() - this.gameStartTime) / 1000;
+        if (this.foundOwl && totalGameTime < 480) { // 8 minutes = 480 seconds
+            this.trackAchievement('speedrun_complete', 1);
+        }
+
+        // Final score achievement
+        this.trackAchievement('score', this.score);
+    }
+
+    // ===== LEADERBOARD SYSTEM =====
+
+    private loadLeaderboard(): void {
+        try {
+            const saved = localStorage.getItem(this.LEADERBOARD_KEY);
+            if (saved) {
+                this.leaderboard = JSON.parse(saved);
+            } else {
+                this.leaderboard = [];
+            }
+        } catch {
+            this.leaderboard = [];
+        }
+    }
+
+    private saveLeaderboard(): void {
+        try {
+            localStorage.setItem(this.LEADERBOARD_KEY, JSON.stringify(this.leaderboard));
+        } catch {
+            // Silently fail
+        }
+    }
+
+    private isHighScore(score: number): boolean {
+        if (this.leaderboard.length < 10) return true;
+        return score > (this.leaderboard[this.leaderboard.length - 1]?.score ?? 0);
+    }
+
+    private addToLeaderboard(entry: LeaderboardEntry): void {
+        this.leaderboard.push(entry);
+        this.leaderboard.sort((a, b) => b.score - a.score);
+        this.leaderboard = this.leaderboard.slice(0, 10); // Keep top 10
+        this.saveLeaderboard();
     }
 
     private updateLevelComplete(dt: number): void {
@@ -775,8 +1135,136 @@ export class PlatformGame extends BaseGame {
     private updateEndScreen(dt: number): void {
         this.stateTimer += dt;
         const input = this.services?.input;
+
+        // Update achievement toast even on end screens
+        if (this.achievementToast && this.achievementToast.timer > 0) {
+            this.achievementToast.timer -= dt;
+        }
+
+        if (this.gameState === 'victory' && this.enteringName) {
+            // Handle name input
+            if (input?.isUpPressed?.() && !this.nameInputUpWasPressed) {
+                this.nameInputChars[this.nameInputIndex] = this.nextChar(this.nameInputChars[this.nameInputIndex], 1);
+            }
+            if (input?.isDownPressed?.() && !this.nameInputDownWasPressed) {
+                this.nameInputChars[this.nameInputIndex] = this.nextChar(this.nameInputChars[this.nameInputIndex], -1);
+            }
+            if (input?.isLeftPressed?.() && !this.nameInputLeftWasPressed) {
+                this.nameInputIndex = Math.max(0, this.nameInputIndex - 1);
+            }
+            if (input?.isRightPressed?.() && !this.nameInputRightWasPressed) {
+                this.nameInputIndex = Math.min(2, this.nameInputIndex + 1);
+            }
+            if (input?.isActionPressed?.() && !this.nameInputActionWasPressed) {
+                // Submit name
+                const name = this.nameInputChars.join('');
+                this.addToLeaderboard({
+                    name,
+                    score: this.score,
+                    timeRemaining: Math.floor(this.timeRemaining),
+                    deaths: this.deaths,
+                    date: Date.now(),
+                });
+                this.enteringName = false;
+                this.services?.audio?.playSound?.('success');
+            }
+
+            // Update key states
+            this.nameInputUpWasPressed = input?.isUpPressed?.() ?? false;
+            this.nameInputDownWasPressed = input?.isDownPressed?.() ?? false;
+            this.nameInputLeftWasPressed = input?.isLeftPressed?.() ?? false;
+            this.nameInputRightWasPressed = input?.isRightPressed?.() ?? false;
+            this.nameInputActionWasPressed = input?.isActionPressed?.() ?? false;
+            return;
+        }
+
         if (this.stateTimer > 2 && input?.isActionPressed?.()) {
-            this.onRestart();
+            if (this.gameState === 'victory' && this.isHighScore(this.score) && !this.enteringName && !this.hasEnteredName) {
+                // Enter name input mode
+                this.enteringName = true;
+                this.nameInputIndex = 0;
+                this.nameInputChars = ['A', 'A', 'A'];
+                this.hasEnteredName = true;
+                this.services?.audio?.playSound?.('coin');
+            } else {
+                this.onRestart();
+            }
+        }
+    }
+
+    private nextChar(char: string, direction: number): string {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let index = chars.indexOf(char);
+        if (index === -1) index = 0;
+        index = (index + direction + chars.length) % chars.length;
+        return chars[index];
+    }
+
+    private beginStory(event: StoryEvent): void {
+        this.activeStory = event;
+        this.storySeen.add(event.id);
+        this.gameState = 'story';
+        this.stateTimer = 0;
+    }
+
+    private updateStory(dt: number): void {
+        this.stateTimer += dt;
+        const input = this.services?.input;
+        if (this.stateTimer > 0.2 && input?.isActionPressed?.()) {
+            if (this.storyQueue.length > 0) {
+                this.beginStory(this.storyQueue.shift()!);
+            } else {
+                this.activeStory = null;
+                this.gameState = 'playing';
+            }
+        }
+    }
+
+    private checkStoryTriggers(): void {
+        if (!this.level || this.activeStory) return;
+
+        for (const event of this.levelStory) {
+            if (this.storySeen.has(event.id)) continue;
+            if (event.trigger.type !== 'position') continue;
+
+            const radius = event.trigger.radius ?? 1.5;
+            const targetX = event.trigger.x * TILE_SIZE + TILE_SIZE * 0.5;
+            const targetY = event.trigger.y * TILE_SIZE + TILE_SIZE * 0.5;
+            const dx = this.player.centerX - targetX;
+            const dy = this.player.centerY - targetY;
+            const distSq = dx * dx + dy * dy;
+            if (distSq <= (radius * TILE_SIZE) * (radius * TILE_SIZE)) {
+                this.beginStory(event);
+                break;
+            }
+        }
+    }
+
+    private triggerBossStory(triggerType: 'boss_alert' | 'boss_defeat' | 'boss_phase', bossType: GuardType, phase?: number): void {
+        if (this.activeStory) return;
+
+        for (const event of this.levelStory) {
+            if (this.storySeen.has(event.id)) continue;
+
+            const trigger = event.trigger;
+            if (trigger.type !== triggerType) continue;
+
+            if (triggerType === 'boss_alert' && trigger.type === 'boss_alert') {
+                if (trigger.bossType === bossType) {
+                    this.beginStory(event);
+                    return;
+                }
+            } else if (triggerType === 'boss_defeat' && trigger.type === 'boss_defeat') {
+                if (trigger.bossType === bossType) {
+                    this.beginStory(event);
+                    return;
+                }
+            } else if (triggerType === 'boss_phase' && trigger.type === 'boss_phase') {
+                if (trigger.bossType === bossType && trigger.phase === phase) {
+                    this.beginStory(event);
+                    return;
+                }
+            }
         }
     }
 
@@ -868,6 +1356,448 @@ export class PlatformGame extends BaseGame {
 
     private spawnDeathBurst(x: number, y: number): void {
         this.spawnParticles(x, y, 30, ['#880000', '#440000', '#220000'], 300, 1.0, [5, 15], 300);
+    }
+
+    // ===== BOSS BATTLE SYSTEM =====
+
+    private updateBossState(): void {
+        // Find active boss (captain or shadow in combat)
+        let foundBoss: Guard | null = null;
+
+        for (const guard of this.guards) {
+            if (guard.type !== 'captain' && guard.type !== 'shadow') continue;
+            if (!guard.isAlive) continue;
+
+            // Check if boss is engaged in combat
+            const inCombat = guard.state === 'alert' || guard.state === 'combat_ready' ||
+                guard.state === 'attacking' || guard.state === 'blocking' ||
+                guard.state === 'stunned' || guard.state === 'retreating';
+
+            if (inCombat) {
+                foundBoss = guard;
+                break;
+            }
+        }
+
+        // Update active boss reference
+        if (foundBoss && this.activeBoss !== foundBoss) {
+            this.activeBoss = foundBoss;
+            this.bossHealthBarTimer = 0;
+            // Transition to boss music
+            if (this.musicState !== 'boss' && this.musicState !== 'victory') {
+                this.services?.audio?.playMusic?.('action_intense', 1.0);
+                this.musicState = 'boss';
+            }
+            // Trigger boss alert dialogue
+            this.triggerBossStory('boss_alert', foundBoss.type);
+        } else if (!foundBoss && this.activeBoss) {
+            // Boss left combat or died
+            this.bossHealthBarTimer += 0.016; // ~60fps
+            if (this.bossHealthBarTimer > 3) {
+                // Return to exploration if boss disengaged (not defeated)
+                if (this.activeBoss.isAlive && this.musicState === 'boss') {
+                    this.services?.audio?.playMusic?.('epic_tension', 2.0);
+                    this.musicState = 'exploration';
+                }
+                this.activeBoss = null;
+            }
+        }
+
+        if (this.activeBoss) {
+            this.bossHealthBarTimer = Math.min(1, this.bossHealthBarTimer + 0.05);
+        }
+    }
+
+    private updateSlowmo(dt: number): void {
+        if (this.slowmoTimer > 0) {
+            this.slowmoTimer -= dt;
+            if (this.slowmoTimer <= 0) {
+                this.timeScale = 1.0;
+            }
+        }
+    }
+
+    private updateBanner(dt: number): void {
+        if (this.bannerTimer > 0) {
+            this.bannerTimer -= dt;
+        }
+
+        if (this.phaseFlashTimer > 0) {
+            this.phaseFlashTimer -= dt;
+        }
+    }
+
+    private onBossDefeat(guard: Guard): void {
+        const isShadow = guard.type === 'shadow';
+        const isCaptain = guard.type === 'captain';
+
+        if (!isShadow && !isCaptain) return;
+
+        // Epic slowdown
+        this.timeScale = 0.25;
+        this.slowmoTimer = isShadow ? 2.5 : 1.5;
+
+        // Extended screen shake
+        this.triggerScreenShake(isShadow ? 20 : 12, isShadow ? 2.0 : 1.0);
+
+        // Massive particle explosion
+        this.spawnParticles(
+            guard.centerX,
+            guard.y + guard.height * 0.5,
+            isShadow ? 60 : 40,
+            isShadow ? ['#4400ff', '#8800ff', '#220066', '#000033'] : ['#880000', '#660000', '#440000'],
+            isShadow ? 400 : 300,
+            isShadow ? 1.5 : 1.0,
+            [6, 20],
+            200
+        );
+
+        // Show victory banner
+        const bannerText = isShadow ? 'THE SHADOW IS VANQUISHED' : 'THE CAPTAIN FALLS';
+        this.showBanner(bannerText, isShadow ? 3.5 : 2.5);
+
+        // Score bonus
+        this.score += isShadow ? 2000 : 500;
+
+        // Play victory music
+        this.services?.audio?.playMusic?.('epic_heroic', 0.5);
+        this.musicState = 'victory';
+
+        // Achievement triggers (via platform service)
+        if (isCaptain) {
+            this.trackAchievement('captain_defeated', 1);
+            // Unlock the door on Level 3
+            this.doorLocked = false;
+        }
+        if (isShadow) {
+            this.trackAchievement('shadow_defeated', 1);
+        }
+
+        // For Shadow: show secondary banner after delay
+        if (isShadow) {
+            setTimeout(() => {
+                this.showBanner('THE PATH IS OPEN', 2.0);
+            }, 2500);
+        }
+
+        // Trigger boss defeat dialogue after a short delay
+        setTimeout(() => {
+            this.triggerBossStory('boss_defeat', guard.type);
+        }, isShadow ? 3500 : 2000);
+    }
+
+    private onShadowPhaseChange(newPhase: number, guard: Guard): void {
+        // Screen flash effect
+        this.phaseFlashTimer = 0.3;
+
+        // Brief slowdown
+        this.timeScale = 0.3;
+        this.slowmoTimer = 0.5;
+
+        // Screen shake
+        this.triggerScreenShake(10, 0.4);
+
+        // Phase-specific effects
+        if (newPhase === 2) {
+            this.showBanner('THE FURY AWAKENS', 2.0);
+            // Purple particles
+            this.spawnParticles(guard.centerX, guard.y + 24, 20, ['#ff4400', '#ff8800', '#ffcc00'], 250, 0.8, [4, 12], 100);
+        } else if (newPhase === 3) {
+            this.showBanner('DESPERATION', 2.0);
+            // Dark particles
+            this.spawnParticles(guard.centerX, guard.y + 24, 25, ['#8800ff', '#4400aa', '#220055'], 300, 1.0, [5, 15], 80);
+        }
+
+        this.services?.audio?.playSound?.('unlock'); // Use existing sound for now
+
+        // Trigger phase dialogue after banner fades
+        setTimeout(() => {
+            this.triggerBossStory('boss_phase', 'shadow', newPhase);
+        }, 2200);
+    }
+
+    private showBanner(text: string, duration: number): void {
+        this.bannerText = text;
+        this.bannerTimer = duration;
+        this.bannerDuration = duration;
+    }
+
+    private renderBossHealthBar(ctx: CanvasRenderingContext2D): void {
+        if (!this.activeBoss) return;
+
+        const boss = this.activeBoss;
+        const w = ctx.canvas.width;
+
+        // Fade in animation
+        const alpha = Math.min(1, this.bossHealthBarTimer * 2);
+        if (alpha <= 0) return;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Boss name
+        const bossName = boss.type === 'shadow' ? 'SHADOW GUARDIAN' : 'THE CAPTAIN';
+        ctx.fillStyle = boss.type === 'shadow' ? '#aa88ff' : '#ff6644';
+        ctx.font = 'bold 18px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(bossName, w / 2, 85);
+
+        // Health bar background
+        const barWidth = 200;
+        const barHeight = 12;
+        const barX = (w - barWidth) / 2;
+        const barY = 92;
+
+        ctx.fillStyle = '#222222';
+        ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+        // Health segments
+        const healthPercent = boss.health / boss.maxHealth;
+        const filledWidth = Math.floor(barWidth * healthPercent);
+
+        // Color based on health
+        let barColor = '#44ff44'; // Green
+        if (healthPercent < 0.6) barColor = '#ffcc00'; // Yellow
+        if (healthPercent < 0.3) barColor = '#ff4444'; // Red
+
+        ctx.fillStyle = barColor;
+        ctx.fillRect(barX, barY, filledWidth, barHeight);
+
+        // Health segments overlay
+        ctx.strokeStyle = '#111111';
+        ctx.lineWidth = 1;
+        const segmentWidth = barWidth / boss.maxHealth;
+        for (let i = 1; i < boss.maxHealth; i++) {
+            const segX = barX + i * segmentWidth;
+            ctx.beginPath();
+            ctx.moveTo(segX, barY);
+            ctx.lineTo(segX, barY + barHeight);
+            ctx.stroke();
+        }
+
+        // Border
+        ctx.strokeStyle = boss.type === 'shadow' ? '#8866cc' : '#aa4422';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
+
+        // HP text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px Arial';
+        ctx.fillText(`${boss.health} / ${boss.maxHealth}`, w / 2, barY + barHeight + 14);
+
+        ctx.restore();
+    }
+
+    private renderBanner(ctx: CanvasRenderingContext2D): void {
+        if (this.bannerTimer <= 0 || !this.bannerText) return;
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        // Fade in/out
+        const fadeIn = Math.min(1, (this.bannerDuration - this.bannerTimer) * 4);
+        const fadeOut = Math.min(1, this.bannerTimer * 2);
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Banner background
+        const bannerHeight = 60;
+        const bannerY = h / 2 - bannerHeight / 2;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(0, bannerY, w, bannerHeight);
+
+        // Gold borders
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(0, bannerY, w, 3);
+        ctx.fillRect(0, bannerY + bannerHeight - 3, w, 3);
+
+        // Text
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 28px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.bannerText, w / 2, h / 2);
+
+        ctx.restore();
+    }
+
+    private renderPhaseFlash(ctx: CanvasRenderingContext2D): void {
+        if (this.phaseFlashTimer <= 0) return;
+
+        const alpha = this.phaseFlashTimer / 0.3;
+        ctx.save();
+        ctx.fillStyle = `rgba(136, 0, 255, ${alpha * 0.4})`;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.restore();
+    }
+
+    private renderVictoryScreen(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        ctx.fillStyle = 'rgba(50, 40, 0, 0.9)';
+        ctx.fillRect(0, 0, w, h);
+
+        // Title
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('🦉 GOLDEN OWL FOUND! 🦉', w / 2, 60);
+
+        // Stats
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '20px Arial';
+        ctx.fillText(`Final Score: ${this.score}`, w / 2, 100);
+        ctx.fillText(`Time: ${Math.floor(this.timeRemaining)}s remaining`, w / 2, 125);
+
+        if (this.enteringName) {
+            // Name input mode
+            this.renderNameInput(ctx, w, h);
+        } else if (this.stateTimer > 2 && this.isHighScore(this.score)) {
+            // Prompt to enter name
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 24px Arial';
+            ctx.fillText('NEW HIGH SCORE!', w / 2, 170);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '18px Arial';
+            ctx.fillText('Press SPACE to enter your name', w / 2, 200);
+        } else if (this.stateTimer > 2) {
+            // Show leaderboard and restart prompt
+            this.renderLeaderboard(ctx, w, h);
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = '18px Arial';
+            ctx.fillText('Press SPACE to play again', w / 2, h - 40);
+        }
+    }
+
+    private renderNameInput(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('ENTER YOUR NAME', w / 2, 170);
+
+        // Draw letter boxes
+        const boxWidth = 50;
+        const boxHeight = 60;
+        const startX = w / 2 - (boxWidth * 3 + 20) / 2;
+        const boxY = 190;
+
+        for (let i = 0; i < 3; i++) {
+            const x = startX + i * (boxWidth + 10);
+            const isSelected = i === this.nameInputIndex;
+
+            // Box background
+            ctx.fillStyle = isSelected ? '#554400' : '#333333';
+            ctx.fillRect(x, boxY, boxWidth, boxHeight);
+
+            // Box border
+            ctx.strokeStyle = isSelected ? '#ffd700' : '#666666';
+            ctx.lineWidth = isSelected ? 3 : 1;
+            ctx.strokeRect(x, boxY, boxWidth, boxHeight);
+
+            // Letter
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.nameInputChars[i], x + boxWidth / 2, boxY + 45);
+
+            // Selection arrows
+            if (isSelected) {
+                ctx.fillStyle = '#ffd700';
+                ctx.font = '16px Arial';
+                ctx.fillText('▲', x + boxWidth / 2, boxY - 5);
+                ctx.fillText('▼', x + boxWidth / 2, boxY + boxHeight + 18);
+            }
+        }
+
+        // Instructions
+        ctx.fillStyle = '#888888';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('UP/DOWN to change letter, LEFT/RIGHT to move', w / 2, boxY + boxHeight + 50);
+        ctx.fillText('Press SPACE to confirm', w / 2, boxY + boxHeight + 70);
+    }
+
+    private renderLeaderboard(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        if (this.leaderboard.length === 0) return;
+
+        const startY = 170;
+        const lineHeight = 24;
+
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('LEADERBOARD', w / 2, startY);
+
+        // Header
+        ctx.fillStyle = '#888888';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('RANK', w / 2 - 140, startY + 25);
+        ctx.fillText('NAME', w / 2 - 80, startY + 25);
+        ctx.fillText('SCORE', w / 2 + 40, startY + 25);
+
+        // Entries
+        ctx.font = '16px Arial';
+        for (let i = 0; i < Math.min(this.leaderboard.length, 10); i++) {
+            const entry = this.leaderboard[i];
+            const y = startY + 50 + i * lineHeight;
+
+            // Highlight current score if it matches
+            const isCurrentScore = entry.score === this.score && entry.date > Date.now() - 5000;
+            ctx.fillStyle = isCurrentScore ? '#ffd700' : '#ffffff';
+
+            ctx.textAlign = 'left';
+            ctx.fillText(`${i + 1}.`, w / 2 - 140, y);
+            ctx.fillText(entry.name, w / 2 - 80, y);
+            ctx.textAlign = 'right';
+            ctx.fillText(`${entry.score}`, w / 2 + 120, y);
+        }
+    }
+
+    private renderAchievementToast(ctx: CanvasRenderingContext2D): void {
+        if (!this.achievementToast || this.achievementToast.timer <= 0) return;
+
+        const w = ctx.canvas.width;
+        const toastWidth = 280;
+        const toastHeight = 60;
+        const toastX = (w - toastWidth) / 2;
+        const toastY = 120;
+
+        // Fade in/out animation
+        const fadeIn = Math.min(1, (3 - this.achievementToast.timer) * 4);
+        const fadeOut = Math.min(1, this.achievementToast.timer * 2);
+        const alpha = Math.min(fadeIn, fadeOut);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+
+        // Toast background
+        ctx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+        ctx.fillRect(toastX, toastY, toastWidth, toastHeight);
+
+        // Gold border
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(toastX, toastY, toastWidth, toastHeight);
+
+        // Trophy icon
+        ctx.fillStyle = '#ffd700';
+        ctx.font = '28px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillText('🏆', toastX + 15, toastY + 40);
+
+        // Achievement unlocked text
+        ctx.fillStyle = '#888888';
+        ctx.font = '12px Arial';
+        ctx.fillText('ACHIEVEMENT UNLOCKED', toastX + 55, toastY + 22);
+
+        // Achievement name
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 18px Arial';
+        ctx.fillText(this.achievementToast.name, toastX + 55, toastY + 45);
+
+        ctx.restore();
     }
 
     private updateCamera(): void {
@@ -1169,6 +2099,27 @@ export class PlatformGame extends BaseGame {
                 // Handle
                 ctx.fillStyle = '#ffcc00';
                 ctx.fillRect(x + 30, y + 24, 4, 4);
+
+                // Locked door visual (Level 3 until Captain defeated)
+                if (this.doorLocked && this.currentLevel === 2) {
+                    // Red iron bars
+                    ctx.fillStyle = '#661111';
+                    for (let i = 0; i < 4; i++) {
+                        ctx.fillRect(x + 14 + i * 6, y + 4, 3, 40);
+                    }
+                    // Horizontal chains
+                    ctx.fillStyle = '#444444';
+                    ctx.fillRect(x + 12, y + 14, 24, 3);
+                    ctx.fillRect(x + 12, y + 30, 24, 3);
+                    // Golden lock symbol
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.fillRect(x + 20, y + 20, 8, 10);
+                    ctx.fillStyle = '#cc9900';
+                    ctx.fillRect(x + 22, y + 16, 4, 6);
+                    ctx.beginPath();
+                    ctx.arc(x + 24, y + 18, 3, Math.PI, 0);
+                    ctx.stroke();
+                }
                 break;
 
             case 'switch':
@@ -1223,6 +2174,9 @@ export class PlatformGame extends BaseGame {
     protected onRenderUI(ctx: CanvasRenderingContext2D): void {
         if (this.gameState === 'menu') return;
 
+        // Phase flash overlay (rendered first, behind UI)
+        this.renderPhaseFlash(ctx);
+
         // Health
         for (let i = 0; i < this.player.maxHealth; i++) {
             const filled = i < this.player.health;
@@ -1260,6 +2214,9 @@ export class PlatformGame extends BaseGame {
         ctx.font = '16px Arial';
         ctx.fillText(`💎 ${this.gemsCollected}`, ctx.canvas.width - 20, 55);
 
+        // Boss health bar
+        this.renderBossHealthBar(ctx);
+
         // DEBUG: Player state info
         ctx.fillStyle = '#00ff00';
         ctx.font = '12px monospace';
@@ -1280,6 +2237,12 @@ export class PlatformGame extends BaseGame {
 
         // State overlays
         this.renderStateOverlay(ctx);
+
+        // Boss victory banner (on top of everything)
+        this.renderBanner(ctx);
+
+        // Achievement toast
+        this.renderAchievementToast(ctx);
     }
 
     private renderStateOverlay(ctx: CanvasRenderingContext2D): void {
@@ -1309,20 +2272,7 @@ export class PlatformGame extends BaseGame {
                 break;
 
             case 'victory':
-                ctx.fillStyle = 'rgba(50, 40, 0, 0.9)';
-                ctx.fillRect(0, 0, w, h);
-                ctx.fillStyle = '#ffd700';
-                ctx.font = 'bold 48px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('🦉 GOLDEN OWL FOUND! 🦉', w / 2, h / 2 - 40);
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '24px Arial';
-                ctx.fillText(`Final Score: ${this.score}`, w / 2, h / 2 + 20);
-                ctx.fillText(`Time: ${Math.floor(this.timeRemaining)}s remaining`, w / 2, h / 2 + 50);
-                if (this.stateTimer > 2) {
-                    ctx.fillStyle = '#ffdd44';
-                    ctx.fillText('Press SPACE to play again', w / 2, h / 2 + 100);
-                }
+                this.renderVictoryScreen(ctx, w, h);
                 break;
 
             case 'game_over':
@@ -1336,12 +2286,75 @@ export class PlatformGame extends BaseGame {
                 ctx.font = '24px Arial';
                 ctx.fillText(`Score: ${this.score}`, w / 2, h / 2 + 10);
                 ctx.fillText(`Reached Level ${this.currentLevel + 1}`, w / 2, h / 2 + 40);
-                if (this.stateTimer > 2) {
-                    ctx.fillStyle = '#ffdd44';
-                    ctx.fillText('Press SPACE to retry', w / 2, h / 2 + 90);
-                }
+                break;
+            case 'story':
+                this.renderStoryOverlay(ctx);
                 break;
         }
+    }
+
+    private renderStoryOverlay(ctx: CanvasRenderingContext2D): void {
+        const story = this.activeStory;
+        if (!story) return;
+
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+        const panelHeight = Math.min(220, Math.floor(h * 0.35));
+        const panelY = h - panelHeight - 20;
+        const panelX = 30;
+        const panelW = w - 60;
+
+        ctx.save();
+        ctx.fillStyle = 'rgba(5, 8, 12, 0.8)';
+        ctx.fillRect(panelX, panelY, panelW, panelHeight);
+        ctx.strokeStyle = 'rgba(255, 221, 68, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(panelX, panelY, panelW, panelHeight);
+
+        let textY = panelY + 32;
+        if (story.title) {
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(story.title, panelX + 20, textY);
+            textY += 26;
+        }
+
+        ctx.fillStyle = '#e5e7eb';
+        ctx.font = '16px Arial';
+        const lines = this.wrapText(ctx, story.text, panelW - 40);
+        lines.forEach((line) => {
+            ctx.fillText(line, panelX + 20, textY);
+            textY += 20;
+        });
+
+        ctx.fillStyle = '#a1a1aa';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText('Press SPACE to continue', panelX + panelW - 20, panelY + panelHeight - 16);
+
+        ctx.restore();
+    }
+
+    private wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+        const lines: string[] = [];
+        const paragraphs = text.split('\n');
+        paragraphs.forEach((paragraph, index) => {
+            const words = paragraph.split(' ');
+            let line = '';
+            words.forEach((word) => {
+                const testLine = line ? `${line} ${word}` : word;
+                if (ctx.measureText(testLine).width > maxWidth && line) {
+                    lines.push(line);
+                    line = word;
+                } else {
+                    line = testLine;
+                }
+            });
+            if (line) lines.push(line);
+            if (index < paragraphs.length - 1) lines.push('');
+        });
+        return lines;
     }
 
     private renderMenu(ctx: CanvasRenderingContext2D): void {
@@ -1408,6 +2421,24 @@ export class PlatformGame extends BaseGame {
         this.shakeIntensity = 0;
         this.shakeOffsetX = 0;
         this.shakeOffsetY = 0;
+        this.footstepTimer = 0;
+        this.activeBoss = null;
+        this.bossHealthBarTimer = 0;
+        this.bannerText = '';
+        this.bannerTimer = 0;
+        this.bannerDuration = 0;
+        this.timeScale = 1.0;
+        this.slowmoTimer = 0;
+        this.phaseFlashTimer = 0;
+        // Reset name entry state
+        this.enteringName = false;
+        this.hasEnteredName = false;
+        this.nameInputIndex = 0;
+        this.nameInputChars = ['A', 'A', 'A'];
+        // Reset game start time for speedrunner achievement
+        this.gameStartTime = Date.now();
+        // Reset music state
+        this.musicState = 'none';
         this.loadLevel(0);
         this.gameState = 'level_intro';
         this.stateTimer = 0;
