@@ -1,8 +1,10 @@
 import type { GuardType } from '../entities/Guard';
+import type { TileType } from '../data/TileTypes';
 
 export type StoryTrigger =
     | { type: 'level_start' }
     | { type: 'position'; x: number; y: number; radius?: number }
+    | { type: 'tile_proximity'; tileType: TileType; radius?: number; index?: number }
     | { type: 'boss_alert'; bossType: GuardType }
     | { type: 'boss_defeat'; bossType: GuardType }
     | { type: 'boss_phase'; bossType: GuardType; phase: number }
@@ -111,7 +113,7 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             id: 'l1-turn-back',
             title: 'Faded Inscription',
             text: '"TURN BACK"',
-            trigger: { type: 'position', x: 5, y: 5, radius: 2 },
+            trigger: { type: 'tile_proximity', tileType: 'inscription', index: 0, radius: 2 },
         },
         {
             id: 'l1-journal',
@@ -119,13 +121,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             text:
                 '"Day 3: The guards here are not alive, yet they walk. They wear the faces of men but move like memories. ' +
                 'I think the Caverns create them from those who failed before. Gods help me - I think I see my brother among them."',
-            trigger: { type: 'position', x: 24, y: 9, radius: 2 },
+            trigger: { type: 'tile_proximity', tileType: 'journal', radius: 2 },
         },
         {
             id: 'l1-brave-door',
             title: 'Sealed Door',
             text: '"Only the brave may pass."',
-            trigger: { type: 'position', x: 45, y: 5, radius: 2 },
+            trigger: { type: 'tile_proximity', tileType: 'inscription', index: 1, radius: 2 },
         },
     ],
     1: [
@@ -139,7 +141,7 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             id: 'l2-spectral-voice',
             title: 'Spectral Voice',
             text: SPECTRAL_VOICE,
-            trigger: { type: 'position', x: 25, y: 8, radius: 3 },
+            trigger: { type: 'tile_proximity', tileType: 'spectral_crystal', radius: 3 },
         },
     ],
     2: [
@@ -173,13 +175,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             id: 'l4-trapped-seeker',
             title: 'The Fallen Seeker',
             text: TRAPPED_SEEKER,
-            trigger: { type: 'position', x: 55, y: 17, radius: 3 },
+            trigger: { type: 'tile_proximity', tileType: 'fallen_seeker', radius: 3 },
         },
         {
             id: 'l4-final-gate',
             title: 'The Final Gate',
             text: FINAL_GATE_INSCRIPTION,
-            trigger: { type: 'position', x: 67, y: 14, radius: 2 },
+            trigger: { type: 'tile_proximity', tileType: 'inscription', radius: 2 },
         },
     ],
     4: [

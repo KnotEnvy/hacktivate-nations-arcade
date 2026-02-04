@@ -32,6 +32,12 @@ const CHAR_TO_TILE: Record<string, TileType> = {
   E: 'guard',
   P: 'player',
   O: 'owl',
+  // Story/environmental tiles
+  S: 'skeleton',
+  I: 'inscription',
+  C: 'spectral_crystal',
+  F: 'fallen_seeker',
+  J: 'journal',
 };
 
 const GATE_CHARS = ['G', 'R', 'B', 'Y'];
@@ -102,14 +108,25 @@ const PALETTE = [
       { char: 'E', label: 'Guard' },
     ],
   },
+  {
+    label: 'Story',
+    tiles: [
+      { char: 'S', label: 'Skeleton' },
+      { char: 'I', label: 'Inscription' },
+      { char: 'C', label: 'Spectral Crystal' },
+      { char: 'J', label: 'Journal' },
+      { char: 'F', label: 'Fallen Seeker' },
+    ],
+  },
 ];
 
-const CATEGORY_PALETTES: Record<string, string[]> = {
-  Basics: ['#475569', '#64748b', '#6b7280', '#94a3b8', '#9ca3af', '#4b5563'],
-  Hazards: ['#dc2626', '#ef4444', '#f97316'],
-  Interactables: ['#0f766e', '#14b8a6', '#2dd4bf', '#5eead4'],
-  Pickups: ['#f59e0b', '#fbbf24', '#fcd34d', '#f97316', '#fb923c'],
-  Entities: ['#38bdf8', '#60a5fa'],
+// Get swatch color for a tile char - uses actual game colors for consistency
+const getTileSwatchColor = (char: string): string => {
+  // Special colors for gate/switch variants
+  if (CHAR_SWATCH[char]) return CHAR_SWATCH[char];
+  // Use actual TILE_COLORS from the game
+  const tileType = CHAR_TO_TILE[char] ?? 'empty';
+  return TILE_COLORS[tileType]?.primary ?? '#000000';
 };
 
 const createGrid = (width: number, height: number, fill: string = ' ') =>
@@ -497,9 +514,8 @@ export default function LevelEditorPage() {
                   <div key={group.label} className="space-y-2">
                     <p className="text-xs uppercase tracking-wide text-purple-300">{group.label}</p>
                     <div className="space-y-1">
-                      {group.tiles.map((tile, index) => {
-                        const palette = CATEGORY_PALETTES[group.label] ?? ['#000000'];
-                        const color = CHAR_SWATCH[tile.char] ?? palette[index % palette.length];
+                      {group.tiles.map((tile) => {
+                        const color = getTileSwatchColor(tile.char);
                         const isActive = selectedChar === tile.char;
                         return (
                           <button

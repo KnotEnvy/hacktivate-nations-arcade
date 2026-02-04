@@ -1242,19 +1242,62 @@ export class PlatformGame extends BaseGame {
 
         for (const event of this.levelStory) {
             if (this.storySeen.has(event.id)) continue;
-            if (event.trigger.type !== 'position') continue;
 
-            const radius = event.trigger.radius ?? 1.5;
-            const targetX = event.trigger.x * TILE_SIZE + TILE_SIZE * 0.5;
-            const targetY = event.trigger.y * TILE_SIZE + TILE_SIZE * 0.5;
-            const dx = this.player.centerX - targetX;
-            const dy = this.player.centerY - targetY;
-            const distSq = dx * dx + dy * dy;
-            if (distSq <= (radius * TILE_SIZE) * (radius * TILE_SIZE)) {
-                this.beginStory(event);
-                break;
+            const trigger = event.trigger;
+
+            // Handle position-based triggers (legacy)
+            if (trigger.type === 'position') {
+                const radius = trigger.radius ?? 1.5;
+                const targetX = trigger.x * TILE_SIZE + TILE_SIZE * 0.5;
+                const targetY = trigger.y * TILE_SIZE + TILE_SIZE * 0.5;
+                const dx = this.player.centerX - targetX;
+                const dy = this.player.centerY - targetY;
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= (radius * TILE_SIZE) * (radius * TILE_SIZE)) {
+                    this.beginStory(event);
+                    break;
+                }
+            }
+
+            // Handle tile proximity triggers - triggers follow the tile wherever it's placed
+            if (trigger.type === 'tile_proximity') {
+                const tilePositions = this.findTilePositions(trigger.tileType);
+                if (tilePositions.length === 0) continue;
+
+                // If index specified, use that specific tile; otherwise use first (index 0)
+                const targetIndex = trigger.index ?? 0;
+                if (targetIndex >= tilePositions.length) continue;
+
+                const tilePos = tilePositions[targetIndex];
+                const radius = trigger.radius ?? 1.5;
+                const targetX = tilePos.x * TILE_SIZE + TILE_SIZE * 0.5;
+                const targetY = tilePos.y * TILE_SIZE + TILE_SIZE * 0.5;
+                const dx = this.player.centerX - targetX;
+                const dy = this.player.centerY - targetY;
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= (radius * TILE_SIZE) * (radius * TILE_SIZE)) {
+                    this.beginStory(event);
+                    break;
+                }
             }
         }
+    }
+
+    // Find all positions of a specific tile type in the current level
+    private findTilePositions(tileType: TileType): Array<{ x: number; y: number }> {
+        if (!this.level) return [];
+
+        const positions: Array<{ x: number; y: number }> = [];
+        for (let y = 0; y < this.level.height; y++) {
+            for (let x = 0; x < this.level.width; x++) {
+                if (getTileAt(this.level, x, y) === tileType) {
+                    positions.push({ x, y });
+                }
+            }
+        }
+        // Sort by row (y) then column (x) for consistent ordering
+        positions.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x);
+        return positions;
     }
 
     private triggerBossStory(triggerType: 'boss_alert' | 'boss_defeat' | 'boss_phase', bossType: GuardType, phase?: number): void {
