@@ -1,24 +1,83 @@
 {
   "project": "hacktivate-nations-arcade",
   "game": "Crystal Caverns (platform-adventure)",
-  "handoff_date": "2026-02-01",
-  "summary": "Added Boss Battle Polish: health bars for Captain/Shadow bosses, phase transition effects for Shadow Guardian with screen flash and slowmo, epic victory sequences with slowdown, extended particles, and victory banners. Combat system now feels more polished with boss-specific feedback.",
+  "handoff_date": "2026-02-04",
+  "version": "0.9.0-beta",
+  "summary": "Story-Rich Platform Adventure with Visual Environmental Storytelling. Added visual story elements (skeletons, journals, inscriptions, spectral crystals, fallen seekers), dynamic tile_proximity triggers that follow tiles wherever placed, level editor with all new tiles and game-accurate colors. Boss battles feature health bars, phase transitions, and epic victory sequences.",
   "key_changes": [
-    "Boss health bar UI: appears when fighting Captain (Level 3) or Shadow Guardian (Level 5), shows boss name and segmented health bar with color coding.",
-    "Shadow Guardian phase transitions: screen flash, brief slowmo, and dramatic banners ('THE FURY AWAKENS', 'DESPERATION') when crossing 70% and 30% HP thresholds.",
-    "Boss victory sequences: epic slowdown (timeScale=0.25), extended screen shake, massive particle explosion, and victory banners ('THE CAPTAIN FALLS', 'THE SHADOW IS VANQUISHED').",
-    "Guard.ts: added onPhaseChange and onDeath callbacks for boss event handling.",
-    "Global timeScale system: allows slowmo effects across player, guards, traps, and particles."
+    "Visual Story Elements: 5 new tile types (skeleton, inscription, spectral_crystal, journal, fallen_seeker) with full rendering and animations",
+    "Dynamic Story Triggers: New tile_proximity trigger type - stories now trigger based on tile location, not hardcoded coordinates",
+    "Level Editor Overhaul: Added all story tiles to palette, colors now match actual game tile colors for easier level design",
+    "Boss Health Bars: Captain (L3) and Shadow Guardian (L5) show health bars during combat",
+    "Phase Transitions: Shadow Guardian has dramatic phase changes with screen flash, slowmo, and banners",
+    "Victory Sequences: Epic slowdown, screen shake, particle explosions, and victory banners on boss defeat",
+    "Door Lock System: Level 3 door locked until Captain defeated, with visual chains/bars indicator",
+    "Comprehensive Story Dialogue: Level openings, boss taunts, Kael responses, victory/defeat endings"
   ],
   "files_touched": [
     "src/games/platform-adventure/PlatformGame.ts",
     "src/games/platform-adventure/entities/Guard.ts",
     "src/games/platform-adventure/levels/LevelData.ts",
     "src/games/platform-adventure/levels/StoryData.ts",
+    "src/games/platform-adventure/data/TileTypes.ts",
     "src/games/platform-adventure/entities/Player.ts",
     "src/app/dev/level-editor/page.tsx",
     "src/services/AudioManager.ts"
   ],
+  "story_system": {
+    "data_file": "src/games/platform-adventure/levels/StoryData.ts",
+    "trigger_types": {
+      "level_start": "Fires when level begins",
+      "tile_proximity": "Fires when player near specific tile type (NEW - follows tiles wherever placed)",
+      "position": "Legacy fixed x,y coordinate trigger",
+      "boss_alert": "When boss enters combat",
+      "boss_defeat": "When boss is killed",
+      "boss_phase": "When Shadow Guardian changes phase",
+      "kael_response": "Kael's combat dialogue during Shadow fight",
+      "victory": "When Golden Owl collected",
+      "defeat": "When player dies on Level 5"
+    },
+    "tile_proximity_example": {
+      "trigger": "{ type: 'tile_proximity', tileType: 'journal', radius: 2 }",
+      "index_support": "Optional index for multiple tiles of same type (index: 0 = first, index: 1 = second)"
+    },
+    "ui": "Bottom overlay panel; SPACE advances; blocks gameplay while shown"
+  },
+  "visual_story_tiles": {
+    "skeleton": {
+      "char": "S",
+      "description": "Skeletal remains of fallen seekers",
+      "rendering": "Skull with eye sockets, scattered bones, ribcage",
+      "color": "#aaaaaa"
+    },
+    "inscription": {
+      "char": "I",
+      "description": "Carved stone tablets with glowing text",
+      "rendering": "Stone tablet with carved lines, blue glow aura",
+      "color": "#6688aa"
+    },
+    "spectral_crystal": {
+      "char": "C",
+      "description": "Haunted purple crystal",
+      "rendering": "Tall crystal with pulsing animation and radial glow",
+      "color": "#8844ff",
+      "animated": true
+    },
+    "journal": {
+      "char": "J",
+      "description": "Old leather-bound book",
+      "rendering": "Floating book with bob animation, warm golden glow",
+      "color": "#8b7355",
+      "animated": true
+    },
+    "fallen_seeker": {
+      "char": "F",
+      "description": "Injured NPC lying on ground",
+      "rendering": "Person with breathing animation, reaching arm, crushed leg",
+      "color": "#886644",
+      "animated": true
+    }
+  },
   "boss_battle_system": {
     "health_bar": {
       "location": "Top center of screen when boss is in combat",
@@ -28,14 +87,15 @@
       "hp": 5,
       "victory_banner": "THE CAPTAIN FALLS",
       "score_bonus": 500,
-      "slowmo_duration": 1.5
+      "slowmo_duration": 1.5,
+      "door_lock": "Door locked until Captain defeated, shows chains/bars visual"
     },
     "shadow_guardian_level_5": {
       "hp": 10,
       "phases": {
-        "phase_1": ">70% HP - Defensive",
-        "phase_2": "30-70% HP - 'THE FURY AWAKENS' banner, aggressive, charge attacks",
-        "phase_3": "<30% HP - 'DESPERATION' banner, spin attacks"
+        "phase_1": ">70% HP - Defensive, 'The Sentinel'",
+        "phase_2": "30-70% HP - 'THE FURY AWAKENS' banner, aggressive",
+        "phase_3": "<30% HP - 'DESPERATION' banner, unpredictable"
       },
       "victory_banner": "THE SHADOW IS VANQUISHED",
       "secondary_banner": "THE PATH IS OPEN (after 2.5s)",
@@ -47,34 +107,55 @@
       "victory": "Extended slowmo (0.25 time scale), 15-20px screen shake, 40-60 particles"
     }
   },
-  "story_system": {
-    "data_file": "src/games/platform-adventure/levels/StoryData.ts",
-    "triggers": [
-      "level_start",
-      "position (tile-based, radius in tiles)"
+  "level_editor": {
+    "route": "/dev/level-editor",
+    "features": [
+      "All tile types including new story tiles",
+      "Game-accurate colors (uses TILE_COLORS.primary)",
+      "Brush, Fill, and Erase tools",
+      "Undo/Redo with Ctrl+Z/Ctrl+Y",
+      "Alt+click to pick tile",
+      "Snap Guards to ground",
+      "Import/Export ASCII and LevelData formats"
     ],
-    "ui": "Bottom overlay panel; SPACE advances; blocks gameplay while shown."
+    "palette_categories": ["Basics", "Hazards", "Interactables", "Pickups", "Entities", "Story"],
+    "story_tiles_added": ["S (Skeleton)", "I (Inscription)", "C (Spectral Crystal)", "J (Journal)", "F (Fallen Seeker)"]
   },
-  "level_1_design": {
-    "goal": "Discovery + onboarding with story beats (opening text, TURN BACK inscription, journal, brave door).",
-    "layout_notes": [
-      "Early steps/inscription at left; mid-level torch + journal; switch opens gate near mid-right; guard near exit; pits/spikes and loose tile on main floor; door at far right."
+  "story_events_by_level": {
+    "level_1": [
+      "Opening: 'The Forgotten Threshold'",
+      "Inscription 1: 'TURN BACK' warning",
+      "Journal: Previous seeker's account of guards",
+      "Inscription 2: 'Only the brave may pass'"
+    ],
+    "level_2": [
+      "Opening: 'Hall of Whispers'",
+      "Spectral Crystal: Voice from Thornhold"
+    ],
+    "level_3": [
+      "Opening: 'Gauntlet of the Fallen'",
+      "Captain Alert: Pre-fight dialogue",
+      "Captain Defeat: Final words about the Shadow"
+    ],
+    "level_4": [
+      "Opening: 'Labyrinth of Choices'",
+      "Fallen Seeker: Injured NPC dialogue",
+      "Final Gate Inscription: Shadow awaits"
+    ],
+    "level_5": [
+      "Opening: 'Heart of Crystal'",
+      "Shadow Alert: 'I am the truth you hide...'",
+      "Shadow Phase 2: 'You came seeking redemption?'",
+      "Shadow Phase 3: 'Give UP...'",
+      "Kael Responses (3 phases): Combat dialogue",
+      "Victory: Golden Owl wisdom",
+      "Defeat: Shadow claims Kael"
     ]
   },
   "gate_switch_mapping": {
     "chars": {
-      "gates": [
-        "G",
-        "R",
-        "B",
-        "Y"
-      ],
-      "switches": [
-        "*",
-        "r",
-        "b",
-        "y"
-      ]
+      "gates": ["G", "R", "B", "Y"],
+      "switches": ["*", "r", "b", "y"]
     },
     "colors": {
       "G/*": "gray",
@@ -82,55 +163,15 @@
       "B/b": "blue",
       "Y/y": "gold"
     },
-    "linking": "Switches open all gates of the same color.",
-    "notes": [
-      "Switch activation uses player feet within the switch tile bounds and persists once pressed.",
-      "Open gates become non-solid for collision checks and animate open via openProgress."
-    ]
+    "linking": "Switches open all gates of the same color"
   },
   "audio": {
-    "new_sound_names": [
-      "footstep_stone",
-      "land",
-      "sword_draw",
-      "sword_sheathe",
-      "sword_swing",
-      "sword_clash",
-      "switch_click",
-      "gate_open",
-      "hurt_grunt",
-      "death_cry"
+    "implemented_sounds": [
+      "footstep_stone", "land", "sword_draw", "sword_sheathe",
+      "sword_swing", "sword_clash", "switch_click", "gate_open",
+      "hurt_grunt", "death_cry"
     ],
-    "implementation": "Procedural sounds in AudioManager; wired in PlatformGame."
-  },
-  "type_check": {
-    "command": "cmd /c npm run type-check",
-    "note": "PowerShell execution policy blocks npm.ps1; use cmd wrapper.",
-    "known_errors_non_platform": [
-      "jest.setup.ts mock type error",
-      "AsteroidsGame sound name types",
-      "MiniGolfGame InputManager isTouchActive missing",
-      "TowerBuilderGame InputManager isMouseDown/isTouchActive missing + sound name types",
-      "useSupabaseAuth otp type",
-      "AchievementService casing conflict"
-    ],
-    "platform_adventure_errors": "None observed in latest run"
-  },
-  "next_steps": [
-    "Playtest boss battles on Levels 3 and 5 to verify health bars, phase transitions, and victory sequences work correctly.",
-    "Sprint 3: Visual Polish - parallax backgrounds, dynamic torch lighting, enhanced character animations.",
-    "Sprint 5: Scoring multipliers + end-of-level breakdown (ScoreBreakdown in CRYSTAL_CAVERNS_PHASE2.md).",
-    "Consider adding boss music transition and victory fanfare sounds.",
-    "Story: add skip/save behavior once persistence exists."
-  ],
-  "references": [
-    "src/games/platform-adventure/CRYSTAL_CAVERNS_PHASE2.md",
-    "src/games/platform-adventure/CRYSTAL_CAVERNS_STORY.md",
-    "src/app/dev/level-editor/page.tsx"
-  ],
-  "routes": {
-    "game": "/games/platform-adventure",
-    "level_editor": "/dev/level-editor"
+    "implementation": "Procedural sounds in AudioManager"
   },
   "controls": {
     "move": "Left/Right or A/D",
@@ -138,43 +179,43 @@
     "attack": "Space",
     "block": "Ctrl",
     "sword_toggle": "Shift",
-    "note": "Down drop is mentioned in UI text but not implemented yet."
+    "drop_through": "Down (on platforms)"
   },
-  "debug_overlays": {
-    "enabled": true,
-    "location": "src/games/platform-adventure/PlatformGame.ts",
-    "note": "Player state debug text is rendered in onRenderUI; remove for production if desired."
+  "type_check": {
+    "command": "npx tsc --noEmit",
+    "platform_adventure_errors": "None",
+    "known_errors_other_games": [
+      "jest.setup.ts mock types",
+      "AsteroidsGame sound names",
+      "MiniGolfGame InputManager methods",
+      "TowerBuilderGame InputManager methods"
+    ]
   },
-  "story_level_1_triggers": [
-    {
-      "id": "l1-turn-back",
-      "title": "Faded Inscription",
-      "tile_x": 6,
-      "tile_y": 12,
-      "radius_tiles": 2
-    },
-    {
-      "id": "l1-journal",
-      "title": "Crumbling Journal",
-      "tile_x": 22,
-      "tile_y": 9,
-      "radius_tiles": 2
-    },
-    {
-      "id": "l1-brave-door",
-      "title": "Sealed Door",
-      "tile_x": 46,
-      "tile_y": 12,
-      "radius_tiles": 2
-    }
+  "routes": {
+    "game": "/games/platform-adventure",
+    "level_editor": "/dev/level-editor"
+  },
+  "references": [
+    "src/games/platform-adventure/CRYSTAL_CAVERNS_PHASE2.md",
+    "src/games/platform-adventure/CRYSTAL_CAVERNS_PHASE3.md",
+    "src/games/platform-adventure/CRYSTAL_CAVERNS_STORY.md",
+    "tasks/todo.md"
   ],
-  "level_editor_usage": [
-    "Left click paints, right click erases, Alt+click picks tile.",
-    "Fill tool uses left click to fill with selected tile and right click to fill with empty.",
-    "Use 'Snap Guards' to drop guards onto the nearest solid tile.",
-    "Copy ASCII or LevelData rows from the right panel for LevelData.ts updates.",
-    "Colored gate/switch tiles: G/R/B/Y and */r/b/y."
-  ],
-  "guard_spawn_note": "Guards are snapped to ground on spawn (getGuardGroundY). Level 3 spawns a captain near the door; Level 5 spawns a shadow guard near the owl.",
-  "story_persistence": "StorySeen resets on level load; no save persistence yet."
+  "completion_status": {
+    "core_gameplay": "95%",
+    "story_system": "90%",
+    "boss_battles": "85%",
+    "visual_polish": "70%",
+    "audio": "60%",
+    "level_design": "80%",
+    "overall": "80%"
+  },
+  "next_steps": [
+    "See CRYSTAL_CAVERNS_PHASE3.md for final polish roadmap",
+    "Playtest all levels to verify story triggers work correctly",
+    "Add parallax backgrounds for depth",
+    "Implement dynamic torch lighting",
+    "Add music system with boss music transitions",
+    "Final level design pass and balance tuning"
+  ]
 }
