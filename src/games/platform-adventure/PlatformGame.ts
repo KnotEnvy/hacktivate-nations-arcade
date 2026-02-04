@@ -8,7 +8,7 @@ import { Guard, GuardSense, GuardType } from './entities/Guard';
 import { Collectible } from './entities/Collectible';
 import { Trap } from './entities/Trap';
 import { ALL_LEVELS, LevelDefinition, getTileAt, findPlayerSpawn, findDoorPosition } from './levels/LevelData';
-import { STORY_BY_LEVEL, StoryEvent } from './levels/StoryData';
+import { STORY_BY_LEVEL, GLOBAL_STORY_EVENTS, StoryEvent } from './levels/StoryData';
 
 type GameState = 'menu' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over';
 
@@ -636,6 +636,10 @@ export class PlatformGame extends BaseGame {
         if (this.player.state === 'dead') {
             this.deaths++;
             this.timeRemaining -= 10;
+            // On Level 5 during Shadow fight, show defeat taunt
+            if (this.currentLevel === 4 && this.activeBoss?.type === 'shadow') {
+                this.triggerEndingStory('defeat');
+            }
             setTimeout(() => this.player.respawn(), 1000);
         }
 
@@ -834,7 +838,6 @@ export class PlatformGame extends BaseGame {
                         // Check all achievements
                         this.checkAchievements();
                         this.checkVictoryAchievements();
-                        this.gameState = 'victory';
                         this.stateTimer = 0;
                         this.services?.audio?.playSound?.('success');
                         // Play victory music if not already playing
@@ -842,6 +845,8 @@ export class PlatformGame extends BaseGame {
                             this.services?.audio?.playMusic?.('epic_heroic', 0.5);
                             this.musicState = 'victory';
                         }
+                        // Trigger the Owl's wisdom dialogue before victory screen
+                        this.triggerEndingStory('victory');
                         break;
                 }
             }
@@ -1212,10 +1217,22 @@ export class PlatformGame extends BaseGame {
         const input = this.services?.input;
         if (this.stateTimer > 0.2 && input?.isActionPressed?.()) {
             if (this.storyQueue.length > 0) {
-                this.beginStory(this.storyQueue.shift()!);
+                const nextEvent = this.storyQueue.shift()!;
+                // Check for victory transition marker
+                if (nextEvent.id === '__victory_transition__') {
+                    this.activeStory = null;
+                    this.gameState = 'victory';
+                } else {
+                    this.beginStory(nextEvent);
+                }
             } else {
                 this.activeStory = null;
-                this.gameState = 'playing';
+                // Check if we should go to victory instead of playing
+                if (this.foundOwl) {
+                    this.gameState = 'victory';
+                } else {
+                    this.gameState = 'playing';
+                }
             }
         }
     }
@@ -1265,6 +1282,52 @@ export class PlatformGame extends BaseGame {
                     return;
                 }
             }
+        }
+    }
+
+    private triggerKaelResponse(phase: number): void {
+        if (this.activeStory) return;
+
+        for (const event of this.levelStory) {
+            if (this.storySeen.has(event.id)) continue;
+            const trigger = event.trigger;
+            if (trigger.type === 'kael_response' && trigger.phase === phase) {
+                this.beginStory(event);
+                return;
+            }
+        }
+    }
+
+    private triggerEndingStory(triggerType: 'victory' | 'defeat'): void {
+        // Check level-specific events first
+        for (const event of this.levelStory) {
+            if (this.storySeen.has(event.id)) continue;
+            if (event.trigger.type === triggerType) {
+                this.beginStory(event);
+                // For victory, transition to victory screen after story
+                if (triggerType === 'victory') {
+                    this.storyQueue.push({
+                        id: '__victory_transition__',
+                        text: '',
+                        trigger: { type: 'victory' },
+                    });
+                }
+                return;
+            }
+        }
+
+        // Check global events (for defeat)
+        for (const event of GLOBAL_STORY_EVENTS) {
+            if (this.storySeen.has(event.id)) continue;
+            if (event.trigger.type === triggerType) {
+                this.beginStory(event);
+                return;
+            }
+        }
+
+        // If no story found for victory, go directly to victory screen
+        if (triggerType === 'victory') {
+            this.gameState = 'victory';
         }
     }
 
@@ -1514,6 +1577,11 @@ export class PlatformGame extends BaseGame {
         setTimeout(() => {
             this.triggerBossStory('boss_phase', 'shadow', newPhase);
         }, 2200);
+
+        // Trigger Kael's defiant response after Shadow's taunt
+        setTimeout(() => {
+            this.triggerKaelResponse(newPhase);
+        }, 5000);
     }
 
     private showBanner(text: string, duration: number): void {
@@ -2143,6 +2211,134 @@ export class PlatformGame extends BaseGame {
                 ctx.fillRect(x + 16, y, 16, TILE_SIZE);
                 ctx.fillStyle = colors.secondary;
                 ctx.fillRect(x + 18, y, 12, TILE_SIZE);
+                break;
+
+            case 'skeleton':
+                // Skull
+                ctx.fillStyle = '#cccccc';
+                ctx.beginPath();
+                ctx.arc(x + 16, y + 36, 8, 0, Math.PI * 2);
+                ctx.fill();
+                // Eye sockets
+                ctx.fillStyle = '#222222';
+                ctx.beginPath();
+                ctx.arc(x + 13, y + 34, 2, 0, Math.PI * 2);
+                ctx.arc(x + 19, y + 34, 2, 0, Math.PI * 2);
+                ctx.fill();
+                // Jaw
+                ctx.fillStyle = '#aaaaaa';
+                ctx.fillRect(x + 11, y + 40, 10, 4);
+                // Ribcage/bones scattered
+                ctx.fillStyle = '#bbbbbb';
+                ctx.fillRect(x + 26, y + 38, 14, 3);
+                ctx.fillRect(x + 28, y + 42, 10, 2);
+                ctx.fillRect(x + 8, y + 44, 8, 2);
+                // Arm bone
+                ctx.fillRect(x + 30, y + 32, 12, 3);
+                break;
+
+            case 'inscription':
+                // Carved stone tablet on wall
+                ctx.fillStyle = '#445566';
+                ctx.fillRect(x + 8, y + 8, 32, 32);
+                ctx.fillStyle = '#334455';
+                ctx.fillRect(x + 10, y + 10, 28, 28);
+                // Carved text lines (stylized)
+                ctx.fillStyle = '#5577aa';
+                ctx.fillRect(x + 14, y + 16, 20, 2);
+                ctx.fillRect(x + 14, y + 22, 16, 2);
+                ctx.fillRect(x + 14, y + 28, 18, 2);
+                // Glow when near
+                const inscriptionGlow = ctx.createRadialGradient(x + 24, y + 24, 0, x + 24, y + 24, 30);
+                inscriptionGlow.addColorStop(0, 'rgba(100, 136, 170, 0.2)');
+                inscriptionGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = inscriptionGlow;
+                ctx.fillRect(x - 6, y - 6, 60, 60);
+                break;
+
+            case 'spectral_crystal':
+                // Glowing purple crystal
+                const crystalPulse = Math.sin(Date.now() * 0.003) * 0.3 + 0.7;
+                // Glow aura
+                const crystalGlow = ctx.createRadialGradient(x + 24, y + 24, 0, x + 24, y + 24, 35);
+                crystalGlow.addColorStop(0, `rgba(136, 68, 255, ${crystalPulse * 0.5})`);
+                crystalGlow.addColorStop(0.5, `rgba(136, 68, 255, ${crystalPulse * 0.2})`);
+                crystalGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = crystalGlow;
+                ctx.fillRect(x - 11, y - 11, 70, 70);
+                // Crystal body
+                ctx.fillStyle = `rgba(136, 68, 255, ${crystalPulse})`;
+                ctx.beginPath();
+                ctx.moveTo(x + 24, y + 6);
+                ctx.lineTo(x + 34, y + 20);
+                ctx.lineTo(x + 30, y + 42);
+                ctx.lineTo(x + 18, y + 42);
+                ctx.lineTo(x + 14, y + 20);
+                ctx.closePath();
+                ctx.fill();
+                // Inner highlight
+                ctx.fillStyle = `rgba(170, 102, 255, ${crystalPulse})`;
+                ctx.beginPath();
+                ctx.moveTo(x + 24, y + 12);
+                ctx.lineTo(x + 30, y + 22);
+                ctx.lineTo(x + 24, y + 34);
+                ctx.lineTo(x + 18, y + 22);
+                ctx.closePath();
+                ctx.fill();
+                break;
+
+            case 'journal':
+                // Old leather-bound book
+                const journalBob = Math.sin(Date.now() * 0.002) * 2;
+                // Book cover
+                ctx.fillStyle = '#6b4423';
+                ctx.fillRect(x + 12, y + 26 + journalBob, 24, 18);
+                // Pages
+                ctx.fillStyle = '#d4c4a8';
+                ctx.fillRect(x + 14, y + 28 + journalBob, 20, 14);
+                // Spine
+                ctx.fillStyle = '#4a2f15';
+                ctx.fillRect(x + 12, y + 26 + journalBob, 3, 18);
+                // Text lines on page
+                ctx.fillStyle = '#8b7355';
+                ctx.fillRect(x + 18, y + 31 + journalBob, 12, 1);
+                ctx.fillRect(x + 18, y + 34 + journalBob, 10, 1);
+                ctx.fillRect(x + 18, y + 37 + journalBob, 11, 1);
+                // Glow
+                const journalGlow = ctx.createRadialGradient(x + 24, y + 35, 0, x + 24, y + 35, 25);
+                journalGlow.addColorStop(0, 'rgba(255, 200, 100, 0.3)');
+                journalGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = journalGlow;
+                ctx.fillRect(x - 1, y + 10, 50, 40);
+                break;
+
+            case 'fallen_seeker':
+                // Injured person lying on ground
+                const breathe = Math.sin(Date.now() * 0.002) * 1;
+                // Body (lying down)
+                ctx.fillStyle = '#665544';
+                ctx.fillRect(x + 8, y + 34, 32, 10);
+                // Torso
+                ctx.fillStyle = '#554433';
+                ctx.fillRect(x + 16, y + 32 + breathe, 16, 12);
+                // Head
+                ctx.fillStyle = '#aa8866';
+                ctx.beginPath();
+                ctx.arc(x + 12, y + 36, 6, 0, Math.PI * 2);
+                ctx.fill();
+                // Hair
+                ctx.fillStyle = '#443322';
+                ctx.beginPath();
+                ctx.arc(x + 12, y + 34, 5, Math.PI, 0);
+                ctx.fill();
+                // Arm reaching out
+                ctx.fillStyle = '#aa8866';
+                ctx.fillRect(x + 32, y + 36, 10, 4);
+                // Crushed leg/rubble
+                ctx.fillStyle = '#555555';
+                ctx.fillRect(x + 24, y + 40, 16, 8);
+                ctx.fillStyle = '#444444';
+                ctx.fillRect(x + 28, y + 38, 8, 6);
                 break;
         }
     }

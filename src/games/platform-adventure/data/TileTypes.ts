@@ -3,26 +3,31 @@
 export const TILE_SIZE = 48;
 
 export type TileType =
-    | 'empty'       // Air
-    | 'floor'       // Solid floor tile
-    | 'wall'        // Solid wall
-    | 'pillar'      // Climbable pillar
-    | 'platform'    // Thin platform (can drop through)
-    | 'ledge'       // Grabbable ledge
-    | 'spikes'      // Instant death spikes
-    | 'chomper'     // Timed blade trap
-    | 'loose'       // Crumbling floor
-    | 'gate'        // Openable gate
-    | 'switch'      // Pressure plate switch
-    | 'door'        // Level exit/entrance
-    | 'torch'       // Decorative torch
-    | 'potion_hp'   // Health potion spawn
-    | 'potion_max'  // Max HP increase spawn
-    | 'gem'         // Score gem spawn
-    | 'time'        // Time crystal spawn
-    | 'guard'       // Guard spawn point
-    | 'player'      // Player spawn point
-    | 'owl';        // Golden Owl (final goal)
+    | 'empty'           // Air
+    | 'floor'           // Solid floor tile
+    | 'wall'            // Solid wall
+    | 'pillar'          // Climbable pillar
+    | 'platform'        // Thin platform (can drop through)
+    | 'ledge'           // Grabbable ledge
+    | 'spikes'          // Instant death spikes
+    | 'chomper'         // Timed blade trap
+    | 'loose'           // Crumbling floor
+    | 'gate'            // Openable gate
+    | 'switch'          // Pressure plate switch
+    | 'door'            // Level exit/entrance
+    | 'torch'           // Decorative torch
+    | 'potion_hp'       // Health potion spawn
+    | 'potion_max'      // Max HP increase spawn
+    | 'gem'             // Score gem spawn
+    | 'time'            // Time crystal spawn
+    | 'guard'           // Guard spawn point
+    | 'player'          // Player spawn point
+    | 'owl'             // Golden Owl (final goal)
+    | 'skeleton'        // Skeletal remains of fallen seekers
+    | 'inscription'     // Carved wall inscription
+    | 'spectral_crystal'// Glowing haunted crystal
+    | 'fallen_seeker'   // Injured/dying NPC
+    | 'journal';        // Readable journal
 
 export interface TileDefinition {
     solid: boolean;
@@ -53,6 +58,11 @@ export const TILE_DEFS: Record<TileType, TileDefinition> = {
     guard: { solid: false, deadly: false, climbable: false, interactive: false, animated: false },
     player: { solid: false, deadly: false, climbable: false, interactive: false, animated: false },
     owl: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    skeleton: { solid: false, deadly: false, climbable: false, interactive: false, animated: false },
+    inscription: { solid: false, deadly: false, climbable: false, interactive: true, animated: false },
+    spectral_crystal: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    fallen_seeker: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    journal: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
 };
 
 // Visual rendering colors/patterns
@@ -77,4 +87,9 @@ export const TILE_COLORS: Record<TileType, { primary: string; secondary: string;
     guard: { primary: '#aa3333', secondary: '#cc4444', accent: '#882222' },
     player: { primary: '#4488ff', secondary: '#66aaff', accent: '#2266cc' },
     owl: { primary: '#ffd700', secondary: '#ffea00', accent: '#cca500' },
+    skeleton: { primary: '#aaaaaa', secondary: '#cccccc', accent: '#888888' },
+    inscription: { primary: '#6688aa', secondary: '#88aacc', accent: '#4466aa' },
+    spectral_crystal: { primary: '#8844ff', secondary: '#aa66ff', accent: '#6622dd' },
+    fallen_seeker: { primary: '#886644', secondary: '#aa8866', accent: '#664422' },
+    journal: { primary: '#8b7355', secondary: '#a08060', accent: '#6b5335' },
 };
