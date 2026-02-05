@@ -9,6 +9,9 @@ import { Collectible } from './entities/Collectible';
 import { Trap } from './entities/Trap';
 import { ALL_LEVELS, LevelDefinition, getTileAt, findPlayerSpawn, findDoorPosition } from './levels/LevelData';
 import { STORY_BY_LEVEL, GLOBAL_STORY_EVENTS, StoryEvent } from './levels/StoryData';
+import { ParallaxBackground } from './rendering/ParallaxBackground';
+import { Camera, SHAKE_PRESETS, ShakePreset } from './rendering/Camera';
+import { DynamicLighting } from './rendering/DynamicLighting';
 
 type GameState = 'menu' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over';
 
@@ -163,18 +166,21 @@ export class PlatformGame extends BaseGame {
     private torches: Array<{ x: number; y: number; flicker: number }> = [];
 
     // Camera
-    private camX: number = 0;
-    private camY: number = 0;
+    private camera: Camera = new Camera(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
+
+    // Parallax background system
+    private parallaxBackground: ParallaxBackground = new ParallaxBackground();
+
+    // Dynamic lighting system
+    private lighting: DynamicLighting = new DynamicLighting();
 
     // Combat feel
     private hitStopTimer: number = 0;
-    private shakeTimer: number = 0;
-    private shakeDuration: number = 0;
-    private shakeIntensity: number = 0;
-    private shakeOffsetX: number = 0;
-    private shakeOffsetY: number = 0;
     private particles: Particle[] = [];
     private footstepTimer: number = 0;
+
+    // Screen flash effect
+    private screenFlash: { color: string; alpha: number; timer: number; duration: number } | null = null;
 
     // Boss battle
     private activeBoss: Guard | null = null;
@@ -234,6 +240,7 @@ export class PlatformGame extends BaseGame {
 
     // Input state for edge detection
     private swordKeyWasPressed: boolean = false;
+    private jumpKeyWasPressed: boolean = false;
 
     protected renderBaseHud: boolean = false;
 
@@ -256,6 +263,12 @@ export class PlatformGame extends BaseGame {
         this.currentLevel = levelIndex;
         this.level = ALL_LEVELS[levelIndex] || ALL_LEVELS[0];
 
+        // Set parallax background theme for this level
+        this.parallaxBackground.setLevel(levelIndex);
+
+        // Set lighting level and clear old lights
+        this.lighting.setLevel(levelIndex);
+
         // Add time bonus
         this.timeRemaining = Math.min(this.MAX_TIME, this.timeRemaining + this.level.timeBonus);
 
@@ -273,11 +286,8 @@ export class PlatformGame extends BaseGame {
         let gemCount = 0;
         this.particles = [];
         this.hitStopTimer = 0;
-        this.shakeTimer = 0;
-        this.shakeDuration = 0;
-        this.shakeIntensity = 0;
-        this.shakeOffsetX = 0;
-        this.shakeOffsetY = 0;
+        this.camera.reset();
+        this.screenFlash = null;
         this.footstepTimer = 0;
         this.activeBoss = null;
         this.bossHealthBarTimer = 0;
@@ -329,9 +339,14 @@ export class PlatformGame extends BaseGame {
                     case 'owl':
                         this.collectibles.push(new Collectible(px + 16, py + 8, 'owl'));
                         owlPosition = { x: px, y: py };
+                        this.lighting.addOwlLight(px + TILE_SIZE / 2, py + TILE_SIZE / 2);
                         break;
                     case 'torch':
                         this.torches.push({ x: px + TILE_SIZE / 2, y: py + 12, flicker: Math.random() * Math.PI * 2 });
+                        this.lighting.addTorch(px + TILE_SIZE / 2, py + 12);
+                        break;
+                    case 'spectral_crystal':
+                        this.lighting.addSpectralCrystal(px + TILE_SIZE / 2, py + TILE_SIZE / 2);
                         break;
                     case 'spikes':
                         this.traps.push(new Trap(px, py, 'spikes'));
@@ -372,6 +387,9 @@ export class PlatformGame extends BaseGame {
         }
 
         this.linkSwitchesToGates();
+
+        // Place moonlight shafts at key areas and regular intervals
+        this.placeMoonlights();
 
         // Spawn guards with difficulty scaling + Level 3 captain
         const baseGuardType = this.getGuardTypeForLevel(this.currentLevel);
@@ -428,8 +446,8 @@ export class PlatformGame extends BaseGame {
         this.player.setCheckpoint(spawn.x, spawn.y);
         this.player.respawn();
 
-        // Reset camera
-        this.updateCamera();
+        // Snap camera to player position
+        this.snapCameraToPlayer();
     }
 
     private getGuardTypeForLevel(levelIndex: number): GuardType {
@@ -507,8 +525,16 @@ export class PlatformGame extends BaseGame {
         // Clamp dt to prevent physics explosion
         const safeDt = Math.min(dt, 0.05);
 
-        // Update screen shake + hit stop
-        this.updateScreenShake(safeDt);
+        // Update parallax background animations
+        this.parallaxBackground.update(safeDt);
+
+        // Update dynamic lighting (torch flicker, etc.)
+        this.lighting.update(safeDt);
+
+        // Update screen flash
+        this.updateScreenFlash(safeDt);
+
+        // Update hit stop (camera updates happen later in updateCamera)
         if (this.hitStopTimer > 0) {
             this.hitStopTimer = Math.max(0, this.hitStopTimer - safeDt);
             return;
@@ -562,21 +588,39 @@ export class PlatformGame extends BaseGame {
 
         const wasGrounded = this.player.isGrounded;
 
-        // Handle jump
-        if (up) {
-            if (this.player.jump()) {
+        // Handle jump with buffering and variable height
+        if (up && !this.jumpKeyWasPressed) {
+            // Jump key just pressed - buffer the jump
+            this.player.bufferJump();
+            if (this.player.state === 'jump') {
                 this.services?.audio?.playSound?.('jump');
             }
+        } else if (!up && this.jumpKeyWasPressed) {
+            // Jump key just released - cut jump for variable height
+            this.player.onJumpRelease();
         }
+        this.jumpKeyWasPressed = up;
 
         // Update player physics
         this.player.update(safeDt * this.timeScale);
+
+        // Update player torch light (always on, dims over time, relights near torches)
+        this.lighting.updatePlayerLight(
+            this.player.centerX,
+            this.player.centerY
+        );
 
         // Collision detection
         this.handlePlayerCollision();
 
         if (!wasGrounded && this.player.isGrounded) {
             this.services?.audio?.playSound?.('land');
+        }
+
+        // Check for buffered jump AFTER collision resolution
+        // (prevents wall-sticking and block-phasing)
+        if (this.player.tryBufferedJump()) {
+            this.services?.audio?.playSound?.('jump');
         }
 
         this.updateFootsteps(safeDt);
@@ -643,8 +687,8 @@ export class PlatformGame extends BaseGame {
             setTimeout(() => this.player.respawn(), 1000);
         }
 
-        // Update camera
-        this.updateCamera();
+        // Update camera with dt for smooth following
+        this.updateCamera(safeDt);
     }
 
 
@@ -950,6 +994,49 @@ export class PlatformGame extends BaseGame {
                 this.linkSwitchToGate(switchIndex, gateIndex);
             }
         });
+    }
+
+    /**
+     * Place moonlight shafts at gates, switches, and regular intervals
+     * to provide ambient lighting so the level isn't pitch black between torches.
+     */
+    private placeMoonlights(): void {
+        if (!this.level) return;
+
+        const levelPixelWidth = this.level.width * TILE_SIZE;
+        const levelPixelHeight = this.level.height * TILE_SIZE;
+
+        // Moonlight near every gate (level exits / doors)
+        for (const gate of this.gates) {
+            this.lighting.addMoonlight(
+                gate.x + TILE_SIZE / 2,
+                gate.y - TILE_SIZE
+            );
+        }
+
+        // Moonlight near every switch
+        for (const sw of this.switches) {
+            this.lighting.addMoonlight(
+                sw.x + TILE_SIZE / 2,
+                sw.y - TILE_SIZE
+            );
+        }
+
+        // Moonlight near the door/exit
+        const door = findDoorPosition(this.level);
+        if (door) {
+            this.lighting.addMoonlight(door.x + TILE_SIZE / 2, door.y - TILE_SIZE);
+        }
+
+        // Place ambient moonlights at regular intervals along the level
+        // Spacing decreases on later levels (fewer moonlights = darker feel)
+        const spacingByLevel = [400, 500, 650, 800, 1000];
+        const spacing = spacingByLevel[this.currentLevel] ?? 600;
+        const midY = levelPixelHeight * 0.35; // Upper portion of level
+
+        for (let px = spacing / 2; px < levelPixelWidth; px += spacing) {
+            this.lighting.addMoonlight(px, midY);
+        }
     }
 
     private checkDoor(): void {
@@ -1379,25 +1466,42 @@ export class PlatformGame extends BaseGame {
         this.hitStopTimer = Math.max(this.hitStopTimer, duration);
     }
 
-    private triggerScreenShake(intensity: number, duration: number): void {
+    private triggerScreenShake(intensity: number, duration: number, frequency: number = 60): void {
         if (duration <= 0) return;
-        this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
-        this.shakeDuration = Math.max(this.shakeDuration, duration);
-        this.shakeTimer = Math.max(this.shakeTimer, duration);
+        this.camera.shake(intensity, duration, frequency);
     }
 
-    private updateScreenShake(dt: number): void {
-        if (this.shakeTimer <= 0) {
-            this.shakeOffsetX = 0;
-            this.shakeOffsetY = 0;
+    private triggerScreenShakePreset(preset: ShakePreset): void {
+        this.camera.shakePreset(preset);
+    }
+
+    /**
+     * Trigger a screen flash effect
+     * @param color CSS color string
+     * @param duration Duration in seconds
+     * @param initialAlpha Starting alpha (0-1), defaults to 0.5
+     */
+    private triggerScreenFlash(color: string, duration: number, initialAlpha: number = 0.5): void {
+        this.screenFlash = {
+            color,
+            alpha: initialAlpha,
+            timer: duration,
+            duration,
+        };
+    }
+
+    private updateScreenFlash(dt: number): void {
+        if (!this.screenFlash) return;
+
+        this.screenFlash.timer -= dt;
+        if (this.screenFlash.timer <= 0) {
+            this.screenFlash = null;
             return;
         }
 
-        this.shakeTimer = Math.max(0, this.shakeTimer - dt);
-        const progress = this.shakeDuration > 0 ? this.shakeTimer / this.shakeDuration : 0;
-        const shake = progress * progress;
-        this.shakeOffsetX = (Math.random() - 0.5) * this.shakeIntensity * shake;
-        this.shakeOffsetY = (Math.random() - 0.5) * this.shakeIntensity * shake;
+        // Fade out over duration
+        const progress = this.screenFlash.timer / this.screenFlash.duration;
+        this.screenFlash.alpha = progress * 0.5; // Max alpha of 0.5
     }
 
     private spawnParticles(
@@ -1543,8 +1647,11 @@ export class PlatformGame extends BaseGame {
         this.timeScale = 0.25;
         this.slowmoTimer = isShadow ? 2.5 : 1.5;
 
-        // Extended screen shake
-        this.triggerScreenShake(isShadow ? 20 : 12, isShadow ? 2.0 : 1.0);
+        // Extended screen shake using presets
+        this.triggerScreenShakePreset(isShadow ? 'SHADOW_DEATH' : 'CAPTAIN_DEATH');
+
+        // Screen flash on boss death
+        this.triggerScreenFlash(isShadow ? '#4400ff' : '#ff4400', isShadow ? 0.5 : 0.3);
 
         // Massive particle explosion
         this.spawnParticles(
@@ -1593,15 +1700,16 @@ export class PlatformGame extends BaseGame {
     }
 
     private onShadowPhaseChange(newPhase: number, guard: Guard): void {
-        // Screen flash effect
+        // Screen flash effect (purple flash for Shadow phase)
         this.phaseFlashTimer = 0.3;
+        this.triggerScreenFlash('#8800ff', 0.4, 0.4);
 
         // Brief slowdown
         this.timeScale = 0.3;
         this.slowmoTimer = 0.5;
 
-        // Screen shake
-        this.triggerScreenShake(10, 0.4);
+        // Screen shake using preset
+        this.triggerScreenShakePreset('PHASE_CHANGE');
 
         // Phase-specific effects
         if (newPhase === 2) {
@@ -1741,6 +1849,16 @@ export class PlatformGame extends BaseGame {
         const alpha = this.phaseFlashTimer / 0.3;
         ctx.save();
         ctx.fillStyle = `rgba(136, 0, 255, ${alpha * 0.4})`;
+        ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.restore();
+    }
+
+    private renderScreenFlash(ctx: CanvasRenderingContext2D): void {
+        if (!this.screenFlash || this.screenFlash.alpha <= 0) return;
+
+        ctx.save();
+        ctx.globalAlpha = this.screenFlash.alpha;
+        ctx.fillStyle = this.screenFlash.color;
         ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         ctx.restore();
     }
@@ -1911,21 +2029,43 @@ export class PlatformGame extends BaseGame {
         ctx.restore();
     }
 
-    private updateCamera(): void {
+    private updateCamera(dt: number): void {
         if (!this.level) return;
 
-        const targetX = this.player.centerX - GAME_CONFIG.CANVAS_WIDTH / 2;
-        const targetY = this.player.centerY - GAME_CONFIG.CANVAS_HEIGHT / 2;
+        // Set level bounds for camera clamping
+        this.camera.setLevelBounds(
+            this.level.width * TILE_SIZE,
+            this.level.height * TILE_SIZE
+        );
 
-        // Clamp to level bounds
-        const maxX = this.level.width * TILE_SIZE - GAME_CONFIG.CANVAS_WIDTH;
-        const maxY = this.level.height * TILE_SIZE - GAME_CONFIG.CANVAS_HEIGHT;
+        // Update camera with player as target
+        this.camera.update(dt, {
+            centerX: this.player.centerX,
+            centerY: this.player.centerY,
+            facingRight: this.player.facingRight,
+            vy: this.player.vy,
+            isGrounded: this.player.isGrounded,
+        });
+    }
 
-        this.camX += (targetX - this.camX) * 0.1;
-        this.camY += (targetY - this.camY) * 0.1;
+    /**
+     * Snap camera to player position (used on level start)
+     */
+    private snapCameraToPlayer(): void {
+        if (!this.level) return;
 
-        this.camX = Math.max(0, Math.min(maxX, this.camX));
-        this.camY = Math.max(0, Math.min(maxY, this.camY));
+        this.camera.setLevelBounds(
+            this.level.width * TILE_SIZE,
+            this.level.height * TILE_SIZE
+        );
+
+        this.camera.snapTo({
+            centerX: this.player.centerX,
+            centerY: this.player.centerY,
+            facingRight: this.player.facingRight,
+            vy: this.player.vy,
+            isGrounded: this.player.isGrounded,
+        });
     }
 
     protected onRender(ctx: CanvasRenderingContext2D): void {
@@ -1936,8 +2076,10 @@ export class PlatformGame extends BaseGame {
 
         if (!this.level) return;
 
-        const camX = this.camX - this.shakeOffsetX;
-        const camY = this.camY - this.shakeOffsetY;
+        // Get camera offset (includes shake)
+        const camOffset = this.camera.getOffset();
+        const camX = camOffset.x;
+        const camY = camOffset.y;
 
         // Background + parallax
         this.renderBackground(ctx, camX, camY);
@@ -1974,153 +2116,13 @@ export class PlatformGame extends BaseGame {
     }
 
     private renderBackground(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
-        const w = ctx.canvas.width;
-        const h = ctx.canvas.height;
-
-        const grad = ctx.createLinearGradient(0, 0, 0, h);
-        grad.addColorStop(0, '#141a33');
-        grad.addColorStop(1, '#0b0d16');
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, 0, w, h);
-
-        this.drawCaveLayer(ctx, camX * 0.1, camY * 0.1, w, h);
-        this.drawStalactites(ctx, camX * 0.3, camY * 0.2, w);
-        this.drawCrystalGlints(ctx, camX * 0.15, camY * 0.1, w, h);
-        this.drawChains(ctx, camX * 0.6, w);
-    }
-
-    private hashNoise(seed: number): number {
-        const s = Math.sin(seed * 12.9898) * 43758.5453;
-        return s - Math.floor(s);
-    }
-
-    private drawCaveLayer(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, w: number, h: number): void {
-        const step = 120;
-        const shift = ((offsetX % step) + step) % step;
-        let x = -shift - step * 2;
-        const baseY = h * 0.5 + offsetY * 0.2;
-
-        ctx.fillStyle = '#141a33';
-        ctx.beginPath();
-        ctx.moveTo(x, h);
-        ctx.lineTo(x, baseY);
-
-        let idx = Math.floor((x + offsetX) / step);
-        while (x < w + step * 2) {
-            const height = 30 + this.hashNoise(idx) * 50;
-            ctx.lineTo(x, baseY + height);
-            x += step;
-            idx += 1;
-        }
-
-        ctx.lineTo(w + step * 2, h);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    private drawStalactites(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, w: number): void {
-        const step = 160;
-        const shift = ((offsetX % step) + step) % step;
-        let x = -shift - step;
-        let idx = Math.floor((x + offsetX) / step);
-
-        ctx.fillStyle = '#1c2238';
-        while (x < w + step) {
-            const height = 30 + this.hashNoise(idx) * 50;
-            const width = 20 + this.hashNoise(idx + 3) * 30;
-            const tipY = 20 + offsetY * 0.2;
-            ctx.beginPath();
-            ctx.moveTo(x, tipY);
-            ctx.lineTo(x + width * 0.5, tipY + height);
-            ctx.lineTo(x + width, tipY);
-            ctx.closePath();
-            ctx.fill();
-            x += step;
-            idx += 1;
-        }
-    }
-
-    private drawChains(ctx: CanvasRenderingContext2D, offsetX: number, w: number): void {
-        const step = 220;
-        const shift = ((offsetX % step) + step) % step;
-        let x = -shift - step;
-        let idx = Math.floor((x + offsetX) / step);
-
-        ctx.strokeStyle = 'rgba(120, 120, 140, 0.55)';
-        ctx.lineWidth = 2;
-
-        while (x < w + step) {
-            const length = 80 + this.hashNoise(idx) * 140;
-            const sway = Math.sin(this.gameTime * 2 + idx) * 2;
-            ctx.beginPath();
-            ctx.moveTo(x + sway, -20);
-            ctx.lineTo(x + sway, length);
-            ctx.stroke();
-            x += step;
-            idx += 1;
-        }
+        // Render the level-specific parallax background
+        this.parallaxBackground.render(ctx, camX, camY);
     }
 
     private renderLighting(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
-        const w = ctx.canvas.width;
-        const h = ctx.canvas.height;
-
-        ctx.save();
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
-        ctx.fillRect(0, 0, w, h);
-
-        ctx.globalCompositeOperation = 'lighter';
-
-        const playerGradient = ctx.createRadialGradient(
-            this.player.centerX - camX,
-            this.player.centerY - camY,
-            0,
-            this.player.centerX - camX,
-            this.player.centerY - camY,
-            140
-        );
-        playerGradient.addColorStop(0, 'rgba(210, 230, 255, 0.65)');
-        playerGradient.addColorStop(0.5, 'rgba(160, 200, 255, 0.3)');
-        playerGradient.addColorStop(1, 'transparent');
-        ctx.fillStyle = playerGradient;
-        ctx.fillRect(0, 0, w, h);
-
-        for (const torch of this.torches) {
-            const flicker = Math.sin(this.gameTime * 8 + torch.flicker);
-            const radius = 120 + flicker * 10;
-            const intensity = 0.85 + flicker * 0.1;
-            const gx = torch.x - camX;
-            const gy = torch.y - camY;
-
-            const gradient = ctx.createRadialGradient(gx, gy, 0, gx, gy, radius);
-            gradient.addColorStop(0, `rgba(255, 210, 140, ${intensity})`);
-            gradient.addColorStop(0.5, `rgba(255, 140, 60, ${intensity * 0.45})`);
-            gradient.addColorStop(1, 'transparent');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(gx - radius, gy - radius, radius * 2, radius * 2);
-        }
-
-        ctx.restore();
-    }
-
-    private drawCrystalGlints(ctx: CanvasRenderingContext2D, offsetX: number, offsetY: number, w: number, h: number): void {
-        const stepX = 180;
-        const stepY = 140;
-        const shiftX = ((offsetX % stepX) + stepX) % stepX;
-        const shiftY = ((offsetY % stepY) + stepY) % stepY;
-
-        ctx.save();
-        for (let y = -shiftY; y < h + stepY; y += stepY) {
-            for (let x = -shiftX; x < w + stepX; x += stepX) {
-                const seed = (x + offsetX) * 0.01 + (y + offsetY) * 0.02;
-                const glow = this.hashNoise(seed);
-                if (glow < 0.55) continue;
-                const size = 2 + glow * 3;
-                ctx.fillStyle = `rgba(90, 140, 255, ${0.25 + glow * 0.25})`;
-                ctx.fillRect(x + 20 * glow, y + 12 * glow, size, size);
-            }
-        }
-        ctx.restore();
+        // Use the DynamicLighting system for sophisticated lighting effects
+        this.lighting.renderLightingOverlay(ctx, camX, camY);
     }
 
     private renderTiles(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
@@ -2413,7 +2415,10 @@ export class PlatformGame extends BaseGame {
     protected onRenderUI(ctx: CanvasRenderingContext2D): void {
         if (this.gameState === 'menu') return;
 
-        // Phase flash overlay (rendered first, behind UI)
+        // Screen flash overlay (rendered first, behind UI)
+        this.renderScreenFlash(ctx);
+
+        // Phase flash overlay (boss phase changes - purple tint)
         this.renderPhaseFlash(ctx);
 
         // Health
@@ -2655,11 +2660,8 @@ export class PlatformGame extends BaseGame {
         this.foundOwl = false;
         this.particles = [];
         this.hitStopTimer = 0;
-        this.shakeTimer = 0;
-        this.shakeDuration = 0;
-        this.shakeIntensity = 0;
-        this.shakeOffsetX = 0;
-        this.shakeOffsetY = 0;
+        this.camera.reset();
+        this.screenFlash = null;
         this.footstepTimer = 0;
         this.activeBoss = null;
         this.bossHealthBarTimer = 0;

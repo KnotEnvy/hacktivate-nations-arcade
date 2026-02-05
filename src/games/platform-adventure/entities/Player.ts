@@ -18,6 +18,18 @@ export class Player {
     private readonly JUMP_VELOCITY = 350;
     private readonly GRAVITY = 900;
 
+    // Coyote time - allows jumping briefly after leaving platform
+    private readonly coyoteTime: number = 0.1;  // 100ms window
+    private timeSinceGrounded: number = 0;
+
+    // Jump buffering - registers jump input just before landing
+    private readonly jumpBufferTime: number = 0.1;  // 100ms window
+    private timeSinceJumpPressed: number = Infinity;
+
+    // Variable jump height - release early for lower jump
+    private jumpReleased: boolean = true;
+    private readonly JUMP_CUT_MULTIPLIER = 0.65;
+
     // Velocity - now properly typed
     public vx: number = 0;
     public vy: number = 0;
@@ -79,6 +91,19 @@ export class Player {
         if (this.blockTimer > 0) this.blockTimer -= dt;
         if (this.hurtTimer > 0) this.hurtTimer -= dt;
         this.animTimer += dt;
+
+        // Update coyote time tracking
+        if (this.isGrounded) {
+            this.timeSinceGrounded = 0;
+        } else {
+            this.timeSinceGrounded += dt;
+        }
+
+        // Update jump buffer timer
+        this.timeSinceJumpPressed += dt;
+
+        // NOTE: Buffered jump check is handled by PlatformGame AFTER collision
+        // resolution to avoid wall-sticking and block-phasing issues.
 
         // Handle attack state exit
         if (this.state === 'attack' && this.attackTimer <= 0) {
@@ -187,12 +212,51 @@ export class Player {
         }
     }
 
-    jump(): boolean {
-        if (!this.canMove() || !this.isGrounded) return false;
+    // Buffer a jump input - called when jump key is pressed
+    bufferJump(): void {
+        this.timeSinceJumpPressed = 0;
+        this.jumpReleased = false;
+        // Try to jump immediately if possible
+        this.jump();
+    }
+
+    // Check if a buffered jump should fire (call AFTER collision resolution)
+    tryBufferedJump(): boolean {
+        if (this.isGrounded && this.timeSinceJumpPressed < this.jumpBufferTime) {
+            this.executeJump();
+            return true;
+        }
+        return false;
+    }
+
+    // Called when jump key is released - for variable jump height
+    onJumpRelease(): void {
+        this.jumpReleased = true;
+        // Only cut velocity if actively rising from a jump (not falling)
+        if (this.vy < 0 && this.state === 'jump') {
+            this.vy *= this.JUMP_CUT_MULTIPLIER;
+        }
+    }
+
+    // Internal method to execute the actual jump
+    private executeJump(): void {
+        if (!this.canMove()) return;
+
         this.vy = -this.JUMP_VELOCITY;
         this.isGrounded = false;
         this.state = 'jump';
         this.animTimer = 0;
+        this.timeSinceJumpPressed = Infinity;  // Reset buffer after using
+        this.timeSinceGrounded = Infinity;  // Prevent double-jump via coyote time
+    }
+
+    jump(): boolean {
+        // Check coyote time: can jump if grounded OR recently was grounded
+        const canCoyoteJump = this.isGrounded || this.timeSinceGrounded < this.coyoteTime;
+
+        if (!this.canMove() || !canCoyoteJump) return false;
+
+        this.executeJump();
         return true;
     }
 
@@ -206,6 +270,7 @@ export class Player {
         if (!this.isGrounded) {
             this.isGrounded = true;
             this.vy = 0;
+            this.timeSinceGrounded = 0;  // Reset coyote timer on landing
             if (this.state === 'jump' || this.state === 'fall') {
                 this.state = this.hasSword ? 'combat_idle' : 'idle';
                 this.animTimer = 0;
@@ -316,6 +381,10 @@ export class Player {
         this.attackTimer = 0;
         this.blockTimer = 0;
         this.hurtTimer = 0;
+        // Reset movement polish state
+        this.timeSinceGrounded = 0;
+        this.timeSinceJumpPressed = Infinity;
+        this.jumpReleased = true;
     }
 
     setCheckpoint(x: number, y: number): void {
