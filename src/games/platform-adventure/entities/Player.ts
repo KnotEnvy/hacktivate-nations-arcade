@@ -554,12 +554,14 @@ export class Player {
         const breatheWidth = isIdle ? Math.sin(breathPhase) * 0.5 : 0;
         const torsoW = Math.floor(16 + breatheWidth);
         const torsoX = 4 + Math.floor((16 - torsoW) / 2);
+        // Attack lean: body shifts forward during thrust
+        const attackLean = this.state === 'attack' ? [0, 1, 2, 3, 1][Math.min(this.animFrame, 4)] : 0;
         ctx.fillStyle = this.state === 'hurt' ? '#aa4444' : '#4466aa';
         if (this.state === 'jump' && this.animFrame <= 0) {
             // Crouch torso lower during jump anticipation (P3-1.4)
             ctx.fillRect(torsoX, 18 + idleBob, torsoW, 16);
         } else {
-            ctx.fillRect(torsoX, 14 + idleBob, torsoW, 18);
+            ctx.fillRect(torsoX + attackLean, 14 + idleBob, torsoW, 18);
         }
 
         // ===== BELT =====
@@ -567,25 +569,39 @@ export class Player {
         if (this.state === 'jump' && this.animFrame <= 0) {
             ctx.fillRect(4, 33 + idleBob, 16, 2);
         } else {
-            ctx.fillRect(4, 31 + idleBob, 16, 2);
+            ctx.fillRect(4 + attackLean, 31 + idleBob, 16, 2);
         }
 
         // ===== ARMS =====
         ctx.fillStyle = '#ffcc99';
         if (this.state === 'attack') {
-            if (this.animFrame <= 1) {
-                // Wind-up: arm pulled back (P3-1.4 telegraph)
-                ctx.fillRect(16, 18 + idleBob, 8, 4);
+            if (this.animFrame <= 0) {
+                // Frame 0 — Anticipation: arm pulled back
+                ctx.fillRect(14, 18 + idleBob, 6, 4); // upper arm at shoulder
+                ctx.fillRect(10, 16 + idleBob, 5, 4); // forearm angled back
                 // Subtle glow telegraph
                 ctx.save();
-                ctx.globalAlpha = 0.25;
+                ctx.globalAlpha = 0.2;
                 ctx.fillStyle = '#ffcc66';
-                ctx.fillRect(14, 14 + idleBob, 12, 10);
+                ctx.fillRect(12, 14 + idleBob, 10, 10);
                 ctx.restore();
                 ctx.fillStyle = '#ffcc99';
+            } else if (this.animFrame === 1) {
+                // Frame 1 — Load: arm coiled at chest
+                ctx.fillRect(16 + attackLean, 16 + idleBob, 5, 4); // upper arm
+                ctx.fillRect(20 + attackLean, 14 + idleBob, 5, 4); // forearm forward
+            } else if (this.animFrame === 2) {
+                // Frame 2 — Thrust: arm extending
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 8, 4); // forearm thrusting
+            } else if (this.animFrame === 3) {
+                // Frame 3 — Full extension: arm fully out
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm at shoulder
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 10, 4); // forearm extended
             } else {
-                // Strike + hold
-                ctx.fillRect(20, 14 + idleBob, 20, 4);
+                // Frame 4 — Recovery: retracting
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm
+                ctx.fillRect(22 + attackLean, 15 + idleBob, 6, 4); // forearm pulling back
             }
         } else if (this.state === 'block') {
             const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
@@ -611,7 +627,7 @@ export class Player {
         if (this.state === 'jump' && this.animFrame <= 0) {
             ctx.fillRect(6, 4 + idleBob, 12, 14); // Head slightly higher during crouch
         } else {
-            ctx.fillRect(6, 0 + idleBob, 12, 14);
+            ctx.fillRect(6 + attackLean, 0 + idleBob, 12, 14);
         }
 
         // ===== HAIR =====
@@ -620,8 +636,8 @@ export class Player {
             ctx.fillRect(6, 4 + idleBob, 12, 4);
             ctx.fillRect(4, 6 + idleBob, 4, 5);
         } else {
-            ctx.fillRect(6, 0 + idleBob, 12, 4);
-            ctx.fillRect(4, 2 + idleBob, 4, 5);
+            ctx.fillRect(6 + attackLean, 0 + idleBob, 12, 4);
+            ctx.fillRect(4 + attackLean, 2 + idleBob, 4, 5);
         }
 
         // ===== EYE =====
@@ -629,38 +645,87 @@ export class Player {
         if (this.state === 'jump' && this.animFrame <= 0) {
             ctx.fillRect(14, 10 + idleBob, 2, 2);
         } else {
-            ctx.fillRect(14, 6 + idleBob, 2, 2);
+            ctx.fillRect(14 + attackLean, 6 + idleBob, 2, 2);
         }
 
         // ===== SWORD =====
         if (this.hasSword) {
-            ctx.fillStyle = '#c0d0e0';
             if (this.state === 'attack') {
-                if (this.animFrame <= 1) {
-                    // Sword pulled back for wind-up
-                    ctx.fillRect(20, 18 + idleBob, 8, 2);
+                const al = attackLean;
+                if (this.animFrame <= 0) {
+                    // Frame 0 — Sword pulled back, angled up
+                    ctx.fillStyle = '#886633'; // Hilt first (behind blade)
+                    ctx.fillRect(12, 14 + idleBob, 4, 5);
+                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillRect(10, 10 + idleBob, 3, 6); // blade angled up
+                    ctx.fillRect(9, 8 + idleBob, 2, 4);   // blade tip
+                } else if (this.animFrame === 1) {
+                    // Frame 1 — Sword coiled at chest, blade angled forward
+                    ctx.fillStyle = '#886633';
+                    ctx.fillRect(20 + al, 13 + idleBob, 4, 5);
+                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillRect(23 + al, 12 + idleBob, 6, 3); // blade forward-angled
+                    ctx.fillRect(28 + al, 11 + idleBob, 3, 3); // tip
+                } else if (this.animFrame === 2) {
+                    // Frame 2 — Thrust: blade extends forward, tapered
+                    ctx.fillStyle = '#886633';
+                    ctx.fillRect(26 + al, 13 + idleBob, 4, 5);
+                    ctx.fillStyle = '#c0d0e0';
+                    // Tapered blade: wide base → narrow tip
+                    ctx.beginPath();
+                    ctx.moveTo(29 + al, 13 + idleBob);      // base top
+                    ctx.lineTo(43 + al, 15 + idleBob);      // tip center-top
+                    ctx.lineTo(44 + al, 16 + idleBob);      // tip point
+                    ctx.lineTo(43 + al, 17 + idleBob);      // tip center-bottom
+                    ctx.lineTo(29 + al, 18 + idleBob);      // base bottom
+                    ctx.closePath();
+                    ctx.fill();
+                    // Speed line
+                    ctx.save();
+                    ctx.globalAlpha = 0.2;
+                    ctx.strokeStyle = '#c0d0e0';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(22 + al, 16 + idleBob);
+                    ctx.lineTo(30 + al, 16 + idleBob);
+                    ctx.stroke();
+                    ctx.restore();
+                } else if (this.animFrame === 3) {
+                    // Frame 3 — Full extension: max reach, tapered blade + glint
+                    ctx.fillStyle = '#886633';
+                    ctx.fillRect(28 + al, 13 + idleBob, 4, 5);
+                    ctx.fillStyle = '#c0d0e0';
+                    // Tapered blade at full reach
+                    ctx.beginPath();
+                    ctx.moveTo(31 + al, 13 + idleBob);
+                    ctx.lineTo(47 + al, 15 + idleBob);
+                    ctx.lineTo(48 + al, 16 + idleBob);
+                    ctx.lineTo(47 + al, 17 + idleBob);
+                    ctx.lineTo(31 + al, 18 + idleBob);
+                    ctx.closePath();
+                    ctx.fill();
+                    // Glint at tip
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(47 + al, 15 + idleBob, 2, 2);
                 } else {
-                    // Sword thrust forward - long blade
-                    ctx.fillRect(28, 14 + idleBob, 20, 3);
-                    ctx.fillRect(46, 13 + idleBob, 4, 5);
+                    // Frame 4 — Recovery: sword retracting
+                    ctx.fillStyle = '#886633';
+                    ctx.fillRect(24 + al, 14 + idleBob, 4, 5);
+                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillRect(27 + al, 14 + idleBob, 8, 3); // shorter blade
+                    ctx.fillRect(34 + al, 14 + idleBob, 2, 2); // small tip
                 }
             } else if (this.state === 'block') {
+                ctx.fillStyle = '#c0d0e0';
                 const raise = this.animFrame === 0 ? 6 : this.animFrame === 1 ? 2 : 8;
                 ctx.fillRect(20, 2 + raise + idleBob, 3, 22);
-            } else {
-                ctx.fillRect(22, 18 + idleBob, 14, 2);
-            }
-            // Hilt
-            ctx.fillStyle = '#886633';
-            if (this.state === 'attack') {
-                if (this.animFrame <= 1) {
-                    ctx.fillRect(18, 16 + idleBob, 5, 6);
-                } else {
-                    ctx.fillRect(24, 12 + idleBob, 5, 8);
-                }
-            } else if (this.state === 'block') {
+                ctx.fillStyle = '#886633';
                 ctx.fillRect(18, 22 + idleBob, 8, 4);
             } else {
+                // Idle/run: sword at side
+                ctx.fillStyle = '#c0d0e0';
+                ctx.fillRect(22, 18 + idleBob, 14, 2);
+                ctx.fillStyle = '#886633';
                 ctx.fillRect(20, 16 + idleBob, 5, 6);
             }
         }

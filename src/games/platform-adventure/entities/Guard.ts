@@ -24,10 +24,11 @@ const GUARD_COLORS: Record<GuardType, {
     visor: string;
     sword: string;
     accent?: string;
+    skin?: string;
 }> = {
-    recruit:  { armor: '#aa3333', armorHurt: '#ff6666', helmet: '#333333', visor: '#1a1a1a', sword: '#888899' },
+    recruit:  { armor: '#8B6914', armorHurt: '#c49a2e', helmet: '#6B4F2A', visor: '#6B4F2A', sword: '#777788', skin: '#ffcc99' },
     soldier:  { armor: '#aa3333', armorHurt: '#ff6666', helmet: '#333333', visor: '#1a1a1a', sword: '#888899' },
-    veteran:  { armor: '#993333', armorHurt: '#ff5555', helmet: '#2a2a2a', visor: '#1a1a1a', sword: '#9999aa' },
+    veteran:  { armor: '#555566', armorHurt: '#8888aa', helmet: '#3a3a3a', visor: '#1a1a1a', sword: '#aaaabb', accent: '#667788' },
     captain:  { armor: '#882222', armorHurt: '#ff4444', helmet: '#222222', visor: '#110011', sword: '#ccbb88', accent: '#ffcc00' },
     shadow:   { armor: '#220033', armorHurt: '#6600aa', helmet: '#110022', visor: '#330044', sword: '#4400ff', accent: '#8800ff' },
 };
@@ -649,6 +650,9 @@ export class Guard {
         const isMoving = this.state === 'patrol' || this.state === 'alert' || this.state === 'suspicious' ||
             this.state === 'retreating' || (this.state === 'combat_ready' && this.advanceTimer > 0);
         const colors = GUARD_COLORS[this.type];
+        const isRecruit = this.type === 'recruit';
+        const isSoldier = this.type === 'soldier';
+        const isVeteran = this.type === 'veteran';
         const isCaptain = this.type === 'captain';
         const isShadow = this.type === 'shadow';
 
@@ -702,11 +706,43 @@ export class Guard {
             } else {
                 ctx.fillRect(0, 36, 24, 8);
             }
+        } else if (isRecruit) {
+            // Recruit: narrow leather vest
+            const breatheW = isIdle ? Math.sin(this.animTimer * 2.5) * 0.4 : 0;
+            const tw = Math.floor(14 + breatheW);
+            ctx.fillRect(5 + Math.floor((14 - tw) / 2), 14 + idleBob, tw, 20);
+            // Skin-colored sides visible
+            ctx.fillStyle = colors.skin ?? '#ffcc99';
+            ctx.fillRect(3, 16 + idleBob, 3, 14);
+            ctx.fillRect(18, 16 + idleBob, 3, 14);
+        } else if (isVeteran) {
+            // Veteran: wider heavy armor
+            const breatheW = isIdle ? Math.sin(this.animTimer * 2.5) * 0.4 : 0;
+            const tw = Math.floor(18 + breatheW);
+            ctx.fillRect(3 + Math.floor((18 - tw) / 2), 14 + idleBob, tw, 20);
+            // Diagonal scar across torso
+            ctx.fillStyle = '#3a3a44';
+            ctx.fillRect(7, 18 + idleBob, 2, 2);
+            ctx.fillRect(9, 20 + idleBob, 2, 2);
+            ctx.fillRect(11, 22 + idleBob, 2, 2);
+            ctx.fillRect(13, 24 + idleBob, 2, 2);
         } else {
-            // Breathing torso width (P3-1.4)
+            // Soldier / Captain / Shadow: standard torso
             const breatheW = isIdle ? Math.sin(this.animTimer * 2.5) * 0.4 : 0;
             const tw = Math.floor(16 + breatheW);
             ctx.fillRect(4 + Math.floor((16 - tw) / 2), 14 + idleBob, tw, 20);
+            // Soldier chainmail detail at bottom of torso
+            if (isSoldier) {
+                ctx.fillStyle = '#882222';
+                ctx.fillRect(5, 32 + idleBob, 14, 2);
+            }
+        }
+
+        // ===== VETERAN PAULDRONS =====
+        if (isVeteran && !isDying) {
+            ctx.fillStyle = colors.accent ?? '#667788';
+            ctx.fillRect(0, 14 + idleBob, 5, 6);
+            ctx.fillRect(19, 14 + idleBob, 5, 6);
         }
 
         // ===== CAPTAIN PAULDRONS =====
@@ -720,7 +756,9 @@ export class Guard {
         }
 
         // ===== ARMS =====
-        ctx.fillStyle = colors.armor;
+        const armColor = isRecruit ? (colors.skin ?? '#ffcc99') : colors.armor;
+        const armWidth = isRecruit ? 3 : 4;
+        ctx.fillStyle = armColor;
         if (this.state === 'attacking') {
             // Attack telegraph glow (P3-1.4)
             if (this.stateTimer < this.attackDuration * 0.3) {
@@ -729,9 +767,9 @@ export class Guard {
                 ctx.fillStyle = isShadow ? '#8800ff' : '#ff6644';
                 ctx.fillRect(16, 10, 14, 10);
                 ctx.restore();
-                ctx.fillStyle = colors.armor;
+                ctx.fillStyle = armColor;
             }
-            ctx.fillRect(20, 16, 16, 4);
+            ctx.fillRect(20, 16, 16, armWidth);
         } else if (this.state === 'blocking') {
             ctx.fillRect(18, 6, 6, 16);
         } else if (isDying) {
@@ -743,8 +781,8 @@ export class Guard {
                 ctx.fillRect(20, 20, 4, 8);
             }
         } else {
-            ctx.fillRect(0, 16 + idleBob, 4, 12);
-            ctx.fillRect(20, 16 + idleBob, 4, 12);
+            ctx.fillRect(0, 16 + idleBob, armWidth, 12);
+            ctx.fillRect(24 - armWidth, 16 + idleBob, armWidth, 12);
         }
 
         // ===== HELMET =====
@@ -757,7 +795,26 @@ export class Guard {
                 ctx.fillStyle = colors.visor;
                 ctx.fillRect(12, deathFrame === 0 ? 8 : 14, 6, 6);
             }
+        } else if (isRecruit) {
+            // Recruit: small leather cap (shorter, open face)
+            ctx.fillRect(6, 2 + idleBob, 12, 10);
+            // Open face — skin-colored chin/lower face
+            ctx.fillStyle = colors.skin ?? '#ffcc99';
+            ctx.fillRect(6, 10 + idleBob, 12, 4);
+            // Two dot eyes
+            ctx.fillStyle = '#2a1a0a';
+            ctx.fillRect(12, 6 + idleBob, 2, 2);
+            ctx.fillRect(16, 6 + idleBob, 2, 2);
+        } else if (isVeteran) {
+            // Veteran: wider full helm with nose guard
+            ctx.fillRect(3, 0 + idleBob, 18, 14);
+            ctx.fillStyle = colors.visor;
+            ctx.fillRect(12, 4 + idleBob, 7, 6);
+            // Nose guard — vertical bar over visor
+            ctx.fillStyle = colors.helmet;
+            ctx.fillRect(14, 4 + idleBob, 2, 8);
         } else {
+            // Soldier / Captain / Shadow: standard full helm
             ctx.fillRect(4, 0 + idleBob, 16, 14);
             ctx.fillStyle = colors.visor;
             ctx.fillRect(12, 4 + idleBob, 6, 6);
@@ -791,6 +848,12 @@ export class Guard {
                 ctx.shadowBlur = 8;
                 ctx.fillRect(36, 14, 24, 3);
                 ctx.restore();
+            } else if (isRecruit) {
+                // Short dagger thrust
+                ctx.fillRect(36, 14, 12, 3);
+            } else if (isVeteran) {
+                // Heavy broad slash
+                ctx.fillRect(36, 12, 22, 5);
             } else {
                 ctx.fillRect(36, 14, 20, 3);
             }
@@ -799,6 +862,12 @@ export class Guard {
         } else if (!isDying) {
             if (isCaptain) {
                 ctx.fillRect(22, 18 + idleBob, 18, 3);
+            } else if (isRecruit) {
+                // Short dagger at side
+                ctx.fillRect(22, 20 + idleBob, 8, 2);
+            } else if (isVeteran) {
+                // Broad greatsword at side
+                ctx.fillRect(22, 18 + idleBob, 16, 3);
             } else {
                 ctx.fillRect(22, 20 + idleBob, 14, 2);
             }
