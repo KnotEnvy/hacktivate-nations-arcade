@@ -6,14 +6,14 @@ import { TILE_SIZE, TileType, TILE_COLORS } from './data/TileTypes';
 import { Player } from './entities/Player';
 import { Guard, GuardSense, GuardType } from './entities/Guard';
 import { Collectible } from './entities/Collectible';
-import { Trap } from './entities/Trap';
+import { Trap, TrapType } from './entities/Trap';
 import { ALL_LEVELS, LevelDefinition, getTileAt, findPlayerSpawn, findDoorPosition } from './levels/LevelData';
 import { STORY_BY_LEVEL, GLOBAL_STORY_EVENTS, StoryEvent } from './levels/StoryData';
 import { ParallaxBackground } from './rendering/ParallaxBackground';
 import { Camera, SHAKE_PRESETS, ShakePreset } from './rendering/Camera';
 import { DynamicLighting } from './rendering/DynamicLighting';
 
-type GameState = 'menu' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over';
+type GameState = 'menu' | 'level_select' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over' | 'paused';
 
 // Enhanced scoring system
 const SCORING = {
@@ -46,6 +46,76 @@ type Particle = {
     size: number;
     color: string;
     gravity: number;
+};
+
+type DeathCause = 'guard' | 'trap' | 'pit' | 'time';
+
+type DeathInterstitialParticle = {
+    x: number; y: number; vx: number; vy: number;
+    life: number; maxLife: number; size: number; color: string;
+};
+
+type DeathInterstitial = {
+    active: boolean;
+    timer: number;
+    duration: number;
+    cause: DeathCause;
+    guardType?: GuardType;
+    trapType?: TrapType;
+    particles: DeathInterstitialParticle[];
+    flavorIndex: number;
+};
+
+const DEATH_FLAVOR_TEXT: Record<DeathCause, string[]> = {
+    guard: [
+        'The guards show no mercy...',
+        'Steel bites deep in the dark.',
+        'Outmatched, but not defeated.',
+        'The cavern claims another soul.',
+        'A warrior falls, but rises again.',
+        'Their blade was faster this time.',
+    ],
+    trap: [
+        'The cavern\'s teeth are sharp.',
+        'Ancient mechanisms still hunger.',
+        'These ruins were built to kill.',
+        'The dungeon punishes the unwary.',
+        'Every stone hides danger.',
+        'The architects were cruel.',
+    ],
+    pit: [
+        'The abyss yawns endlessly below.',
+        'Darkness swallowed everything.',
+        'The fall seemed to last forever.',
+        'Nothing but void beneath your feet.',
+        'The depths claimed another explorer.',
+        'Watch your step next time.',
+    ],
+    time: [
+        'The sands of time have run dry.',
+        'Time waits for no adventurer.',
+        'The cavern\'s magic fades...',
+        'Too slow to outrun fate.',
+        'The torch sputters and dies.',
+        'Darkness reclaims the caverns.',
+    ],
+};
+
+type ScoreBreakdownState = {
+    phase: 'counting' | 'waiting';
+    lineIndex: number;
+    lineProgress: number;
+    lines: Array<{ label: string; value: number; displayValue: number }>;
+    levelTotal: number;
+    runningTotal: number;
+};
+
+type ScorePopup = {
+    x: number;
+    y: number;
+    text: string;
+    color: string;
+    timer: number;
 };
 
 type GateColor = 'gray' | 'red' | 'blue' | 'gold';
@@ -208,6 +278,13 @@ export class PlatformGame extends BaseGame {
     private gemsCollected: number = 0;
     private guardsDefeated: number = 0;
     private deaths: number = 0;
+    private pendingDeathRecord: { cause: DeathCause; guardType?: GuardType; trapType?: TrapType; level: number } | null = null;
+    private lastDeathCause: DeathCause = 'time';
+    private deathsByGuard: number = 0;
+    private deathsByTrap: number = 0;
+    private deathsByPit: number = 0;
+    private timePenaltyTotal: number = 0;
+    private deathInterstitial: DeathInterstitial | null = null;
     private foundOwl: boolean = false;
     private levelStory: StoryEvent[] = [];
     private storyQueue: StoryEvent[] = [];
@@ -248,12 +325,46 @@ export class PlatformGame extends BaseGame {
     private swordKeyWasPressed: boolean = false;
     private jumpKeyWasPressed: boolean = false;
 
+    // HUD animations (P3-6)
+    private scorePopups: ScorePopup[] = [];
+    private healthPulseTimer: number = 0;
+    private lastPlayerHealth: number = 3;
+    private gemBounceTimer: number = 0;
+
+    // Story typewriter (P3-6)
+    private storyCharIndex: number = 0;
+    private storyFullyRevealed: boolean = false;
+
+    // Score breakdown (P3-4)
+    private scoreBreakdown: ScoreBreakdownState | null = null;
+    private levelGuardsDefeated: number = 0;
+
+    // Pause menu (P3-6)
+    private pauseMenuIndex: number = 0;
+    private escKeyWasPressed: boolean = false;
+    private pauseUpWasPressed: boolean = false;
+    private pauseDownWasPressed: boolean = false;
+
+    // Level select (P3-6)
+    private menuIndex: number = 0;
+    private menuUpWasPressed: boolean = false;
+    private menuDownWasPressed: boolean = false;
+    private levelSelectIndex: number = 0;
+    private levelSelectUpWasPressed: boolean = false;
+    private levelSelectDownWasPressed: boolean = false;
+    private menuActionWasPressed: boolean = false;
+    private unlockedLevels: number = 1;
+    private levelBestScores: number[] = [0, 0, 0, 0, 0];
+    private levelBestTimes: number[] = [0, 0, 0, 0, 0];
+    private readonly PROGRESS_KEY = 'crystal-caverns-progress';
+
     protected renderBaseHud: boolean = false;
 
     protected onInit(): void {
         this.player = new Player(100, 200);
         this.loadPersistentStats();
         this.loadLeaderboard();
+        this.loadProgress();
         this.gameStartTime = Date.now();
         this.loadLevel(0);
     }
@@ -316,6 +427,7 @@ export class PlatformGame extends BaseGame {
         this.levelDamagesTaken = 0;
         this.levelPerfectBlocks = 0;
         this.levelCounterAttacks = 0;
+        this.levelGuardsDefeated = 0;
         this.swordEverDrawn = false;
         this.levelStartTime = Date.now();
         this.levelGemsCollected = 0;
@@ -482,9 +594,24 @@ export class PlatformGame extends BaseGame {
     }
 
     protected onUpdate(dt: number): void {
+        // ESC pause toggle (only from 'playing' or 'paused')
+        const escPressed = this.services?.input?.isKeyPressed?.('Escape') || false;
+        if (escPressed && !this.escKeyWasPressed) {
+            if (this.gameState === 'playing') {
+                this.gameState = 'paused';
+                this.pauseMenuIndex = 0;
+            } else if (this.gameState === 'paused') {
+                this.gameState = 'playing';
+            }
+        }
+        this.escKeyWasPressed = escPressed;
+
         switch (this.gameState) {
             case 'menu':
                 this.updateMenu(dt);
+                break;
+            case 'level_select':
+                this.updateLevelSelect(dt);
                 break;
             case 'level_intro':
                 this.updateLevelIntro(dt);
@@ -498,6 +625,9 @@ export class PlatformGame extends BaseGame {
             case 'level_complete':
                 this.updateLevelComplete(dt);
                 break;
+            case 'paused':
+                this.updatePauseMenu(dt);
+                break;
             case 'victory':
             case 'game_over':
                 this.updateEndScreen(dt);
@@ -507,11 +637,99 @@ export class PlatformGame extends BaseGame {
 
     private updateMenu(dt: number): void {
         const input = this.services?.input;
-        if (input?.isActionPressed?.()) {
-            this.gameState = 'level_intro';
-            this.stateTimer = 0;
-            this.services?.audio?.playSound?.('powerup');
+        const up = input?.isUpPressed?.() || false;
+        const down = input?.isDownPressed?.() || false;
+        const action = input?.isActionPressed?.() || false;
+
+        if (up && !this.menuUpWasPressed) this.menuIndex = Math.max(0, this.menuIndex - 1);
+        if (down && !this.menuDownWasPressed) this.menuIndex = Math.min(1, this.menuIndex + 1);
+        this.menuUpWasPressed = up;
+        this.menuDownWasPressed = down;
+
+        if (action && !this.menuActionWasPressed) {
+            if (this.menuIndex === 0) {
+                // New Game
+                this.gameState = 'level_intro';
+                this.stateTimer = 0;
+                this.services?.audio?.playSound?.('powerup');
+            } else {
+                // Level Select
+                this.gameState = 'level_select';
+                this.levelSelectIndex = 0;
+                this.services?.audio?.playSound?.('coin');
+            }
         }
+        this.menuActionWasPressed = action;
+    }
+
+    private updateLevelSelect(dt: number): void {
+        const input = this.services?.input;
+        const up = input?.isUpPressed?.() || false;
+        const down = input?.isDownPressed?.() || false;
+        const action = input?.isActionPressed?.() || false;
+        const esc = input?.isKeyPressed?.('Escape') || false;
+
+        if (up && !this.levelSelectUpWasPressed) {
+            this.levelSelectIndex = Math.max(0, this.levelSelectIndex - 1);
+        }
+        if (down && !this.levelSelectDownWasPressed) {
+            this.levelSelectIndex = Math.min(ALL_LEVELS.length - 1, this.levelSelectIndex + 1);
+        }
+        this.levelSelectUpWasPressed = up;
+        this.levelSelectDownWasPressed = down;
+
+        // ESC to go back to menu
+        if (esc && !this.escKeyWasPressed) {
+            this.gameState = 'menu';
+            this.menuIndex = 1;
+        }
+
+        if (action && !this.menuActionWasPressed) {
+            if (this.levelSelectIndex < this.unlockedLevels) {
+                // Play selected level
+                this.loadLevel(this.levelSelectIndex);
+                this.gameState = 'level_intro';
+                this.stateTimer = 0;
+                this.services?.audio?.playSound?.('powerup');
+            } else {
+                // Locked - play error sound
+                this.services?.audio?.playSound?.('error');
+            }
+        }
+        this.menuActionWasPressed = action;
+    }
+
+    private updatePauseMenu(dt: number): void {
+        const input = this.services?.input;
+        const up = input?.isUpPressed?.() || false;
+        const down = input?.isDownPressed?.() || false;
+        const action = input?.isActionPressed?.() || false;
+
+        if (up && !this.pauseUpWasPressed) {
+            this.pauseMenuIndex = Math.max(0, this.pauseMenuIndex - 1);
+        }
+        if (down && !this.pauseDownWasPressed) {
+            this.pauseMenuIndex = Math.min(2, this.pauseMenuIndex + 1);
+        }
+        this.pauseUpWasPressed = up;
+        this.pauseDownWasPressed = down;
+
+        if (action && !this.menuActionWasPressed) {
+            switch (this.pauseMenuIndex) {
+                case 0: // Resume
+                    this.gameState = 'playing';
+                    break;
+                case 1: // Restart Level
+                    this.loadLevel(this.currentLevel);
+                    this.gameState = 'level_intro';
+                    this.stateTimer = 0;
+                    break;
+                case 2: // Quit to Menu
+                    this.endGame();
+                    break;
+            }
+        }
+        this.menuActionWasPressed = action;
     }
 
     private updateLevelIntro(dt: number): void {
@@ -551,10 +769,18 @@ export class PlatformGame extends BaseGame {
             return;
         }
 
+        // Death interstitial - freeze game, only update interstitial + camera
+        if (this.deathInterstitial?.active) {
+            this.updateDeathInterstitial(safeDt);
+            this.updateCamera(safeDt);
+            return;
+        }
+
         // Update timer
         this.timeRemaining -= safeDt;
         if (this.timeRemaining <= 0) {
             this.timeRemaining = 0;
+            this.lastDeathCause = 'time';
             this.endGame();
             return;
         }
@@ -697,20 +923,56 @@ export class PlatformGame extends BaseGame {
         // Update particles
         this.updateParticles(safeDt * this.timeScale);
 
+        // Update HUD animation timers
+        if (this.healthPulseTimer > 0) this.healthPulseTimer -= safeDt;
+        if (this.gemBounceTimer > 0) this.gemBounceTimer -= safeDt;
+        // Health pulse detection
+        if (this.player.health < this.lastPlayerHealth) {
+            this.healthPulseTimer = 0.3;
+        }
+        this.lastPlayerHealth = this.player.health;
+        // Update score popups
+        for (const popup of this.scorePopups) {
+            popup.timer -= safeDt;
+            popup.y -= 40 * safeDt;
+        }
+        this.scorePopups = this.scorePopups.filter(p => p.timer > 0);
+
         // Update achievement toast timer
         if (this.achievementToast && this.achievementToast.timer > 0) {
             this.achievementToast.timer -= safeDt;
         }
 
-        // Check death
-        if (this.player.state === 'dead') {
+        // Check death - trigger interstitial instead of immediate respawn
+        if (this.player.state === 'dead' && !this.deathInterstitial) {
             this.deaths++;
             this.timeRemaining -= 10;
+            this.timePenaltyTotal += 10;
+
+            // Consume pending death record for cause tracking
+            const cause = this.pendingDeathRecord?.cause ?? 'guard';
+            this.lastDeathCause = cause;
+            if (cause === 'guard') this.deathsByGuard++;
+            else if (cause === 'trap') this.deathsByTrap++;
+            else if (cause === 'pit') this.deathsByPit++;
+
             // On Level 5 during Shadow fight, show defeat taunt
             if (this.currentLevel === 4 && this.activeBoss?.type === 'shadow') {
                 this.triggerEndingStory('defeat');
             }
-            setTimeout(() => this.player.respawn(), 1000);
+
+            // Create death interstitial
+            this.deathInterstitial = {
+                active: true,
+                timer: 0,
+                duration: 2.5,
+                cause,
+                guardType: this.pendingDeathRecord?.guardType,
+                trapType: this.pendingDeathRecord?.trapType,
+                particles: this.spawnDeathInterstitialParticles(cause),
+                flavorIndex: Math.floor(Math.random() * DEATH_FLAVOR_TEXT[cause].length),
+            };
+            this.pendingDeathRecord = null;
         }
 
         // Update camera with dt for smooth following
@@ -783,6 +1045,7 @@ export class PlatformGame extends BaseGame {
         // Deadly tile check (falling into pit)
         if (this.player.y > this.level.height * TILE_SIZE) {
             if (this.player.state !== 'dying' && this.player.state !== 'dead') {
+                this.pendingDeathRecord = { cause: 'pit', level: this.currentLevel };
                 this.player.die();
                 this.services?.audio?.playSound?.('death_cry');
             }
@@ -822,9 +1085,11 @@ export class PlatformGame extends BaseGame {
                         }
                         if (!guard.isAlive) {
                             this.guardsDefeated++;
+                            this.levelGuardsDefeated++;
                             this.score += SCORING.GUARD_KILL;
                             this.services?.audio?.playSound?.('death_cry');
                             this.spawnDeathBurst(guard.centerX, guard.y + guard.height * 0.5);
+                            this.scorePopups.push({ x: guard.centerX, y: guard.y - 10, text: `+${SCORING.GUARD_KILL}`, color: '#ff6644', timer: 1.2 });
                         }
                     }
                 }
@@ -850,6 +1115,7 @@ export class PlatformGame extends BaseGame {
                     this.levelPerfectBlocks++;
                     this.totalBlocksEver++;
                     this.score += SCORING.PERFECT_BLOCK;
+                    this.scorePopups.push({ x: this.player.centerX, y: this.player.y - 10, text: `+${SCORING.PERFECT_BLOCK}`, color: '#8888ff', timer: 1.0 });
                 } else {
                     // Set knockback direction on player for hurt stagger (P3-3.2)
                     this.player.hurtDirection = knockDir;
@@ -862,6 +1128,9 @@ export class PlatformGame extends BaseGame {
                     this.triggerScreenShakePreset('PLAYER_HURT');
                     // Track damage taken
                     this.levelDamagesTaken++;
+                    if (died) {
+                        this.pendingDeathRecord = { cause: 'guard', guardType: guard.type, level: this.currentLevel };
+                    }
                 }
             }
         }
@@ -881,6 +1150,9 @@ export class PlatformGame extends BaseGame {
                 this.triggerHitStop(0.06);
                 this.triggerScreenShakePreset('TRAP_HIT');
                 this.triggerScreenFlash('#ff2200', 0.12, 0.15);
+                if (died) {
+                    this.pendingDeathRecord = { cause: 'trap', trapType: trap.type, level: this.currentLevel };
+                }
             }
         }
     }
@@ -908,14 +1180,20 @@ export class PlatformGame extends BaseGame {
                         this.totalGemsEver++;
                         this.score += SCORING.GEM_VALUE;
                         this.services?.audio?.playSound?.('coin');
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: `+${SCORING.GEM_VALUE}`, color: '#ffdd44', timer: 1.0 });
+                        this.gemBounceTimer = 0.3;
                         break;
                     case 'time':
                         this.timeRemaining = Math.min(this.MAX_TIME, this.timeRemaining + 15);
                         this.score += 25;
                         this.services?.audio?.playSound?.('coin');
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: '+15s', color: '#44ddff', timer: 1.0 });
                         break;
                     case 'owl':
                         this.foundOwl = true;
+                        // Unlock all levels on victory
+                        this.unlockedLevels = ALL_LEVELS.length;
+                        this.saveProgress();
                         // Calculate final level bonus
                         const finalBonus = this.calculateLevelBonus();
                         this.score += finalBonus;
@@ -1096,12 +1374,11 @@ export class PlatformGame extends BaseGame {
             this.player.feetY >= door.y && this.player.feetY < door.y + TILE_SIZE) {
             // Level complete!
             if (this.currentLevel < ALL_LEVELS.length - 1) {
-                // Calculate and award level bonus
-                const bonus = this.calculateLevelBonus();
-                this.score += bonus;
-
                 // Check achievements before transitioning
                 this.checkAchievements();
+
+                // Build score breakdown (defer score addition until player confirms)
+                this.scoreBreakdown = this.buildScoreBreakdown();
 
                 this.gameState = 'level_complete';
                 this.stateTimer = 0;
@@ -1136,6 +1413,54 @@ export class PlatformGame extends BaseGame {
         }
 
         return bonus;
+    }
+
+    private buildScoreBreakdown(): ScoreBreakdownState {
+        const levelTime = (Date.now() - this.levelStartTime) / 1000;
+        const lines: ScoreBreakdownState['lines'] = [];
+
+        // Gems
+        const gemScore = this.levelGemsCollected * SCORING.GEM_VALUE;
+        lines.push({ label: `Gems Collected (${this.levelGemsCollected}/${this.totalGemsInLevel})`, value: gemScore, displayValue: 0 });
+
+        // Time remaining
+        let timeScore = Math.floor(this.timeRemaining * SCORING.TIME_VALUE);
+        const isSpeedBonus = levelTime < SCORING.SPEED_THRESHOLD;
+        if (isSpeedBonus) {
+            timeScore *= SCORING.SPEED_MULTIPLIER;
+        }
+        lines.push({ label: `Time Remaining${isSpeedBonus ? ' (x2 SPEED!)' : ''}`, value: timeScore, displayValue: 0 });
+
+        // Guards defeated this level
+        if (this.levelGuardsDefeated > 0) {
+            lines.push({ label: `Guards Defeated (${this.levelGuardsDefeated})`, value: this.levelGuardsDefeated * SCORING.GUARD_KILL, displayValue: 0 });
+        }
+
+        // Perfect blocks
+        if (this.levelPerfectBlocks > 0) {
+            lines.push({ label: `Perfect Blocks (${this.levelPerfectBlocks})`, value: this.levelPerfectBlocks * SCORING.PERFECT_BLOCK, displayValue: 0 });
+        }
+
+        // No-hit bonus
+        if (this.levelDamagesTaken === 0) {
+            lines.push({ label: 'Flawless (No Damage!)', value: SCORING.NO_HIT_BONUS, displayValue: 0 });
+        }
+
+        // All gems bonus
+        if (this.totalGemsInLevel > 0 && this.levelGemsCollected >= this.totalGemsInLevel) {
+            lines.push({ label: 'All Gems Collected!', value: 250, displayValue: 0 });
+        }
+
+        const levelTotal = lines.reduce((sum, l) => sum + l.value, 0);
+
+        return {
+            phase: 'counting',
+            lineIndex: 0,
+            lineProgress: 0,
+            lines,
+            levelTotal,
+            runningTotal: this.score + levelTotal,
+        };
     }
 
     // ===== ACHIEVEMENT SYSTEM (uses platform AchievementService) =====
@@ -1247,6 +1572,32 @@ export class PlatformGame extends BaseGame {
         }
     }
 
+    private loadProgress(): void {
+        try {
+            const saved = localStorage.getItem(this.PROGRESS_KEY);
+            if (saved) {
+                const data = JSON.parse(saved);
+                this.unlockedLevels = data.unlockedLevels ?? 1;
+                this.levelBestScores = data.levelBestScores ?? [0, 0, 0, 0, 0];
+                this.levelBestTimes = data.levelBestTimes ?? [0, 0, 0, 0, 0];
+            }
+        } catch {
+            // Use defaults
+        }
+    }
+
+    private saveProgress(): void {
+        try {
+            localStorage.setItem(this.PROGRESS_KEY, JSON.stringify({
+                unlockedLevels: this.unlockedLevels,
+                levelBestScores: this.levelBestScores,
+                levelBestTimes: this.levelBestTimes,
+            }));
+        } catch {
+            // Silently fail
+        }
+    }
+
     private isHighScore(score: number): boolean {
         if (this.leaderboard.length < 10) return true;
         return score > (this.leaderboard[this.leaderboard.length - 1]?.score ?? 0);
@@ -1261,10 +1612,310 @@ export class PlatformGame extends BaseGame {
 
     private updateLevelComplete(dt: number): void {
         this.stateTimer += dt;
-        if (this.stateTimer > 2) {
-            this.loadLevel(this.currentLevel + 1);
-            this.gameState = 'level_intro';
-            this.stateTimer = 0;
+        if (!this.scoreBreakdown) {
+            // Fallback: old behavior if no breakdown
+            if (this.stateTimer > 2) {
+                this.loadLevel(this.currentLevel + 1);
+                this.gameState = 'level_intro';
+                this.stateTimer = 0;
+            }
+            return;
+        }
+
+        const bd = this.scoreBreakdown;
+        if (bd.phase === 'counting') {
+            bd.lineProgress += dt * 2.5; // ~0.4s per line
+            if (bd.lineProgress >= 1) {
+                // Finalize current line
+                const line = bd.lines[bd.lineIndex];
+                line.displayValue = line.value;
+                bd.lineIndex++;
+                bd.lineProgress = 0;
+                this.services?.audio?.playSound?.('coin');
+
+                if (bd.lineIndex >= bd.lines.length) {
+                    bd.phase = 'waiting';
+                }
+            } else {
+                // Animate current line's display value
+                const line = bd.lines[bd.lineIndex];
+                line.displayValue = Math.floor(line.value * bd.lineProgress);
+            }
+        } else if (bd.phase === 'waiting') {
+            const input = this.services?.input;
+            if (input?.isActionPressed?.()) {
+                // Award the score and advance
+                this.score += bd.levelTotal;
+
+                // Save best score/time and unlock next level
+                const lvl = this.currentLevel;
+                this.levelBestScores[lvl] = Math.max(this.levelBestScores[lvl], bd.levelTotal);
+                this.levelBestTimes[lvl] = Math.max(this.levelBestTimes[lvl], this.timeRemaining);
+                if (lvl + 1 >= this.unlockedLevels) {
+                    this.unlockedLevels = Math.min(ALL_LEVELS.length, lvl + 2);
+                }
+                this.saveProgress();
+
+                this.scoreBreakdown = null;
+                this.loadLevel(this.currentLevel + 1);
+                this.gameState = 'level_intro';
+                this.stateTimer = 0;
+            }
+        }
+    }
+
+    private updateDeathInterstitial(dt: number): void {
+        if (!this.deathInterstitial) return;
+        const di = this.deathInterstitial;
+        di.timer += dt;
+
+        // Animate particles
+        for (const p of di.particles) {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.life -= dt;
+            // Gravity for pit particles (falling down), upward for guard/trap
+            if (di.cause === 'pit') {
+                p.vy += 30 * dt;
+            } else {
+                p.vy -= 20 * dt;
+            }
+        }
+        di.particles = di.particles.filter(p => p.life > 0);
+
+        // Wait for SPACE press (after 0.5s minimum so player sees the screen)
+        const input = this.services?.input;
+        if (di.timer > 0.5 && input?.isActionPressed?.()) {
+            this.completeDeathInterstitial();
+        }
+    }
+
+    private completeDeathInterstitial(): void {
+        this.deathInterstitial = null;
+        this.endGame();
+    }
+
+    private spawnDeathInterstitialParticles(cause: DeathCause): DeathInterstitialParticle[] {
+        const particles: DeathInterstitialParticle[] = [];
+        const cx = 400; // Canvas center x (GAME_CONFIG.CANVAS_WIDTH / 2)
+        const cy = 200; // Slightly above center
+
+        for (let i = 0; i < 20; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 30 + Math.random() * 80;
+            let color: string;
+            let vy: number;
+
+            switch (cause) {
+                case 'guard':
+                    color = `rgba(${200 + Math.random() * 55}, ${Math.random() * 60}, ${Math.random() * 30}, 0.8)`;
+                    vy = -20 - Math.random() * 60; // Rise up like embers
+                    break;
+                case 'trap':
+                    color = `rgba(${220 + Math.random() * 35}, ${150 + Math.random() * 80}, ${Math.random() * 40}, 0.8)`;
+                    vy = Math.sin(angle) * speed; // Scatter
+                    break;
+                case 'pit':
+                    color = `rgba(${60 + Math.random() * 40}, ${100 + Math.random() * 80}, ${200 + Math.random() * 55}, 0.7)`;
+                    vy = 20 + Math.random() * 40; // Fall down like wisps
+                    break;
+                default:
+                    color = `rgba(180, 180, 200, 0.6)`;
+                    vy = -10 - Math.random() * 30;
+            }
+
+            particles.push({
+                x: cx + (Math.random() - 0.5) * 120,
+                y: cy + (Math.random() - 0.5) * 40,
+                vx: Math.cos(angle) * speed * 0.5,
+                vy,
+                life: 1.5 + Math.random() * 1.5,
+                maxLife: 2.5,
+                size: 2 + Math.random() * 4,
+                color,
+            });
+        }
+        return particles;
+    }
+
+    private renderDeathInterstitial(ctx: CanvasRenderingContext2D): void {
+        if (!this.deathInterstitial?.active) return;
+        const di = this.deathInterstitial;
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        // Fade in (0 to 1 over 0.3s)
+        const fadeIn = Math.min(1, di.timer / 0.3);
+
+        // Overlay color based on death type
+        let overlayColor: string;
+        switch (di.cause) {
+            case 'guard': overlayColor = `rgba(60, 10, 10, ${0.85 * fadeIn})`; break;
+            case 'trap':  overlayColor = `rgba(50, 30, 5, ${0.85 * fadeIn})`; break;
+            case 'pit':   overlayColor = `rgba(10, 15, 50, ${0.85 * fadeIn})`; break;
+            default:      overlayColor = `rgba(30, 30, 30, ${0.85 * fadeIn})`;
+        }
+
+        ctx.fillStyle = overlayColor;
+        ctx.fillRect(0, 0, w, h);
+
+        // Particles (behind text)
+        for (const p of di.particles) {
+            const alpha = (p.life / p.maxLife) * fadeIn;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // Icon with pulse
+        const iconAlpha = fadeIn;
+        const iconPulse = 1 + Math.sin(di.timer * 4) * 0.08;
+        ctx.save();
+        ctx.translate(w / 2, h / 2 - 50);
+        ctx.scale(iconPulse, iconPulse);
+        ctx.globalAlpha = iconAlpha;
+        this.drawDeathIcon(ctx, di.cause, di.trapType);
+        ctx.restore();
+
+        // Title (0.2s delay)
+        if (di.timer > 0.2) {
+            const titleAlpha = Math.min(1, (di.timer - 0.2) / 0.2);
+            ctx.globalAlpha = titleAlpha * fadeIn;
+            ctx.fillStyle = di.cause === 'guard' ? '#ff6644' : di.cause === 'trap' ? '#ffaa33' : '#6688ff';
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(this.getDeathTitle(di), w / 2, h / 2 + 15);
+        }
+
+        // Flavor text (0.5s delay)
+        if (di.timer > 0.5) {
+            const flavorAlpha = Math.min(1, (di.timer - 0.5) / 0.3);
+            ctx.globalAlpha = flavorAlpha * fadeIn;
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(DEATH_FLAVOR_TEXT[di.cause][di.flavorIndex], w / 2, h / 2 + 50);
+        }
+
+        // -10s penalty indicator
+        if (di.timer > 0.3) {
+            const penAlpha = Math.min(1, (di.timer - 0.3) / 0.2);
+            ctx.globalAlpha = penAlpha * fadeIn;
+            ctx.fillStyle = '#ff4444';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('-10s', w / 2, h / 2 + 80);
+        }
+
+        // "SPACE to continue" prompt (after 0.8s, pulsing)
+        if (di.timer > 0.8) {
+            const promptAlpha = 0.5 + Math.sin(di.timer * 3) * 0.3;
+            ctx.globalAlpha = promptAlpha;
+            ctx.fillStyle = '#888888';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('SPACE to continue', w / 2, h / 2 + 115);
+        }
+
+        ctx.globalAlpha = 1;
+    }
+
+    private drawDeathIcon(ctx: CanvasRenderingContext2D, cause: DeathCause, trapType?: TrapType): void {
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+
+        switch (cause) {
+            case 'guard': {
+                // Crossed swords
+                const s = 22;
+                ctx.strokeStyle = '#ff6644';
+                // Sword 1 (top-left to bottom-right)
+                ctx.beginPath();
+                ctx.moveTo(-s, -s); ctx.lineTo(s, s);
+                ctx.moveTo(-s + 6, -s); ctx.lineTo(-s, -s + 6); // guard
+                ctx.stroke();
+                // Sword 2 (top-right to bottom-left)
+                ctx.beginPath();
+                ctx.moveTo(s, -s); ctx.lineTo(-s, s);
+                ctx.moveTo(s - 6, -s); ctx.lineTo(s, -s + 6); // guard
+                ctx.stroke();
+                break;
+            }
+            case 'trap': {
+                // Spikes or jaws based on trap type
+                ctx.strokeStyle = '#ffaa33';
+                ctx.fillStyle = '#ffaa33';
+                if (trapType === 'chomper') {
+                    // Jaw shape
+                    const jw = 24;
+                    // Upper jaw
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        const x = -jw + i * (jw * 2 / 4);
+                        ctx.moveTo(x, -4); ctx.lineTo(x + jw / 4, 8); ctx.lineTo(x + jw / 2, -4);
+                    }
+                    ctx.stroke();
+                    // Lower jaw
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        const x = -jw + i * (jw * 2 / 4);
+                        ctx.moveTo(x, 4); ctx.lineTo(x + jw / 4, -8); ctx.lineTo(x + jw / 2, 4);
+                    }
+                    ctx.stroke();
+                } else {
+                    // Spike triangles
+                    const sw = 28;
+                    for (let i = 0; i < 4; i++) {
+                        const x = -sw + i * (sw * 2 / 3);
+                        ctx.beginPath();
+                        ctx.moveTo(x, 10);
+                        ctx.lineTo(x + sw / 3, -14);
+                        ctx.lineTo(x + sw * 2 / 3, 10);
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
+                }
+                break;
+            }
+            case 'pit': {
+                // Downward chevrons
+                ctx.strokeStyle = '#6688ff';
+                for (let i = 0; i < 3; i++) {
+                    const y = -12 + i * 14;
+                    const alpha = 1 - i * 0.25;
+                    ctx.globalAlpha = alpha;
+                    ctx.beginPath();
+                    ctx.moveTo(-16, y);
+                    ctx.lineTo(0, y + 10);
+                    ctx.lineTo(16, y);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+                break;
+            }
+        }
+    }
+
+    private getDeathTitle(di: DeathInterstitial): string {
+        switch (di.cause) {
+            case 'guard': {
+                const guardName = di.guardType
+                    ? di.guardType.charAt(0).toUpperCase() + di.guardType.slice(1)
+                    : 'Guard';
+                return `SLAIN BY ${guardName.toUpperCase()}`;
+            }
+            case 'trap': {
+                if (di.trapType === 'chomper') return 'CRUSHED';
+                if (di.trapType === 'loose_floor') return 'GROUND COLLAPSED';
+                return 'IMPALED';
+            }
+            case 'pit':
+                return 'FELL INTO THE ABYSS';
+            default:
+                return 'FALLEN';
         }
     }
 
@@ -1277,8 +1928,8 @@ export class PlatformGame extends BaseGame {
             this.achievementToast.timer -= dt;
         }
 
-        if (this.gameState === 'victory' && this.enteringName) {
-            // Handle name input
+        if (this.enteringName) {
+            // Handle name input (victory or game_over)
             if (input?.isUpPressed?.() && !this.nameInputUpWasPressed) {
                 this.nameInputChars[this.nameInputIndex] = this.nextChar(this.nameInputChars[this.nameInputIndex], 1);
             }
@@ -1315,15 +1966,15 @@ export class PlatformGame extends BaseGame {
         }
 
         if (this.stateTimer > 2 && input?.isActionPressed?.()) {
-            if (this.gameState === 'victory' && this.isHighScore(this.score) && !this.enteringName && !this.hasEnteredName) {
-                // Enter name input mode
+            if (this.isHighScore(this.score) && !this.enteringName && !this.hasEnteredName) {
+                // Enter name input mode (both victory and game_over)
                 this.enteringName = true;
                 this.nameInputIndex = 0;
                 this.nameInputChars = ['A', 'A', 'A'];
                 this.hasEnteredName = true;
                 this.services?.audio?.playSound?.('coin');
             } else {
-                this.onRestart();
+                this.endGame();
             }
         }
     }
@@ -1341,28 +1992,46 @@ export class PlatformGame extends BaseGame {
         this.storySeen.add(event.id);
         this.gameState = 'story';
         this.stateTimer = 0;
+        this.storyCharIndex = 0;
+        this.storyFullyRevealed = false;
     }
 
     private updateStory(dt: number): void {
         this.stateTimer += dt;
+
+        // Advance typewriter
+        if (!this.storyFullyRevealed && this.activeStory) {
+            this.storyCharIndex += dt * 30;
+            if (this.storyCharIndex >= this.activeStory.text.length) {
+                this.storyFullyRevealed = true;
+            }
+        }
+
         const input = this.services?.input;
         if (this.stateTimer > 0.2 && input?.isActionPressed?.()) {
-            if (this.storyQueue.length > 0) {
-                const nextEvent = this.storyQueue.shift()!;
-                // Check for victory transition marker
-                if (nextEvent.id === '__victory_transition__') {
-                    this.activeStory = null;
-                    this.gameState = 'victory';
-                } else {
-                    this.beginStory(nextEvent);
-                }
+            if (!this.storyFullyRevealed) {
+                // First press: reveal all text
+                this.storyFullyRevealed = true;
+                this.storyCharIndex = this.activeStory?.text.length ?? 0;
             } else {
-                this.activeStory = null;
-                // Check if we should go to victory instead of playing
-                if (this.foundOwl) {
-                    this.gameState = 'victory';
+                // Second press: advance to next story event
+                if (this.storyQueue.length > 0) {
+                    const nextEvent = this.storyQueue.shift()!;
+                    // Check for victory transition marker
+                    if (nextEvent.id === '__victory_transition__') {
+                        this.activeStory = null;
+                        this.gameState = 'victory';
+                    } else {
+                        this.beginStory(nextEvent);
+                    }
                 } else {
-                    this.gameState = 'playing';
+                    this.activeStory = null;
+                    // Check if we should go to victory instead of playing
+                    if (this.foundOwl) {
+                        this.gameState = 'victory';
+                    } else {
+                        this.gameState = 'playing';
+                    }
                 }
             }
         }
@@ -2148,6 +2817,122 @@ export class PlatformGame extends BaseGame {
         }
     }
 
+    private renderGameOverScreen(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        // Background themed to last death cause
+        let bgColor: string;
+        let titleColor: string;
+        let title: string;
+        switch (this.lastDeathCause) {
+            case 'guard':
+                bgColor = 'rgba(50, 8, 8, 0.92)';
+                titleColor = '#ff6644';
+                title = 'FALLEN IN COMBAT';
+                break;
+            case 'trap':
+                bgColor = 'rgba(45, 25, 5, 0.92)';
+                titleColor = '#ffaa33';
+                title = 'CLAIMED BY THE CAVERN';
+                break;
+            case 'pit':
+                bgColor = 'rgba(8, 12, 45, 0.92)';
+                titleColor = '#6688ff';
+                title = 'LOST TO THE ABYSS';
+                break;
+            default:
+                bgColor = 'rgba(30, 10, 10, 0.92)';
+                titleColor = '#ff4444';
+                title = 'TIME EXPIRED';
+        }
+
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, w, h);
+        ctx.textAlign = 'center';
+
+        // Title
+        ctx.fillStyle = titleColor;
+        ctx.font = 'bold 36px Arial';
+        ctx.fillText(title, w / 2, 55);
+
+        // Score + level
+        ctx.fillStyle = '#ffdd44';
+        ctx.font = 'bold 22px Arial';
+        ctx.fillText(`Score: ${this.score}`, w / 2, 95);
+        ctx.fillStyle = '#cccccc';
+        ctx.font = '18px Arial';
+        ctx.fillText(`Reached Level ${this.currentLevel + 1}: ${this.level?.name ?? ''}`, w / 2, 120);
+
+        // Death statistics
+        const statsY = 155;
+        ctx.fillStyle = '#ff6666';
+        ctx.font = 'bold 18px Arial';
+        ctx.fillText('DEATH STATISTICS', w / 2, statsY);
+
+        ctx.font = '16px Arial';
+        const totalDeaths = this.deaths;
+        const statLines = [
+            { label: 'Total Deaths', value: `${totalDeaths}`, color: '#dddddd' },
+            { label: 'Slain by Guards', value: `${this.deathsByGuard}`, color: '#ff8866' },
+            { label: 'Killed by Traps', value: `${this.deathsByTrap}`, color: '#ffbb55' },
+            { label: 'Fell into Pits', value: `${this.deathsByPit}`, color: '#88aaff' },
+            { label: 'Time Lost to Deaths', value: `${this.timePenaltyTotal}s`, color: '#ff6666' },
+        ];
+
+        for (let i = 0; i < statLines.length; i++) {
+            const y = statsY + 25 + i * 22;
+            const stat = statLines[i];
+            ctx.fillStyle = '#888888';
+            ctx.textAlign = 'right';
+            ctx.fillText(stat.label + ':', w / 2 + 10, y);
+            ctx.fillStyle = stat.color;
+            ctx.textAlign = 'left';
+            ctx.fillText(stat.value, w / 2 + 20, y);
+        }
+
+        // Session stats
+        const sessionY = statsY + 25 + statLines.length * 22 + 15;
+        ctx.fillStyle = '#aaaaaa';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('SESSION', w / 2, sessionY);
+        ctx.font = '15px Arial';
+        ctx.fillStyle = '#888888';
+        ctx.textAlign = 'right';
+        ctx.fillText('Guards Defeated:', w / 2 + 10, sessionY + 22);
+        ctx.fillText('Gems Collected:', w / 2 + 10, sessionY + 42);
+        ctx.fillStyle = '#cccccc';
+        ctx.textAlign = 'left';
+        ctx.fillText(`${this.guardsDefeated}`, w / 2 + 20, sessionY + 22);
+        ctx.fillText(`${this.gemsCollected}`, w / 2 + 20, sessionY + 42);
+
+        // Name entry / high score / restart prompt
+        if (this.enteringName) {
+            this.renderNameInput(ctx, w, h);
+        } else if (this.stateTimer > 2 && this.isHighScore(this.score) && !this.hasEnteredName) {
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('NEW HIGH SCORE!', w / 2, h - 65);
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '16px Arial';
+            ctx.fillText('Press SPACE to enter your name', w / 2, h - 40);
+        } else if (this.stateTimer > 2) {
+            if (this.leaderboard.length > 0) {
+                // Compact leaderboard hint
+                ctx.fillStyle = '#888888';
+                ctx.font = '14px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(`Best: ${this.leaderboard[0].name} - ${this.leaderboard[0].score}`, w / 2, h - 60);
+            }
+            const promptAlpha = 0.5 + Math.sin(this.stateTimer * 3) * 0.3;
+            ctx.globalAlpha = promptAlpha;
+            ctx.fillStyle = '#ffdd44';
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Press SPACE to try again', w / 2, h - 35);
+            ctx.globalAlpha = 1;
+        }
+    }
+
     private renderNameInput(ctx: CanvasRenderingContext2D, w: number, h: number): void {
         ctx.fillStyle = '#ffd700';
         ctx.font = 'bold 24px Arial';
@@ -2216,6 +3001,7 @@ export class PlatformGame extends BaseGame {
         ctx.fillText('SCORE', w / 2 + 40, startY + 25);
 
         // Entries
+        const medalColors = ['#ffd700', '#c0c0c0', '#cd7f32'];
         ctx.font = '16px Arial';
         for (let i = 0; i < Math.min(this.leaderboard.length, 10); i++) {
             const entry = this.leaderboard[i];
@@ -2223,10 +3009,23 @@ export class PlatformGame extends BaseGame {
 
             // Highlight current score if it matches
             const isCurrentScore = entry.score === this.score && entry.date > Date.now() - 5000;
-            ctx.fillStyle = isCurrentScore ? '#ffd700' : '#ffffff';
+            if (isCurrentScore) {
+                ctx.fillStyle = 'rgba(255, 215, 0, 0.12)';
+                ctx.fillRect(w / 2 - 150, y - 16, 280, 22);
+            }
+
+            // Medal colors for top 3, gold highlight for current, white for rest
+            if (isCurrentScore) {
+                ctx.fillStyle = '#ffd700';
+            } else if (i < 3) {
+                ctx.fillStyle = medalColors[i];
+            } else {
+                ctx.fillStyle = '#ffffff';
+            }
 
             ctx.textAlign = 'left';
-            ctx.fillText(`${i + 1}.`, w / 2 - 140, y);
+            const rankLabel = i < 3 ? ['1st', '2nd', '3rd'][i] : `${i + 1}.`;
+            ctx.fillText(rankLabel, w / 2 - 140, y);
             ctx.fillText(entry.name, w / 2 - 80, y);
             ctx.textAlign = 'right';
             ctx.fillText(`${entry.score}`, w / 2 + 120, y);
@@ -2322,6 +3121,10 @@ export class PlatformGame extends BaseGame {
             this.renderMenu(ctx);
             return;
         }
+        if (this.gameState === 'level_select') {
+            this.renderLevelSelect(ctx);
+            return;
+        }
 
         if (!this.level) return;
 
@@ -2359,6 +3162,21 @@ export class PlatformGame extends BaseGame {
 
         // Render particles
         this.renderParticles(ctx, camX, camY);
+
+        // Render score popups (world-space, before lighting)
+        for (const popup of this.scorePopups) {
+            const alpha = Math.min(1, popup.timer * 2);
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = popup.color;
+            ctx.font = `bold 16px Arial`;
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+            ctx.lineWidth = 3;
+            ctx.strokeText(popup.text, popup.x - camX, popup.y - camY);
+            ctx.fillText(popup.text, popup.x - camX, popup.y - camY);
+            ctx.restore();
+        }
 
         // Lighting overlay
         this.renderLighting(ctx, camX, camY);
@@ -2662,7 +3480,7 @@ export class PlatformGame extends BaseGame {
     }
 
     protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-        if (this.gameState === 'menu') return;
+        if (this.gameState === 'menu' || this.gameState === 'level_select') return;
 
         // Screen flash overlay (rendered first, behind UI)
         this.renderScreenFlash(ctx);
@@ -2670,24 +3488,51 @@ export class PlatformGame extends BaseGame {
         // Phase flash overlay (boss phase changes - purple tint)
         this.renderPhaseFlash(ctx);
 
-        // Health
+        // Death interstitial overlay (skips HUD when active)
+        if (this.deathInterstitial?.active) {
+            this.renderDeathInterstitial(ctx);
+            // Still render state overlay (for story if triggered) and banner/toast
+            this.renderStateOverlay(ctx);
+            this.renderBanner(ctx);
+            this.renderAchievementToast(ctx);
+            return;
+        }
+
+        // Health (with pulse on damage)
+        ctx.save();
+        if (this.healthPulseTimer > 0) {
+            const pulseScale = 1 + Math.sin(this.healthPulseTimer / 0.3 * Math.PI) * 0.15;
+            ctx.translate(20, 20);
+            ctx.scale(pulseScale, pulseScale);
+            ctx.translate(-20, -20);
+        }
         for (let i = 0; i < this.player.maxHealth; i++) {
             const filled = i < this.player.health;
-            ctx.fillStyle = filled ? '#ff4444' : '#333333';
+            ctx.fillStyle = filled ? (this.healthPulseTimer > 0 ? '#ff6666' : '#ff4444') : '#333333';
             ctx.fillRect(20 + i * 24, 20, 20, 20);
             if (filled) {
                 ctx.fillStyle = '#ff8888';
                 ctx.fillRect(22 + i * 24, 22, 8, 8);
             }
         }
+        ctx.restore();
 
-        // Timer
+        // Timer (with flash when < 30s)
         const minutes = Math.floor(this.timeRemaining / 60);
         const seconds = Math.floor(this.timeRemaining % 60);
-        ctx.fillStyle = this.timeRemaining < 30 ? '#ff4444' : '#ffffff';
-        ctx.font = 'bold 28px Arial';
+        if (this.timeRemaining < 30) {
+            const pulse = Math.sin(this.gameTime * 6) * 0.3 + 0.7;
+            const fontSize = 28 + Math.sin(this.gameTime * 6) * 2;
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = '#ff4444';
+            ctx.font = `bold ${Math.round(fontSize)}px Arial`;
+        } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 28px Arial';
+        }
         ctx.textAlign = 'center';
         ctx.fillText(`${minutes}:${seconds.toString().padStart(2, '0')}`, ctx.canvas.width / 2, 35);
+        ctx.globalAlpha = 1;
 
         // Level name
         if (this.level) {
@@ -2702,10 +3547,19 @@ export class PlatformGame extends BaseGame {
         ctx.textAlign = 'right';
         ctx.fillText(`${this.score}`, ctx.canvas.width - 20, 35);
 
-        // Gems
+        // Gems (with bounce on pickup)
+        ctx.save();
+        if (this.gemBounceTimer > 0) {
+            const bounceScale = 1 + Math.sin((0.3 - this.gemBounceTimer) / 0.3 * Math.PI) * 0.25;
+            const gemX = ctx.canvas.width - 20;
+            ctx.translate(gemX, 55);
+            ctx.scale(bounceScale, bounceScale);
+            ctx.translate(-gemX, -55);
+        }
         ctx.fillStyle = '#4488ff';
         ctx.font = '16px Arial';
         ctx.fillText(`💎 ${this.gemsCollected}`, ctx.canvas.width - 20, 55);
+        ctx.restore();
 
         // Boss health bar
         this.renderBossHealthBar(ctx);
@@ -2756,12 +3610,7 @@ export class PlatformGame extends BaseGame {
                 break;
 
             case 'level_complete':
-                ctx.fillStyle = 'rgba(0, 50, 0, 0.8)';
-                ctx.fillRect(0, 0, w, h);
-                ctx.fillStyle = '#44ff44';
-                ctx.font = 'bold 36px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('LEVEL COMPLETE!', w / 2, h / 2);
+                this.renderScoreBreakdown(ctx, w, h);
                 break;
 
             case 'victory':
@@ -2769,20 +3618,130 @@ export class PlatformGame extends BaseGame {
                 break;
 
             case 'game_over':
-                ctx.fillStyle = 'rgba(50, 0, 0, 0.9)';
-                ctx.fillRect(0, 0, w, h);
-                ctx.fillStyle = '#ff4444';
-                ctx.font = 'bold 48px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('TIME EXPIRED', w / 2, h / 2 - 40);
-                ctx.fillStyle = '#ffffff';
-                ctx.font = '24px Arial';
-                ctx.fillText(`Score: ${this.score}`, w / 2, h / 2 + 10);
-                ctx.fillText(`Reached Level ${this.currentLevel + 1}`, w / 2, h / 2 + 40);
+                this.renderGameOverScreen(ctx, w, h);
                 break;
             case 'story':
                 this.renderStoryOverlay(ctx);
                 break;
+
+            case 'paused':
+                this.renderPauseMenu(ctx, w, h);
+                break;
+        }
+    }
+
+    private renderPauseMenu(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        ctx.fillRect(0, 0, w, h);
+
+        // Title
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 40px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('PAUSED', w / 2, h / 2 - 80);
+
+        // Menu options
+        const options = ['Resume', 'Restart Level', 'Quit to Menu'];
+        const menuY = h / 2 - 20;
+        for (let i = 0; i < options.length; i++) {
+            const y = menuY + i * 40;
+            const selected = i === this.pauseMenuIndex;
+            ctx.fillStyle = selected ? '#ffd700' : '#888888';
+            ctx.font = selected ? 'bold 24px Arial' : '22px Arial';
+            ctx.fillText(options[i], w / 2, y);
+
+            if (selected) {
+                // Arrow indicator
+                ctx.fillText('▸', w / 2 - 100, y);
+            }
+        }
+
+        // Controls hint
+        ctx.fillStyle = '#555555';
+        ctx.font = '14px Arial';
+        ctx.fillText('↑↓ Navigate  •  SPACE Select  •  ESC Resume', w / 2, h / 2 + 120);
+    }
+
+    private renderScoreBreakdown(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        ctx.fillStyle = 'rgba(0, 30, 0, 0.85)';
+        ctx.fillRect(0, 0, w, h);
+
+        if (!this.scoreBreakdown) {
+            // Fallback
+            ctx.fillStyle = '#44ff44';
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('LEVEL COMPLETE!', w / 2, h / 2);
+            return;
+        }
+
+        const bd = this.scoreBreakdown;
+        const startY = h / 2 - bd.lines.length * 16 - 30;
+
+        // Title
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 32px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${this.currentLevel + 1} Complete!`, w / 2, startY - 20);
+
+        // Score lines
+        const lineHeight = 30;
+        for (let i = 0; i < bd.lines.length; i++) {
+            const y = startY + 30 + i * lineHeight;
+            const line = bd.lines[i];
+
+            if (i > bd.lineIndex) continue; // Not yet revealed
+            if (i === bd.lineIndex && bd.phase === 'counting') {
+                // Currently counting - animated
+                ctx.fillStyle = '#ffffff';
+            } else {
+                ctx.fillStyle = '#cccccc';
+            }
+
+            ctx.font = '18px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText(line.label, w / 2 - 180, y);
+            ctx.textAlign = 'right';
+            ctx.fillStyle = '#44ff44';
+            ctx.font = 'bold 18px Arial';
+            ctx.fillText(`+${line.displayValue}`, w / 2 + 180, y);
+        }
+
+        // Separator + totals (only when counting is done)
+        const totalsY = startY + 30 + bd.lines.length * lineHeight + 10;
+        if (bd.phase === 'waiting') {
+            // Separator line
+            ctx.strokeStyle = '#ffd700';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(w / 2 - 180, totalsY - 5);
+            ctx.lineTo(w / 2 + 180, totalsY - 5);
+            ctx.stroke();
+
+            // Level total
+            ctx.fillStyle = '#ffd700';
+            ctx.font = 'bold 22px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Level Bonus', w / 2 - 180, totalsY + 15);
+            ctx.textAlign = 'right';
+            ctx.fillText(`+${bd.levelTotal}`, w / 2 + 180, totalsY + 15);
+
+            // Running total
+            ctx.fillStyle = '#ffffff';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'left';
+            ctx.fillText('Total Score', w / 2 - 180, totalsY + 48);
+            ctx.textAlign = 'right';
+            ctx.fillText(`${bd.runningTotal}`, w / 2 + 180, totalsY + 48);
+
+            // Continue prompt (flashing)
+            const flash = Math.sin(this.stateTimer * 4) * 0.3 + 0.7;
+            ctx.globalAlpha = flash;
+            ctx.fillStyle = '#aaaaaa';
+            ctx.font = '16px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Press SPACE to continue', w / 2, totalsY + 90);
+            ctx.globalAlpha = 1;
         }
     }
 
@@ -2815,7 +3774,8 @@ export class PlatformGame extends BaseGame {
 
         ctx.fillStyle = '#e5e7eb';
         ctx.font = '16px Arial';
-        const lines = this.wrapText(ctx, story.text, panelW - 40);
+        const visibleText = story.text.substring(0, Math.floor(this.storyCharIndex));
+        const lines = this.wrapText(ctx, visibleText, panelW - 40);
         lines.forEach((line) => {
             ctx.fillText(line, panelX + 20, textY);
             textY += 20;
@@ -2824,7 +3784,8 @@ export class PlatformGame extends BaseGame {
         ctx.fillStyle = '#a1a1aa';
         ctx.font = '14px Arial';
         ctx.textAlign = 'right';
-        ctx.fillText('Press SPACE to continue', panelX + panelW - 20, panelY + panelHeight - 16);
+        const prompt = this.storyFullyRevealed ? 'Press SPACE to continue' : 'Press SPACE to skip...';
+        ctx.fillText(prompt, panelX + panelW - 20, panelY + panelHeight - 16);
 
         ctx.restore();
     }
@@ -2848,6 +3809,88 @@ export class PlatformGame extends BaseGame {
             if (index < paragraphs.length - 1) lines.push('');
         });
         return lines;
+    }
+
+    private renderLevelSelect(ctx: CanvasRenderingContext2D): void {
+        const w = ctx.canvas.width;
+        const h = ctx.canvas.height;
+
+        // Background
+        const grad = ctx.createLinearGradient(0, 0, 0, h);
+        grad.addColorStop(0, '#1a1a2e');
+        grad.addColorStop(1, '#0a0a15');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+
+        // Title
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 36px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('LEVEL SELECT', w / 2, 60);
+
+        // Level cards
+        const cardH = 52;
+        const cardW = 400;
+        const startY = 100;
+        for (let i = 0; i < ALL_LEVELS.length; i++) {
+            const y = startY + i * (cardH + 10);
+            const selected = i === this.levelSelectIndex;
+            const unlocked = i < this.unlockedLevels;
+
+            // Card background
+            if (selected) {
+                ctx.fillStyle = unlocked ? 'rgba(255, 215, 0, 0.15)' : 'rgba(100, 100, 100, 0.15)';
+            } else {
+                ctx.fillStyle = 'rgba(30, 30, 50, 0.6)';
+            }
+            ctx.fillRect((w - cardW) / 2, y, cardW, cardH);
+
+            // Card border
+            ctx.strokeStyle = selected ? '#ffd700' : (unlocked ? '#444466' : '#333333');
+            ctx.lineWidth = selected ? 2 : 1;
+            ctx.strokeRect((w - cardW) / 2, y, cardW, cardH);
+
+            const textX = (w - cardW) / 2 + 16;
+
+            if (unlocked) {
+                // Level number and name
+                ctx.fillStyle = selected ? '#ffd700' : '#ffffff';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Level ${i + 1}: ${ALL_LEVELS[i].name}`, textX, y + 22);
+
+                // Best score and time
+                ctx.fillStyle = '#888888';
+                ctx.font = '14px Arial';
+                if (this.levelBestScores[i] > 0) {
+                    ctx.fillText(`Best: ${this.levelBestScores[i]}pts  |  ${Math.floor(this.levelBestTimes[i])}s remaining`, textX, y + 42);
+                } else {
+                    ctx.fillText('Not yet completed', textX, y + 42);
+                }
+            } else {
+                // Locked
+                ctx.fillStyle = '#555555';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'left';
+                ctx.fillText(`Level ${i + 1}: ???`, textX, y + 22);
+                ctx.font = '14px Arial';
+                ctx.fillText('🔒 Complete previous level to unlock', textX, y + 42);
+            }
+
+            // Selection arrow
+            if (selected) {
+                ctx.fillStyle = '#ffd700';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText('▸', (w - cardW) / 2 - 8, y + 30);
+            }
+        }
+
+        // Controls hint
+        ctx.fillStyle = '#555555';
+        ctx.font = '14px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('↑↓ Navigate  •  SPACE Play  •  ESC Back', w / 2, h - 30);
     }
 
     private renderMenu(ctx: CanvasRenderingContext2D): void {
@@ -2877,10 +3920,18 @@ export class PlatformGame extends BaseGame {
         ctx.font = '64px Arial';
         ctx.fillText('🦉', w / 2, 220);
 
-        // Instructions
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '20px Arial';
-        ctx.fillText('Press SPACE to begin', w / 2, 300);
+        // Menu options
+        const options = ['New Game', 'Level Select'];
+        for (let i = 0; i < options.length; i++) {
+            const y = 290 + i * 38;
+            const selected = i === this.menuIndex;
+            ctx.fillStyle = selected ? '#ffd700' : '#888888';
+            ctx.font = selected ? 'bold 22px Arial' : '20px Arial';
+            ctx.fillText(options[i], w / 2, y);
+            if (selected) {
+                ctx.fillText('▸', w / 2 - 90, y);
+            }
+        }
 
         // Controls
         ctx.fillStyle = '#666666';
@@ -2906,8 +3957,19 @@ export class PlatformGame extends BaseGame {
         this.gemsCollected = 0;
         this.guardsDefeated = 0;
         this.deaths = 0;
+        this.pendingDeathRecord = null;
+        this.lastDeathCause = 'time';
+        this.deathsByGuard = 0;
+        this.deathsByTrap = 0;
+        this.deathsByPit = 0;
+        this.timePenaltyTotal = 0;
+        this.deathInterstitial = null;
         this.foundOwl = false;
         this.particles = [];
+        this.scorePopups = [];
+        this.scoreBreakdown = null;
+        this.healthPulseTimer = 0;
+        this.gemBounceTimer = 0;
         this.hitStopTimer = 0;
         this.camera.reset();
         this.screenFlash = null;
@@ -2920,6 +3982,19 @@ export class PlatformGame extends BaseGame {
         this.timeScale = 1.0;
         this.slowmoTimer = 0;
         this.phaseFlashTimer = 0;
+        // Reset pause menu state
+        this.pauseMenuIndex = 0;
+        this.escKeyWasPressed = false;
+        this.pauseUpWasPressed = false;
+        this.pauseDownWasPressed = false;
+        // Reset menu/level select state
+        this.menuIndex = 0;
+        this.menuUpWasPressed = false;
+        this.menuDownWasPressed = false;
+        this.levelSelectIndex = 0;
+        this.levelSelectUpWasPressed = false;
+        this.levelSelectDownWasPressed = false;
+        this.menuActionWasPressed = false;
         // Reset name entry state
         this.enteringName = false;
         this.hasEnteredName = false;
