@@ -1,8 +1,9 @@
 # Crystal Caverns - Phase 3: Final Polish & Release
 
-> **Version**: 1.0 | **Status**: Pre-Release Polish
+> **Version**: 1.0 | **Status**: In Progress (Sprint P3-1 & P3-3 complete)
 > **Target**: Public Release Ready
 > **Quality Bar**: Premium Indie Game Polish
+> **Last Updated**: 2026-02-05
 >
 > *"Players should be amazed by the amount of polish. They'll come back for more and demand DLC."*
 
@@ -20,22 +21,22 @@ Phase 3 transforms Crystal Caverns from a feature-complete game into a **release
 - [ ] Local leaderboards working
 - [ ] All 5 levels playtested and balanced
 - [ ] Story fully integrated and impactful
-- [ ] Controls feel "tight" and responsive
+- [x] Controls feel "tight" and responsive *(coyote time, jump buffer, variable jump)*
 
 ---
 
 ## Sprint Overview
 
-| Sprint | Focus | Priority | Est. Effort |
-|--------|-------|----------|-------------|
-| P3-1 | Visual Atmosphere | HIGH | Large |
-| P3-2 | Audio & Music | HIGH | Medium |
-| P3-3 | Game Feel & Juice | HIGH | Medium |
-| P3-4 | Progression Systems | MEDIUM | Medium |
-| P3-5 | Level Design Polish | HIGH | Large |
-| P3-6 | UI/UX Refinement | MEDIUM | Medium |
-| P3-7 | Performance & QA | HIGH | Large |
-| P3-8 | Launch Prep | HIGH | Small |
+| Sprint | Focus | Priority | Est. Effort | Status |
+|--------|-------|----------|-------------|--------|
+| P3-1 | Visual Atmosphere | HIGH | Large | **1.1 DONE, 1.2 DONE**, 1.3-1.4 TODO |
+| P3-2 | Audio & Music | HIGH | Medium | NOT STARTED (saved for last) |
+| P3-3 | Game Feel & Juice | HIGH | Medium | **3.1 DONE, 3.3 DONE**, 3.2 PARTIAL |
+| P3-4 | Progression Systems | MEDIUM | Medium | NOT STARTED |
+| P3-5 | Level Design Polish | HIGH | Large | NOT STARTED |
+| P3-6 | UI/UX Refinement | MEDIUM | Medium | NOT STARTED |
+| P3-7 | Performance & QA | HIGH | Large | NOT STARTED |
+| P3-8 | Launch Prep | HIGH | Small | NOT STARTED |
 
 ---
 
@@ -73,11 +74,20 @@ const PARALLAX_LAYERS: ParallaxLayer[] = [
 | 5 | Heart Chamber | Massive central crystal, golden light rays, Shadow tendrils |
 
 ### Implementation Tasks
-- [ ] Create ParallaxBackground class
-- [ ] Design 4 layers per level (20 total layer designs)
-- [ ] Implement smooth scrolling with camera
-- [ ] Add subtle animation (floating dust, flickering lights)
-- [ ] Optimize rendering (only draw visible portions)
+- [x] Create ParallaxBackground class *(rendering/ParallaxBackground.ts - 1017 lines)*
+- [x] Design 4 layers per level (20 total layer designs)
+- [x] Implement smooth scrolling with camera
+- [x] Add subtle animation (floating dust, flickering lights)
+- [x] Optimize rendering (only draw visible portions, viewport culling)
+
+### Implementation Notes (Completed 2026-02-05)
+- **File**: `src/games/platform-adventure/rendering/ParallaxBackground.ts`
+- 5 level themes with 4 parallax layers each (scrollFactor: 0.05, 0.15, 0.3, 0.5)
+- 25+ procedurally drawn element types using hashNoise deterministic generation
+- Horizontal wrapping for seamless scrolling
+- Per-element animation (floating, swaying, pulsing)
+- Background gradient colors tuned for visibility: not too dark, cave-appropriate
+- Ambient overlay tint per level theme
 
 ---
 
@@ -135,22 +145,46 @@ class TorchLight {
 }
 ```
 
-### Light Sources
-| Source | Radius | Color | Flicker |
-|--------|--------|-------|---------|
-| Wall Torch | 120px | Warm orange | High |
-| Crystal (blue) | 80px | Cool blue | Low pulse |
-| Spectral Crystal | 100px | Purple | Pulsing |
-| Golden Owl | 200px | Golden | Steady glow |
-| Player (sword drawn) | 40px | Steel glint | On attack |
+### Light Sources (Actual Implementation)
+| Source | Radius | Color | Flicker | Purpose |
+|--------|--------|-------|---------|---------|
+| Wall Torch | 180px | Warm orange | High (15) | Mounted on walls, relights player torch |
+| Crystal | 80px | Cool blue | Low pulse (3) | Ambient cave glow |
+| Spectral Crystal | 100px | Purple | Pulsing (5) | Haunted/story atmosphere |
+| Golden Owl | 200px | Golden | Steady glow | Level 5 objective beacon |
+| Player Torch | 200px | Warm orange | Medium (8) | Always-on player light, dims over time |
+| Moonlight | 280px | Silver-blue | None (slow pulse) | Ambient ceiling shafts at key areas |
+
+### Player Torch Mechanic
+- Player always carries a torch (not tied to sword)
+- Brightness drains from 100% to 25% over 45 seconds
+- Walking near a wall torch relights to full brightness
+- Radius: 200px (full) → 70px (dim)
+- Each level starts with a fresh torch
+
+### Moonlight System
+- Auto-placed near gates, switches, and door/exit
+- Spaced at regular intervals along levels (400-1000px, wider in deeper levels)
+- Positioned at 35% level height (simulates ceiling cracks)
+- Large radius (280px), soft silver-blue glow, no flicker
 
 ### Implementation Tasks
-- [ ] Create DynamicLighting class
-- [ ] Implement torch flicker algorithm
-- [ ] Add light sources for all relevant tiles
-- [ ] Create ambient darkness per level (darker = later levels)
-- [ ] Player torch/sword glow effect
-- [ ] Performance: light culling for off-screen sources
+- [x] Create DynamicLighting class *(rendering/DynamicLighting.ts - ~500 lines)*
+- [x] Implement torch flicker algorithm (multi-sine + random)
+- [x] Add light sources for all relevant tiles (torch, crystal, spectral_crystal, owl)
+- [x] Create ambient darkness per level (L1: 0.05, L2: 0.12, L3: 0.22, L4: 0.35, L5: 0.45)
+- [x] Player torch mechanic (dims over time, relight near wall torches)
+- [x] Moonlight system (auto-placed ambient lighting at key areas)
+- [x] Performance: offscreen canvas rendering, light culling for off-screen sources
+- [x] Colored light glows via 'screen' composite mode
+
+### Implementation Notes (Completed 2026-02-05)
+- **File**: `src/games/platform-adventure/rendering/DynamicLighting.ts`
+- Uses offscreen canvas + destination-out compositing for light cutouts
+- Colored glow layer on top using 'screen' blend mode
+- Radial gradient with generous center brightness (40% radius at 90% cutout)
+- Ambient darkness overlay is level-specific, progressively darker
+- placeMoonlights() in PlatformGame.ts auto-distributes ambient light
 
 ---
 
@@ -349,12 +383,19 @@ class Camera {
 | Landing (high fall) | 4px | 0.15s | High |
 
 ### Implementation Tasks
-- [ ] Implement smooth camera follow
-- [ ] Add look-ahead based on movement direction
-- [ ] Vertical camera offset for jumping
-- [ ] Screen shake preset system
-- [ ] Screen flash effects (hurt, phase change)
-- [ ] Chromatic aberration on big hits (optional)
+- [x] Implement smooth camera follow *(lerp speed 8)*
+- [x] Add look-ahead based on movement direction *(50px ahead)*
+- [x] Vertical camera offset for jumping *(±40px)*
+- [x] Screen shake preset system *(9 presets: PLAYER_HURT, GUARD_DEATH, CAPTAIN_DEATH, SHADOW_DEATH, LANDING_IMPACT, BLOCK_CLASH, HIT_ENEMY, TRAP_HIT, PHASE_CHANGE)*
+- [x] Screen flash effects *(triggerScreenFlash with color, alpha, duration)*
+- [ ] Chromatic aberration on big hits (optional - not implemented)
+
+### Implementation Notes (Completed 2026-02-05)
+- **File**: `src/games/platform-adventure/rendering/Camera.ts` (235 lines)
+- Sine wave oscillation with ease-out decay for screen shake
+- Frequency parameter controls shake feel (60Hz = jittery, 15Hz = low rumble)
+- Level bounds clamping prevents camera going outside level
+- snapTo() used on level start for instant positioning
 
 ---
 
@@ -431,11 +472,19 @@ update(dt: number): void {
 ```
 
 ### Implementation Tasks
-- [ ] Implement coyote time (100ms)
-- [ ] Implement jump buffering (100ms)
-- [ ] Variable jump height (release early = lower jump)
+- [x] Implement coyote time (100ms) *(timeSinceGrounded tracking)*
+- [x] Implement jump buffering (100ms) *(bufferJump() + tryBufferedJump() after collision)*
+- [x] Variable jump height (release early = lower jump) *(JUMP_CUT_MULTIPLIER = 0.65)*
 - [ ] Landing recovery frames
 - [ ] Edge correction (push player onto ledge if close)
+
+### Implementation Notes (Completed 2026-02-05)
+- **File**: `src/games/platform-adventure/entities/Player.ts`
+- **CRITICAL**: Jump buffer check must run AFTER collision resolution in PlatformGame.ts
+  - Running it in Player.update() caused wall-sticking and block-phasing bugs
+  - PlatformGame calls `player.tryBufferedJump()` after `handlePlayerCollision()`
+- Variable jump only cuts velocity when `state === 'jump'` (guard prevents cutting during fall)
+- Edge detection pattern: `jumpKeyWasPressed` tracks previous frame, bufferJump() on press edge, onJumpRelease() on release edge
 
 ---
 
@@ -952,8 +1001,8 @@ Each level needs **memorable visual moments**:
 ## Should Have (High Value)
 1. Achievement system
 2. Leaderboards
-3. Parallax backgrounds
-4. Dynamic lighting
+3. ~~Parallax backgrounds~~ **DONE**
+4. ~~Dynamic lighting~~ **DONE** (with player torch + moonlight)
 5. Score breakdown screen
 6. Menu system polish
 

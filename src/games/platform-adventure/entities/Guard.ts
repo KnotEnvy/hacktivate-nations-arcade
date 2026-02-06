@@ -106,6 +106,9 @@ export class Guard {
     private previousShadowPhase: 1 | 2 | 3 | 0 = 0;
     private chargeDirection: number = 1;
 
+    // Hit feedback (P3-3.2)
+    public flashTimer: number = 0;
+
     // Callbacks for boss events
     onPhaseChange?: (newPhase: number, guard: Guard) => void;
     onDeath?: (guard: Guard) => void;
@@ -144,6 +147,7 @@ export class Guard {
         this.animTimer += dt;
         if (this.combatCooldown > 0) this.combatCooldown -= dt;
         if (this.damageCooldown > 0) this.damageCooldown -= dt;
+        if (this.flashTimer > 0) this.flashTimer -= dt;
         this.stateTimer += dt;
 
         const distToPlayer = Math.abs(sense.playerX - this.x);
@@ -599,6 +603,7 @@ export class Guard {
 
         this.health -= amount;
         this.damageCooldown = 0.25;
+        this.flashTimer = 0.12; // White flash on hit (P3-3.2)
 
         if (this.health <= 0) {
             this.setState('dying');
@@ -625,17 +630,33 @@ export class Guard {
 
         this.drawBody(ctx);
 
+        // White flash overlay on hit (P3-3.2)
+        if (this.flashTimer > 0) {
+            const flashAlpha = Math.min(0.7, this.flashTimer / 0.12);
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+            ctx.fillRect(-2, -2, this.width + 4, this.height + 4);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
         ctx.restore();
     }
 
     private drawBody(ctx: CanvasRenderingContext2D): void {
         const isHurt = this.state === 'stunned' || this.state === 'dying';
         const isDying = this.state === 'dying';
+        const isIdle = this.state === 'idle' || this.state === 'combat_ready';
         const isMoving = this.state === 'patrol' || this.state === 'alert' || this.state === 'suspicious' ||
             this.state === 'retreating' || (this.state === 'combat_ready' && this.advanceTimer > 0);
         const colors = GUARD_COLORS[this.type];
         const isCaptain = this.type === 'captain';
         const isShadow = this.type === 'shadow';
+
+        // Breathing idle bob (P3-1.4)
+        const idleBob = isIdle && !isMoving ? Math.sin(this.animTimer * 2.5) * 1.5 : 0;
+
+        // Dramatic death sequence (P3-1.4)
+        const deathFrame = isDying ? Math.min(3, Math.floor(this.stateTimer / 0.25)) : -1;
 
         // Shadow glow effect (drawn first, behind everything)
         if (isShadow) {
@@ -647,88 +668,124 @@ export class Guard {
             ctx.restore();
         }
 
-        // Legs
+        // ===== LEGS =====
         ctx.fillStyle = '#2a2a2a';
         if (isMoving) {
             const legOffset = Math.sin(this.animFrame * Math.PI / 2) * 4;
             ctx.fillRect(4, 32 + legOffset, 6, 14 - legOffset);
             ctx.fillRect(14, 32 - legOffset, 6, 14 + legOffset);
         } else if (isDying) {
-            ctx.fillRect(0, 44, 24, 4);
+            if (deathFrame <= 0) {
+                // Stagger
+                ctx.fillRect(4, 34, 6, 12);
+                ctx.fillRect(14, 36, 6, 10);
+            } else if (deathFrame === 1) {
+                // Knees
+                ctx.fillRect(6, 38, 5, 8);
+                ctx.fillRect(13, 39, 5, 7);
+            } else {
+                // Collapsed
+                ctx.fillRect(0, 44, 24, 4);
+            }
         } else {
-            ctx.fillRect(4, 34, 6, 14);
-            ctx.fillRect(14, 34, 6, 14);
+            ctx.fillRect(4, 34 + idleBob, 6, 14);
+            ctx.fillRect(14, 34 + idleBob, 6, 14);
         }
 
-        // Torso (type-specific armor color)
+        // ===== TORSO =====
         ctx.fillStyle = isHurt ? colors.armorHurt : colors.armor;
         if (isDying) {
-            ctx.fillRect(0, 36, 24, 8);
+            if (deathFrame <= 0) {
+                ctx.fillRect(4, 18, 16, 16);
+            } else if (deathFrame === 1) {
+                ctx.fillRect(4, 24, 16, 14);
+            } else {
+                ctx.fillRect(0, 36, 24, 8);
+            }
         } else {
-            ctx.fillRect(4, 14, 16, 20);
+            // Breathing torso width (P3-1.4)
+            const breatheW = isIdle ? Math.sin(this.animTimer * 2.5) * 0.4 : 0;
+            const tw = Math.floor(16 + breatheW);
+            ctx.fillRect(4 + Math.floor((16 - tw) / 2), 14 + idleBob, tw, 20);
         }
 
-        // Captain gold shoulder pauldrons
+        // ===== CAPTAIN PAULDRONS =====
         if (isCaptain && !isDying && colors.accent) {
             ctx.fillStyle = colors.accent;
-            ctx.fillRect(0, 12, 6, 8);  // Left pauldron
-            ctx.fillRect(18, 12, 6, 8); // Right pauldron
-            // Pauldron highlights
+            ctx.fillRect(0, 12 + idleBob, 6, 8);
+            ctx.fillRect(18, 12 + idleBob, 6, 8);
             ctx.fillStyle = '#ffe066';
-            ctx.fillRect(1, 13, 2, 3);
-            ctx.fillRect(19, 13, 2, 3);
+            ctx.fillRect(1, 13 + idleBob, 2, 3);
+            ctx.fillRect(19, 13 + idleBob, 2, 3);
         }
 
-        // Arms
+        // ===== ARMS =====
         ctx.fillStyle = colors.armor;
         if (this.state === 'attacking') {
+            // Attack telegraph glow (P3-1.4)
+            if (this.stateTimer < this.attackDuration * 0.3) {
+                ctx.save();
+                ctx.globalAlpha = 0.2;
+                ctx.fillStyle = isShadow ? '#8800ff' : '#ff6644';
+                ctx.fillRect(16, 10, 14, 10);
+                ctx.restore();
+                ctx.fillStyle = colors.armor;
+            }
             ctx.fillRect(20, 16, 16, 4);
         } else if (this.state === 'blocking') {
             ctx.fillRect(18, 6, 6, 16);
         } else if (isDying) {
-            ctx.fillRect(0, 32, 4, 4);
-            ctx.fillRect(20, 32, 4, 4);
+            if (deathFrame >= 2) {
+                ctx.fillRect(0, 32, 4, 4);
+                ctx.fillRect(20, 32, 4, 4);
+            } else {
+                ctx.fillRect(0, 18, 4, 10);
+                ctx.fillRect(20, 20, 4, 8);
+            }
         } else {
-            ctx.fillRect(0, 16, 4, 12);
-            ctx.fillRect(20, 16, 4, 12);
+            ctx.fillRect(0, 16 + idleBob, 4, 12);
+            ctx.fillRect(20, 16 + idleBob, 4, 12);
         }
 
-        // Helmet
+        // ===== HELMET =====
         ctx.fillStyle = colors.helmet;
         if (isDying) {
-            ctx.fillRect(0, 28, 10, 8);
+            if (deathFrame >= 2) {
+                ctx.fillRect(0, 28, 10, 8);
+            } else {
+                ctx.fillRect(4, deathFrame === 0 ? 4 : 10, 16, 14);
+                ctx.fillStyle = colors.visor;
+                ctx.fillRect(12, deathFrame === 0 ? 8 : 14, 6, 6);
+            }
         } else {
-            ctx.fillRect(4, 0, 16, 14);
+            ctx.fillRect(4, 0 + idleBob, 16, 14);
             ctx.fillStyle = colors.visor;
-            ctx.fillRect(12, 4, 6, 6); // Visor
+            ctx.fillRect(12, 4 + idleBob, 6, 6);
 
             // Captain red plume
             if (isCaptain) {
                 ctx.fillStyle = '#cc2222';
-                ctx.fillRect(8, -8, 4, 10);  // Plume base
-                ctx.fillRect(6, -12, 8, 6);  // Plume top
+                ctx.fillRect(8, -8 + idleBob, 4, 10);
+                ctx.fillRect(6, -12 + idleBob, 8, 6);
                 ctx.fillStyle = '#ff4444';
-                ctx.fillRect(7, -10, 2, 4);  // Plume highlight
+                ctx.fillRect(7, -10 + idleBob, 2, 4);
             }
 
-            // Captain gold crest on helmet
+            // Captain gold crest
             if (isCaptain && colors.accent) {
                 ctx.fillStyle = colors.accent;
-                ctx.fillRect(6, 0, 12, 3);  // Gold band at top
+                ctx.fillRect(6, 0 + idleBob, 12, 3);
             }
         }
 
-        // Sword (type-specific color, captain has larger sword when attacking)
+        // ===== SWORD =====
         ctx.fillStyle = colors.sword;
         if (this.state === 'attacking') {
             if (isCaptain) {
-                // Captain's larger sword
                 ctx.fillRect(36, 12, 26, 5);
-                // Gold hilt
                 ctx.fillStyle = colors.accent ?? '#ffcc00';
                 ctx.fillRect(32, 10, 6, 9);
             } else if (isShadow) {
-                // Shadow's glowing blade
                 ctx.save();
                 ctx.shadowColor = colors.accent ?? '#8800ff';
                 ctx.shadowBlur = 8;
@@ -738,15 +795,16 @@ export class Guard {
                 ctx.fillRect(36, 14, 20, 3);
             }
         } else if (this.state === 'blocking') {
-            // Shield up
             ctx.fillRect(22, 4, 4, 18);
         } else if (!isDying) {
             if (isCaptain) {
-                // Captain's sheathed sword is larger
-                ctx.fillRect(22, 18, 18, 3);
+                ctx.fillRect(22, 18 + idleBob, 18, 3);
             } else {
-                ctx.fillRect(22, 20, 14, 2);
+                ctx.fillRect(22, 20 + idleBob, 14, 2);
             }
+        } else if (isDying && deathFrame >= 2) {
+            // Dropped sword on ground
+            ctx.fillRect(12, 42, 14, 2);
         }
     }
 

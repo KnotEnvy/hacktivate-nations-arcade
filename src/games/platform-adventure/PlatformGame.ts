@@ -179,6 +179,12 @@ export class PlatformGame extends BaseGame {
     private particles: Particle[] = [];
     private footstepTimer: number = 0;
 
+    // Particle enhancement timers (P3-1.3)
+    private ambientDustTimer: number = 0;
+    private footstepDustTimer: number = 0;
+    private crystalPositions: Array<{ x: number; y: number }> = [];
+    private previousPlayerVy: number = 0;
+
     // Screen flash effect
     private screenFlash: { color: string; alpha: number; timer: number; duration: number } | null = null;
 
@@ -281,11 +287,15 @@ export class PlatformGame extends BaseGame {
         this.gateIndexByTile = new Map();
         this.switchIndexByTile = new Map();
         this.torches = [];
+        this.crystalPositions = [];
         const guardSpawns: Array<{ x: number; y: number }> = [];
         let owlPosition: { x: number; y: number } | null = null;
         let gemCount = 0;
         this.particles = [];
         this.hitStopTimer = 0;
+        this.ambientDustTimer = 0;
+        this.footstepDustTimer = 0;
+        this.previousPlayerVy = 0;
         this.camera.reset();
         this.screenFlash = null;
         this.footstepTimer = 0;
@@ -347,6 +357,7 @@ export class PlatformGame extends BaseGame {
                         break;
                     case 'spectral_crystal':
                         this.lighting.addSpectralCrystal(px + TILE_SIZE / 2, py + TILE_SIZE / 2);
+                        this.crystalPositions.push({ x: px, y: py });
                         break;
                     case 'spikes':
                         this.traps.push(new Trap(px, py, 'spikes'));
@@ -587,6 +598,7 @@ export class PlatformGame extends BaseGame {
         }
 
         const wasGrounded = this.player.isGrounded;
+        this.previousPlayerVy = this.player.vy;
 
         // Handle jump with buffering and variable height
         if (up && !this.jumpKeyWasPressed) {
@@ -615,6 +627,13 @@ export class PlatformGame extends BaseGame {
 
         if (!wasGrounded && this.player.isGrounded) {
             this.services?.audio?.playSound?.('land');
+            // Landing impact particles for high falls
+            if (this.previousPlayerVy > 280) {
+                this.spawnLandingImpact(this.player.centerX, this.player.y + this.player.height);
+                if (this.previousPlayerVy > 400) {
+                    this.triggerScreenShakePreset('LANDING_IMPACT');
+                }
+            }
         }
 
         // Check for buffered jump AFTER collision resolution
@@ -667,6 +686,13 @@ export class PlatformGame extends BaseGame {
             return;
         }
         this.checkDoor();
+
+        // Update ambient particle effects (P3-1.3)
+        const camOffset = this.camera.getOffset();
+        this.updateAmbientDust(safeDt, camOffset.x, camOffset.y);
+        this.updateTorchSparks(safeDt, camOffset.x, camOffset.y);
+        this.updateCrystalShimmer(safeDt, camOffset.x, camOffset.y);
+        this.updateFootstepDust(safeDt);
 
         // Update particles
         this.updateParticles(safeDt * this.timeScale);
@@ -772,19 +798,28 @@ export class PlatformGame extends BaseGame {
 
                 if (ph.x < guard.right && ph.x + ph.w > guard.left &&
                     ph.y < guard.bottom && ph.y + ph.h > guard.top) {
+                    const hitDir = this.player.facingRight ? 1 : -1;
+                    const isBoss = guard.type === 'captain' || guard.type === 'shadow';
+
                     if (guard.isBlocking) {
                         // Blocked!
                         this.services?.audio?.playSound?.('sword_clash');
-                        this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5);
-                        this.triggerHitStop(0.02);
-                        this.triggerScreenShake(3, 0.08);
+                        this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
+                        this.triggerHitStop(isBoss ? 0.04 : 0.02);
+                        this.triggerScreenShakePreset('BLOCK_CLASH');
                     } else {
                         guard.takeDamage();
                         this.services?.audio?.playSound?.('hit');
                         this.services?.audio?.playSound?.('hurt_grunt');
                         this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
-                        this.triggerHitStop(0.03);
-                        this.triggerScreenShake(6, 0.12);
+                        // Hit stop scales with damage and boss status (P3-3.2)
+                        this.triggerHitStop(isBoss ? 0.06 : 0.04);
+                        this.triggerScreenShakePreset(isBoss ? 'HIT_ENEMY' : 'GUARD_DEATH');
+                        // Boss extra feedback: screen flash + extra particles
+                        if (isBoss) {
+                            this.triggerScreenFlash('#ffffff', 0.15, 0.1);
+                            this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
+                        }
                         if (!guard.isAlive) {
                             this.guardsDefeated++;
                             this.score += SCORING.GUARD_KILL;
@@ -803,23 +838,28 @@ export class PlatformGame extends BaseGame {
             const gh = guard.attackHitbox;
             if (gh.x < this.player.right && gh.x + gh.w > this.player.left &&
                 gh.y < this.player.bottom && gh.y + gh.h > this.player.top) {
+                const knockDir = guard.facingRight ? 1 : -1;
+
                 if (this.player.isBlocking && !guard.attackIgnoresBlock) {
                     this.services?.audio?.playSound?.('sword_clash');
                     guard.onAttackBlocked();
-                    this.spawnSwordClash(this.player.centerX, this.player.centerY);
-                    this.triggerHitStop(0.02);
-                    this.triggerScreenShake(3, 0.08);
+                    this.spawnSwordClash(this.player.centerX, this.player.centerY, -knockDir);
+                    this.triggerHitStop(0.03);
+                    this.triggerScreenShakePreset('BLOCK_CLASH');
                     // Track perfect block and award points
                     this.levelPerfectBlocks++;
                     this.totalBlocksEver++;
                     this.score += SCORING.PERFECT_BLOCK;
                 } else {
+                    // Set knockback direction on player for hurt stagger (P3-3.2)
+                    this.player.hurtDirection = knockDir;
                     const died = this.player.takeDamage(guard.attackDamage, guard.attackIgnoresBlock);
                     this.services?.audio?.playSound?.('hit');
                     this.services?.audio?.playSound?.(died ? 'death_cry' : 'hurt_grunt');
                     this.spawnBloodBurst(this.player.centerX, this.player.centerY);
-                    this.triggerHitStop(0.03 * guard.attackDamage);
-                    this.triggerScreenShake(7, 0.14);
+                    // Hit stop scales with damage (P3-3.2)
+                    this.triggerHitStop(0.04 + guard.attackDamage * 0.02);
+                    this.triggerScreenShakePreset('PLAYER_HURT');
                     // Track damage taken
                     this.levelDamagesTaken++;
                 }
@@ -838,8 +878,9 @@ export class PlatformGame extends BaseGame {
                 this.services?.audio?.playSound?.('hit');
                 this.services?.audio?.playSound?.(died ? 'death_cry' : 'hurt_grunt');
                 this.spawnBloodBurst(this.player.centerX, this.player.centerY);
-                this.triggerHitStop(0.04);
-                this.triggerScreenShake(10, 0.18);
+                this.triggerHitStop(0.06);
+                this.triggerScreenShakePreset('TRAP_HIT');
+                this.triggerScreenFlash('#ff2200', 0.12, 0.15);
             }
         }
     }
@@ -884,6 +925,9 @@ export class PlatformGame extends BaseGame {
                         this.checkVictoryAchievements();
                         this.stateTimer = 0;
                         this.services?.audio?.playSound?.('success');
+                        // Golden radiance explosion (P3-1.3)
+                        this.spawnOwlRadiance(c.x, c.y);
+                        this.triggerScreenFlash('#ffd700', 0.6, 0.4);
                         // Play victory music if not already playing
                         if (this.musicState !== 'victory') {
                             this.services?.audio?.playMusic?.('epic_heroic', 0.5);
@@ -1542,6 +1586,10 @@ export class PlatformGame extends BaseGame {
             p.life -= dt;
         }
         this.particles = this.particles.filter((p) => p.life > 0);
+        // Performance cap: remove oldest particles if too many
+        if (this.particles.length > 500) {
+            this.particles = this.particles.slice(this.particles.length - 500);
+        }
     }
 
     private renderParticles(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
@@ -1556,16 +1604,215 @@ export class PlatformGame extends BaseGame {
         ctx.restore();
     }
 
-    private spawnSwordClash(x: number, y: number): void {
-        this.spawnParticles(x, y, 12, ['#ffffff', '#ffdd00'], 200, 0.3, [2, 6]);
+    private spawnSwordClash(x: number, y: number, direction: number = 0): void {
+        const colors = ['#ffffff', '#ffdd00', '#ffee88'];
+        const count = 12;
+        for (let i = 0; i < count; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            // If direction specified, bias particles in that direction
+            if (direction !== 0) {
+                const baseAngle = direction > 0 ? 0 : Math.PI;
+                angle = baseAngle + (Math.random() - 0.5) * Math.PI * 0.8;
+            }
+            const speed = 150 + Math.random() * 100;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 40,
+                life: 0.3,
+                maxLife: 0.3,
+                size: 2 + Math.random() * 4,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                gravity: 300,
+            });
+        }
     }
 
     private spawnBloodBurst(x: number, y: number): void {
         this.spawnParticles(x, y, 8, ['#ff0000', '#aa0000'], 150, 0.5, [3, 8], 500);
     }
 
-    private spawnDeathBurst(x: number, y: number): void {
-        this.spawnParticles(x, y, 30, ['#880000', '#440000', '#220000'], 300, 1.0, [5, 15], 300);
+    private spawnDeathBurst(x: number, y: number, isBoss: boolean = false): void {
+        this.spawnParticles(x, y, isBoss ? 50 : 30, ['#880000', '#440000', '#220000'], isBoss ? 350 : 300, isBoss ? 1.5 : 1.0, [5, isBoss ? 18 : 15], 300);
+        // Boss dissolve: slow upward float of ethereal particles
+        if (isBoss) {
+            for (let i = 0; i < 35; i++) {
+                this.particles.push({
+                    x: x + (Math.random() - 0.5) * 40,
+                    y: y + (Math.random() - 0.5) * 40,
+                    vx: (Math.random() - 0.5) * 25,
+                    vy: -60 - Math.random() * 40,
+                    life: 2.5,
+                    maxLife: 2.5,
+                    size: 4 + Math.random() * 8,
+                    color: Math.random() < 0.5 ? 'rgba(136, 0, 170, 0.7)' : 'rgba(68, 0, 255, 0.5)',
+                    gravity: -20,
+                });
+            }
+        }
+    }
+
+    // ===== PARTICLE ENHANCEMENT SYSTEM (P3-1.3) =====
+
+    private updateAmbientDust(dt: number, camX: number, camY: number): void {
+        this.ambientDustTimer -= dt;
+        if (this.ambientDustTimer <= 0) {
+            this.ambientDustTimer = 0.4;
+            const canvasW = GAME_CONFIG.CANVAS_WIDTH;
+            const canvasH = GAME_CONFIG.CANVAS_HEIGHT;
+            for (let i = 0; i < 2; i++) {
+                this.particles.push({
+                    x: camX + Math.random() * canvasW,
+                    y: camY + Math.random() * canvasH,
+                    vx: (Math.random() - 0.5) * 12,
+                    vy: -8 - Math.random() * 6,
+                    life: 4.0 + Math.random() * 2.0,
+                    maxLife: 6.0,
+                    size: 1 + Math.random() * 1.5,
+                    color: `rgba(180, 160, 140, ${0.15 + Math.random() * 0.15})`,
+                    gravity: -3,
+                });
+            }
+        }
+    }
+
+    private updateTorchSparks(dt: number, camX: number, camY: number): void {
+        if (this.torches.length === 0) return;
+        const canvasW = GAME_CONFIG.CANVAS_WIDTH;
+        const canvasH = GAME_CONFIG.CANVAS_HEIGHT;
+        // Spawn sparks from a random visible torch
+        if (Math.random() < 0.12) {
+            const torch = this.torches[Math.floor(Math.random() * this.torches.length)];
+            // Cull off-screen torches
+            if (torch.x < camX - 100 || torch.x > camX + canvasW + 100 ||
+                torch.y < camY - 100 || torch.y > camY + canvasH + 100) return;
+            const count = 2 + Math.floor(Math.random() * 2);
+            for (let i = 0; i < count; i++) {
+                this.particles.push({
+                    x: torch.x + (Math.random() - 0.5) * 8,
+                    y: torch.y,
+                    vx: (Math.random() - 0.5) * 25,
+                    vy: -35 - Math.random() * 25,
+                    life: 0.4 + Math.random() * 0.3,
+                    maxLife: 0.7,
+                    size: 1 + Math.random(),
+                    color: Math.random() < 0.6 ? '#ff8833' : '#ffcc44',
+                    gravity: 60,
+                });
+            }
+        }
+    }
+
+    private updateCrystalShimmer(dt: number, camX: number, camY: number): void {
+        if (this.crystalPositions.length === 0) return;
+        const canvasW = GAME_CONFIG.CANVAS_WIDTH;
+        const canvasH = GAME_CONFIG.CANVAS_HEIGHT;
+        if (Math.random() < 0.1) {
+            const crystal = this.crystalPositions[Math.floor(Math.random() * this.crystalPositions.length)];
+            const cx = crystal.x + TILE_SIZE / 2;
+            const cy = crystal.y + TILE_SIZE / 2;
+            // Cull off-screen
+            if (cx < camX - 100 || cx > camX + canvasW + 100 ||
+                cy < camY - 100 || cy > camY + canvasH + 100) return;
+            const count = 2 + Math.floor(Math.random() * 3);
+            const colors = ['#8844ff', '#aa66ff', '#cc88ff', '#6622cc'];
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 10 + Math.random() * 20;
+                this.particles.push({
+                    x: cx + Math.cos(angle) * dist,
+                    y: cy + Math.sin(angle) * dist,
+                    vx: Math.cos(angle) * 8 + (Math.random() - 0.5) * 5,
+                    vy: -12 - Math.random() * 8,
+                    life: 0.6 + Math.random() * 0.4,
+                    maxLife: 1.0,
+                    size: 1.5 + Math.random() * 2,
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    gravity: -10,
+                });
+            }
+        }
+    }
+
+    private updateFootstepDust(dt: number): void {
+        if (!this.player.isGrounded || this.player.state !== 'run') {
+            this.footstepDustTimer = 0;
+            return;
+        }
+        this.footstepDustTimer -= dt;
+        if (this.footstepDustTimer <= 0) {
+            this.footstepDustTimer = 0.18;
+            const behindX = this.player.facingRight
+                ? this.player.x
+                : this.player.x + this.player.width;
+            const count = 2 + Math.floor(Math.random() * 2);
+            for (let i = 0; i < count; i++) {
+                this.particles.push({
+                    x: behindX + (Math.random() - 0.5) * 10,
+                    y: this.player.y + this.player.height - 2,
+                    vx: (this.player.facingRight ? -1 : 1) * (15 + Math.random() * 20),
+                    vy: -15 - Math.random() * 12,
+                    life: 0.25 + Math.random() * 0.1,
+                    maxLife: 0.35,
+                    size: 2 + Math.random() * 2,
+                    color: `rgba(140, 120, 90, ${0.3 + Math.random() * 0.2})`,
+                    gravity: 150,
+                });
+            }
+        }
+    }
+
+    private spawnLandingImpact(x: number, y: number): void {
+        const count = 8 + Math.floor(Math.random() * 4);
+        for (let i = 0; i < count; i++) {
+            // Fan outward from landing point
+            const angle = -Math.PI * 0.15 - Math.random() * Math.PI * 0.7;
+            const speed = 60 + Math.random() * 80;
+            this.particles.push({
+                x: x + (Math.random() - 0.5) * 16,
+                y,
+                vx: Math.cos(angle) * speed * (Math.random() < 0.5 ? 1 : -1),
+                vy: Math.sin(angle) * speed,
+                life: 0.3 + Math.random() * 0.15,
+                maxLife: 0.45,
+                size: 2 + Math.random() * 3,
+                color: `rgba(150, 130, 100, ${0.4 + Math.random() * 0.2})`,
+                gravity: 350,
+            });
+        }
+    }
+
+    private spawnOwlRadiance(x: number, y: number): void {
+        // Golden radiant burst
+        for (let i = 0; i < 80; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 80 + Math.random() * 180;
+            const lifetime = 2.0 + Math.random() * 1.5;
+            this.particles.push({
+                x, y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: lifetime,
+                maxLife: lifetime,
+                size: 3 + Math.random() * 6,
+                color: Math.random() < 0.7 ? '#ffd700' : '#ffea00',
+                gravity: -40,
+            });
+        }
+        // White sparkle accents
+        for (let i = 0; i < 25; i++) {
+            this.particles.push({
+                x: x + (Math.random() - 0.5) * 80,
+                y: y + (Math.random() - 0.5) * 80,
+                vx: (Math.random() - 0.5) * 40,
+                vy: -30 - Math.random() * 30,
+                life: 2.5 + Math.random() * 1.0,
+                maxLife: 3.5,
+                size: 1 + Math.random() * 2,
+                color: '#ffffff',
+                gravity: -15,
+            });
+        }
     }
 
     // ===== BOSS BATTLE SYSTEM =====
@@ -1653,16 +1900,18 @@ export class PlatformGame extends BaseGame {
         // Screen flash on boss death
         this.triggerScreenFlash(isShadow ? '#4400ff' : '#ff4400', isShadow ? 0.5 : 0.3);
 
-        // Massive particle explosion
+        // Massive particle explosion with boss dissolve effect (P3-1.3 enhanced)
+        this.spawnDeathBurst(guard.centerX, guard.y + guard.height * 0.5, true);
+        // Extra themed particles on top
         this.spawnParticles(
             guard.centerX,
             guard.y + guard.height * 0.5,
-            isShadow ? 60 : 40,
-            isShadow ? ['#4400ff', '#8800ff', '#220066', '#000033'] : ['#880000', '#660000', '#440000'],
-            isShadow ? 400 : 300,
-            isShadow ? 1.5 : 1.0,
-            [6, 20],
-            200
+            isShadow ? 40 : 25,
+            isShadow ? ['#4400ff', '#8800ff', '#220066'] : ['#ff4400', '#ff6600', '#880000'],
+            isShadow ? 350 : 250,
+            isShadow ? 1.2 : 0.8,
+            [4, 16],
+            150
         );
 
         // Show victory banner

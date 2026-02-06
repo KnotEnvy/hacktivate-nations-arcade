@@ -70,6 +70,14 @@ export class Player {
     public maxHealth: number = 3;
     public invulnTimer: number = 0;
 
+    // Hit feedback (P3-3.2)
+    public flashTimer: number = 0;
+    public hurtDirection: number = 0; // -1 = knocked left, 1 = knocked right
+
+    // Animation polish (P3-1.4)
+    private landingSquash: number = 0; // 0-1, decays over time
+    private deathFrame: number = 0;
+
     // Spawn
     private spawnX: number;
     private spawnY: number;
@@ -90,6 +98,8 @@ export class Player {
         if (this.attackTimer > 0) this.attackTimer -= dt;
         if (this.blockTimer > 0) this.blockTimer -= dt;
         if (this.hurtTimer > 0) this.hurtTimer -= dt;
+        if (this.flashTimer > 0) this.flashTimer -= dt;
+        if (this.landingSquash > 0) this.landingSquash = Math.max(0, this.landingSquash - dt * 4);
         this.animTimer += dt;
 
         // Update coyote time tracking
@@ -269,6 +279,7 @@ export class Player {
     land(): void {
         if (!this.isGrounded) {
             this.isGrounded = true;
+            this.landingSquash = Math.min(1.0, Math.abs(this.vy) / 500); // Scale squash with fall speed (P3-1.4)
             this.vy = 0;
             this.timeSinceGrounded = 0;  // Reset coyote timer on landing
             if (this.state === 'jump' || this.state === 'fall') {
@@ -338,6 +349,7 @@ export class Player {
 
         this.health -= amount;
         this.invulnTimer = 1.5;
+        this.flashTimer = 0.12; // White flash on hit (P3-3.2)
 
         if (this.health <= 0) {
             this.state = 'dying';
@@ -381,6 +393,10 @@ export class Player {
         this.attackTimer = 0;
         this.blockTimer = 0;
         this.hurtTimer = 0;
+        this.flashTimer = 0;
+        this.hurtDirection = 0;
+        this.landingSquash = 0;
+        this.deathFrame = 0;
         // Reset movement polish state
         this.timeSinceGrounded = 0;
         this.timeSinceJumpPressed = Infinity;
@@ -411,24 +427,103 @@ export class Player {
 
         this.drawSprite(ctx);
 
+        // White flash overlay on hit (P3-3.2)
+        if (this.flashTimer > 0) {
+            const flashAlpha = Math.min(0.7, this.flashTimer / 0.12);
+            ctx.globalCompositeOperation = 'source-atop';
+            ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+            ctx.fillRect(-2, -2, this.width + 4, this.height + 4);
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
         ctx.restore();
     }
 
     private drawSprite(ctx: CanvasRenderingContext2D): void {
         const isDead = this.state === 'dying' || this.state === 'dead';
         const isIdle = this.state === 'idle' || this.state === 'combat_idle';
-        const idleBob = isIdle ? Math.sin((this.animFrame / this.ANIM.idleFrames) * Math.PI * 2) * 2 : 0;
+        const breathPhase = (this.animFrame / this.ANIM.idleFrames) * Math.PI * 2;
+        const idleBob = isIdle ? Math.sin(breathPhase) * 2 : 0;
 
+        // Landing squash/stretch (P3-1.4)
+        const squash = this.landingSquash;
+        const squashY = squash * 0.25; // Squash up to 25% vertically
+        const stretchX = squash * 0.15; // Stretch 15% horizontally
+
+        // Hurt stagger offset (P3-1.4)
+        const hurtLean = this.state === 'hurt' ? this.hurtDirection * 3 : 0;
+
+        // ===== DRAMATIC DEATH SEQUENCE (P3-1.4) =====
         if (isDead) {
-            // Fallen body
-            ctx.fillStyle = '#444';
-            ctx.fillRect(0, 40, 24, 8);
-            ctx.fillStyle = '#4466aa';
-            ctx.fillRect(0, 32, 24, 8);
+            this.deathFrame = Math.min(4, Math.floor(this.animTimer / 0.2));
+            if (this.deathFrame <= 0) {
+                // Stagger back
+                ctx.fillStyle = '#444';
+                ctx.fillRect(4, 32, 5, 14);
+                ctx.fillRect(13, 34, 5, 12);
+                ctx.fillStyle = this.state === 'dying' ? '#664466' : '#4466aa';
+                ctx.fillRect(4, 16, 16, 16);
+                ctx.fillStyle = '#ffcc99';
+                ctx.fillRect(6, 2, 12, 14);
+                ctx.fillStyle = '#4a3020';
+                ctx.fillRect(6, 2, 12, 4);
+            } else if (this.deathFrame === 1) {
+                // Knees buckling
+                ctx.fillStyle = '#444';
+                ctx.fillRect(6, 36, 5, 10);
+                ctx.fillRect(13, 37, 5, 9);
+                ctx.fillStyle = '#4466aa';
+                ctx.fillRect(4, 22, 16, 14);
+                ctx.fillStyle = '#ffcc99';
+                ctx.fillRect(6, 8, 12, 14);
+                ctx.fillStyle = '#4a3020';
+                ctx.fillRect(6, 8, 12, 4);
+            } else if (this.deathFrame === 2) {
+                // Falling forward
+                ctx.fillStyle = '#444';
+                ctx.fillRect(8, 38, 5, 8);
+                ctx.fillRect(15, 39, 5, 7);
+                ctx.fillStyle = '#4466aa';
+                ctx.fillRect(4, 28, 16, 10);
+                ctx.fillStyle = '#ffcc99';
+                ctx.fillRect(6, 16, 12, 12);
+                ctx.fillStyle = '#4a3020';
+                ctx.fillRect(6, 16, 12, 4);
+            } else {
+                // Fully collapsed on ground
+                ctx.fillStyle = '#444';
+                ctx.fillRect(0, 42, 24, 6);
+                ctx.fillStyle = '#4466aa';
+                ctx.fillRect(0, 34, 24, 8);
+                ctx.fillStyle = '#ffcc99';
+                ctx.fillRect(2, 30, 10, 6);
+                ctx.fillStyle = '#4a3020';
+                ctx.fillRect(2, 30, 10, 3);
+                // Dropped sword
+                if (this.hasSword) {
+                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillRect(14, 40, 12, 2);
+                    ctx.fillStyle = '#886633';
+                    ctx.fillRect(12, 39, 4, 4);
+                }
+            }
             return;
         }
 
-        // Legs
+        // Apply squash transform
+        if (squash > 0.05) {
+            ctx.save();
+            ctx.translate(this.width / 2, this.height);
+            ctx.scale(1 + stretchX, 1 - squashY);
+            ctx.translate(-this.width / 2, -this.height);
+        }
+
+        // Apply hurt lean
+        if (hurtLean !== 0) {
+            ctx.translate(hurtLean, 0);
+        }
+
+        // ===== LEGS =====
         ctx.fillStyle = '#333';
         if (this.state === 'run') {
             const phase = (this.animFrame / this.ANIM.runFrames) * Math.PI * 2;
@@ -437,12 +532,15 @@ export class Player {
             ctx.fillRect(13, 32 - off, 5, 14 - Math.abs(off));
         } else if (this.state === 'jump' || this.state === 'fall') {
             if (this.animFrame <= 0) {
-                ctx.fillRect(6, 28, 5, 14);
-                ctx.fillRect(13, 30, 5, 12);
+                // Jump anticipation: crouched legs (P3-1.4)
+                ctx.fillRect(5, 34, 6, 12);
+                ctx.fillRect(13, 35, 6, 11);
             } else if (this.animFrame === 1) {
+                // Apex: legs extended
                 ctx.fillRect(6, 30, 5, 14);
                 ctx.fillRect(13, 30, 5, 14);
             } else {
+                // Landing prep: legs reaching down
                 ctx.fillRect(6, 32, 5, 16);
                 ctx.fillRect(13, 34, 5, 12);
             }
@@ -451,26 +549,45 @@ export class Player {
             ctx.fillRect(13, 32 + idleBob, 5, 16);
         }
 
-        // Torso
+        // ===== TORSO =====
+        // Breathing width pulse (P3-1.4)
+        const breatheWidth = isIdle ? Math.sin(breathPhase) * 0.5 : 0;
+        const torsoW = Math.floor(16 + breatheWidth);
+        const torsoX = 4 + Math.floor((16 - torsoW) / 2);
         ctx.fillStyle = this.state === 'hurt' ? '#aa4444' : '#4466aa';
-        ctx.fillRect(4, 14 + idleBob, 16, 18);
+        if (this.state === 'jump' && this.animFrame <= 0) {
+            // Crouch torso lower during jump anticipation (P3-1.4)
+            ctx.fillRect(torsoX, 18 + idleBob, torsoW, 16);
+        } else {
+            ctx.fillRect(torsoX, 14 + idleBob, torsoW, 18);
+        }
 
-        // Belt
+        // ===== BELT =====
         ctx.fillStyle = '#664422';
-        ctx.fillRect(4, 31 + idleBob, 16, 2);
+        if (this.state === 'jump' && this.animFrame <= 0) {
+            ctx.fillRect(4, 33 + idleBob, 16, 2);
+        } else {
+            ctx.fillRect(4, 31 + idleBob, 16, 2);
+        }
 
-        // Arms
+        // ===== ARMS =====
         ctx.fillStyle = '#ffcc99';
         if (this.state === 'attack') {
             if (this.animFrame <= 1) {
-                // Windup
-                ctx.fillRect(16, 16 + idleBob, 10, 4);
+                // Wind-up: arm pulled back (P3-1.4 telegraph)
+                ctx.fillRect(16, 18 + idleBob, 8, 4);
+                // Subtle glow telegraph
+                ctx.save();
+                ctx.globalAlpha = 0.25;
+                ctx.fillStyle = '#ffcc66';
+                ctx.fillRect(14, 14 + idleBob, 12, 10);
+                ctx.restore();
+                ctx.fillStyle = '#ffcc99';
             } else {
                 // Strike + hold
                 ctx.fillRect(20, 14 + idleBob, 20, 4);
             }
         } else if (this.state === 'block') {
-            // Arm raised to block
             const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
             ctx.fillRect(18, 6 + raise + idleBob, 4, 18);
         } else if (this.state === 'run') {
@@ -478,54 +595,79 @@ export class Player {
             const off = Math.sin(phase) * 3;
             ctx.fillRect(0, 16 - off + idleBob, 4, 10);
             ctx.fillRect(20, 16 + off + idleBob, 4, 10);
+        } else if (this.state === 'hurt') {
+            // Arms recoil in hurt direction (P3-1.4)
+            ctx.fillRect(2, 18, 4, 8);
+            ctx.fillRect(18, 20, 4, 8);
         } else {
-            // Idle arms at sides
-            ctx.fillRect(0, 16 + idleBob, 4, 10);
-            ctx.fillRect(20, 16 + idleBob, 4, 10);
+            // Idle: subtle arm sway with breathing
+            const armSway = isIdle ? Math.sin(breathPhase + 0.5) * 1 : 0;
+            ctx.fillRect(0, 16 + idleBob + armSway, 4, 10);
+            ctx.fillRect(20, 16 + idleBob - armSway, 4, 10);
         }
 
-        // Head
+        // ===== HEAD =====
         ctx.fillStyle = '#ffcc99';
-        ctx.fillRect(6, 0 + idleBob, 12, 14);
+        if (this.state === 'jump' && this.animFrame <= 0) {
+            ctx.fillRect(6, 4 + idleBob, 12, 14); // Head slightly higher during crouch
+        } else {
+            ctx.fillRect(6, 0 + idleBob, 12, 14);
+        }
 
-        // Hair
+        // ===== HAIR =====
         ctx.fillStyle = '#4a3020';
-        ctx.fillRect(6, 0 + idleBob, 12, 4);
-        ctx.fillRect(4, 2 + idleBob, 4, 5);
+        if (this.state === 'jump' && this.animFrame <= 0) {
+            ctx.fillRect(6, 4 + idleBob, 12, 4);
+            ctx.fillRect(4, 6 + idleBob, 4, 5);
+        } else {
+            ctx.fillRect(6, 0 + idleBob, 12, 4);
+            ctx.fillRect(4, 2 + idleBob, 4, 5);
+        }
 
-        // Eye
+        // ===== EYE =====
         ctx.fillStyle = '#000';
-        ctx.fillRect(14, 6 + idleBob, 2, 2);
+        if (this.state === 'jump' && this.animFrame <= 0) {
+            ctx.fillRect(14, 10 + idleBob, 2, 2);
+        } else {
+            ctx.fillRect(14, 6 + idleBob, 2, 2);
+        }
 
-        // Sword
+        // ===== SWORD =====
         if (this.hasSword) {
-            ctx.fillStyle = '#c0d0e0'; // Bright steel color
+            ctx.fillStyle = '#c0d0e0';
             if (this.state === 'attack') {
                 if (this.animFrame <= 1) {
-                    ctx.fillRect(22, 16 + idleBob, 10, 2);
+                    // Sword pulled back for wind-up
+                    ctx.fillRect(20, 18 + idleBob, 8, 2);
                 } else {
                     // Sword thrust forward - long blade
                     ctx.fillRect(28, 14 + idleBob, 20, 3);
-                    // Blade tip
                     ctx.fillRect(46, 13 + idleBob, 4, 5);
                 }
             } else if (this.state === 'block') {
-                // Sword held vertically for defense
                 const raise = this.animFrame === 0 ? 6 : this.animFrame === 1 ? 2 : 8;
                 ctx.fillRect(20, 2 + raise + idleBob, 3, 22);
             } else {
-                // Sword held at ready (diagonal)
                 ctx.fillRect(22, 18 + idleBob, 14, 2);
             }
-            // Hilt/guard
+            // Hilt
             ctx.fillStyle = '#886633';
             if (this.state === 'attack') {
-                ctx.fillRect(24, 12 + idleBob, 5, 8);
+                if (this.animFrame <= 1) {
+                    ctx.fillRect(18, 16 + idleBob, 5, 6);
+                } else {
+                    ctx.fillRect(24, 12 + idleBob, 5, 8);
+                }
             } else if (this.state === 'block') {
                 ctx.fillRect(18, 22 + idleBob, 8, 4);
             } else {
                 ctx.fillRect(20, 16 + idleBob, 5, 6);
             }
+        }
+
+        // Restore squash transform
+        if (squash > 0.05) {
+            ctx.restore();
         }
     }
 
