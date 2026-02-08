@@ -1,6 +1,6 @@
 // ===== src/games/platform-adventure/entities/Collectible.ts =====
 
-export type CollectibleType = 'potion_hp' | 'potion_max' | 'gem' | 'time' | 'owl';
+export type CollectibleType = 'potion_hp' | 'potion_max' | 'gem' | 'time' | 'owl' | 'item_sword' | 'item_armor' | 'item_boots' | 'item_heart';
 
 export class Collectible {
     x: number;
@@ -57,6 +57,18 @@ export class Collectible {
                 break;
             case 'owl':
                 this.drawGoldenOwl(ctx, screenX, screenY);
+                break;
+            case 'item_sword':
+                this.drawSwordItem(ctx, screenX, screenY);
+                break;
+            case 'item_armor':
+                this.drawArmorItem(ctx, screenX, screenY);
+                break;
+            case 'item_boots':
+                this.drawBootsItem(ctx, screenX, screenY);
+                break;
+            case 'item_heart':
+                this.drawHeartItem(ctx, screenX, screenY);
                 break;
         }
 
@@ -200,6 +212,136 @@ export class Collectible {
         const sparkX = x + 8 + Math.cos(this.sparklePhase * 3) * 12;
         const sparkY = y + 10 + Math.sin(this.sparklePhase * 3) * 8;
         ctx.fillRect(sparkX - 1, sparkY - 1, 2, 2);
+    }
+
+    private drawSwordItem(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+        const pulse = Math.sin(this.sparklePhase) * 0.15 + 0.85;
+
+        // Glow aura
+        ctx.fillStyle = `rgba(192, 208, 224, ${pulse * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x + 8, y + 10, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Blade
+        ctx.fillStyle = '#c0d0e0';
+        ctx.fillRect(x + 6, y, 4, 14);
+        // Blade tip
+        ctx.beginPath();
+        ctx.moveTo(x + 6, y);
+        ctx.lineTo(x + 8, y - 3);
+        ctx.lineTo(x + 10, y);
+        ctx.closePath();
+        ctx.fill();
+
+        // Cross-guard
+        ctx.fillStyle = '#886633';
+        ctx.fillRect(x + 3, y + 13, 10, 3);
+        // Grip
+        ctx.fillStyle = '#664422';
+        ctx.fillRect(x + 6, y + 16, 4, 4);
+
+        // Sparkle
+        if (Math.sin(this.sparklePhase * 2) > 0.8) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x + 7, y - 1, 2, 2);
+        }
+    }
+
+    private drawArmorItem(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+        const pulse = Math.sin(this.sparklePhase * 0.8) * 0.1 + 0.9;
+
+        // Glow
+        ctx.fillStyle = `rgba(136, 153, 170, ${pulse * 0.25})`;
+        ctx.beginPath();
+        ctx.arc(x + 8, y + 10, 14, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Chest plate shape
+        ctx.fillStyle = '#7788aa';
+        ctx.beginPath();
+        ctx.moveTo(x + 2, y + 4);
+        ctx.lineTo(x + 8, y);
+        ctx.lineTo(x + 14, y + 4);
+        ctx.lineTo(x + 14, y + 16);
+        ctx.lineTo(x + 2, y + 16);
+        ctx.closePath();
+        ctx.fill();
+
+        // Highlight
+        ctx.fillStyle = '#99aacc';
+        ctx.fillRect(x + 5, y + 3, 6, 4);
+
+        // Shoulder pads
+        ctx.fillStyle = '#667788';
+        ctx.fillRect(x, y + 3, 4, 6);
+        ctx.fillRect(x + 12, y + 3, 4, 6);
+    }
+
+    private drawBootsItem(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+        const pulse = Math.sin(this.sparklePhase * 1.2) * 0.2 + 0.8;
+
+        // Glow
+        ctx.fillStyle = `rgba(68, 170, 255, ${pulse * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x + 8, y + 12, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Left boot
+        ctx.fillStyle = '#2266aa';
+        ctx.fillRect(x + 1, y + 6, 5, 10);
+        ctx.fillRect(x, y + 14, 7, 4);
+        // Right boot
+        ctx.fillRect(x + 10, y + 6, 5, 10);
+        ctx.fillRect(x + 9, y + 14, 7, 4);
+
+        // Speed lines
+        ctx.strokeStyle = `rgba(68, 170, 255, ${pulse * 0.5})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x - 2, y + 10);
+        ctx.lineTo(x - 6, y + 10);
+        ctx.moveTo(x - 1, y + 14);
+        ctx.lineTo(x - 5, y + 14);
+        ctx.stroke();
+    }
+
+    private drawHeartItem(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+        const pulse = Math.sin(this.sparklePhase * 1.5) * 0.2 + 0.8;
+
+        // Glow
+        ctx.fillStyle = `rgba(255, 68, 170, ${pulse * 0.35})`;
+        ctx.beginPath();
+        ctx.arc(x + 8, y + 10, 16, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Crystal heart shape
+        ctx.fillStyle = '#ff44aa';
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 18);
+        ctx.lineTo(x, y + 8);
+        ctx.lineTo(x + 3, y + 2);
+        ctx.lineTo(x + 8, y + 6);
+        ctx.lineTo(x + 13, y + 2);
+        ctx.lineTo(x + 16, y + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        // Inner highlight
+        ctx.fillStyle = '#ff88cc';
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 14);
+        ctx.lineTo(x + 4, y + 8);
+        ctx.lineTo(x + 6, y + 5);
+        ctx.lineTo(x + 8, y + 8);
+        ctx.closePath();
+        ctx.fill();
+
+        // Sparkle
+        if (Math.sin(this.sparklePhase * 3) > 0.7) {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x + 10, y + 4, 2, 2);
+        }
     }
 
     get left(): number { return this.x; }

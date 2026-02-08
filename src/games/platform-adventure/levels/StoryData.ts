@@ -9,6 +9,7 @@ export type StoryTrigger =
     | { type: 'boss_defeat'; bossType: GuardType }
     | { type: 'boss_phase'; bossType: GuardType; phase: number }
     | { type: 'kael_response'; phase: number }
+    | { type: 'item_pickup'; itemType: string }
     | { type: 'victory' }
     | { type: 'defeat' };
 
@@ -110,9 +111,9 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             trigger: { type: 'level_start' },
         },
         {
-            id: 'l1-turn-back',
-            title: 'Faded Inscription',
-            text: '"TURN BACK"',
+            id: 'l1-fists',
+            title: 'Worn Inscription',
+            text: '"Every warrior begins with their fists. Press Z to strike. The blade awaits beyond the gate."',
             trigger: { type: 'tile_proximity', tileType: 'inscription', index: 0, radius: 2 },
         },
         {
@@ -129,6 +130,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             text: '"Only the brave may pass."',
             trigger: { type: 'tile_proximity', tileType: 'inscription', index: 1, radius: 2 },
         },
+        {
+            id: 'l1-item-sword',
+            title: 'Ancient Blade',
+            text: '"The blade of the First Seeker. It has waited centuries for a hand brave enough to wield it. ' +
+                'Press SHIFT to draw your sword. Press Z to strike. Press CTRL to block."',
+            trigger: { type: 'item_pickup', itemType: 'item_sword' },
+        },
     ],
     1: [
         {
@@ -142,6 +150,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             title: 'Spectral Voice',
             text: SPECTRAL_VOICE,
             trigger: { type: 'tile_proximity', tileType: 'spectral_crystal', radius: 3 },
+        },
+        {
+            id: 'l2-item-armor',
+            title: 'Iron Armor',
+            text: '"Forged in the cavern\'s first age, when dwarven smiths still walked these halls. ' +
+                'It remembers the shape of warriors. It will remember yours."',
+            trigger: { type: 'item_pickup', itemType: 'item_armor' },
         },
     ],
     2: [
@@ -163,6 +178,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             text: CAPTAIN_DEFEAT,
             trigger: { type: 'boss_defeat', bossType: 'captain' },
         },
+        {
+            id: 'l3-item-boots',
+            title: 'Dash Boots',
+            text: '"The Captain once wore these in life. Enchanted with the speed of wind, ' +
+                'they carried him through battles no mortal could survive. Press CTRL (sword sheathed) to dash."',
+            trigger: { type: 'item_pickup', itemType: 'item_boots' },
+        },
     ],
     3: [
         {
@@ -182,6 +204,13 @@ export const STORY_BY_LEVEL: Record<number, StoryEvent[]> = {
             title: 'The Final Gate',
             text: FINAL_GATE_INSCRIPTION,
             trigger: { type: 'tile_proximity', tileType: 'inscription', radius: 2 },
+        },
+        {
+            id: 'l4-item-heart',
+            title: 'Crystal Heart',
+            text: '"Take it to the Shadow... it is the only thing he fears. ' +
+                'The heart of the mountain itself, crystallized into pure will. Your blade will burn with its power."',
+            trigger: { type: 'item_pickup', itemType: 'item_heart' },
         },
     ],
     4: [

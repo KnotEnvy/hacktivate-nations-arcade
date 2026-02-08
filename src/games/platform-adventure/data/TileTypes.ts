@@ -27,7 +27,11 @@ export type TileType =
     | 'inscription'     // Carved wall inscription
     | 'spectral_crystal'// Glowing haunted crystal
     | 'fallen_seeker'   // Injured/dying NPC
-    | 'journal';        // Readable journal
+    | 'journal'         // Readable journal
+    | 'item_sword'      // Ancient Blade pickup
+    | 'item_armor'      // Iron Armor pickup
+    | 'item_boots'      // Dash Boots pickup
+    | 'item_heart';     // Crystal Heart pickup
 
 export interface TileDefinition {
     solid: boolean;
@@ -63,6 +67,10 @@ export const TILE_DEFS: Record<TileType, TileDefinition> = {
     spectral_crystal: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
     fallen_seeker: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
     journal: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    item_sword: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    item_armor: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    item_boots: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
+    item_heart: { solid: false, deadly: false, climbable: false, interactive: true, animated: true },
 };
 
 // Visual rendering colors/patterns
@@ -92,4 +100,8 @@ export const TILE_COLORS: Record<TileType, { primary: string; secondary: string;
     spectral_crystal: { primary: '#8844ff', secondary: '#aa66ff', accent: '#6622dd' },
     fallen_seeker: { primary: '#886644', secondary: '#aa8866', accent: '#664422' },
     journal: { primary: '#8b7355', secondary: '#a08060', accent: '#6b5335' },
+    item_sword: { primary: '#c0d0e0', secondary: '#dde8f0', accent: '#886633' },
+    item_armor: { primary: '#8899aa', secondary: '#aabbcc', accent: '#667788' },
+    item_boots: { primary: '#44aaff', secondary: '#66ccff', accent: '#2288dd' },
+    item_heart: { primary: '#ff44aa', secondary: '#ff88cc', accent: '#dd2288' },
 };

@@ -4,6 +4,13 @@ import { TILE_SIZE } from '../data/TileTypes';
 
 export type PlayerState = 'idle' | 'run' | 'jump' | 'fall' | 'combat_idle' | 'attack' | 'block' | 'hurt' | 'dying' | 'dead';
 
+export interface PlayerInventory {
+    hasBlade: boolean;
+    hasArmor: boolean;
+    hasBoots: boolean;
+    hasHeart: boolean;
+}
+
 export class Player {
     // Position
     x: number;
@@ -78,6 +85,17 @@ export class Player {
     private landingSquash: number = 0; // 0-1, decays over time
     private deathFrame: number = 0;
 
+    // Inventory (item progression)
+    public inventory: PlayerInventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+
+    // Dash (requires Dash Boots)
+    public isDashing: boolean = false;
+    private dashTimer: number = 0;
+    private dashCooldown: number = 0;
+    private readonly DASH_SPEED = 400;
+    private readonly DASH_DURATION = 0.15;
+    private readonly DASH_COOLDOWN = 0.8;
+
     // Spawn
     private spawnX: number;
     private spawnY: number;
@@ -100,6 +118,17 @@ export class Player {
         if (this.hurtTimer > 0) this.hurtTimer -= dt;
         if (this.flashTimer > 0) this.flashTimer -= dt;
         if (this.landingSquash > 0) this.landingSquash = Math.max(0, this.landingSquash - dt * 4);
+        if (this.dashCooldown > 0) this.dashCooldown -= dt;
+
+        // Dash update
+        if (this.isDashing) {
+            this.dashTimer -= dt;
+            if (this.dashTimer <= 0) {
+                this.isDashing = false;
+                this.vx = 0;
+            }
+        }
+
         this.animTimer += dt;
 
         // Update coyote time tracking
@@ -272,7 +301,8 @@ export class Player {
 
     private canMove(): boolean {
         return this.state !== 'attack' && this.state !== 'block' &&
-            this.state !== 'hurt' && this.state !== 'dying' && this.state !== 'dead';
+            this.state !== 'hurt' && this.state !== 'dying' && this.state !== 'dead' &&
+            !this.isDashing;
     }
 
     // Called by collision system when landing
@@ -298,8 +328,13 @@ export class Player {
         }
     }
 
+    resetInventory(): void {
+        this.inventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+    }
+
     // Combat
     toggleSword(): void {
+        if (!this.inventory.hasBlade) return; // Need Ancient Blade to draw sword
         if (this.canMove()) {
             this.hasSword = !this.hasSword;
             this.state = this.hasSword ? 'combat_idle' : 'idle';
@@ -308,22 +343,36 @@ export class Player {
     }
 
     tryAttack(): boolean {
-        // Must have sword and not already attacking
-        if (!this.hasSword) return false;
         if (this.state === 'attack' || this.state === 'block' ||
             this.state === 'hurt' || this.state === 'dying' || this.state === 'dead') return false;
 
         this.state = 'attack';
-        this.attackTimer = 0.35;
         this.animTimer = 0;
-        // Create hitbox in front
-        this.attackHitbox = {
-            x: this.x + (this.facingRight ? this.width : -25),
-            y: this.y + 10,
-            w: 25,
-            h: 30
-        };
+
+        if (this.hasSword) {
+            // Sword attack: longer reach, longer duration
+            this.attackTimer = 0.35;
+            this.attackHitbox = {
+                x: this.x + (this.facingRight ? this.width : -25),
+                y: this.y + 10,
+                w: 25,
+                h: 30
+            };
+        } else {
+            // Punch attack: short range, fast
+            this.attackTimer = 0.25;
+            this.attackHitbox = {
+                x: this.x + (this.facingRight ? this.width : -12),
+                y: this.y + 12,
+                w: 12,
+                h: 20
+            };
+        }
         return true;
+    }
+
+    get isPunchAttack(): boolean {
+        return this.state === 'attack' && !this.hasSword;
     }
 
     tryBlock(): boolean {
@@ -334,6 +383,20 @@ export class Player {
         this.blockTimer = 0.4;
         this.isBlocking = true;
         this.animTimer = 0;
+        return true;
+    }
+
+    tryDash(): boolean {
+        if (!this.inventory.hasBoots) return false;
+        if (this.isDashing || this.dashCooldown > 0) return false;
+        if (this.state === 'attack' || this.state === 'block' ||
+            this.state === 'hurt' || this.state === 'dying' || this.state === 'dead') return false;
+
+        this.isDashing = true;
+        this.dashTimer = this.DASH_DURATION;
+        this.dashCooldown = this.DASH_COOLDOWN;
+        this.invulnTimer = Math.max(this.invulnTimer, this.DASH_DURATION + 0.05); // i-frames during dash
+        this.vx = this.DASH_SPEED * (this.facingRight ? 1 : -1);
         return true;
     }
 
@@ -397,6 +460,9 @@ export class Player {
         this.hurtDirection = 0;
         this.landingSquash = 0;
         this.deathFrame = 0;
+        this.isDashing = false;
+        this.dashTimer = 0;
+        this.dashCooldown = 0;
         // Reset movement polish state
         this.timeSinceGrounded = 0;
         this.timeSinceJumpPressed = Infinity;
@@ -453,6 +519,9 @@ export class Player {
         // Hurt stagger offset (P3-1.4)
         const hurtLean = this.state === 'hurt' ? this.hurtDirection * 3 : 0;
 
+        // Blade color (Crystal Heart turns it pink)
+        const bladeColor = this.inventory.hasHeart ? '#ff88cc' : '#c0d0e0';
+
         // ===== DRAMATIC DEATH SEQUENCE (P3-1.4) =====
         if (isDead) {
             this.deathFrame = Math.min(4, Math.floor(this.animTimer / 0.2));
@@ -501,7 +570,7 @@ export class Player {
                 ctx.fillRect(2, 30, 10, 3);
                 // Dropped sword
                 if (this.hasSword) {
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     ctx.fillRect(14, 40, 12, 2);
                     ctx.fillStyle = '#886633';
                     ctx.fillRect(12, 39, 4, 4);
@@ -524,7 +593,7 @@ export class Player {
         }
 
         // ===== LEGS =====
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = this.inventory.hasBoots ? '#2266aa' : '#333';
         if (this.state === 'run') {
             const phase = (this.animFrame / this.ANIM.runFrames) * Math.PI * 2;
             const off = Math.sin(phase) * 5;
@@ -556,12 +625,25 @@ export class Player {
         const torsoX = 4 + Math.floor((16 - torsoW) / 2);
         // Attack lean: body shifts forward during thrust
         const attackLean = this.state === 'attack' ? [0, 1, 2, 3, 1][Math.min(this.animFrame, 4)] : 0;
-        ctx.fillStyle = this.state === 'hurt' ? '#aa4444' : '#4466aa';
+        const torsoColor = this.state === 'hurt' ? '#aa4444' : (this.inventory.hasArmor ? '#7788aa' : '#4466aa');
+        ctx.fillStyle = torsoColor;
         if (this.state === 'jump' && this.animFrame <= 0) {
             // Crouch torso lower during jump anticipation (P3-1.4)
             ctx.fillRect(torsoX, 18 + idleBob, torsoW, 16);
         } else {
             ctx.fillRect(torsoX + attackLean, 14 + idleBob, torsoW, 18);
+        }
+
+        // Armor shoulder pads
+        if (this.inventory.hasArmor && this.state !== 'hurt') {
+            ctx.fillStyle = '#667788';
+            const shoulderY = (this.state === 'jump' && this.animFrame <= 0) ? 17 + idleBob : 13 + idleBob;
+            ctx.fillRect(2 + attackLean, shoulderY, 5, 4);
+            ctx.fillRect(17 + attackLean, shoulderY, 5, 4);
+            // Chest highlight
+            ctx.fillStyle = '#99aacc';
+            const chestY = (this.state === 'jump' && this.animFrame <= 0) ? 22 + idleBob : 18 + idleBob;
+            ctx.fillRect(8 + attackLean, chestY, 8, 3);
         }
 
         // ===== BELT =====
@@ -574,12 +656,11 @@ export class Player {
 
         // ===== ARMS =====
         ctx.fillStyle = '#ffcc99';
-        if (this.state === 'attack') {
+        if (this.state === 'attack' && this.hasSword) {
             if (this.animFrame <= 0) {
                 // Frame 0 — Anticipation: arm pulled back
-                ctx.fillRect(14, 18 + idleBob, 6, 4); // upper arm at shoulder
-                ctx.fillRect(10, 16 + idleBob, 5, 4); // forearm angled back
-                // Subtle glow telegraph
+                ctx.fillRect(14, 18 + idleBob, 6, 4);
+                ctx.fillRect(10, 16 + idleBob, 5, 4);
                 ctx.save();
                 ctx.globalAlpha = 0.2;
                 ctx.fillStyle = '#ffcc66';
@@ -587,21 +668,44 @@ export class Player {
                 ctx.restore();
                 ctx.fillStyle = '#ffcc99';
             } else if (this.animFrame === 1) {
-                // Frame 1 — Load: arm coiled at chest
-                ctx.fillRect(16 + attackLean, 16 + idleBob, 5, 4); // upper arm
-                ctx.fillRect(20 + attackLean, 14 + idleBob, 5, 4); // forearm forward
+                ctx.fillRect(16 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(20 + attackLean, 14 + idleBob, 5, 4);
             } else if (this.animFrame === 2) {
-                // Frame 2 — Thrust: arm extending
-                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm
-                ctx.fillRect(22 + attackLean, 14 + idleBob, 8, 4); // forearm thrusting
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 8, 4);
             } else if (this.animFrame === 3) {
-                // Frame 3 — Full extension: arm fully out
-                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm at shoulder
-                ctx.fillRect(22 + attackLean, 14 + idleBob, 10, 4); // forearm extended
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 10, 4);
             } else {
-                // Frame 4 — Recovery: retracting
-                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4); // upper arm
-                ctx.fillRect(22 + attackLean, 15 + idleBob, 6, 4); // forearm pulling back
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 15 + idleBob, 6, 4);
+            }
+        } else if (this.state === 'attack' && !this.hasSword) {
+            // Punch animation — fist extends forward
+            if (this.animFrame <= 0) {
+                // Wind-up: arm pulled back
+                ctx.fillRect(10, 18 + idleBob, 5, 4);
+                ctx.fillRect(6, 16 + idleBob, 5, 4);
+            } else if (this.animFrame <= 1) {
+                // Coil: fist at chest
+                ctx.fillRect(16, 16 + idleBob, 5, 4);
+                ctx.fillRect(20, 15 + idleBob, 5, 5);
+            } else if (this.animFrame <= 2) {
+                // Punch extending
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 7, 5);
+                // Fist
+                ctx.fillRect(28 + attackLean, 13 + idleBob, 5, 6);
+            } else if (this.animFrame <= 3) {
+                // Full extension
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 14 + idleBob, 10, 4);
+                // Fist at max reach
+                ctx.fillRect(31 + attackLean, 13 + idleBob, 5, 6);
+            } else {
+                // Recovery
+                ctx.fillRect(18 + attackLean, 16 + idleBob, 5, 4);
+                ctx.fillRect(22 + attackLean, 15 + idleBob, 6, 4);
             }
         } else if (this.state === 'block') {
             const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
@@ -656,21 +760,21 @@ export class Player {
                     // Frame 0 — Sword pulled back, angled up
                     ctx.fillStyle = '#886633'; // Hilt first (behind blade)
                     ctx.fillRect(12, 14 + idleBob, 4, 5);
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     ctx.fillRect(10, 10 + idleBob, 3, 6); // blade angled up
                     ctx.fillRect(9, 8 + idleBob, 2, 4);   // blade tip
                 } else if (this.animFrame === 1) {
                     // Frame 1 — Sword coiled at chest, blade angled forward
                     ctx.fillStyle = '#886633';
                     ctx.fillRect(20 + al, 13 + idleBob, 4, 5);
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     ctx.fillRect(23 + al, 12 + idleBob, 6, 3); // blade forward-angled
                     ctx.fillRect(28 + al, 11 + idleBob, 3, 3); // tip
                 } else if (this.animFrame === 2) {
                     // Frame 2 — Thrust: blade extends forward, tapered
                     ctx.fillStyle = '#886633';
                     ctx.fillRect(26 + al, 13 + idleBob, 4, 5);
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     // Tapered blade: wide base → narrow tip
                     ctx.beginPath();
                     ctx.moveTo(29 + al, 13 + idleBob);      // base top
@@ -683,7 +787,7 @@ export class Player {
                     // Speed line
                     ctx.save();
                     ctx.globalAlpha = 0.2;
-                    ctx.strokeStyle = '#c0d0e0';
+                    ctx.strokeStyle = bladeColor;
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.moveTo(22 + al, 16 + idleBob);
@@ -694,7 +798,7 @@ export class Player {
                     // Frame 3 — Full extension: max reach, tapered blade + glint
                     ctx.fillStyle = '#886633';
                     ctx.fillRect(28 + al, 13 + idleBob, 4, 5);
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     // Tapered blade at full reach
                     ctx.beginPath();
                     ctx.moveTo(31 + al, 13 + idleBob);
@@ -711,19 +815,23 @@ export class Player {
                     // Frame 4 — Recovery: sword retracting
                     ctx.fillStyle = '#886633';
                     ctx.fillRect(24 + al, 14 + idleBob, 4, 5);
-                    ctx.fillStyle = '#c0d0e0';
+                    ctx.fillStyle = bladeColor;
                     ctx.fillRect(27 + al, 14 + idleBob, 8, 3); // shorter blade
                     ctx.fillRect(34 + al, 14 + idleBob, 2, 2); // small tip
                 }
             } else if (this.state === 'block') {
-                ctx.fillStyle = '#c0d0e0';
+                ctx.fillStyle = bladeColor;
                 const raise = this.animFrame === 0 ? 6 : this.animFrame === 1 ? 2 : 8;
                 ctx.fillRect(20, 2 + raise + idleBob, 3, 22);
                 ctx.fillStyle = '#886633';
                 ctx.fillRect(18, 22 + idleBob, 8, 4);
             } else {
                 // Idle/run: sword at side
-                ctx.fillStyle = '#c0d0e0';
+                if (this.inventory.hasHeart) {
+                    ctx.fillStyle = 'rgba(255, 68, 170, 0.3)';
+                    ctx.fillRect(20, 14 + idleBob, 18, 6);
+                }
+                ctx.fillStyle = bladeColor;
                 ctx.fillRect(22, 18 + idleBob, 14, 2);
                 ctx.fillStyle = '#886633';
                 ctx.fillRect(20, 16 + idleBob, 5, 6);

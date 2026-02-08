@@ -3,7 +3,7 @@ import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest, GameScore } from '@/lib/types';
 import { GAME_CONFIG } from '@/lib/constants';
 import { TILE_SIZE, TileType, TILE_COLORS } from './data/TileTypes';
-import { Player } from './entities/Player';
+import { Player, PlayerInventory } from './entities/Player';
 import { Guard, GuardSense, GuardType } from './entities/Guard';
 import { Collectible } from './entities/Collectible';
 import { Trap, TrapType } from './entities/Trap';
@@ -358,6 +358,13 @@ export class PlatformGame extends BaseGame {
     private levelBestTimes: number[] = [0, 0, 0, 0, 0];
     private readonly PROGRESS_KEY = 'crystal-caverns-progress';
 
+    // Item progression inventory
+    private playerInventory: PlayerInventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+    private readonly INVENTORY_KEY = 'crystal-caverns-inventory';
+
+    // Dash input edge detection
+    private dashKeyWasPressed: boolean = false;
+
     protected renderBaseHud: boolean = false;
 
     protected onInit(): void {
@@ -365,6 +372,7 @@ export class PlatformGame extends BaseGame {
         this.loadPersistentStats();
         this.loadLeaderboard();
         this.loadProgress();
+        this.loadInventory();
         this.gameStartTime = Date.now();
         this.loadLevel(0);
     }
@@ -505,6 +513,26 @@ export class PlatformGame extends BaseGame {
                             linkedGates: [],
                         });
                         break;
+                    case 'item_sword':
+                        if (!this.playerInventory.hasBlade) {
+                            this.collectibles.push(new Collectible(px + 16, py + 12, 'item_sword'));
+                        }
+                        break;
+                    case 'item_armor':
+                        if (!this.playerInventory.hasArmor) {
+                            this.collectibles.push(new Collectible(px + 16, py + 12, 'item_armor'));
+                        }
+                        break;
+                    case 'item_boots':
+                        if (!this.playerInventory.hasBoots) {
+                            this.collectibles.push(new Collectible(px + 16, py + 12, 'item_boots'));
+                        }
+                        break;
+                    case 'item_heart':
+                        if (!this.playerInventory.hasHeart) {
+                            this.collectibles.push(new Collectible(px + 16, py + 12, 'item_heart'));
+                        }
+                        break;
                 }
             }
         }
@@ -568,6 +596,9 @@ export class PlatformGame extends BaseGame {
         this.player.y = spawn.y;
         this.player.setCheckpoint(spawn.x, spawn.y);
         this.player.respawn();
+
+        // Apply persistent inventory to player
+        this.applyInventoryToPlayer();
 
         // Snap camera to player position
         this.snapCameraToPlayer();
@@ -648,7 +679,8 @@ export class PlatformGame extends BaseGame {
 
         if (action && !this.menuActionWasPressed) {
             if (this.menuIndex === 0) {
-                // New Game
+                // New Game — reset inventory
+                this.resetInventory();
                 this.gameState = 'level_intro';
                 this.stateTimer = 0;
                 this.services?.audio?.playSound?.('powerup');
@@ -803,16 +835,22 @@ export class PlatformGame extends BaseGame {
         }
         this.swordKeyWasPressed = shiftKey;
 
-        // Handle combat
-        if (this.player.hasSword) {
-            if (action) {
-                if (this.player.tryAttack()) {
-                    this.services?.audio?.playSound?.('sword_swing');
-                }
-            } else if (ctrlKey) {
-                this.player.tryBlock();
+        // Handle combat (punch when no sword, sword attack when drawn)
+        if (action) {
+            if (this.player.tryAttack()) {
+                this.services?.audio?.playSound?.(this.player.hasSword ? 'sword_swing' : 'hit');
+            }
+        } else if (ctrlKey && this.player.hasSword) {
+            this.player.tryBlock();
+        }
+
+        // Handle dash (Ctrl when sword NOT drawn, requires boots)
+        if (ctrlKey && !this.player.hasSword && !this.dashKeyWasPressed) {
+            if (this.player.tryDash()) {
+                this.services?.audio?.playSound?.('jump'); // Reuse jump sound for dash
             }
         }
+        this.dashKeyWasPressed = ctrlKey;
 
         // Handle movement - direct calls like TapDodge!
         if (left) {
@@ -1071,8 +1109,10 @@ export class PlatformGame extends BaseGame {
                         this.triggerHitStop(isBoss ? 0.04 : 0.02);
                         this.triggerScreenShakePreset('BLOCK_CLASH');
                     } else {
-                        guard.takeDamage();
-                        this.services?.audio?.playSound?.('hit');
+                        // Calculate damage: sword = 1 (2 with Crystal Heart), punch = 1
+                        const damage = this.player.hasSword && this.playerInventory.hasHeart ? 2 : 1;
+                        guard.takeDamage(damage);
+                        this.services?.audio?.playSound?.(this.player.hasSword ? 'hit' : 'hurt_grunt');
                         this.services?.audio?.playSound?.('hurt_grunt');
                         this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
                         // Hit stop scales with damage and boss status (P3-3.2)
@@ -1188,6 +1228,46 @@ export class PlatformGame extends BaseGame {
                         this.score += 25;
                         this.services?.audio?.playSound?.('coin');
                         this.scorePopups.push({ x: c.x, y: c.y - 10, text: '+15s', color: '#44ddff', timer: 1.0 });
+                        break;
+                    case 'item_sword':
+                        this.playerInventory.hasBlade = true;
+                        this.player.inventory.hasBlade = true;
+                        this.player.hasSword = true; // Auto-draw sword
+                        this.swordEverDrawn = true;
+                        this.saveInventory();
+                        this.services?.audio?.playSound?.('unlock');
+                        this.triggerScreenFlash('#c0d0e0', 0.4, 0.2);
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: 'Ancient Blade!', color: '#c0d0e0', timer: 2.0 });
+                        this.queueItemStory('item_sword');
+                        break;
+                    case 'item_armor':
+                        this.playerInventory.hasArmor = true;
+                        this.player.inventory.hasArmor = true;
+                        this.player.maxHealth = 5;
+                        this.player.health = this.player.maxHealth; // Full heal
+                        this.saveInventory();
+                        this.services?.audio?.playSound?.('unlock');
+                        this.triggerScreenFlash('#8899aa', 0.4, 0.2);
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: 'Iron Armor!', color: '#8899aa', timer: 2.0 });
+                        this.queueItemStory('item_armor');
+                        break;
+                    case 'item_boots':
+                        this.playerInventory.hasBoots = true;
+                        this.player.inventory.hasBoots = true;
+                        this.saveInventory();
+                        this.services?.audio?.playSound?.('unlock');
+                        this.triggerScreenFlash('#44aaff', 0.4, 0.2);
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: 'Dash Boots!', color: '#44aaff', timer: 2.0 });
+                        this.queueItemStory('item_boots');
+                        break;
+                    case 'item_heart':
+                        this.playerInventory.hasHeart = true;
+                        this.player.inventory.hasHeart = true;
+                        this.saveInventory();
+                        this.services?.audio?.playSound?.('unlock');
+                        this.triggerScreenFlash('#ff44aa', 0.5, 0.3);
+                        this.scorePopups.push({ x: c.x, y: c.y - 10, text: 'Crystal Heart!', color: '#ff44aa', timer: 2.0 });
+                        this.queueItemStory('item_heart');
                         break;
                     case 'owl':
                         this.foundOwl = true;
@@ -1489,6 +1569,43 @@ export class PlatformGame extends BaseGame {
         }
     }
 
+    private loadInventory(): void {
+        try {
+            const saved = localStorage.getItem(this.INVENTORY_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved);
+                this.playerInventory = {
+                    hasBlade: parsed.hasBlade ?? false,
+                    hasArmor: parsed.hasArmor ?? false,
+                    hasBoots: parsed.hasBoots ?? false,
+                    hasHeart: parsed.hasHeart ?? false,
+                };
+            }
+        } catch {
+            // Use defaults
+        }
+    }
+
+    private saveInventory(): void {
+        try {
+            localStorage.setItem(this.INVENTORY_KEY, JSON.stringify(this.playerInventory));
+        } catch {
+            // Silently fail
+        }
+    }
+
+    private resetInventory(): void {
+        this.playerInventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+        this.saveInventory();
+    }
+
+    private applyInventoryToPlayer(): void {
+        this.player.inventory = { ...this.playerInventory };
+        if (this.playerInventory.hasArmor) {
+            this.player.maxHealth = 5;
+        }
+    }
+
     private trackAchievement(type: string, value: number): void {
         const unlocked = this.services?.achievements?.trackGameSpecificStat?.(
             'platform-adventure',
@@ -1692,7 +1809,8 @@ export class PlatformGame extends BaseGame {
 
     private completeDeathInterstitial(): void {
         this.deathInterstitial = null;
-        this.endGame();
+        this.gameState = 'game_over';
+        this.stateTimer = 0;
     }
 
     private spawnDeathInterstitialParticles(cause: DeathCause): DeathInterstitialParticle[] {
@@ -2171,6 +2289,17 @@ export class PlatformGame extends BaseGame {
         // If no story found for victory, go directly to victory screen
         if (triggerType === 'victory') {
             this.gameState = 'victory';
+        }
+    }
+
+    private queueItemStory(itemType: string): void {
+        const events = STORY_BY_LEVEL[this.currentLevel] ?? [];
+        for (const event of events) {
+            if (this.storySeen.has(event.id)) continue;
+            if (event.trigger.type === 'item_pickup' && (event.trigger as { itemType?: string }).itemType === itemType) {
+                this.beginStory(event);
+                return;
+            }
         }
     }
 

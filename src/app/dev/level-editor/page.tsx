@@ -38,6 +38,11 @@ const CHAR_TO_TILE: Record<string, TileType> = {
   C: 'spectral_crystal',
   F: 'fallen_seeker',
   J: 'journal',
+  // Item progression tiles
+  W: 'item_sword',
+  A: 'item_armor',
+  V: 'item_boots',
+  K: 'item_heart',
 };
 
 const GATE_CHARS = ['G', 'R', 'B', 'Y'];
@@ -106,6 +111,15 @@ const PALETTE = [
     tiles: [
       { char: 'P', label: 'Player Spawn' },
       { char: 'E', label: 'Guard' },
+    ],
+  },
+  {
+    label: 'Items',
+    tiles: [
+      { char: 'W', label: 'Ancient Blade' },
+      { char: 'A', label: 'Iron Armor' },
+      { char: 'V', label: 'Dash Boots' },
+      { char: 'K', label: 'Crystal Heart' },
     ],
   },
   {
