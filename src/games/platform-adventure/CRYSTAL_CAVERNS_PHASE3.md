@@ -1,9 +1,9 @@
 # Crystal Caverns - Phase 3: Final Polish & Release
 
-> **Version**: 1.0 | **Status**: In Progress (Sprint P3-1 & P3-3 complete)
+> **Version**: 1.0 | **Status**: In Progress (P3-1, P3-3, P3-4, P3-5, P3-6 complete — Audio, Performance, Launch remaining)
 > **Target**: Public Release Ready
 > **Quality Bar**: Premium Indie Game Polish
-> **Last Updated**: 2026-02-05
+> **Last Updated**: 2026-02-07
 >
 > *"Players should be amazed by the amount of polish. They'll come back for more and demand DLC."*
 
@@ -18,10 +18,11 @@ Phase 3 transforms Crystal Caverns from a feature-complete game into a **release
 - [ ] 60 FPS stable performance
 - [ ] Complete audio experience (music + SFX)
 - [ ] Achievement system functional
-- [ ] Local leaderboards working
-- [ ] All 5 levels playtested and balanced
-- [ ] Story fully integrated and impactful
+- [x] Local leaderboards working *(top 10, name entry, persist to localStorage)*
+- [x] All 5 levels playtested and balanced *(L5 redesigned with 4 zones)*
+- [x] Story fully integrated and impactful *(typewriter, story triggers, inscriptions, skeletons)*
 - [x] Controls feel "tight" and responsive *(coyote time, jump buffer, variable jump)*
+- [x] Game over screen shows death stats, session stats, high score entry
 
 ---
 
@@ -29,12 +30,12 @@ Phase 3 transforms Crystal Caverns from a feature-complete game into a **release
 
 | Sprint | Focus | Priority | Est. Effort | Status |
 |--------|-------|----------|-------------|--------|
-| P3-1 | Visual Atmosphere | HIGH | Large | **1.1 DONE, 1.2 DONE**, 1.3-1.4 TODO |
+| P3-1 | Visual Atmosphere | HIGH | Large | **DONE** (parallax, lighting, particles, animation) |
 | P3-2 | Audio & Music | HIGH | Medium | NOT STARTED (saved for last) |
-| P3-3 | Game Feel & Juice | HIGH | Medium | **3.1 DONE, 3.3 DONE**, 3.2 PARTIAL |
-| P3-4 | Progression Systems | MEDIUM | Medium | NOT STARTED |
-| P3-5 | Level Design Polish | HIGH | Large | NOT STARTED |
-| P3-6 | UI/UX Refinement | MEDIUM | Medium | NOT STARTED |
+| P3-3 | Game Feel & Juice | HIGH | Medium | **DONE** (camera, hit feedback, movement polish) |
+| P3-4 | Progression Systems | MEDIUM | Medium | **DONE** (score breakdown, leaderboard, level unlock, game over screen) |
+| P3-5 | Level Design Polish | HIGH | Large | **DONE** (all 5 levels revamped, L5 redesigned with 4 zones) |
+| P3-6 | UI/UX Refinement | MEDIUM | Medium | **DONE** (HUD, story typewriter, pause, level select, game over) |
 | P3-7 | Performance & QA | HIGH | Large | NOT STARTED |
 | P3-8 | Launch Prep | HIGH | Small | NOT STARTED |
 
@@ -202,12 +203,12 @@ class TorchLight {
 | Owl radiance | Owl collected | 100+ | 3s |
 
 ### Implementation Tasks
-- [ ] Add ambient dust particle spawning
-- [ ] Create torch spark emitter
-- [ ] Crystal shimmer effect
-- [ ] Player movement particles
-- [ ] Enhanced death animations
-- [ ] Victory celebration particles
+- [x] Add ambient dust particle spawning
+- [x] Create torch spark emitter
+- [x] Crystal shimmer effect
+- [x] Player movement particles (footstep dust, landing impact)
+- [x] Enhanced death animations
+- [x] Victory celebration particles (owl radiance)
 
 ---
 
@@ -226,12 +227,12 @@ class TorchLight {
 | Death | Fall | Dramatic collapse, weapon drop |
 
 ### Implementation Tasks
-- [ ] Add breathing to idle animation
-- [ ] Improve walk/run cycle fluidity
-- [ ] Jump anticipation and landing squash
-- [ ] Attack wind-up telegraph
-- [ ] Directional hurt stagger
-- [ ] Dramatic death sequence
+- [x] Add breathing to idle animation
+- [x] Improve walk/run cycle fluidity
+- [x] Jump anticipation and landing squash
+- [x] Attack wind-up telegraph
+- [x] Directional hurt stagger
+- [x] Dramatic death sequence
 
 ---
 
@@ -422,11 +423,11 @@ onHitConnect(attacker: Entity, target: Entity, damage: number): void {
 ```
 
 ### Implementation Tasks
-- [ ] Tune hit stop duration by damage
-- [ ] White flash on hit
-- [ ] Directional knockback
-- [ ] Impact particles with directionality
-- [ ] Boss hits have extra feedback
+- [x] Tune hit stop duration by damage
+- [x] White flash on hit
+- [x] Directional knockback
+- [x] Impact particles with directionality
+- [x] Boss hits have extra feedback
 
 ---
 
@@ -622,12 +623,12 @@ class ScoreMultiplier {
 ```
 
 ### Implementation Tasks
-- [ ] Create Leaderboard class
-- [ ] Score breakdown screen at level end
-- [ ] Score multiplier system with UI indicator
-- [ ] Top 10 local leaderboard
-- [ ] Name entry on high score
-- [ ] Persist to localStorage
+- [x] Create Leaderboard class
+- [x] Score breakdown screen at level end
+- [x] Score multiplier system with UI indicator
+- [x] Top 10 local leaderboard
+- [x] Name entry on high score
+- [x] Persist to localStorage
 
 ---
 
@@ -656,11 +657,11 @@ class ScoreMultiplier {
 ```
 
 ### Implementation Tasks
-- [ ] Design level complete UI
-- [ ] Animate score counting up
-- [ ] Show item-by-item breakdown
-- [ ] Display any achievements unlocked
-- [ ] Continue to next level or credits
+- [x] Design level complete UI
+- [x] Animate score counting up
+- [x] Show item-by-item breakdown
+- [x] Display any achievements unlocked
+- [x] Continue to next level or credits
 
 ---
 
@@ -776,12 +777,12 @@ Each level needs **memorable visual moments**:
 - Boss health bar (when applicable)
 
 ### HUD Polish Tasks
-- [ ] Animate health changes (pulse on damage/heal)
-- [ ] Score pop-ups when collecting items
-- [ ] Timer warning (flash when <30 seconds)
-- [ ] Multiplier indicator (when active)
-- [ ] Subtle gem counter
-- [ ] Mini-map (optional, togglable)
+- [x] Animate health changes (pulse on damage/heal)
+- [x] Score pop-ups when collecting items
+- [x] Timer warning (flash when <30 seconds)
+- [x] Multiplier indicator (when active)
+- [x] Subtle gem counter
+- [ ] Mini-map (optional, togglable) — deferred
 
 ---
 
@@ -816,28 +817,28 @@ Each level needs **memorable visual moments**:
 - Display (screen shake toggle, particles toggle)
 
 ### Implementation Tasks
-- [ ] Design main menu with game logo
-- [ ] Implement level select screen
-- [ ] Create settings panel
-- [ ] Pause menu functionality
-- [ ] Save/load game state
+- [x] Design main menu with game logo
+- [x] Implement level select screen
+- [x] Create settings panel
+- [x] Pause menu functionality
+- [x] Save/load game state
 
 ---
 
 ## 6.3 Story Presentation
 
 ### Story Panel Polish
-- [ ] Add character portrait (Kael, Captain, Shadow, Owl)
-- [ ] Typewriter text effect (skippable)
-- [ ] Background dim during story
-- [ ] Sound effect on text appearance
-- [ ] Smooth fade in/out transitions
+- [ ] Add character portrait (Kael, Captain, Shadow, Owl) — deferred
+- [x] Typewriter text effect (skippable)
+- [x] Background dim during story
+- [ ] Sound effect on text appearance — needs audio sprint
+- [x] Smooth fade in/out transitions
 
 ### Loading Screens
-- [ ] Level name and subtitle
-- [ ] Atmospheric quote or hint
-- [ ] Progress indicator
-- [ ] Quick tip rotation
+- [x] Level name and subtitle (level_intro state)
+- [x] Atmospheric quote or hint
+- [x] Progress indicator
+- [ ] Quick tip rotation — deferred
 
 ---
 
@@ -994,22 +995,22 @@ Each level needs **memorable visual moments**:
 1. Performance stable at 60 FPS
 2. All critical bugs fixed
 3. Complete audio (music + SFX)
-4. Level design balanced
-5. Story triggers working correctly
-6. Save system functional
+4. ~~Level design balanced~~ **DONE** (all 5 levels revamped, L5 redesigned)
+5. ~~Story triggers working correctly~~ **DONE**
+6. ~~Save system functional~~ **DONE** (localStorage persistence)
 
 ## Should Have (High Value)
 1. Achievement system
-2. Leaderboards
+2. ~~Leaderboards~~ **DONE** (top 10, name entry, persist)
 3. ~~Parallax backgrounds~~ **DONE**
 4. ~~Dynamic lighting~~ **DONE** (with player torch + moonlight)
-5. Score breakdown screen
-6. Menu system polish
+5. ~~Score breakdown screen~~ **DONE** (level complete + game over)
+6. ~~Menu system polish~~ **DONE** (main menu, pause, level select)
 
 ## Nice to Have (Post-Launch)
 1. Secret areas
-2. Additional particle effects
-3. Character animation improvements
+2. ~~Additional particle effects~~ **DONE** (7 types)
+3. ~~Character animation improvements~~ **DONE** (breathing, squash, stagger, death)
 4. Speedrun mode
 5. Controller support
 6. Accessibility options
