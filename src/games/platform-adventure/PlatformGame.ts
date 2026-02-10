@@ -325,6 +325,9 @@ export class PlatformGame extends BaseGame {
     private swordKeyWasPressed: boolean = false;
     private jumpKeyWasPressed: boolean = false;
 
+    // Pending item raise animation (plays after story dialogue)
+    private pendingItemRaise: boolean = false;
+
     // HUD animations (P3-6)
     private scorePopups: ScorePopup[] = [];
     private healthPulseTimer: number = 0;
@@ -437,6 +440,7 @@ export class PlatformGame extends BaseGame {
         this.levelCounterAttacks = 0;
         this.levelGuardsDefeated = 0;
         this.swordEverDrawn = false;
+        this.pendingItemRaise = false;
         this.levelStartTime = Date.now();
         this.levelGemsCollected = 0;
         this.totalGemsInLevel = gemCount;
@@ -825,13 +829,18 @@ export class PlatformGame extends BaseGame {
         const shiftKey = input?.isKeyPressed?.('ShiftLeft') || input?.isKeyPressed?.('ShiftRight') || false;
         const ctrlKey = input?.isKeyPressed?.('ControlLeft') || input?.isKeyPressed?.('ControlRight') || false;
 
-        // Handle sword toggle (edge triggered)
+        // Handle combat mode toggle (edge triggered) — Shift always works
         if (shiftKey && !this.swordKeyWasPressed) {
-            this.player.toggleSword();
+            this.player.toggleCombatMode();
             if (this.player.hasSword) {
                 this.swordEverDrawn = true;
+                this.services?.audio?.playSound?.('sword_draw');
+            } else if (this.player.inCombatMode) {
+                // Entering fist stance (no blade)
+                this.services?.audio?.playSound?.('jump'); // Stance shuffle sound
+            } else {
+                this.services?.audio?.playSound?.('sword_sheathe');
             }
-            this.services?.audio?.playSound?.(this.player.hasSword ? 'sword_draw' : 'sword_sheathe');
         }
         this.swordKeyWasPressed = shiftKey;
 
@@ -840,12 +849,12 @@ export class PlatformGame extends BaseGame {
             if (this.player.tryAttack()) {
                 this.services?.audio?.playSound?.(this.player.hasSword ? 'sword_swing' : 'hit');
             }
-        } else if (ctrlKey && this.player.hasSword) {
+        } else if (ctrlKey && this.player.inCombatMode) {
             this.player.tryBlock();
         }
 
-        // Handle dash (Ctrl when sword NOT drawn, requires boots)
-        if (ctrlKey && !this.player.hasSword && !this.dashKeyWasPressed) {
+        // Handle dash (Ctrl when NOT in combat mode, requires boots)
+        if (ctrlKey && !this.player.inCombatMode && !this.dashKeyWasPressed) {
             if (this.player.tryDash()) {
                 this.services?.audio?.playSound?.('jump'); // Reuse jump sound for dash
             }
@@ -1094,42 +1103,91 @@ export class PlatformGame extends BaseGame {
         // Player attacks guard
         if (this.player.attackHitbox) {
             const ph = this.player.attackHitbox;
+            const isSwordAttack = this.player.hasSword;
+
             for (const guard of this.guards) {
                 if (!guard.isAlive) continue;
 
                 if (ph.x < guard.right && ph.x + ph.w > guard.left &&
                     ph.y < guard.bottom && ph.y + ph.h > guard.top) {
-                    const hitDir = this.player.facingRight ? 1 : -1;
+                    // Push direction: always away from player center
+                    const hitDir = guard.centerX >= this.player.centerX ? 1 : -1;
                     const isBoss = guard.type === 'captain' || guard.type === 'shadow';
 
-                    if (guard.isBlocking) {
-                        // Blocked!
-                        this.services?.audio?.playSound?.('sword_clash');
-                        this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
-                        this.triggerHitStop(isBoss ? 0.04 : 0.02);
-                        this.triggerScreenShakePreset('BLOCK_CLASH');
-                    } else {
-                        // Calculate damage: sword = 1 (2 with Crystal Heart), punch = 1
-                        const damage = this.player.hasSword && this.playerInventory.hasHeart ? 2 : 1;
-                        guard.takeDamage(damage);
-                        this.services?.audio?.playSound?.(this.player.hasSword ? 'hit' : 'hurt_grunt');
-                        this.services?.audio?.playSound?.('hurt_grunt');
-                        this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
-                        // Hit stop scales with damage and boss status (P3-3.2)
-                        this.triggerHitStop(isBoss ? 0.06 : 0.04);
-                        this.triggerScreenShakePreset(isBoss ? 'HIT_ENEMY' : 'GUARD_DEATH');
-                        // Boss extra feedback: screen flash + extra particles
-                        if (isBoss) {
-                            this.triggerScreenFlash('#ffffff', 0.15, 0.1);
+                    if (isSwordAttack) {
+                        // === SWORD ATTACK: works on everything ===
+                        if (guard.isBlocking) {
+                            this.services?.audio?.playSound?.('sword_clash');
                             this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
+                            this.triggerHitStop(isBoss ? 0.04 : 0.02);
+                            this.triggerScreenShakePreset('BLOCK_CLASH');
+                        } else {
+                            // Sword damage: 1 (2 with Crystal Heart). Recruits take 3 (instant kill).
+                            let damage = this.playerInventory.hasHeart ? 2 : 1;
+                            if (guard.type === 'recruit') damage = 3; // One-shot recruit
+                            guard.takeDamage(damage);
+                            this.services?.audio?.playSound?.('hit');
+                            this.services?.audio?.playSound?.('hurt_grunt');
+                            this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
+                            this.triggerHitStop(isBoss ? 0.06 : 0.04);
+                            this.triggerScreenShakePreset(isBoss ? 'HIT_ENEMY' : 'GUARD_DEATH');
+                            if (isBoss) {
+                                this.triggerScreenFlash('#ffffff', 0.15, 0.1);
+                                this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
+                            }
+                            if (!guard.isAlive) {
+                                this.guardsDefeated++;
+                                this.levelGuardsDefeated++;
+                                this.score += SCORING.GUARD_KILL;
+                                this.services?.audio?.playSound?.('death_cry');
+                                this.spawnDeathBurst(guard.centerX, guard.y + guard.height * 0.5);
+                                this.scorePopups.push({ x: guard.centerX, y: guard.y - 10, text: `+${SCORING.GUARD_KILL}`, color: '#ff6644', timer: 1.2 });
+                            }
                         }
-                        if (!guard.isAlive) {
-                            this.guardsDefeated++;
-                            this.levelGuardsDefeated++;
-                            this.score += SCORING.GUARD_KILL;
-                            this.services?.audio?.playSound?.('death_cry');
-                            this.spawnDeathBurst(guard.centerX, guard.y + guard.height * 0.5);
-                            this.scorePopups.push({ x: guard.centerX, y: guard.y - 10, text: `+${SCORING.GUARD_KILL}`, color: '#ff6644', timer: 1.2 });
+                    } else {
+                        // === PUNCH ATTACK: tiered by guard type ===
+                        if (guard.type === 'recruit') {
+                            // Punch damages recruits normally; on death → KO instead of dying
+                            if (guard.isBlocking) {
+                                // Recruits can't block (blockChance = 0), but handle defensively
+                                this.services?.audio?.playSound?.('sword_clash');
+                                this.triggerHitStop(0.02);
+                            } else {
+                                guard.takeDamage(1);
+                                guard.x += hitDir * 20; // Knock back away from player
+                                this.services?.audio?.playSound?.('hurt_grunt');
+                                this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
+                                this.triggerHitStop(0.03);
+                                this.triggerScreenShakePreset('GUARD_DEATH');
+                                // If recruit "died" from punch, convert to KO
+                                if (guard.isDying) {
+                                    guard.knockOut();
+                                    guard.x += hitDir * 16; // Extra KO knockback
+                                    this.scorePopups.push({ x: guard.centerX, y: guard.y - 10, text: 'KO!', color: '#ffaa44', timer: 1.0 });
+                                }
+                            }
+                        } else if (guard.type === 'soldier') {
+                            // Soldier: no HP damage, every 3rd punch staggers + pushes
+                            guard.punchHitCount++;
+                            this.services?.audio?.playSound?.('hurt_grunt');
+                            this.triggerHitStop(0.02);
+                            // Small impact particles
+                            this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
+                            if (guard.punchHitCount % 3 === 0) {
+                                // Stagger + knockback
+                                guard.stagger();
+                                guard.x += hitDir * 24; // Push ~0.75 tile
+                                this.triggerHitStop(0.04);
+                                this.triggerScreenShakePreset('GUARD_DEATH');
+                                this.spawnBloodBurst(guard.centerX, guard.y + guard.height * 0.5);
+                                this.scorePopups.push({ x: guard.centerX, y: guard.y - 10, text: 'Stagger!', color: '#ffcc44', timer: 0.8 });
+                            }
+                        } else {
+                            // Veteran / Captain / Shadow: punch has no effect
+                            this.services?.audio?.playSound?.('sword_clash'); // Armor clank
+                            this.triggerHitStop(0.01);
+                            // Small spark at impact
+                            this.spawnSwordClash(guard.centerX, guard.y + guard.height * 0.5, hitDir);
                         }
                     }
                 }
@@ -1232,8 +1290,10 @@ export class PlatformGame extends BaseGame {
                     case 'item_sword':
                         this.playerInventory.hasBlade = true;
                         this.player.inventory.hasBlade = true;
-                        this.player.hasSword = true; // Auto-draw sword
+                        this.player.inCombatMode = true;
+                        this.player.hasSword = true;
                         this.swordEverDrawn = true;
+                        this.pendingItemRaise = true; // Trigger raise after story
                         this.saveInventory();
                         this.services?.audio?.playSound?.('unlock');
                         this.triggerScreenFlash('#c0d0e0', 0.4, 0.2);
@@ -1596,6 +1656,11 @@ export class PlatformGame extends BaseGame {
 
     private resetInventory(): void {
         this.playerInventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+        this.player.inventory = { hasBlade: false, hasArmor: false, hasBoots: false, hasHeart: false };
+        this.player.hasSword = false;
+        this.player.inCombatMode = false;
+        this.player.maxHealth = 3;
+        this.player.health = 3;
         this.saveInventory();
     }
 
@@ -2149,6 +2214,12 @@ export class PlatformGame extends BaseGame {
                         this.gameState = 'victory';
                     } else {
                         this.gameState = 'playing';
+                        // Play item raise animation if pending
+                        if (this.pendingItemRaise) {
+                            this.pendingItemRaise = false;
+                            this.player.startItemRaise();
+                            this.services?.audio?.playSound?.('powerup');
+                        }
                     }
                 }
             }
@@ -4065,7 +4136,7 @@ export class PlatformGame extends BaseGame {
         // Controls
         ctx.fillStyle = '#666666';
         ctx.font = '14px Arial';
-        ctx.fillText('Left/Right Move  |  Up Jump  |  Down Drop  |  Shift Sword  |  Ctrl Block', w / 2, h - 60);
+        ctx.fillText('Left/Right Move  |  Up Jump  |  Down Drop  |  Shift Fight  |  Ctrl Block/Dash', w / 2, h - 60);
         ctx.fillText('Navigate 5 levels. Avoid traps. Defeat guards. Find the Owl!', w / 2, h - 35);
     }
 

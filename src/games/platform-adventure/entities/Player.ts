@@ -2,7 +2,7 @@
 // Simplified player with direct movement (like TapDodge pattern)
 import { TILE_SIZE } from '../data/TileTypes';
 
-export type PlayerState = 'idle' | 'run' | 'jump' | 'fall' | 'combat_idle' | 'attack' | 'block' | 'hurt' | 'dying' | 'dead';
+export type PlayerState = 'idle' | 'run' | 'jump' | 'fall' | 'combat_idle' | 'attack' | 'block' | 'hurt' | 'dying' | 'dead' | 'item_raise';
 
 export interface PlayerInventory {
     hasBlade: boolean;
@@ -48,6 +48,7 @@ export class Player {
     public isGrounded: boolean = true;
 
     // Combat
+    public inCombatMode: boolean = false;
     public isBlocking: boolean = false;
     public attackHitbox: { x: number, y: number, w: number, h: number } | null = null;
     private attackTimer: number = 0;
@@ -147,14 +148,20 @@ export class Player {
         // Handle attack state exit
         if (this.state === 'attack' && this.attackTimer <= 0) {
             this.attackHitbox = null;
-            this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.state = this.inCombatMode ? 'combat_idle' : 'idle';
             this.animTimer = 0;
         }
 
         // Handle block state exit
         if (this.state === 'block' && this.blockTimer <= 0) {
             this.isBlocking = false;
-            this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.state = this.inCombatMode ? 'combat_idle' : 'idle';
+            this.animTimer = 0;
+        }
+
+        // Handle item raise animation exit
+        if (this.state === 'item_raise' && this.animTimer > 1.5) {
+            this.state = 'combat_idle';
             this.animTimer = 0;
         }
 
@@ -164,7 +171,7 @@ export class Player {
         }
 
         if (this.state === 'hurt' && this.hurtTimer <= 0) {
-            this.state = this.hasSword ? 'combat_idle' : (this.isGrounded ? 'idle' : 'fall');
+            this.state = this.inCombatMode ? 'combat_idle' : (this.isGrounded ? 'idle' : 'fall');
             this.animTimer = 0;
         }
 
@@ -223,22 +230,39 @@ export class Player {
     // Direct movement methods - called from game input handler
     moveLeft(): void {
         if (this.canMove()) {
-            this.vx = -this.MOVE_SPEED;
+            const speed = this.inCombatMode ? this.MOVE_SPEED * 0.5 : this.MOVE_SPEED;
+            this.vx = -speed;
             this.facingRight = false;
-            if (this.isGrounded && this.state !== 'run') {
-                this.state = 'run';
-                this.animTimer = 0;
+            if (this.isGrounded) {
+                if (this.inCombatMode) {
+                    // Stay in combat_idle while moving — hands stay up
+                    if (this.state !== 'combat_idle') {
+                        this.state = 'combat_idle';
+                        this.animTimer = 0;
+                    }
+                } else if (this.state !== 'run') {
+                    this.state = 'run';
+                    this.animTimer = 0;
+                }
             }
         }
     }
 
     moveRight(): void {
         if (this.canMove()) {
-            this.vx = this.MOVE_SPEED;
+            const speed = this.inCombatMode ? this.MOVE_SPEED * 0.5 : this.MOVE_SPEED;
+            this.vx = speed;
             this.facingRight = true;
-            if (this.isGrounded && this.state !== 'run') {
-                this.state = 'run';
-                this.animTimer = 0;
+            if (this.isGrounded) {
+                if (this.inCombatMode) {
+                    if (this.state !== 'combat_idle') {
+                        this.state = 'combat_idle';
+                        this.animTimer = 0;
+                    }
+                } else if (this.state !== 'run') {
+                    this.state = 'run';
+                    this.animTimer = 0;
+                }
             }
         }
     }
@@ -246,13 +270,14 @@ export class Player {
     stopMoving(): void {
         this.vx = 0;
         if (this.isGrounded && this.state === 'run') {
-            this.state = this.hasSword ? 'combat_idle' : 'idle';
+            this.state = this.inCombatMode ? 'combat_idle' : 'idle';
             this.animTimer = 0;
         }
     }
 
     // Buffer a jump input - called when jump key is pressed
     bufferJump(): void {
+        if (this.inCombatMode) return; // No jumping in combat mode
         this.timeSinceJumpPressed = 0;
         this.jumpReleased = false;
         // Try to jump immediately if possible
@@ -290,6 +315,7 @@ export class Player {
     }
 
     jump(): boolean {
+        if (this.inCombatMode) return false; // No jumping in combat mode
         // Check coyote time: can jump if grounded OR recently was grounded
         const canCoyoteJump = this.isGrounded || this.timeSinceGrounded < this.coyoteTime;
 
@@ -302,7 +328,7 @@ export class Player {
     private canMove(): boolean {
         return this.state !== 'attack' && this.state !== 'block' &&
             this.state !== 'hurt' && this.state !== 'dying' && this.state !== 'dead' &&
-            !this.isDashing;
+            this.state !== 'item_raise' && !this.isDashing;
     }
 
     // Called by collision system when landing
@@ -313,7 +339,7 @@ export class Player {
             this.vy = 0;
             this.timeSinceGrounded = 0;  // Reset coyote timer on landing
             if (this.state === 'jump' || this.state === 'fall') {
-                this.state = this.hasSword ? 'combat_idle' : 'idle';
+                this.state = this.inCombatMode ? 'combat_idle' : 'idle';
                 this.animTimer = 0;
             }
         }
@@ -333,16 +359,25 @@ export class Player {
     }
 
     // Combat
-    toggleSword(): void {
-        if (!this.inventory.hasBlade) return; // Need Ancient Blade to draw sword
-        if (this.canMove()) {
-            this.hasSword = !this.hasSword;
-            this.state = this.hasSword ? 'combat_idle' : 'idle';
-            this.animTimer = 0;
+    toggleCombatMode(): void {
+        if (!this.canMove()) return;
+        this.inCombatMode = !this.inCombatMode;
+        if (this.inCombatMode) {
+            // Enter combat mode
+            if (this.inventory.hasBlade) {
+                this.hasSword = true;
+            }
+            this.state = 'combat_idle';
+        } else {
+            // Exit combat mode
+            this.hasSword = false;
+            this.state = 'idle';
         }
+        this.animTimer = 0;
     }
 
     tryAttack(): boolean {
+        if (!this.inCombatMode) return false; // Must be in combat mode to attack
         if (this.state === 'attack' || this.state === 'block' ||
             this.state === 'hurt' || this.state === 'dying' || this.state === 'dead') return false;
 
@@ -376,7 +411,7 @@ export class Player {
     }
 
     tryBlock(): boolean {
-        if (!this.hasSword || this.state === 'block') return false;
+        if (!this.inCombatMode || this.state === 'block') return false;
         if (!this.canMove()) return false;
 
         this.state = 'block';
@@ -435,6 +470,12 @@ export class Player {
         this.health = this.maxHealth;
     }
 
+    startItemRaise(): void {
+        this.state = 'item_raise';
+        this.animTimer = 0;
+        this.vx = 0;
+    }
+
     die(): void {
         this.state = 'dying';
         this.animTimer = 0;
@@ -450,6 +491,7 @@ export class Player {
         this.animFrame = 0;
         this.animTimer = 0;
         this.isGrounded = true;
+        this.inCombatMode = false;
         this.hasSword = false;
         this.isBlocking = false;
         this.attackHitbox = null;
@@ -474,6 +516,10 @@ export class Player {
         this.spawnY = y;
     }
 
+    // Offscreen canvas for flash effect (reused to avoid allocation)
+    private static flashCanvas: HTMLCanvasElement | null = null;
+    private static flashCtx: CanvasRenderingContext2D | null = null;
+
     // Rendering
     render(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
         const screenX = Math.floor(this.x - camX);
@@ -482,27 +528,49 @@ export class Player {
         // Blink when invulnerable
         if (this.invulnTimer > 0 && Math.floor(this.invulnTimer * 8) % 2 === 0) return;
 
-        ctx.save();
-
-        if (!this.facingRight) {
-            ctx.translate(screenX + this.width, screenY);
-            ctx.scale(-1, 1);
-        } else {
-            ctx.translate(screenX, screenY);
-        }
-
-        this.drawSprite(ctx);
-
-        // White flash overlay on hit (P3-3.2)
+        // If flashing, render to offscreen canvas so source-atop only affects sprite pixels
         if (this.flashTimer > 0) {
+            const bufW = 64; // Generous buffer for sword/attack reach
+            const bufH = 56;
+            if (!Player.flashCanvas || Player.flashCanvas.width !== bufW || Player.flashCanvas.height !== bufH) {
+                Player.flashCanvas = document.createElement('canvas');
+                Player.flashCanvas.width = bufW;
+                Player.flashCanvas.height = bufH;
+                Player.flashCtx = Player.flashCanvas.getContext('2d');
+            }
+            const offCtx = Player.flashCtx!;
+            offCtx.clearRect(0, 0, bufW, bufH);
+            offCtx.save();
+            // Draw sprite into buffer (use bufW for flip so position matches normal render)
+            if (!this.facingRight) {
+                offCtx.translate(bufW, 0);
+                offCtx.scale(-1, 1);
+            }
+            this.drawSprite(offCtx);
+            // Apply flash on top of sprite pixels only
             const flashAlpha = Math.min(0.7, this.flashTimer / 0.12);
-            ctx.globalCompositeOperation = 'source-atop';
-            ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
-            ctx.fillRect(-2, -2, this.width + 4, this.height + 4);
-            ctx.globalCompositeOperation = 'source-over';
+            offCtx.globalCompositeOperation = 'source-atop';
+            offCtx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+            offCtx.fillRect(0, 0, bufW, bufH);
+            offCtx.globalCompositeOperation = 'source-over';
+            offCtx.restore();
+            // Draw the composited result onto main canvas
+            if (!this.facingRight) {
+                ctx.drawImage(Player.flashCanvas, screenX - (bufW - this.width), screenY);
+            } else {
+                ctx.drawImage(Player.flashCanvas, screenX, screenY);
+            }
+        } else {
+            ctx.save();
+            if (!this.facingRight) {
+                ctx.translate(screenX + this.width, screenY);
+                ctx.scale(-1, 1);
+            } else {
+                ctx.translate(screenX, screenY);
+            }
+            this.drawSprite(ctx);
+            ctx.restore();
         }
-
-        ctx.restore();
     }
 
     private drawSprite(ctx: CanvasRenderingContext2D): void {
@@ -521,6 +589,66 @@ export class Player {
 
         // Blade color (Crystal Heart turns it pink)
         const bladeColor = this.inventory.hasHeart ? '#ff88cc' : '#c0d0e0';
+
+        // ===== ITEM RAISE ANIMATION =====
+        if (this.state === 'item_raise') {
+            const t = this.animTimer;
+            const raiseProgress = Math.min(1, t / 0.5); // Raise over 0.5s
+            const holdGlow = t > 0.5 ? Math.sin((t - 0.5) * 6) * 0.3 + 0.7 : 0;
+
+            // Legs — standing wide
+            ctx.fillStyle = this.inventory.hasBoots ? '#2266aa' : '#333';
+            ctx.fillRect(4, 32, 5, 16);
+            ctx.fillRect(15, 32, 5, 16);
+
+            // Torso
+            ctx.fillStyle = this.inventory.hasArmor ? '#7788aa' : '#4466aa';
+            ctx.fillRect(4, 14, 16, 18);
+
+            // Belt
+            ctx.fillStyle = '#664422';
+            ctx.fillRect(4, 31, 16, 2);
+
+            // Arms — both raised overhead holding sword
+            ctx.fillStyle = '#ffcc99';
+            const armRaise = raiseProgress * 14; // Arms go from sides to overhead
+            // Left arm
+            ctx.fillRect(2, 16 - armRaise, 4, 10);
+            // Right arm
+            ctx.fillRect(18, 16 - armRaise, 4, 10);
+
+            // Head
+            ctx.fillStyle = '#ffcc99';
+            ctx.fillRect(6, 0, 12, 14);
+            // Hair
+            ctx.fillStyle = '#4a3020';
+            ctx.fillRect(6, 0, 12, 4);
+            ctx.fillRect(4, 2, 4, 5);
+            // Eye
+            ctx.fillStyle = '#000';
+            ctx.fillRect(14, 6, 2, 2);
+
+            // Sword — raised from side to overhead
+            if (this.hasSword) {
+                const swordY = 18 - armRaise * 1.8; // Sword goes higher than arms
+                ctx.fillStyle = '#886633'; // Hilt
+                ctx.fillRect(9, 6 - armRaise, 6, 5);
+                ctx.fillStyle = bladeColor;
+                // Blade pointing straight up
+                ctx.fillRect(10, swordY - 10, 4, 12);
+                ctx.fillRect(11, swordY - 14, 2, 5); // Tip
+
+                // Glow effect while holding overhead
+                if (holdGlow > 0) {
+                    ctx.save();
+                    ctx.globalAlpha = holdGlow * 0.4;
+                    ctx.fillStyle = this.inventory.hasHeart ? '#ff88cc' : '#aaccff';
+                    ctx.fillRect(4, swordY - 16, 16, 20);
+                    ctx.restore();
+                }
+            }
+            return;
+        }
 
         // ===== DRAMATIC DEATH SEQUENCE (P3-1.4) =====
         if (isDead) {
@@ -613,6 +741,18 @@ export class Player {
                 ctx.fillRect(6, 32, 5, 16);
                 ctx.fillRect(13, 34, 5, 12);
             }
+        } else if (this.state === 'combat_idle') {
+            if (this.vx !== 0) {
+                // Combat shuffle: short bouncy steps, legs stay wide
+                const shufflePhase = this.animTimer * 8; // Faster cadence than run
+                const off = Math.sin(shufflePhase) * 3; // Shorter stride than run
+                ctx.fillRect(4, 32 + off, 5, 16 - Math.abs(off));
+                ctx.fillRect(15, 32 - off, 5, 16 - Math.abs(off));
+            } else {
+                // Standing combat stance: wider leg spread
+                ctx.fillRect(4, 32 + idleBob, 5, 16);
+                ctx.fillRect(15, 32 + idleBob, 5, 16);
+            }
         } else {
             ctx.fillRect(6, 32 + idleBob, 5, 16);
             ctx.fillRect(13, 32 + idleBob, 5, 16);
@@ -627,11 +767,13 @@ export class Player {
         const attackLean = this.state === 'attack' ? [0, 1, 2, 3, 1][Math.min(this.animFrame, 4)] : 0;
         const torsoColor = this.state === 'hurt' ? '#aa4444' : (this.inventory.hasArmor ? '#7788aa' : '#4466aa');
         ctx.fillStyle = torsoColor;
+        // Combat stance forward lean (fists only)
+        const combatLean = (this.state === 'combat_idle' && !this.hasSword) ? 2 : 0;
         if (this.state === 'jump' && this.animFrame <= 0) {
             // Crouch torso lower during jump anticipation (P3-1.4)
             ctx.fillRect(torsoX, 18 + idleBob, torsoW, 16);
         } else {
-            ctx.fillRect(torsoX + attackLean, 14 + idleBob, torsoW, 18);
+            ctx.fillRect(torsoX + attackLean + combatLean, 14 + idleBob, torsoW, 18);
         }
 
         // Armor shoulder pads
@@ -708,8 +850,20 @@ export class Player {
                 ctx.fillRect(22 + attackLean, 15 + idleBob, 6, 4);
             }
         } else if (this.state === 'block') {
-            const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
-            ctx.fillRect(18, 6 + raise + idleBob, 4, 18);
+            if (this.hasSword) {
+                // Sword block: arm raised holding sword vertically
+                const raise = this.animFrame === 0 ? 4 : this.animFrame === 1 ? 0 : 6;
+                ctx.fillRect(18, 6 + raise + idleBob, 4, 18);
+            } else {
+                // Fist block: both arms crossed in front of face/chest
+                const raise = this.animFrame === 0 ? 2 : this.animFrame === 1 ? 0 : 3;
+                // Forearms crossed forming an X guard
+                ctx.fillRect(8, 8 + raise + idleBob, 5, 14);  // Left arm across
+                ctx.fillRect(12, 6 + raise + idleBob, 5, 14);  // Right arm across
+                // Fists
+                ctx.fillRect(7, 6 + raise + idleBob, 6, 5);
+                ctx.fillRect(12, 4 + raise + idleBob, 6, 5);
+            }
         } else if (this.state === 'run') {
             const phase = (this.animFrame / this.ANIM.runFrames) * Math.PI * 2;
             const off = Math.sin(phase) * 3;
@@ -719,6 +873,24 @@ export class Player {
             // Arms recoil in hurt direction (P3-1.4)
             ctx.fillRect(2, 18, 4, 8);
             ctx.fillRect(18, 20, 4, 8);
+        } else if (this.state === 'combat_idle' && this.hasSword) {
+            // Sword combat stance: lead arm extends forward gripping hilt
+            const sway = Math.sin(breathPhase) * 0.5;
+            // Lead arm — extended forward holding sword
+            ctx.fillRect(16, 14 + idleBob + sway, 4, 4);  // Upper arm
+            ctx.fillRect(19, 12 + idleBob + sway, 4, 4);  // Forearm angled up
+            // Rear arm — tucked at side, ready
+            ctx.fillRect(2, 18 + idleBob - sway, 4, 8);
+        } else if (this.state === 'combat_idle' && !this.hasSword) {
+            // Fist fighting stance: arms raised in boxing guard
+            const guardSway = Math.sin(breathPhase) * 0.5;
+            // Lead arm (front) — fist at chest height
+            ctx.fillRect(18, 12 + idleBob + guardSway, 4, 8);
+            // Rear arm — fist guarding face
+            ctx.fillRect(14, 10 + idleBob - guardSway, 4, 8);
+            // Fists (small squares)
+            ctx.fillRect(18, 10 + idleBob + guardSway, 5, 5);
+            ctx.fillRect(14, 8 + idleBob - guardSway, 5, 5);
         } else {
             // Idle: subtle arm sway with breathing
             const armSway = isIdle ? Math.sin(breathPhase + 0.5) * 1 : 0;
@@ -825,6 +997,27 @@ export class Player {
                 ctx.fillRect(20, 2 + raise + idleBob, 3, 22);
                 ctx.fillStyle = '#886633';
                 ctx.fillRect(18, 22 + idleBob, 8, 4);
+            } else if (this.state === 'combat_idle') {
+                // Combat ready: sword held diagonally, tip pointing up-forward
+                const sway = Math.sin(breathPhase) * 0.5;
+                // Crystal Heart glow along blade path
+                if (this.inventory.hasHeart) {
+                    ctx.save();
+                    ctx.globalAlpha = 0.2;
+                    ctx.fillStyle = '#ff44aa';
+                    ctx.fillRect(20, 0 + idleBob + sway, 12, 14);
+                    ctx.restore();
+                }
+                // Hilt at hand position
+                ctx.fillStyle = '#886633';
+                ctx.fillRect(20, 12 + idleBob + sway, 5, 5);
+                // Blade going diagonally up — draw as stepped pixels
+                ctx.fillStyle = bladeColor;
+                ctx.fillRect(22, 10 + idleBob + sway, 3, 3);  // base
+                ctx.fillRect(23, 7 + idleBob + sway, 3, 4);   // mid
+                ctx.fillRect(24, 4 + idleBob + sway, 3, 4);   // upper
+                ctx.fillRect(25, 1 + idleBob + sway, 2, 4);   // tip
+                ctx.fillRect(26, -1 + idleBob + sway, 2, 3);  // tip point
             } else {
                 // Idle/run: sword at side
                 if (this.inventory.hasHeart) {

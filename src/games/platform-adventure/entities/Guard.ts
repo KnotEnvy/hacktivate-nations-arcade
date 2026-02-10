@@ -12,7 +12,8 @@ export type GuardState =
     | 'stunned'
     | 'retreating'
     | 'dying'
-    | 'dead';
+    | 'dead'
+    | 'knocked_out';
 
 export type GuardType = 'recruit' | 'soldier' | 'veteran' | 'captain' | 'shadow';
 
@@ -62,7 +63,7 @@ interface AttackWindow {
 }
 
 const GUARD_STATS: Record<GuardType, GuardStats> = {
-    recruit: { maxHealth: 1, blockChance: 0.2, reactionTime: 0.5, aggression: 0.3, patrolSpeed: 22, advanceSpeed: 55, retreatSpeed: 70 },
+    recruit: { maxHealth: 3, blockChance: 0, reactionTime: 0.5, aggression: 0.3, patrolSpeed: 22, advanceSpeed: 55, retreatSpeed: 70 },
     soldier: { maxHealth: 2, blockChance: 0.4, reactionTime: 0.3, aggression: 0.5, patrolSpeed: 26, advanceSpeed: 60, retreatSpeed: 74 },
     veteran: { maxHealth: 3, blockChance: 0.6, reactionTime: 0.2, aggression: 0.7, patrolSpeed: 30, advanceSpeed: 68, retreatSpeed: 80 },
     captain: { maxHealth: 5, blockChance: 0.7, reactionTime: 0.15, aggression: 0.85, patrolSpeed: 34, advanceSpeed: 75, retreatSpeed: 86 },
@@ -110,6 +111,10 @@ export class Guard {
     // Hit feedback (P3-3.2)
     public flashTimer: number = 0;
 
+    // Punch interaction tracking
+    public punchHitCount: number = 0;
+    public knockoutTimer: number = 0;
+
     // Callbacks for boss events
     onPhaseChange?: (newPhase: number, guard: Guard) => void;
     onDeath?: (guard: Guard) => void;
@@ -144,6 +149,18 @@ export class Guard {
 
     update(dt: number, sense: GuardSense): void {
         if (this.state === 'dead') return;
+
+        // Handle knocked-out recruits recovering
+        if (this.state === 'knocked_out') {
+            this.knockoutTimer -= dt;
+            this.animTimer += dt;
+            if (this.knockoutTimer <= 0) {
+                this.health = this.maxHealth;
+                this.punchHitCount = 0;
+                this.setState('patrol');
+            }
+            return;
+        }
 
         this.animTimer += dt;
         if (this.combatCooldown > 0) this.combatCooldown -= dt;
@@ -388,6 +405,14 @@ export class Guard {
                         w: 36,
                         h: 20,
                     };
+                } else if (this.type === 'recruit') {
+                    // Recruit punch: smaller fist-sized hitbox
+                    this.attackHitbox = {
+                        x: this.x + (this.facingRight ? this.width : -15),
+                        y: this.y + 12,
+                        w: 15,
+                        h: 20,
+                    };
                 } else {
                     this.attackHitbox = {
                         x: this.x + (this.facingRight ? this.width : -30),
@@ -599,7 +624,7 @@ export class Guard {
     }
 
     takeDamage(amount: number = 1): void {
-        if (this.state === 'dead' || this.state === 'dying') return;
+        if (this.state === 'dead' || this.state === 'dying' || this.state === 'knocked_out') return;
         if (this.damageCooldown > 0) return;
 
         this.health -= amount;
@@ -614,36 +639,99 @@ export class Guard {
         }
     }
 
+    stagger(): void {
+        if (this.state === 'dead' || this.state === 'dying' || this.state === 'knocked_out') return;
+        this.setState('stunned');
+        this.flashTimer = 0.12;
+    }
+
+    knockOut(): void {
+        if (this.state === 'dead' || this.state === 'knocked_out') return;
+        this.state = 'knocked_out';
+        this.stateTimer = 0;
+        this.knockoutTimer = 5;
+        this.attackHitbox = null;
+        this.isBlocking = false;
+        this.animTimer = 0;
+    }
+
+    // Offscreen canvas for flash effect (shared across guards)
+    private static flashCanvas: HTMLCanvasElement | null = null;
+    private static flashCtx: CanvasRenderingContext2D | null = null;
+
     render(ctx: CanvasRenderingContext2D, camX: number, camY: number): void {
         if (this.state === 'dead') return;
 
         const screenX = Math.floor(this.x - camX);
         const screenY = Math.floor(this.y - camY);
 
-        ctx.save();
-
-        if (!this.facingRight) {
-            ctx.translate(screenX + this.width, screenY);
-            ctx.scale(-1, 1);
-        } else {
-            ctx.translate(screenX, screenY);
-        }
-
-        this.drawBody(ctx);
-
-        // White flash overlay on hit (P3-3.2)
         if (this.flashTimer > 0) {
+            // Render to offscreen canvas so source-atop only affects sprite pixels
+            const bufW = 64;
+            const bufH = 56;
+            if (!Guard.flashCanvas || Guard.flashCanvas.width !== bufW || Guard.flashCanvas.height !== bufH) {
+                Guard.flashCanvas = document.createElement('canvas');
+                Guard.flashCanvas.width = bufW;
+                Guard.flashCanvas.height = bufH;
+                Guard.flashCtx = Guard.flashCanvas.getContext('2d');
+            }
+            const offCtx = Guard.flashCtx!;
+            offCtx.clearRect(0, 0, bufW, bufH);
+            offCtx.save();
+            if (!this.facingRight) {
+                offCtx.translate(bufW, 0);
+                offCtx.scale(-1, 1);
+            }
+            this.drawBody(offCtx);
             const flashAlpha = Math.min(0.7, this.flashTimer / 0.12);
-            ctx.globalCompositeOperation = 'source-atop';
-            ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
-            ctx.fillRect(-2, -2, this.width + 4, this.height + 4);
-            ctx.globalCompositeOperation = 'source-over';
+            offCtx.globalCompositeOperation = 'source-atop';
+            offCtx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+            offCtx.fillRect(0, 0, bufW, bufH);
+            offCtx.globalCompositeOperation = 'source-over';
+            offCtx.restore();
+            if (!this.facingRight) {
+                ctx.drawImage(Guard.flashCanvas, screenX - (bufW - this.width), screenY);
+            } else {
+                ctx.drawImage(Guard.flashCanvas, screenX, screenY);
+            }
+        } else {
+            ctx.save();
+            if (!this.facingRight) {
+                ctx.translate(screenX + this.width, screenY);
+                ctx.scale(-1, 1);
+            } else {
+                ctx.translate(screenX, screenY);
+            }
+            this.drawBody(ctx);
+            ctx.restore();
         }
-
-        ctx.restore();
     }
 
     private drawBody(ctx: CanvasRenderingContext2D): void {
+        // Knocked out recruit: collapsed on ground, face-down
+        if (this.state === 'knocked_out') {
+            const colors = GUARD_COLORS[this.type];
+            // Legs flat
+            ctx.fillStyle = '#2a2a2a';
+            ctx.fillRect(0, 42, 24, 6);
+            // Torso flat
+            ctx.fillStyle = colors.armor;
+            ctx.fillRect(0, 34, 24, 8);
+            // Head face-down
+            ctx.fillStyle = colors.skin ?? colors.helmet;
+            ctx.fillRect(2, 30, 10, 6);
+            ctx.fillStyle = colors.helmet;
+            ctx.fillRect(2, 30, 10, 3);
+            // Recovery pulse: blink when about to get up
+            if (this.knockoutTimer < 1.5 && Math.floor(this.knockoutTimer * 4) % 2 === 0) {
+                ctx.globalAlpha = 0.5;
+                ctx.fillStyle = '#ffff88';
+                ctx.fillRect(0, 28, 24, 20);
+                ctx.globalAlpha = 1;
+            }
+            return;
+        }
+
         const isHurt = this.state === 'stunned' || this.state === 'dying';
         const isDying = this.state === 'dying';
         const isIdle = this.state === 'idle' || this.state === 'combat_ready';
@@ -769,7 +857,15 @@ export class Guard {
                 ctx.restore();
                 ctx.fillStyle = armColor;
             }
-            ctx.fillRect(20, 16, 16, armWidth);
+            if (isRecruit) {
+                // Recruit punch: arm extends with fist
+                const punchProgress = Math.min(1, this.stateTimer / (this.attackDuration * 0.5));
+                const extend = punchProgress * 12;
+                ctx.fillRect(20 + extend, 16, 4, 4); // arm
+                ctx.fillRect(23 + extend, 15, 5, 6); // fist
+            } else {
+                ctx.fillRect(20, 16, 16, armWidth);
+            }
         } else if (this.state === 'blocking') {
             ctx.fillRect(18, 6, 6, 16);
         } else if (isDying) {
@@ -836,44 +932,41 @@ export class Guard {
         }
 
         // ===== SWORD =====
-        ctx.fillStyle = colors.sword;
-        if (this.state === 'attacking') {
-            if (isCaptain) {
-                ctx.fillRect(36, 12, 26, 5);
-                ctx.fillStyle = colors.accent ?? '#ffcc00';
-                ctx.fillRect(32, 10, 6, 9);
-            } else if (isShadow) {
-                ctx.save();
-                ctx.shadowColor = colors.accent ?? '#8800ff';
-                ctx.shadowBlur = 8;
-                ctx.fillRect(36, 14, 24, 3);
-                ctx.restore();
-            } else if (isRecruit) {
-                // Short dagger thrust
-                ctx.fillRect(36, 14, 12, 3);
-            } else if (isVeteran) {
-                // Heavy broad slash
-                ctx.fillRect(36, 12, 22, 5);
-            } else {
-                ctx.fillRect(36, 14, 20, 3);
+        if (!isRecruit) {
+            // Recruits have no weapon — they punch
+            ctx.fillStyle = colors.sword;
+            if (this.state === 'attacking') {
+                if (isCaptain) {
+                    ctx.fillRect(36, 12, 26, 5);
+                    ctx.fillStyle = colors.accent ?? '#ffcc00';
+                    ctx.fillRect(32, 10, 6, 9);
+                } else if (isShadow) {
+                    ctx.save();
+                    ctx.shadowColor = colors.accent ?? '#8800ff';
+                    ctx.shadowBlur = 8;
+                    ctx.fillRect(36, 14, 24, 3);
+                    ctx.restore();
+                } else if (isVeteran) {
+                    // Heavy broad slash
+                    ctx.fillRect(36, 12, 22, 5);
+                } else {
+                    ctx.fillRect(36, 14, 20, 3);
+                }
+            } else if (this.state === 'blocking') {
+                ctx.fillRect(22, 4, 4, 18);
+            } else if (!isDying) {
+                if (isCaptain) {
+                    ctx.fillRect(22, 18 + idleBob, 18, 3);
+                } else if (isVeteran) {
+                    // Broad greatsword at side
+                    ctx.fillRect(22, 18 + idleBob, 16, 3);
+                } else {
+                    ctx.fillRect(22, 20 + idleBob, 14, 2);
+                }
+            } else if (isDying && deathFrame >= 2) {
+                // Dropped sword on ground
+                ctx.fillRect(12, 42, 14, 2);
             }
-        } else if (this.state === 'blocking') {
-            ctx.fillRect(22, 4, 4, 18);
-        } else if (!isDying) {
-            if (isCaptain) {
-                ctx.fillRect(22, 18 + idleBob, 18, 3);
-            } else if (isRecruit) {
-                // Short dagger at side
-                ctx.fillRect(22, 20 + idleBob, 8, 2);
-            } else if (isVeteran) {
-                // Broad greatsword at side
-                ctx.fillRect(22, 18 + idleBob, 16, 3);
-            } else {
-                ctx.fillRect(22, 20 + idleBob, 14, 2);
-            }
-        } else if (isDying && deathFrame >= 2) {
-            // Dropped sword on ground
-            ctx.fillRect(12, 42, 14, 2);
         }
     }
 
@@ -882,6 +975,6 @@ export class Guard {
     get top(): number { return this.y; }
     get bottom(): number { return this.y + this.height; }
     get centerX(): number { return this.x + this.width / 2; }
-    get isAlive(): boolean { return this.state !== 'dead' && this.state !== 'dying'; }
+    get isAlive(): boolean { return this.state !== 'dead' && this.state !== 'dying' && this.state !== 'knocked_out'; }
     get isDying(): boolean { return this.state === 'dying'; }
 }
