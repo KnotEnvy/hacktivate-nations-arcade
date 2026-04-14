@@ -1477,8 +1477,6 @@ export class ProceduralMusicEngine {
   // Play drums
   private playDrums(track: TrackDefinition, config: InstrumentConfig, now: number): void {
     if (!this.context || !this.musicGainNode) return;
-
-    const ctx = this.context;
     const volume = config.volume;
 
     // Kick on 1 and 3

@@ -20,6 +20,7 @@ export class Ball {
   }
 
   update(dt: number): void {
+    void dt;
     // Add current position to trail
     this.trail.push({ x: this.x, y: this.y });
     if (this.trail.length > this.maxTrailLength) {

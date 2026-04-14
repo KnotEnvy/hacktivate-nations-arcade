@@ -57,8 +57,6 @@ export class Obstacle {
     }
     
     // Calculate rotated corners
-    const cx = this.x + this.width / 2;
-    const cy = this.y + this.height / 2;
     const corners = this.getRotatedCorners();
     
     return {

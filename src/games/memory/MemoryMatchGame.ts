@@ -152,7 +152,6 @@ export class MemoryMatchGame extends BaseGame {
       
       // Track achievements
       this.levelsCompletedThisGame += 1;
-      const levelTime = (Date.now() - this.levelStartTime) / 1000; // seconds
       const perfectMoves = (this.grid.rows * this.grid.cols) / 2; // minimum possible moves
       const isPerfect = this.moves === perfectMoves;
       if (isPerfect) {
@@ -231,7 +230,6 @@ export class MemoryMatchGame extends BaseGame {
       c.anim += Math.sign(target - c.anim) * Math.min(Math.abs(target - c.anim), speed * (1 / 60));
     }
 
-    const ICONS = ICON_SET;
     ctx.save();
     if (this.shakeTime > 0) {
       const mag = 6 * this.shakeTime;
@@ -324,7 +322,7 @@ export class MemoryMatchGame extends BaseGame {
     }
   }
 
-  protected onGameEnd(finalScore: any): void {
+  protected onGameEnd(finalScore: import('@/lib/types').GameScore): void {
     const totalLevelTime = (Date.now() - this.levelStartTime) / 1000; // seconds
     const perfectMoves = (this.grid.rows * this.grid.cols) / 2; // minimum possible moves
     const isPerfect = this.moves === perfectMoves;
@@ -375,7 +373,9 @@ export class MemoryMatchGame extends BaseGame {
     try { localStorage.setItem(this.bestKey(), JSON.stringify({ leastMoves, bestTime })); } catch {}
   }
 
-  protected onResize(width: number, height: number): void {
+  protected onResize(_width: number, _height: number): void {
+    void _width;
+    void _height;
     const { rows, cols } = this.grid;
     if (!this.cards || this.cards.length !== rows * cols) return;
     const { tileW: w, tileH: h } = this.computeLayout(rows, cols);

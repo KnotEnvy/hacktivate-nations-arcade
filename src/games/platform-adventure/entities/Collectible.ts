@@ -153,8 +153,6 @@ export class Collectible {
     }
 
     private drawGoldenOwl(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-        const pulse = Math.sin(this.sparklePhase) * 3;
-
         // Glow aura
         const gradient = ctx.createRadialGradient(x + 8, y + 10, 0, x + 8, y + 10, 20);
         gradient.addColorStop(0, 'rgba(255, 215, 0, 0.5)');

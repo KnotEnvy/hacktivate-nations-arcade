@@ -3,7 +3,6 @@ import {
   TRACK_DEFINITIONS,
   GAME_TRACK_MAPPING,
   getTracksForGame,
-  getHubTrack,
   getAllTrackNames,
 } from './ProceduralMusicEngine';
 
@@ -2521,7 +2520,7 @@ export class AudioManager {
 
     const ctx = this.context;
 
-    freqs.forEach((freq, i) => {
+    freqs.forEach(freq => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
 

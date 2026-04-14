@@ -12,6 +12,19 @@ export interface Challenge {
   expiresAt: Date;
 }
 
+interface StoredChallenge {
+  id: string;
+  title: string;
+  description: string;
+  type: 'daily' | 'weekly';
+  gameId?: string;
+  target: number;
+  progress: number;
+  reward: number;
+  completed: boolean;
+  expiresAt: string;
+}
+
 export class ChallengeService {
   private challenges: Challenge[] = [];
   private listeners: Array<(challenges: Challenge[]) => void> = [];
@@ -26,10 +39,10 @@ export class ChallengeService {
     const saved = localStorage.getItem('hacktivate-challenges');
     if (saved) {
       try {
-        const data = JSON.parse(saved);
-        this.challenges = data.map((c: any) => ({
+        const data = JSON.parse(saved) as StoredChallenge[];
+        this.challenges = data.map(c => ({
           ...c,
-          expiresAt: new Date(c.expiresAt)
+          expiresAt: new Date(c.expiresAt),
         }));
         this.cleanupExpiredChallenges();
       } catch (error) {
@@ -80,7 +93,7 @@ export class ChallengeService {
     ];
 
     // Randomly select 3 challenges
-    const selectedChallenges = [];
+    const selectedChallenges: Challenge[] = [];
     const usedTemplates = new Set();
     
     while (selectedChallenges.length < 3 && usedTemplates.size < challengeTemplates.length) {
@@ -95,7 +108,7 @@ export class ChallengeService {
           type: 'daily' as const,
           progress: 0,
           completed: false,
-          expiresAt: tomorrowUtc
+          expiresAt: tomorrowUtc,
         });
       }
     }

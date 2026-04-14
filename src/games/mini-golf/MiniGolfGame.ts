@@ -1,11 +1,11 @@
 // ===== src/games/minigolf/MiniGolfGame.ts =====
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest, GameScore } from '@/lib/types';
+import { GameManifest } from '@/lib/types';
 
 // Entities
 import { Ball } from './entities/Ball';
 import { Hole } from './entities/Hole';
-import { Obstacle, ObstacleType } from './entities/Obstacle';
+import { Obstacle } from './entities/Obstacle';
 import { AimIndicator } from './entities/AimIndicator';
 
 // Systems
@@ -15,7 +15,7 @@ import { WindSystem } from './systems/WindSystem';
 import { CourseRenderer } from './systems/CourseRenderer';
 
 // Data
-import { COURSES, CourseData } from './data/courses';
+import { COURSES } from './data/courses';
 
 type GamePhase = 'aiming' | 'rolling' | 'sinking' | 'nextHole' | 'stats' | 'complete';
 
@@ -132,6 +132,7 @@ export class MiniGolfGame extends BaseGame {
   }
 
   private handlePointerUp(e: MouseEvent): void {
+    void e;
     if (!this.isDragging || this.phase !== 'aiming') return;
     this.executeShot();
   }
@@ -310,6 +311,7 @@ export class MiniGolfGame extends BaseGame {
   }
 
   private updateAiming(dt: number): void {
+    void dt;
     // Update aim indicator if dragging
     if (this.isDragging && this.dragStart && this.dragCurrent) {
       const dx = this.dragStart.x - this.dragCurrent.x;
@@ -495,6 +497,7 @@ export class MiniGolfGame extends BaseGame {
   }
 
   private updateComplete(dt: number): void {
+    void dt;
     // Game is over, just show final score
   }
 
@@ -526,6 +529,7 @@ export class MiniGolfGame extends BaseGame {
   }
 
   private updateStats(dt: number): void {
+    void dt;
     // Check for click/tap to continue
     const input = this.services?.input;
     if (input) {

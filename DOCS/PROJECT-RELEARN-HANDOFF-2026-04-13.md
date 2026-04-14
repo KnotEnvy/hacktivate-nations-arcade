@@ -39,6 +39,9 @@ Verified on April 14, 2026 after the next consolidation pass:
 - unlock persistence and migration now live in `src/hooks/useArcadeUnlockState.ts` instead of staying embedded inside `ArcadeHub.tsx`
 - the old Zustand stores under `src/stores/` were removed because they were unused and represented stale parallel ownership
 - current progression ownership is clearer: local services plus the unlock hook are the live client source of truth, with Supabase hydration/sync layered on top
+- `cmd /c npm run lint` now passes again
+- `next.config.ts` no longer skips lint during production builds
+- `cmd /c npm run type-check` is now self-sufficient via `scripts/ensure-next-type-stubs.js`, so it no longer depends on a previous build to populate `.next/types`
 
 ## Current Reality
 
@@ -192,9 +195,9 @@ The concrete TypeScript blockers that were fixed include:
 
 Important caveat:
 
-- the repo still has a large ESLint backlog
-- `next build` is currently configured to skip linting so production builds are not blocked by unrelated lint debt
-- `npm run lint` remains red and should be treated as the next cleanup gate, not as solved work
+- the original ESLint backlog that was blocking production builds has been cleared
+- `next build` now runs linting and type-checking again instead of bypassing them
+- further lint drift should be treated as a regression, not accepted debt
 
 ### 3. Catalog vs Playable Registry Is Out Of Sync
 

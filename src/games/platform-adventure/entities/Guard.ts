@@ -559,7 +559,7 @@ export class Guard {
 
         let retreatWeight = healthPercent < 0.3 ? 0.7 : 0.1;
         if (this.rallyActive) retreatWeight *= 0.4;
-        let advanceWeight = inAttackRange ? 0.1 : 0.5;
+        const advanceWeight = inAttackRange ? 0.1 : 0.5;
 
         const total = attackWeight + blockWeight + retreatWeight + advanceWeight;
         if (total <= 0) return 'advance';

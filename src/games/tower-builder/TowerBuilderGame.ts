@@ -9,7 +9,7 @@
 // 7. Dynamic Camera & Parallax - Camera follows tower with parallax background
 
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest, GameScore } from '@/lib/types';
+import { GameManifest } from '@/lib/types';
 
 // ============================================================================
 // TYPES & INTERFACES
@@ -95,7 +95,6 @@ const CANVAS_WIDTH = 520;
 const CANVAS_HEIGHT = 600;
 const BLOCK_HEIGHT = 30;
 const INITIAL_BLOCK_WIDTH = 200;
-const MIN_BLOCK_WIDTH = 20;
 const GROUND_Y = CANVAS_HEIGHT - 60;
 const GRAVITY = 1200;
 const DROP_SPEED = 800;
@@ -965,6 +964,7 @@ export class TowerBuilderGame extends BaseGame {
   }
 
   private updateBackground(dt: number): void {
+    void dt;
     // Parallax layers move slower than camera to create depth effect
     // As camera goes up, background shifts down slightly (parallax)
     this.backgroundLayers.forEach(layer => {

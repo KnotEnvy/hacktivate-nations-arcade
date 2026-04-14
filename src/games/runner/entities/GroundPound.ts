@@ -39,8 +39,6 @@ export class GroundPound {
     const y = this.position.y;
 
     // Shockwave effect - multiple arcs
-    const progress = 1 - Math.min(1, this.animationTime * 2);
-
     // Ground crack/dust
     ctx.fillStyle = '#78716C';
     for (let i = 0; i < 5; i++) {

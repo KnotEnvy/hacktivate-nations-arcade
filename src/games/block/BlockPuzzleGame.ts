@@ -1,6 +1,6 @@
 // src/games/puzzle/BlockPuzzleGame.ts
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types'
+import { GameManifest, GameScore } from '@/lib/types';
 import { Vector2 } from '@/games/shared/utils/Vector2';
 import { EnvironmentSystem, EnvironmentTheme } from './systems/EnvironmentSystem';
 import { ComboSystem } from './systems/ComboSystem';
@@ -377,7 +377,6 @@ private rotatePiece(): boolean {
     private hardDrop(): void {
     if (!this.currentPiece) return;
 
-    const startY = this.currentPiece.position.y;
     let dropDistance = 0;
     while (this.dropPiece()) {
         dropDistance++;
@@ -858,7 +857,7 @@ private rotatePiece(): boolean {
     return this.gameState === 'gameOver' || this.gameState === 'dying';
   }
 
-  protected onGameEnd(finalScore: any): void {
+  protected onGameEnd(finalScore: GameScore): void {
     this.extendedGameData = {
       lines_cleared: this.linesCleared,
       puzzle_level: this.level,

@@ -237,6 +237,8 @@ export class PhysicsSystem {
   }
 
   private checkBoundsCollision(ball: Ball, prevX: number, prevY: number): { hit: boolean } {
+    void prevX;
+    void prevY;
     if (!this.bounds) return { hit: false };
     
     const points = this.bounds.points;

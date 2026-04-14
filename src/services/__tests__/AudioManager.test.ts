@@ -26,7 +26,7 @@ const createMockOscillator = () => ({
   stop: jest.fn(),
   frequency: createMockFrequency(),
   type: 'sine' as OscillatorType,
-  onended: null as any,
+  onended: null as OscillatorNode['onended'],
 });
 
 const createMockGain = () => ({
@@ -85,10 +85,21 @@ const mockAudioContext = {
   sampleRate: 44100,
   state: 'suspended' as AudioContextState,
   resume: jest.fn(() => Promise.resolve()),
+} as unknown as AudioContext;
+
+const setMockCurrentTime = (value: number) => {
+  Object.defineProperty(mockAudioContext, 'currentTime', {
+    configurable: true,
+    writable: true,
+    value,
+  });
 };
 
 // Mock AudioContext globally
-(global as any).AudioContext = jest.fn(() => mockAudioContext);
+Object.defineProperty(globalThis, 'AudioContext', {
+  writable: true,
+  value: jest.fn(() => mockAudioContext) as unknown as typeof AudioContext,
+});
 
 describe('AudioManager', () => {
   let audioManager: AudioManager;
@@ -96,7 +107,7 @@ describe('AudioManager', () => {
   beforeEach(() => {
     audioManager = new AudioManager();
     jest.clearAllMocks();
-    mockAudioContext.currentTime = 0;
+    setMockCurrentTime(0);
     oscillatorsCreated = 0;
     gainsCreated = 0;
     bufferSourcesCreated = 0;
@@ -109,8 +120,11 @@ describe('AudioManager', () => {
     });
 
     test('handles initialization gracefully when AudioContext fails', async () => {
-      (global as any).AudioContext = jest.fn(() => {
+      Object.defineProperty(globalThis, 'AudioContext', {
+        writable: true,
+        value: jest.fn(() => {
         throw new Error('AudioContext not supported');
+        }),
       });
 
       const manager = new AudioManager();
@@ -145,11 +159,12 @@ describe('AudioManager', () => {
 
       // When muted, should not create any oscillators
       expect(oscillatorsCreated).toBe(0);
+      expect(gainsCreated).toBe(0);
     });
 
     test('handles unknown sound effects with fallback', () => {
       expect(() => {
-        audioManager.playSound('invalid_sound' as any);
+        audioManager.playSound('invalid_sound' as never);
       }).not.toThrow();
 
       // Fallback sound creates at least 1 oscillator
@@ -162,6 +177,7 @@ describe('AudioManager', () => {
       // Collision uses noise buffer + oscillator
       expect(mockAudioContext.createBuffer).toHaveBeenCalled();
       expect(mockAudioContext.createBufferSource).toHaveBeenCalled();
+      expect(bufferSourcesCreated).toBeGreaterThan(0);
     });
 
     test('plays explosion sound with heavy noise', () => {
@@ -170,6 +186,7 @@ describe('AudioManager', () => {
       // Explosion uses noise + multiple oscillators
       expect(mockAudioContext.createBuffer).toHaveBeenCalled();
       expect(oscillatorsCreated).toBeGreaterThanOrEqual(2);
+      expect(bufferSourcesCreated).toBeGreaterThan(0);
     });
 
     test('plays all new sound types without error', () => {

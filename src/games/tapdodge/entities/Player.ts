@@ -327,6 +327,7 @@ export class Player {
     }
 
     private renderEnergyWings(ctx: CanvasRenderingContext2D, cx: number, cy: number, primaryColor: string, glowColor: string): void {
+        void glowColor;
         ctx.save();
 
         const wingFlap = Math.sin(this.wingPhase) * 0.3;
@@ -378,6 +379,7 @@ export class Player {
     }
 
     private renderMainBody(ctx: CanvasRenderingContext2D, cx: number, cy: number, primaryColor: string, secondaryColor: string, pulse: number): void {
+        void pulse;
         // Outer edge glow
         ctx.strokeStyle = primaryColor;
         ctx.lineWidth = 3;

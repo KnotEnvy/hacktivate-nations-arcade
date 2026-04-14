@@ -137,8 +137,8 @@ describe('Game Themes', () => {
     });
 
     test('returns default theme for null/undefined', () => {
-      const theme1 = getGameTheme(null as any);
-      const theme2 = getGameTheme(undefined as any);
+      const theme1 = getGameTheme(null as never);
+      const theme2 = getGameTheme(undefined as never);
       
       expect(theme1).toEqual(GAME_THEMES.default);
       expect(theme2).toEqual(GAME_THEMES.default);

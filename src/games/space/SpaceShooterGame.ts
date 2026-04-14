@@ -1241,8 +1241,6 @@ export class SpaceShooterGame extends BaseGame {
   }
 
   private spawnEnemyGroup(type: Enemy['type'], count: number, pattern: string): void {
-    const config = ENEMY_CONFIGS[type];
-    
     // Assign a new group ID for this spawn group
     const groupId = ++this.currentGroupId;
     this.groupSizes.set(groupId, count);
@@ -1519,7 +1517,7 @@ export class SpaceShooterGame extends BaseGame {
           // Calculate damage with crit chance
           const critChance = this.shipUpgrades.critChance * 0.05; // 5% per level
           const isCrit = Math.random() < critChance;
-          let damage = isCrit ? b.damage * 2 : b.damage;
+          const damage = isCrit ? b.damage * 2 : b.damage;
           
           // Elite tanker shield absorbs damage
           if (e.isElite && e.type === 'tanker' && e.eliteShield > 0) {
@@ -1973,7 +1971,7 @@ export class SpaceShooterGame extends BaseGame {
     this.services?.audio?.playSound?.('game_over');
     
     // Set extended data for achievements
-    const survivalTimeSec = Math.floor((Date.now() - (this as any).startTime) / 1000);
+    const survivalTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
     this.extendedGameData = {
       maxCombo: this.maxCombo,
       totalKills: this.totalKills,
@@ -2122,12 +2120,12 @@ export class SpaceShooterGame extends BaseGame {
   
   // Override getScore to return cached values after game over
   // This prevents the parent from recalculating rewards repeatedly
-  getScore(): import('@/lib/types').GameScore {
+  getScore(): GameScore {
     // If game is over, use cached values to prevent XP exploits
     const finalScore = this.gameOver ? this.cachedFinalScore : this.score;
     const finalPickups = this.gameOver ? this.cachedFinalPickups : this.pickups;
     
-    const timePlayedMs = this.gameOver ? this.gameTime : Date.now() - (this as any).startTime;
+    const timePlayedMs = this.gameOver ? this.gameTime : Date.now() - this.startTime;
     const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services?.currency?.calculateGameReward?.(
       finalScore,

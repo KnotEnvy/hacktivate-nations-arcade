@@ -18,6 +18,7 @@ export class BossProjectile {
   }
 
   update(dt: number, gameSpeed: number): void {
+    void gameSpeed;
     // Move towards left side
     this.position = this.position.add(this.velocity.multiply(dt));
     this.animationTime += dt;

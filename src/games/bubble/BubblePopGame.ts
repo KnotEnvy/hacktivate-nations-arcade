@@ -4,7 +4,7 @@ import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest, GameScore } from '@/lib/types';
 
 // Entities
-import { Bubble, BubbleColor, PowerUpType, BUBBLE_COLORS } from './entities/Bubble';
+import { Bubble, PowerUpType, BUBBLE_COLORS } from './entities/Bubble';
 import { Shooter } from './entities/Shooter';
 
 // Systems
@@ -394,6 +394,7 @@ export class BubblePopGame extends BaseGame {
   }
 
   private updateShooting(dt: number): void {
+    void dt;
     const bubble = this.shooter.getShootingBubble();
     if (!bubble) {
       this.gameState = 'playing';

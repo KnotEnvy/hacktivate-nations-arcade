@@ -3,7 +3,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AudioManager } from '@/services/AudioManager';
-import { SCALES } from '@/services/ProceduralMusicEngine';
 import { AchievementService } from '@/services/AchievementService';
 
 interface AudioSettingsProps {
@@ -351,7 +350,6 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
   // Per-game music customization
   const [showGameMusic, setShowGameMusic] = useState(false);
   const [gameMusicPrefs, setGameMusicPrefs] = useState<Record<string, GameMusicPreference>>({});
-  const [selectedGameForMusic, setSelectedGameForMusic] = useState<string>('');
 
   // Load favorites and game music prefs on mount
   useEffect(() => {
@@ -660,26 +658,6 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
     audioManager?.playSound('success');
   };
 
-  // Assign a track to a game
-  const handleAssignTrackToGame = (gameId: string, trackName: string) => {
-    const pref: GameMusicPreference = {
-      gameId,
-      type: 'track',
-      trackName,
-    };
-
-    const updated = { ...gameMusicPrefs, [gameId]: pref };
-    setGameMusicPrefs(updated);
-    saveGameMusicPrefs(updated);
-
-    // Track achievement: Game DJ (games customized)
-    if (achievementService) {
-      achievementService.checkAchievement('music_lab_games_customized', Object.keys(updated).length);
-    }
-
-    audioManager?.playSound('success');
-  };
-
   // Clear game preference (use default)
   const handleClearGamePref = (gameId: string) => {
     const updated = { ...gameMusicPrefs };
@@ -708,20 +686,6 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
   const handleToggleLayer = (layer: keyof typeof layerStates) => {
     const newState = audioManager?.toggleLayer(layer) ?? !layerStates[layer];
     setLayerStates(prev => ({ ...prev, [layer]: newState }));
-    audioManager?.playSound('click');
-  };
-
-  // Solo a layer (enable only that one)
-  const handleSoloLayer = (layer: keyof typeof layerStates) => {
-    audioManager?.soloLayer(layer);
-    setLayerStates({
-      bass: layer === 'bass',
-      drums: layer === 'drums',
-      melody: layer === 'melody',
-      chords: layer === 'chords',
-      arpeggio: layer === 'arpeggio',
-      ambience: layer === 'ambience',
-    });
     audioManager?.playSound('click');
   };
 
@@ -1859,7 +1823,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 {/* Empty state */}
                 {showFavorites && favorites.length === 0 && (
                   <div className="text-center py-4 text-gray-500 text-sm">
-                    No favorites saved yet. Click "Save Current" to save your first configuration!
+                    No favorites saved yet. Click &quot;Save Current&quot; to save your first configuration!
                   </div>
                 )}
               </div>
@@ -1986,7 +1950,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                       <li>• <span className="text-purple-400">Japanese</span> scale for peaceful, zen vibes</li>
                     </>
                   )}
-                  <li>• Use <span className="text-green-400">Per-Game Music</span> to customize each game's soundtrack!</li>
+                  <li>• Use <span className="text-green-400">Per-Game Music</span> to customize each game&apos;s soundtrack!</li>
                 </ul>
               </div>
             </div>

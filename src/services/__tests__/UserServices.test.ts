@@ -191,7 +191,10 @@ describe('UserService', () => {
     });
 
     test('notifies listeners on stats changes', () => {
-      const changes: any[] = [];
+      const changes: Array<{
+        profile: ReturnType<UserService['getProfile']>;
+        stats: ReturnType<UserService['getStats']>;
+      }> = [];
       userService.onUserDataChanged((profile, stats) => {
         changes.push({ profile, stats });
       });
@@ -245,7 +248,10 @@ describe('UserService', () => {
     });
 
     test('notifies listeners on profile changes', () => {
-      const updates: any[] = [];
+      const updates: Array<{
+        profile: ReturnType<UserService['getProfile']>;
+        stats: ReturnType<UserService['getStats']>;
+      }> = [];
       const unsubscribe = userService.onUserDataChanged((profile, stats) => {
         updates.push({ profile, stats });
       });
@@ -259,7 +265,10 @@ describe('UserService', () => {
     });
 
     test('stops notifications after unsubscribe', () => {
-      const updates: any[] = [];
+      const updates: Array<{
+        profile: ReturnType<UserService['getProfile']>;
+        stats: ReturnType<UserService['getStats']>;
+      }> = [];
       const unsubscribe = userService.onUserDataChanged((profile, stats) => {
         updates.push({ profile, stats });
       });
@@ -271,8 +280,8 @@ describe('UserService', () => {
     });
 
     test('handles multiple listeners correctly', () => {
-      const updates1: any[] = [];
-      const updates2: any[] = [];
+      const updates1: number[] = [];
+      const updates2: number[] = [];
       
       userService.onUserDataChanged(() => updates1.push(1));
       userService.onUserDataChanged(() => updates2.push(1));

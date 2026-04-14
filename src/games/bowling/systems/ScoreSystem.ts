@@ -112,7 +112,7 @@ export class ScoreSystem {
     let isSpare = false;
     let isSplit = false;
     let splitName: string | null = null;
-    let isGutter = pinsKnocked === 0 && this.currentRoll === 0;
+    const isGutter = pinsKnocked === 0 && this.currentRoll === 0;
     let frameComplete = false;
     let gameComplete = false;
     let bonusMessage: string | null = null;

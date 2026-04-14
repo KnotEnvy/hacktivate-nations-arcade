@@ -140,20 +140,30 @@ export class Analytics {
   }
 
   trackGameSpecificStat(_gameId: string, _statType: string, _value: number): void {
+    void _gameId;
+    void _statType;
+    void _value;
     // Placeholder hook for game-specific analytics; not persisted yet.
   }
 
   trackCrossGameStat(_statType: string, _value: number): void {
+    void _statType;
+    void _value;
     // Placeholder hook for cross-game analytics; not persisted yet.
   }
 
   trackCurrencyTransaction(_amount: number, _source: string, _balanceAfter: number): void {
+    void _amount;
+    void _source;
+    void _balanceAfter;
     // Count currency events toward monetization engagement for now.
     this.metrics.conversion.monetizationEvents += 1;
     this.persist();
   }
 
   trackAchievementUnlock(_id: string, _reward: number): void {
+    void _id;
+    void _reward;
     if (!this.metrics.achievements.includes(_id)) {
       this.metrics.achievements = [...this.metrics.achievements, _id].slice(0, 25);
       this.persist();

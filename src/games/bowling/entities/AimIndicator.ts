@@ -62,6 +62,7 @@ export class AimIndicator {
 
   // Initialize with lane dimensions
   initialize(laneX: number, laneWidth: number, laneHeight: number): void {
+    void laneHeight;
     this.laneLeft = laneX + 35; // Inside gutters
     this.laneRight = laneX + laneWidth - 35;
     this.laneCenter = laneX + laneWidth / 2;
@@ -260,6 +261,7 @@ export class AimIndicator {
 
   // Main render method
   render(ctx: CanvasRenderingContext2D, laneWidthParam: number): void {
+    void laneWidthParam;
     ctx.save();
 
     const pulse = 0.8 + Math.sin(this.pulsePhase) * 0.2;
@@ -465,6 +467,7 @@ export class AimIndicator {
   }
 
   private renderPowerMeter(ctx: CanvasRenderingContext2D, power: number, pulse: number): void {
+    void pulse;
     // Power meter on the LEFT side of the lane (away from scorecard)
     const meterX = this.laneCenter - this.laneWidth / 2 - 55;
     const meterY = 120; // Fixed position near top

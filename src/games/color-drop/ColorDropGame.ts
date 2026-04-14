@@ -797,6 +797,7 @@ export class ColorDropGame extends BaseGame {
   // ============================================================================
 
   private updateCascade(dt: number): void {
+    void dt;
     let stillFalling = false;
     
     // Move gems down to fill gaps
@@ -1347,7 +1348,6 @@ export class ColorDropGame extends BaseGame {
       ctx.shadowBlur = 10;
       
       // Animated selection ring
-      const pulse = Math.sin(this.gameTime * 5) * 0.1 + 1;
       ctx.strokeRect(x + 2, y + 2, CELL_SIZE - 4, CELL_SIZE - 4);
       
       ctx.shadowBlur = 0;

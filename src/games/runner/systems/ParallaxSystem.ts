@@ -1,5 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // ===== src/games/runner/systems/ParallaxSystem.ts (FULL DETAIL - ANIMATION FIXED) =====
 import { EnvironmentTheme } from './EnvironmentSystem';
+
+type ThemeColors = any;
 
 interface ParallaxLayer {
   speed: number;
@@ -122,7 +125,7 @@ export class ParallaxSystem {
     ctx.globalAlpha = 1;
   }
   
-  private renderDayMountains(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderDayMountains(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Multiple overlapping mountain ranges - MUCH LARGER SCALE
     const ranges = [
       { peaks: 4, height: 180, color: colors.far },      // Was 60, now 180
@@ -156,7 +159,7 @@ export class ParallaxSystem {
     });
   }
   
-  private renderSunsetMountains(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderSunsetMountains(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Dramatic silhouettes with sun disk (SAME AS BEFORE)
     
     // Sun disk
@@ -198,7 +201,7 @@ export class ParallaxSystem {
     });
   }
   
-  private renderNightSkyline(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderNightSkyline(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // City skyline with lit windows (SAME AS BEFORE)
     ctx.fillStyle = colors.buildings;
     ctx.globalAlpha = 0.8;
@@ -237,7 +240,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderDesertDunes(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderDesertDunes(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Rolling sand dunes (SAME AS BEFORE)
     ctx.fillStyle = colors.dunes;
     
@@ -266,7 +269,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderForestRidges(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderForestRidges(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Forested ridges with dense tree line - MUCH TALLER
     const ridges = [
       { height: 300, density: 0.8 }, // Was 100, now 300
@@ -275,7 +278,7 @@ export class ParallaxSystem {
     ];
     
     ridges.forEach((ridge, ridgeIndex) => {
-      ctx.fillStyle = colors.ridges[ridgeIndex];
+      ctx.fillStyle = colors.ridges![ridgeIndex];
       ctx.globalAlpha = 0.7 - ridgeIndex * 0.15; // More visible (was 0.4 - ridgeIndex * 0.1)
       
       // Base ridge shape
@@ -349,7 +352,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderDetailedTree(ctx: CanvasRenderingContext2D, x: number, colors: any, size: number): void {
+  private renderDetailedTree(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, size: number): void {
     const treeY = this.groundY - size * 1.5;
     
     // Trunk with texture (SAME AS BEFORE)
@@ -382,7 +385,7 @@ export class ParallaxSystem {
     });
   }
   
-  private renderRockFormation(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderRockFormation(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Multiple rock clusters (SAME AS BEFORE)
     for (let r = 0; r < 3; r++) {
       const rockX = x + r * 8;
@@ -399,7 +402,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderTreeGrove(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderTreeGrove(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Cluster of small trees (SAME AS BEFORE)
     for (let t = 0; t < 4; t++) {
       const treeX = x + t * 12;
@@ -409,7 +412,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderThemeElement(ctx: CanvasRenderingContext2D, x: number, theme: EnvironmentTheme, colors: any): void {
+  private renderThemeElement(ctx: CanvasRenderingContext2D, x: number, theme: EnvironmentTheme, colors: ThemeColors): void {
     switch (theme) {
       case 'desert':
         // Cactus (SAME AS BEFORE)
@@ -449,7 +452,8 @@ export class ParallaxSystem {
     ctx.globalAlpha = 1;
   }
   
-  private renderDetailedClouds(ctx: CanvasRenderingContext2D, x: number, cloudColors: any, theme: EnvironmentTheme): void {
+  private renderDetailedClouds(ctx: CanvasRenderingContext2D, x: number, cloudColors: ThemeColors, theme: EnvironmentTheme): void {
+    void theme;
     // Large, detailed cloud formations (SAME POSITIONS AS BEFORE)
     const cloudPositions = [
       { x: 100, y: 40, size: 1.2, type: 'cumulus' },
@@ -477,7 +481,7 @@ export class ParallaxSystem {
     });
   }
   
-  private renderCumulusCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: any): void {
+  private renderCumulusCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
     const baseRadius = 25 * size;
     
     // Cloud shadow/depth (SAME AS BEFORE)
@@ -504,7 +508,7 @@ export class ParallaxSystem {
     });
   }
   
-  private renderWispyCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: any): void {
+  private renderWispyCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
     ctx.fillStyle = colors.wispy;
     
     // Elongated wispy shape (SAME AS BEFORE)
@@ -517,7 +521,7 @@ export class ParallaxSystem {
     ctx.fill();
   }
   
-  private renderScatteredClouds(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: any): void {
+  private renderScatteredClouds(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
     // Multiple small cloud puffs (SAME AS BEFORE)
     for (let i = 0; i < 4; i++) {
       const puffX = x + i * 20;
@@ -562,7 +566,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderDetailedBush(ctx: CanvasRenderingContext2D, x: number, colors: any, theme: EnvironmentTheme): void {
+  private renderDetailedBush(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
     const bushIndex = Math.floor(x / 30); // FIXED: Deterministic size
     const bushSize = 12 + (bushIndex % 3) * 3;
     const bushY = this.groundY - bushSize;
@@ -597,7 +601,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderForegroundPost(ctx: CanvasRenderingContext2D, x: number, colors: any, theme: EnvironmentTheme): void {
+  private renderForegroundPost(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
     // Fence post or sign (SAME AS BEFORE)
     ctx.fillStyle = colors.post;
     ctx.fillRect(x, this.groundY - 25, 4, 25);
@@ -613,7 +617,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderSmallRocks(ctx: CanvasRenderingContext2D, x: number, colors: any): void {
+  private renderSmallRocks(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
     // Cluster of small stones (SAME AS BEFORE)
     const rockIndex = Math.floor(x / 30);
     const rockCount = 2 + (rockIndex % 2); // FIXED: Deterministic count
@@ -642,7 +646,8 @@ export class ParallaxSystem {
     ctx.globalAlpha = 1;
   }
   
-  private renderDetailedGround(ctx: CanvasRenderingContext2D, x: number, colors: any, theme: EnvironmentTheme): void {
+  private renderDetailedGround(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
+    void theme;
     // Rich ground texture details every 8 pixels (SAME AS BEFORE)
     for (let gx = 0; gx < this.canvasWidth * 2; gx += 8) {
       const elementIndex = Math.floor((x + gx) / 8); // FIXED: Deterministic
@@ -656,7 +661,8 @@ export class ParallaxSystem {
     }
   }
   
-  private renderGrassCluster(ctx: CanvasRenderingContext2D, x: number, colors: any, theme: EnvironmentTheme): void {
+  private renderGrassCluster(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
+    void theme;
     const grassIndex = Math.floor(x / 8);
     const grassCount = 2 + (grassIndex % 3); // FIXED: Deterministic count
     
@@ -682,7 +688,7 @@ export class ParallaxSystem {
     }
   }
   
-  private renderGroundTexture(ctx: CanvasRenderingContext2D, x: number, colors: any, theme: EnvironmentTheme): void {
+  private renderGroundTexture(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
     switch (theme) {
       case 'desert':
         // Sand ripples (SAME AS BEFORE)
@@ -709,7 +715,7 @@ export class ParallaxSystem {
   }
   
   // Color scheme methods for each theme and layer (SAME AS BEFORE)
-  private getBackgroundColors(theme: EnvironmentTheme): any {
+  private getBackgroundColors(theme: EnvironmentTheme): ThemeColors {
     switch (theme) {
       case 'day':
         return { far: '#A0A0A0', mid: '#8B8B8B', near: '#707070' };
@@ -729,7 +735,7 @@ export class ParallaxSystem {
     }
   }
   
-  private getMidgroundColors(theme: EnvironmentTheme): any {
+  private getMidgroundColors(theme: EnvironmentTheme): ThemeColors {
     switch (theme) {
       case 'day':
         return {
@@ -772,7 +778,7 @@ export class ParallaxSystem {
     }
   }
   
-  private getCloudColors(theme: EnvironmentTheme): any {
+  private getCloudColors(theme: EnvironmentTheme): ThemeColors {
     switch (theme) {
       case 'day':
         return { highlight: 'rgba(255, 255, 255, 0.8)', shadow: 'rgba(200, 200, 200, 0.6)', wispy: 'rgba(240, 240, 240, 0.7)', puff: 'rgba(255, 255, 255, 0.6)' };
@@ -789,7 +795,7 @@ export class ParallaxSystem {
     }
   }
   
-  private getForegroundColors(theme: EnvironmentTheme): any {
+  private getForegroundColors(theme: EnvironmentTheme): ThemeColors {
     switch (theme) {
       case 'day':
         return { bushDark: '#228B22', bushLight: '#90EE90', post: '#8B4513', postTop: '#A0522D', rock: '#696969' };
@@ -806,7 +812,7 @@ export class ParallaxSystem {
     }
   }
   
-  private getGroundColors(theme: EnvironmentTheme): any {
+  private getGroundColors(theme: EnvironmentTheme): ThemeColors {
     switch (theme) {
       case 'day':
         return { grass: '#32CD32', pebble: '#A9A9A9' };

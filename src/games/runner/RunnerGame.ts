@@ -1,6 +1,6 @@
 // ===== src/games/runner/RunnerGame.ts (ENHANCED) =====
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
+import { GameManifest, GameScore } from '@/lib/types';
 import { Player } from './entities/Player';
 import { Obstacle, ObstacleType } from './entities/Obstacle';
 import { Coin } from './entities/Coin';
@@ -1431,7 +1431,7 @@ export class RunnerGame extends BaseGame {
         const isAboveBossCenter = playerCenterY < bossMidY;
 
         if (isFalling && isAboveBossCenter) {
-          const defeated = this.boss.takeDamage(1);
+          this.boss.takeDamage(1);
           this.player.velocity.y = -10; // Stronger bounce for better feel
 
           // Impact ring on boss hit
@@ -1575,7 +1575,7 @@ export class RunnerGame extends BaseGame {
     }
   }
 
-  protected onGameEnd(finalScore: any): void {
+  protected onGameEnd(finalScore: GameScore): void {
     // Store extended achievement data that will be picked up by getScore()
     this.extendedGameData = {
       distance: Math.floor(this.distance),

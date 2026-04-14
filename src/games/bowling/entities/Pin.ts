@@ -471,8 +471,7 @@ export class Pin {
 
     // Velocity-based stretch effect for fast-moving pins
     const speed = this.getSpeed();
-    const stretchFactor = 1 + Math.min(0.3, speed * 0.001);
-
+    void speed;
     // Shadow - offset more when pin is in the air
     const shadowOffset = 4 + this.airHeight * 0.5;
     ctx.beginPath();

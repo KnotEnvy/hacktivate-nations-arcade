@@ -191,8 +191,6 @@ export class MinesweeperGame extends BaseGame {
     // Process reveal queue (cascade animation)
     if (this.revealQueue.length > 0) {
       this.revealTimer += dt;
-      const revealSpeed = 0.02; // Time between each cell reveal
-
       while (this.revealQueue.length > 0 && this.revealTimer >= this.revealQueue[0].delay) {
         const next = this.revealQueue.shift()!;
         const cell = this.board[next.row]?.[next.col];
@@ -1159,6 +1157,8 @@ export class MinesweeperGame extends BaseGame {
   }
 
   protected onResize(_width: number, _height: number): void {
+    void _width;
+    void _height;
     this.updateLayout();
   }
 

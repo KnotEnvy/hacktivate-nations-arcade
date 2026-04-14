@@ -61,7 +61,6 @@ export class BowlingBall {
 
     // Calculate rotation from velocity direction and speed
     // Negative vy means moving up, rotation should reflect forward roll
-    const rollAngle = Math.atan2(this.vx, -this.vy);
     this.rotationSpeed = speed * 0.015;
     this.rotation += this.rotationSpeed * dt * 60;
 

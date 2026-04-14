@@ -11,7 +11,7 @@
 // 7. Combo Rewards - Turkey, Clean Game tracking
 
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest, GameScore } from '@/lib/types';
+import { GameManifest } from '@/lib/types';
 
 import { BowlingBall } from './entities/Ball';
 import { Pin } from './entities/Pin';
@@ -414,6 +414,7 @@ export class BowlingGame extends BaseGame {
   }
 
   private updateAiming(dt: number): void {
+    void dt;
     // Update ball position to match aim indicator during positioning
     if (this.aimIndicator.getPhase() === 'positioning' ||
       this.aimIndicator.getPhase() === 'aiming' ||
@@ -471,6 +472,7 @@ export class BowlingGame extends BaseGame {
   }
 
   private updateScoring(dt: number): void {
+    void dt;
     // Small delay before showing score
     if (this.phaseTimer < 0.5) return;
 
@@ -613,6 +615,7 @@ export class BowlingGame extends BaseGame {
   }
 
   private updateNextFrame(dt: number): void {
+    void dt;
     if (this.phaseTimer > 2) {
       this.setupFrame();
       this.showMessage(`Frame ${this.scoreSystem.getCurrentFrame() + 1}`, 1.5);

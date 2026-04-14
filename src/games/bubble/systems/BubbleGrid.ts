@@ -1,6 +1,6 @@
 // ===== src/games/bubble/systems/BubbleGrid.ts =====
 
-import { Bubble, BubbleColor, PowerUpType, BUBBLE_COLORS } from '../entities/Bubble';
+import { Bubble, BubbleColor, PowerUpType } from '../entities/Bubble';
 
 export interface GridConfig {
   cols: number;

@@ -1,6 +1,6 @@
 // ===== src/games/bubble/entities/Shooter.ts =====
 
-import { Bubble, BubbleColor, PowerUpType, BUBBLE_COLORS, POWERUP_COLORS } from './Bubble';
+import { Bubble, BubbleColor, PowerUpType } from './Bubble';
 
 export interface ShooterConfig {
   x: number;
@@ -186,7 +186,7 @@ export class Shooter {
     let x = this.x;
     let y = this.y;
     let vx = Math.cos(this.angle) * this.SHOOT_SPEED;
-    let vy = Math.sin(this.angle) * this.SHOOT_SPEED;
+    const vy = Math.sin(this.angle) * this.SHOOT_SPEED;
     const radius = 18;
     const dt = 0.016; // 60fps timestep
     const maxPoints = 60;

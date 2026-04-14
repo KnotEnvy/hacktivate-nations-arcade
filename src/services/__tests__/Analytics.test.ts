@@ -203,7 +203,7 @@ describe('Analytics', () => {
     test('calculates average session length', () => {
       const sessions = [5000, 10000, 15000]; // 5s, 10s, 15s
       
-      sessions.forEach((duration, i) => {
+      sessions.forEach(duration => {
         analytics.trackGameStart('runner');
         jest.spyOn(Date, 'now').mockReturnValue(Date.now() + duration);
         analytics.trackGameEnd('runner', 1000, 50, 'completed');

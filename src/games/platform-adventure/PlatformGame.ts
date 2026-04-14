@@ -10,7 +10,7 @@ import { Trap, TrapType } from './entities/Trap';
 import { ALL_LEVELS, LevelDefinition, getTileAt, findPlayerSpawn, findDoorPosition } from './levels/LevelData';
 import { STORY_BY_LEVEL, GLOBAL_STORY_EVENTS, StoryEvent } from './levels/StoryData';
 import { ParallaxBackground } from './rendering/ParallaxBackground';
-import { Camera, SHAKE_PRESETS, ShakePreset } from './rendering/Camera';
+import { Camera, ShakePreset } from './rendering/Camera';
 import { DynamicLighting } from './rendering/DynamicLighting';
 
 type GameState = 'menu' | 'level_select' | 'playing' | 'level_intro' | 'story' | 'level_complete' | 'victory' | 'game_over' | 'paused';
@@ -671,6 +671,7 @@ export class PlatformGame extends BaseGame {
     }
 
     private updateMenu(dt: number): void {
+        void dt;
         const input = this.services?.input;
         const up = input?.isUpPressed?.() || false;
         const down = input?.isDownPressed?.() || false;
@@ -699,6 +700,7 @@ export class PlatformGame extends BaseGame {
     }
 
     private updateLevelSelect(dt: number): void {
+        void dt;
         const input = this.services?.input;
         const up = input?.isUpPressed?.() || false;
         const down = input?.isDownPressed?.() || false;
@@ -736,6 +738,7 @@ export class PlatformGame extends BaseGame {
     }
 
     private updatePauseMenu(dt: number): void {
+        void dt;
         const input = this.services?.input;
         const up = input?.isUpPressed?.() || false;
         const down = input?.isDownPressed?.() || false;
@@ -3134,6 +3137,7 @@ export class PlatformGame extends BaseGame {
     }
 
     private renderNameInput(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        void h;
         ctx.fillStyle = '#ffd700';
         ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
@@ -3182,6 +3186,7 @@ export class PlatformGame extends BaseGame {
     }
 
     private renderLeaderboard(ctx: CanvasRenderingContext2D, w: number, h: number): void {
+        void h;
         if (this.leaderboard.length === 0) return;
 
         const startY = 170;
@@ -3769,7 +3774,7 @@ export class PlatformGame extends BaseGame {
         ctx.font = '12px monospace';
         ctx.textAlign = 'left';
         const p = this.player;
-        ctx.fillText(`State: ${p?.state ?? 'N/A'} | animT: ${(p as any)?.animTimer?.toFixed(2) ?? '?'}`, 20, ctx.canvas.height - 80);
+        ctx.fillText(`State: ${p?.state ?? 'N/A'} | animT: ${p?.animTimer?.toFixed(2) ?? '?'}`, 20, ctx.canvas.height - 80);
         ctx.fillText(`Grounded: ${p?.isGrounded ?? 'N/A'}`, 20, ctx.canvas.height - 65);
         ctx.fillText(`Vel: ${typeof p?.vx === 'number' ? p.vx.toFixed(0) : 'undef'}, ${typeof p?.vy === 'number' ? p.vy.toFixed(0) : 'undef'}`, 20, ctx.canvas.height - 50);
         ctx.fillText(`Pos: ${typeof p?.x === 'number' ? p.x.toFixed(0) : '?'}, ${typeof p?.y === 'number' ? p.y.toFixed(0) : '?'}`, 20, ctx.canvas.height - 35);
@@ -4141,6 +4146,7 @@ export class PlatformGame extends BaseGame {
     }
 
     protected onGameEnd(finalScore: GameScore): void {
+        void finalScore;
         this.extendedGameData = {
             levels_completed: this.currentLevel,
             gems_collected: this.gemsCollected,

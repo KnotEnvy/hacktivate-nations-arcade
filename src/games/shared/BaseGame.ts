@@ -16,7 +16,7 @@ export abstract class BaseGame implements GameModule {
   protected startTime: number = 0;
   
   // Extended game data for achievements
-  protected extendedGameData: any = null;
+  protected extendedGameData: Record<string, unknown> | null = null;
   
   // HUD controls and helpers
   protected renderBaseHud: boolean = true; // allow games to disable base HUD if desired

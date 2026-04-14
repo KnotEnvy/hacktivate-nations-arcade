@@ -246,6 +246,7 @@ export class Boss {
   }
 
   private updateFight(dt: number, gameSpeed: number): void {
+    void gameSpeed;
     // Check for rage mode
     const healthPercent = this.health / this.maxHealth;
     if (healthPercent <= 0.3 && this.phase !== 'rage') {
@@ -543,6 +544,7 @@ export class Boss {
   }
 
   private renderSunBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
+    void h;
     // Main circle
     ctx.beginPath();
     ctx.arc(cx, cy, w * 0.4, 0, Math.PI * 2);
@@ -635,6 +637,7 @@ export class Boss {
   }
 
   private renderSandwormBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
+    void h;
     // Segmented worm body
     const segments = 5;
     for (let i = segments - 1; i >= 0; i--) {
@@ -727,7 +730,6 @@ export class Boss {
   }
 
   private renderEyes(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
-    const eyeGlow = Math.sin(this.animationTime * 4) * 0.3 + 0.7;
     const eyeY = y + this.size.y * 0.35;
     const eyeSpacing = w * 0.35;
 
