@@ -11,6 +11,7 @@ import {
   isDefaultUnlockedGame,
   isTierUnlocked,
 } from '@/lib/unlocks';
+import { hasImplementedGamesInTier, isGameImplemented } from '@/lib/gameCatalog';
 
 interface GameCarouselProps {
   games: GameManifest[];
@@ -100,10 +101,13 @@ export function GameCarousel({
 
       {tiers.map(tier => {
         const tierUnlocked = isTierUnlockedLocal(tier);
+        const tierHasImplementedGames = hasImplementedGamesInTier(tier);
         const tierCost = getTierUnlockCost(tier);
-        const canUnlockTier = !tierUnlocked && tier !== 0 && currentCoins >= tierCost;
+        const canUnlockTier =
+          !tierUnlocked && tier !== 0 && tierHasImplementedGames && currentCoins >= tierCost;
 
-        const nextGameCost = tierUnlocked ? getNextCostForTier(tier) : 0;
+        const nextGameCost =
+          tierUnlocked && tierHasImplementedGames ? getNextCostForTier(tier) : 0;
 
         return (
           <div
@@ -115,11 +119,15 @@ export function GameCarousel({
               <div className="flex items-center gap-2">
                 {tierUnlocked ? (
                   <div className="text-xs font-semibold text-white/90 bg-black/30 border border-white/10 px-3 py-1 rounded-full">
-                    Next game: {nextGameCost} coins
+                    {tierHasImplementedGames ? `Next game: ${nextGameCost} coins` : 'In development'}
                   </div>
                 ) : tier === 0 ? (
                   <div className="text-xs font-semibold text-white/90 bg-black/30 border border-white/10 px-3 py-1 rounded-full">
                     Open
+                  </div>
+                ) : !tierHasImplementedGames ? (
+                  <div className="text-xs font-semibold text-white/90 bg-black/30 border border-white/10 px-3 py-1 rounded-full">
+                    In development
                   </div>
                 ) : (
                   <div className="text-xs font-semibold text-white/90 bg-black/30 border border-white/10 px-3 py-1 rounded-full">
@@ -156,12 +164,14 @@ export function GameCarousel({
                 {games
                   .filter(g => g.tier === tier)
                   .map(game => {
-                    const unlocked = isGameUnlocked(game);
+                    const implemented = isGameImplemented(game.id);
+                    const unlocked = implemented && isGameUnlocked(game);
                     const tierLocked = !tierUnlocked;
-                    const showGameLockOverlay = tierUnlocked && !unlocked;
+                    const showGameLockOverlay = tierUnlocked && implemented && !unlocked;
 
                     const canUnlockGame =
                       !tierLocked &&
+                      implemented &&
                       !unlocked &&
                       !isDefaultUnlockedGame(game.id) &&
                       currentCoins >= nextGameCost;
@@ -176,6 +186,12 @@ export function GameCarousel({
                       >
                         <div className="aspect-square bg-black/30 border-b border-white/10 flex items-center justify-center relative rounded-t-2xl">
                           {renderThumbnail(game, unlocked)}
+
+                          {!implemented && (
+                            <div className="absolute left-2 top-2 z-20 rounded-full border border-white/10 bg-black/70 px-2 py-1 text-[11px] font-bold uppercase tracking-wide text-orange-200">
+                              Coming soon
+                            </div>
+                          )}
 
                           {showGameLockOverlay && (
                             <div className="absolute inset-0 z-10 pointer-events-none">
@@ -218,7 +234,7 @@ export function GameCarousel({
                             </div>
                           )}
 
-                          {!unlocked && tierUnlocked && !isDefaultUnlockedGame(game.id) && (
+                          {implemented && !unlocked && tierUnlocked && !isDefaultUnlockedGame(game.id) && (
                             <div className="absolute bottom-2 right-2 bg-yellow-500 text-black text-xs px-2 py-1 rounded-full font-bold z-20">
                               {nextGameCost} coins
                             </div>
@@ -229,7 +245,11 @@ export function GameCarousel({
                           <h3 className="font-bold text-white mb-2">{game.title}</h3>
                           <p className="text-sm text-gray-300 mb-3">{game.description}</p>
 
-                          {unlocked ? (
+                          {!implemented ? (
+                            <div className="w-full bg-gray-700 text-orange-200 font-bold py-2 px-4 rounded-lg text-center text-sm">
+                              Coming Soon
+                            </div>
+                          ) : unlocked ? (
                             <button
                               data-testid={`game-play-${game.id}`}
                               onClick={e => {
@@ -270,9 +290,13 @@ export function GameCarousel({
             {!tierUnlocked && tier !== 0 && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/70 backdrop-blur rounded-2xl border border-white/10">
                 <div className="text-center space-y-3 px-6 py-6">
-                  <div className="text-xl font-bold text-white">Tier {tier} Locked</div>
+                  <div className="text-xl font-bold text-white">
+                    {tierHasImplementedGames ? `Tier ${tier} Locked` : `Tier ${tier} In Development`}
+                  </div>
                   <p className="text-sm text-gray-300">
-                    Unlock this tier to access and purchase its games.
+                    {tierHasImplementedGames
+                      ? 'Unlock this tier to access and purchase its games.'
+                      : 'This tier has no released games yet, so coin spending is disabled.'}
                   </p>
                   <button
                     data-testid={`tier-unlock-${tier}`}
@@ -283,7 +307,7 @@ export function GameCarousel({
                         : 'bg-gray-700 text-gray-400 cursor-not-allowed'
                       }`}
                   >
-                    Unlock Tier for {tierCost} coins
+                    {tierHasImplementedGames ? `Unlock Tier for ${tierCost} coins` : 'Coming Soon'}
                   </button>
                 </div>
               </div>

@@ -20,7 +20,7 @@ interface GameCanvasProps {
 }
 
 export function GameCanvas({ game, onGameEnd, currencyService, audioManager, achievementService }: GameCanvasProps) {
-  const { canvasRef, ctx } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
+  const { canvasRef } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
   const { isInitialized, isRunning, startGame, stopGame, pauseGame, resumeGame } = useGameModule(
     canvasRef.current,
     game,

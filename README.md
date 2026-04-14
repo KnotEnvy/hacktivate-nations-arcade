@@ -1,76 +1,70 @@
 # HacktivateNations Arcade
 
-HacktivateNations Arcade is a web‑based hub for modular, retro‑inspired mini games. Built with Next.js and TypeScript, the project lets players jump between games, earn a shared currency and unlock new experiences—all without refreshing the page.
+HacktivateNations Arcade is a Next.js + TypeScript arcade hub for modular retro mini-games. Players can move between games, earn a shared currency, unlock tiers, and optionally sync progress through Supabase.
 
-## Purpose
+## Current State
 
-Our goal is to create a plug‑and‑play arcade where the community can contribute new games easily. Each game follows a common `GameModule` contract and plugs into shared services such as input handling, audio, analytics and the in‑game currency. The codebase is designed for rapid iteration and offline‑friendly play via PWA support.
+- The arcade hub, progression loop, auth flow, and leaderboard plumbing are already implemented.
+- The live registry currently contains the shipped games. The broader catalog also includes roadmap entries that are now marked as coming soon in the UI.
+- PWA install/offline claims are intentionally disabled until the required assets and service worker surface are completed.
 
 ## Installation
 
 ```bash
-# clone the repository
 git clone https://github.com/your-org/hacktivate-nations-arcade.git
 cd hacktivate-nations-arcade
-
-# install dependencies
 npm install
-
-# verify TypeScript setup
 npm run type-check
-
-# start the dev server
 npm run dev
 ```
 
-The application runs on [http://localhost:3000](http://localhost:3000) by default. Use `npm run build` and `npm start` to create and serve a production build.
+The app runs on `http://localhost:3000` by default. Use `npm run build` and `npm start` for a production build.
 
-## Available Games
+## Supabase Setup
 
-HacktivateNations Arcade ships with a growing collection of mini games. The current lineup includes:
+Copy `env.example` to `.env.local` for local development and fill in the values:
 
-- **Endless Runner** – dodge obstacles and grab coins while sprinting forward.
-- **Snake** – classic snake action with collectible coins and food.
-- **Block Puzzle** – a falling-block puzzler (in progress).
+```bash
+cp env.example .env.local
+```
 
-Each game implements the same `GameModule` interface and relies on shared services such as `useInput` for controls and `AudioManager` for sounds.
+```env
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_ROLE_KEY=... # server-only, never expose to the client
+```
+
+Required files and services:
+
+- `src/lib/supabase.ts` initializes the browser client.
+- `src/lib/supabase.types.ts` contains generated database typings.
+- `src/services/SupabaseArcadeService.ts` centralizes profile, wallet, achievement, challenge, and leaderboard calls.
+- `src/hooks/useSupabaseAuth.ts` owns auth bootstrap and resend/sign-in flows.
+- `supabase/001_init.sql` provisions the expected schema, view, RPC, and RLS policies.
+
+If Supabase env vars are absent, the arcade runs in guest mode with local-only persistence.
 
 ## Game Development
 
-1. Create a folder inside `src/games` for your game module.
-2. Implement the `GameModule` interface defined in `src/games/shared/GameModule.ts` or extend `BaseGame` from `src/games/shared/BaseGame.ts`.
-3. Register the game in `src/games/registry.ts` so the loader can discover it.
-4. Add a thumbnail under `public/games/<id>/<id>-thumb.svg` (512x512). Keep the house style (simple shapes, bold colors) for visual consistency in the hub.
-5. Use services from `src/services` for input, audio, analytics and currency rewards.
-6. Run `npm run dev` and select your game from the arcade hub to test it locally.
-7. Submit a pull request with your game and any assets under `public/`.
+1. Create a folder under `src/games/<id>`.
+2. Implement the `GameModule` interface or extend `src/games/shared/BaseGame.ts`.
+3. Register the game in `src/games/registry.ts`.
+4. Add a thumbnail under `public/games/<id>/<id>-thumb.svg`.
+5. Reuse shared services from `src/services` for input, audio, analytics, achievements, and currency.
+6. Run `npm run dev` and verify the game through the hub.
 
 ## Scripts
 
-- `npm run dev` – start the development server.
-- `npm run build` – create an optimized production build.
-- `npm start` – run the production build locally.
-- `npm run lint` – check code style with ESLint.
-- `npm run type-check` – verify the project compiles with TypeScript.
-- `npm test` – run Jest tests (if installed).
+- `npm run dev` starts the development server.
+- `npm run build` creates a production build.
+- `npm start` runs the production build.
+- `npm run lint` runs ESLint.
+- `npm run type-check` runs TypeScript without emitting files.
+- `npm test` runs Jest.
+- `npm run e2e` runs Playwright.
 
-## Contributing
+## Production Notes
 
-Contributions are welcome! Check out the docs in `DOCS/` for the development plan and product requirements. Feel free to open issues or pull requests with ideas, bug fixes or new games.
-
-## Supabase Setup (persistence)
-
-Add environment variables to `.env.local` (or your deployment provider):
-
-```
-NEXT_PUBLIC_SUPABASE_URL=...
-NEXT_PUBLIC_SUPABASE_ANON_KEY=...
-SUPABASE_SERVICE_ROLE_KEY=... # server-only, never ship to the client
-```
-
-Use `getSupabaseBrowserClient` or `createSupabaseServerClient` from `src/lib/supabase.ts` to talk to Supabase. Database typings live in `src/lib/supabase.types.ts`, and `SupabaseArcadeService` (in `src/services`) centralizes calls for profiles, wallets, sessions, achievements, and leaderboards. Sign-in uses a magic-link modal in the hub header, with the callback handled at `/auth/callback`.
-
-### Database bootstrap
-
-Apply `supabase/001_init.sql` in the Supabase SQL editor (or `supabase db push` if you keep migrations locally). It creates the `profiles`, `wallets`, `achievements`, and `game_sessions` tables, plus the `leaderboards_view` and RLS policies the app expects. Without this schema, auth will fall back to the local profile and leaderboard queries will fail.
-
+- Do not commit populated `.env` files.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` out of the client bundle and deployment logs.
+- Treat `src/games/registry.ts` as the source of truth for what is actually playable.

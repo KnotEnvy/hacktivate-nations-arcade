@@ -191,18 +191,18 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         email,
         password,
       });
-        if (signInError) {
-          setError(signInError.message);
-        } else {
-          setSession(data.session);
-          if (data.session?.user) {
-            activeUserIdRef.current = data.session.user.id;
-            const fallback =
-              data.session.user.user_metadata?.preferred_username ||
-              data.session.user.email?.split('@')[0];
-            await loadProfile(data.session.user.id, fallback, data.session.access_token);
-          }
+      if (signInError) {
+        setError(signInError.message);
+      } else {
+        setSession(data.session);
+        if (data.session?.user) {
+          activeUserIdRef.current = data.session.user.id;
+          const fallback =
+            data.session.user.user_metadata?.preferred_username ||
+            data.session.user.email?.split('@')[0];
+          await loadProfile(data.session.user.id, fallback, data.session.access_token);
         }
+      }
       setLoading(false);
     },
     [loadProfile]
@@ -229,22 +229,22 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
               : undefined,
         },
       });
-        if (signUpError) {
-          setError(signUpError.message);
+      if (signUpError) {
+        setError(signUpError.message);
+      } else {
+        if (!data.session) {
+          setEmailSentMode('signup');
         } else {
-          if (!data.session) {
-            setEmailSentMode('signup');
-          } else {
-            setPendingEmail(null);
-          }
-          if (data.session?.user) {
-            activeUserIdRef.current = data.session.user.id;
-            const fallback =
-              data.session.user.user_metadata?.preferred_username ||
-              data.session.user.email?.split('@')[0];
-            await loadProfile(data.session.user.id, fallback, data.session.access_token);
-          }
+          setPendingEmail(null);
         }
+        if (data.session?.user) {
+          activeUserIdRef.current = data.session.user.id;
+          const fallback =
+            data.session.user.user_metadata?.preferred_username ||
+            data.session.user.email?.split('@')[0];
+          await loadProfile(data.session.user.id, fallback, data.session.access_token);
+        }
+      }
       setLoading(false);
     },
     [loadProfile]
@@ -264,18 +264,35 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setError(null);
       const redirectTo =
         typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
-      const type = mode === 'magic' ? 'magiclink' : 'signup';
-      const { error: resendError } = await supabaseRef.current.auth.resend({
-        type,
-        email: pendingEmail,
-        options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
-      });
-      if (resendError) {
-        setError(resendError.message);
-      } else {
+      try {
+        if (mode === 'magic') {
+          const { error: signInError } = await supabaseRef.current.auth.signInWithOtp({
+            email: pendingEmail,
+            options: {
+              emailRedirectTo: redirectTo,
+            },
+          });
+
+          if (signInError) {
+            setError(signInError.message);
+            return;
+          }
+        } else {
+          const { error: resendError } = await supabaseRef.current.auth.resend({
+            type: 'signup',
+            email: pendingEmail,
+            options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
+          });
+
+          if (resendError) {
+            setError(resendError.message);
+            return;
+          }
+        }
         setEmailSentMode(mode);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     },
     [pendingEmail]
   );

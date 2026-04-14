@@ -57,9 +57,9 @@ Defined in `supabase/001_init.sql`:
 ## Local State vs Supabase
 - Local services keep the game playable offline.
 - ArcadeHub hydrates from Supabase when session exists and seeds Supabase if missing.
+- Unlock persistence is handled by `src/hooks/useArcadeUnlockState.ts`.
 - Local storage keys:
   - hacktivate-unlocks-v2
-  - hacktivate-unlocked-tiers
   - hacktivate-user-progress
   - hacktivate-user-profile
   - hacktivate-user-stats
@@ -75,10 +75,18 @@ Defined in `supabase/001_init.sql`:
   - If missing, seed Supabase from local.
   - Uses isHydratingRef/hasHydratedRef to avoid loops.
 - Debounced sync for profile + player_state (schedulePlayerSync).
+- Unlock tier/game state now comes from `useArcadeUnlockState`, which owns normalization and legacy migration before sync.
 - Wallet sync on coin changes.
 - Challenge sync batched/debounced.
 - Achievements sync when unlocked.
 - Leaderboard sync via RPC `record_leaderboard_score` on game end.
+
+## Source Of Truth
+- `UserService` is the active client owner for profile/stats/perks.
+- `CurrencyService` is the active client owner for wallet balance and reward calculation.
+- `AchievementService` and `ChallengeService` own their respective local progression slices.
+- `useArcadeUnlockState` owns tier/game unlock persistence.
+- The old Zustand stores under `src/stores/` were removed because they were not part of the live app path.
 
 ## Known Pitfalls
 - If `supabase.types.ts` is missing `Relationships` or if a view is listed under Tables, Postgrest generics infer `never` and cause errors like "property does not exist on type 'never'".

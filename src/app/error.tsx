@@ -21,7 +21,7 @@ export default function Error({
         <div className="text-6xl mb-4">🎮💥</div>
         <h2 className="text-2xl font-bold text-white mb-4">Oops! Game Crashed</h2>
         <p className="text-gray-300 mb-6">
-          Something went wrong with the arcade. Don't worry, we can try to restart it!
+          Something went wrong with the arcade. Don&apos;t worry, we can try to restart it!
         </p>
         <div className="space-y-3">
           <Button onClick={reset} className="arcade-button w-full">

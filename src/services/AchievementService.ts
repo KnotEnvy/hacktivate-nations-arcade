@@ -1,5 +1,5 @@
 // ===== src/services/AchievementService.ts =====
-import { ACHIEVEMENTS } from "@/data/Achievements";
+import { ACHIEVEMENTS } from '@/data/achievements';
 export interface Achievement {
   id: string;
   title: string;

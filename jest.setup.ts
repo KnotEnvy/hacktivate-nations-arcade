@@ -32,7 +32,7 @@ Object.defineProperty(window, 'AudioContext', {
 });
 
 // Mock Canvas API
-HTMLCanvasElement.prototype.getContext = jest.fn(() => ({
+const mockCanvasContext = {
   fillRect: jest.fn(),
   clearRect: jest.fn(),
   getImageData: jest.fn(() => ({ data: new Array(4) })),
@@ -57,5 +57,13 @@ HTMLCanvasElement.prototype.getContext = jest.fn(() => ({
   transform: jest.fn(),
   rect: jest.fn(),
   clip: jest.fn(),
-}));
+} as unknown as CanvasRenderingContext2D;
 
+const mockGetContext = jest.fn((contextId: string) =>
+  contextId === '2d' ? mockCanvasContext : null,
+) as unknown as HTMLCanvasElement['getContext'];
+
+Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+  writable: true,
+  value: mockGetContext,
+});

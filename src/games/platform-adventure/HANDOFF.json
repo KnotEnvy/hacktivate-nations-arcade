@@ -1,238 +1,239 @@
 {
   "project": "hacktivate-nations-arcade",
   "game": "Crystal Caverns (platform-adventure)",
-  "handoff_date": "2026-02-05",
-  "version": "0.9.5-beta",
-  "summary": "Phase 3 polish in progress. Added parallax background system (5 level themes, 4 layers each), dynamic lighting with player torch mechanic and moonlight system, smooth camera with look-ahead and screen shake presets, and movement polish (coyote time, jump buffering, variable jump height). Visual atmosphere and game feel are now dramatically improved. Boss battles, story system, and combat from Phase 2 remain intact.",
-  "key_changes": [
-    "P3-1.1 Parallax Backgrounds: 5 level-themed backgrounds with 4 parallax layers each, 25+ procedurally drawn element types",
-    "P3-1.2 Dynamic Lighting: Torch flicker, crystal glow, spectral crystals, owl radiance, moonlight shafts, player torch mechanic",
-    "P3-1.2 Player Torch: Dims over 45s, relights near wall torches, min 25% brightness, progressive darkness per level",
-    "P3-1.2 Moonlight System: Auto-placed at gates/switches/exits and regular intervals, spacing increases with level depth",
-    "P3-3.1 Camera System: Smooth lerp follow, look-ahead, vertical offset, 9 screen shake presets, screen flash effects",
-    "P3-3.3 Movement Polish: Coyote time (100ms), jump buffering (100ms), variable jump height (release early = shorter jump)",
-    "All Phase 2 systems preserved: Boss battles, story triggers, gate/switch system, combat, level editor"
+  "handoff_date": "2026-02-08",
+  "version": "1.0.0-beta",
+  "summary": "Phase 3 ~80% complete. Full combat system overhaul with tiered punch/sword mechanics, recruit KO system, combat mode toggle, fighting stances, and item raise animation. All visual polish done (parallax, lighting, particles, character animation, camera, hit feedback, movement polish). All 5 levels revamped. UI/UX complete (HUD, story, pause, level select, game over). Remaining: Audio, Performance/QA, Launch.",
+  "focus_areas_next_session": [
+    "Combat & animation polish — guard attack animations, death animations, combat feedback juice",
+    "Player/guard sprite improvements — more detailed pixel art, smoother transitions",
+    "Parallax background enhancements — more visual variety, additional element types",
+    "Dynamic lighting polish — colored light interactions, shadow casting improvements"
   ],
-  "files_created": [
-    "src/games/platform-adventure/rendering/ParallaxBackground.ts",
-    "src/games/platform-adventure/rendering/Camera.ts",
-    "src/games/platform-adventure/rendering/DynamicLighting.ts"
-  ],
-  "files_modified": [
-    "src/games/platform-adventure/PlatformGame.ts",
-    "src/games/platform-adventure/entities/Player.ts"
-  ],
-  "files_from_prior_phases": [
-    "src/games/platform-adventure/entities/Guard.ts",
-    "src/games/platform-adventure/levels/LevelData.ts",
-    "src/games/platform-adventure/levels/StoryData.ts",
-    "src/games/platform-adventure/data/TileTypes.ts",
-    "src/app/dev/level-editor/page.tsx",
-    "src/services/AudioManager.ts"
-  ],
-  "rendering_systems": {
-    "parallax_background": {
-      "file": "src/games/platform-adventure/rendering/ParallaxBackground.ts",
-      "lines": 1017,
-      "description": "Level-themed parallax backgrounds with 4 depth layers",
-      "layer_structure": {
-        "distant_glow": { "scrollFactor": 0.05, "opacity": 0.3, "purpose": "Ambient glows, distant lights" },
-        "far_crystals": { "scrollFactor": 0.15, "opacity": 0.5, "purpose": "Far structures, crystal formations" },
-        "mid_stalactites": { "scrollFactor": 0.3, "opacity": 0.7, "purpose": "Mid-ground details, stalactites" },
-        "near_chains": { "scrollFactor": 0.5, "opacity": 0.9, "purpose": "Foreground elements, chains, mist" }
-      },
-      "level_themes": {
-        "level_1": "Ancient Entry - crumbling arches, distant torchlight, dust motes",
-        "level_2": "Crystal Forest - towering crystals, ethereal mist, blue glow",
-        "level_3": "Fallen Hall - broken pillars, scattered weapons, ghostly silhouettes",
-        "level_4": "Labyrinth Depths - ancient machinery, gears, pipes, steam vents",
-        "level_5": "Heart Chamber - golden light rays, massive crystals, sparkles"
-      },
-      "element_types": [
-        "stalactite", "crystal_tower", "crystal_cluster", "crystal_glow", "crystal_shard",
-        "arch", "pillar_ruin", "broken_pillar", "fallen_statue", "weapon_pile",
-        "torchlight", "ember", "fading_ember", "blood_glow", "ethereal_orb",
-        "mist_wisp", "mist_layer", "dust_cloud", "dust_mote",
-        "chain", "hanging_banner", "gear_large", "gear_small", "pipe", "pipe_near",
-        "steam_vent", "passage_opening", "machine_light", "gear_glow",
-        "ghost_silhouette", "light_ray", "golden_sparkle", "heart_crystal"
-      ],
-      "features": [
-        "hashNoise-based deterministic generation (same seed = same layout)",
-        "Horizontal wrapping for seamless scrolling",
-        "Viewport culling for performance",
-        "Per-element animation (floating, swaying, pulsing)",
-        "Ambient overlay tint per level theme"
-      ]
-    },
-    "dynamic_lighting": {
-      "file": "src/games/platform-adventure/rendering/DynamicLighting.ts",
-      "lines": "~500",
-      "description": "Atmospheric darkness with light sources cutting through",
-      "light_types": {
-        "torch": { "baseRadius": 180, "color": "warm orange", "flickerAmount": 15, "purpose": "Wall-mounted torches" },
-        "crystal": { "baseRadius": 80, "color": "cool blue", "flickerAmount": 3, "purpose": "Crystal ambient glow" },
-        "spectral_crystal": { "baseRadius": 100, "color": "purple", "flickerAmount": 5, "purpose": "Haunted crystal pulsing" },
-        "owl": { "baseRadius": 200, "color": "golden", "flickerAmount": 0, "purpose": "Golden Owl steady glow" },
-        "player_torch": { "baseRadius": 200, "color": "warm orange", "flickerAmount": 8, "purpose": "Player-carried torch" },
-        "moonlight": { "baseRadius": 280, "color": "cool silver-blue", "flickerAmount": 0, "purpose": "Ambient ceiling light shafts" }
-      },
-      "ambient_darkness_per_level": {
-        "level_1": 0.05,
-        "level_2": 0.12,
-        "level_3": 0.22,
-        "level_4": 0.35,
-        "level_5": 0.45,
-        "note": "Progressive darkness simulates descending deeper into caves"
-      },
-      "player_torch_mechanic": {
-        "drain_time": "45 seconds from full to minimum",
-        "min_brightness": 0.25,
-        "max_radius": 200,
-        "min_radius": 70,
-        "relight_radius": 80,
-        "relight_trigger": "Walking near a wall torch",
-        "level_start": "Fresh torch each level"
-      },
-      "moonlight_placement": {
-        "auto_placed_at": ["gates", "switches", "door/exit"],
-        "interval_spacing_by_level": [400, 500, 650, 800, 1000],
-        "vertical_position": "35% of level height (upper portion, simulating ceiling cracks)"
-      },
-      "rendering_technique": {
-        "offscreen_canvas": "Performance optimization - render lighting to offscreen canvas",
-        "destination_out": "Radial gradients cut light circles out of darkness overlay",
-        "screen_composite": "Colored glow added on top for warm/cool light tints",
-        "light_culling": "Off-screen lights skipped for performance"
+  "key_files": {
+    "PlatformGame.ts": {
+      "path": "src/games/platform-adventure/PlatformGame.ts",
+      "lines": 4211,
+      "description": "Main game file. Game loop, level loading, collision, combat resolution, rendering orchestration, all UI states.",
+      "read_strategy": "Too large for single read — use offset/limit in ~500 line chunks",
+      "key_sections": {
+        "game_state_machine": "States: menu, level_select, playing, level_intro, story, level_complete, victory, game_over, paused",
+        "combat_resolution": "Tiered routing: sword vs punch × guard type (recruit/soldier/veteran/captain/shadow)",
+        "input_handling": "Edge detection via wasPressed booleans. Shift=combat toggle, Ctrl=block(combat)/dash(non-combat), Space=attack",
+        "death_flow": "player.die() → dying anim → dead → deathInterstitial → game_over → endGame()",
+        "item_pickup": "pendingItemRaise flag triggers item_raise animation after story dialogue ends"
       }
     },
-    "camera": {
-      "file": "src/games/platform-adventure/rendering/Camera.ts",
-      "lines": 235,
-      "description": "Smooth camera follow with look-ahead, vertical offset, and screen shake",
-      "features": {
-        "smooth_follow": "Lerp speed 8, smooth tracking of player",
-        "look_ahead": "50px ahead in facing direction",
-        "vertical_offset": "Camera shifts up/down when jumping/falling (max 40px)",
-        "level_bounds": "Camera clamped to level boundaries",
-        "snap_to": "Instant position on level start"
+    "Player.ts": {
+      "path": "src/games/platform-adventure/entities/Player.ts",
+      "lines": 1050,
+      "description": "Player entity with combat mode, stances, item raise animation, flash rendering, movement polish.",
+      "states": "idle, run, jump, fall, combat_idle, attack, block, hurt, dying, dead, item_raise",
+      "key_systems": {
+        "combat_mode": "inCombatMode boolean toggled by Shift. 50% move speed, no jumping, combat_idle state",
+        "fighting_stances": "Fist stance (boxing guard, arms up) or sword stance (blade angled 45° diagonal, lead arm forward)",
+        "fist_block": "X-guard arms crossed when blocking without sword",
+        "combat_shuffle": "Leg animation when moving in combat_idle (sin wave offset)",
+        "item_raise": "1.5s animation raising sword overhead with glow effect, triggered after pickup dialogue",
+        "flash_rendering": "Offscreen HTMLCanvasElement with source-atop compositing. Uses translate(bufW, 0) for left-facing flip.",
+        "movement_polish": "Coyote time (100ms), jump buffering (100ms), variable jump height (0.65 cut)"
+      }
+    },
+    "Guard.ts": {
+      "path": "src/games/platform-adventure/entities/Guard.ts",
+      "lines": 980,
+      "description": "Guard AI with 5 types, KO system, punch immunity tiers, boss phases.",
+      "states": "idle, patrol, chase, attack, stunned, blocking, hurt, dying, dead, knocked_out",
+      "guard_types": {
+        "recruit": {
+          "hp": 3,
+          "weapon": "none (punches)",
+          "blockChance": 0,
+          "punch_response": "Takes 1 damage per punch, KO at 0 HP (recovers after 5s). Sword = 3 damage (instant kill, permanent)",
+          "attack_hitbox": "15×20 (fist-sized)"
+        },
+        "soldier": {
+          "hp": 3,
+          "weapon": "sword",
+          "punch_response": "No HP damage. punchHitCount tracks hits; every 3rd punch → stagger + 24px knockback"
+        },
+        "veteran": {
+          "hp": 4,
+          "weapon": "sword",
+          "punch_response": "No effect, armor clank feedback"
+        },
+        "captain": {
+          "hp": 5,
+          "weapon": "sword",
+          "punch_response": "No effect, armor clank feedback",
+          "special": "L3 boss. Door locked until defeated. Slowmo + CAPTAIN_DEATH shake on kill"
+        },
+        "shadow": {
+          "hp": 10,
+          "weapon": "sword",
+          "punch_response": "No effect, armor clank feedback",
+          "special": "L5 boss. 3 phases (>70% defensive, 30-70% aggressive, <30% desperate). SHADOW_DEATH shake on kill"
+        }
       },
-      "shake_presets": {
-        "PLAYER_HURT": { "intensity": 5, "duration": 0.2, "frequency": 60 },
-        "GUARD_DEATH": { "intensity": 3, "duration": 0.15, "frequency": 60 },
-        "CAPTAIN_DEATH": { "intensity": 12, "duration": 1.0, "frequency": 30 },
-        "SHADOW_DEATH": { "intensity": 20, "duration": 2.0, "frequency": 15 },
-        "LANDING_IMPACT": { "intensity": 4, "duration": 0.15, "frequency": 60 },
-        "BLOCK_CLASH": { "intensity": 3, "duration": 0.08, "frequency": 60 },
-        "HIT_ENEMY": { "intensity": 6, "duration": 0.12, "frequency": 50 },
-        "TRAP_HIT": { "intensity": 10, "duration": 0.18, "frequency": 40 },
-        "PHASE_CHANGE": { "intensity": 10, "duration": 0.4, "frequency": 35 }
-      },
-      "shake_technique": "Sine wave oscillation with ease-out decay, frequency-based for feel variation"
+      "key_methods": {
+        "knockOut()": "Recruit-only. Enters knocked_out state, 5s timer, recovers to patrol with full HP",
+        "stagger()": "Brief stun + flash. Used for soldier punch stagger",
+        "punchHitCount": "Tracks cumulative punches for soldier stagger threshold"
+      }
+    },
+    "ParallaxBackground.ts": {
+      "path": "src/games/platform-adventure/rendering/ParallaxBackground.ts",
+      "lines": 1017,
+      "description": "5 level-themed backgrounds with 4 parallax depth layers, 25+ procedural element types"
+    },
+    "DynamicLighting.ts": {
+      "path": "src/games/platform-adventure/rendering/DynamicLighting.ts",
+      "lines": 511,
+      "description": "6 light types (torch, crystal, spectral, owl, player_torch, moonlight) with progressive darkness per level"
+    },
+    "Camera.ts": {
+      "path": "src/games/platform-adventure/rendering/Camera.ts",
+      "lines": 234,
+      "description": "Smooth follow with look-ahead, 9 shake presets, screen flash"
+    },
+    "LevelData.ts": {
+      "path": "src/games/platform-adventure/levels/LevelData.ts",
+      "description": "5 levels (50×15 to 80×22 tiles). All revamped. L5 fully redesigned with 4 zones."
+    },
+    "StoryData.ts": {
+      "path": "src/games/platform-adventure/levels/StoryData.ts",
+      "description": "Story triggers and dialogue. Types: level_start, tile_proximity, position, boss_alert/defeat/phase, kael_response, victory, defeat"
+    },
+    "TileTypes.ts": {
+      "path": "src/games/platform-adventure/data/TileTypes.ts",
+      "description": "Tile definitions and character map"
     }
   },
-  "movement_polish": {
-    "file": "src/games/platform-adventure/entities/Player.ts",
-    "coyote_time": {
-      "duration": "100ms",
-      "description": "Player can still jump briefly after leaving a platform edge"
+  "combat_system": {
+    "overview": "Shift toggles inCombatMode. Works with or without Ancient Blade. Must be in combat mode to attack (punch or sword).",
+    "combat_mode_effects": {
+      "movement": "50% speed (75px/s instead of 150px/s)",
+      "jumping": "Disabled",
+      "state": "combat_idle (stays in this state even while moving)",
+      "legs": "Shuffle animation when moving"
     },
-    "jump_buffering": {
-      "duration": "100ms",
-      "description": "Jump input registered just before landing is executed on landing",
-      "critical_note": "Buffer check runs AFTER collision resolution in PlatformGame.ts (not in Player.update) to prevent wall-sticking bugs"
+    "with_sword": {
+      "stance": "Sword angled 45° diagonal (stepped pixels), lead arm forward, rear arm tucked",
+      "attack": "Sword swing — works on all guard types",
+      "block": "Ctrl — sword raised to block"
     },
-    "variable_jump_height": {
-      "description": "Releasing jump key early cuts vertical velocity for shorter jumps",
-      "cut_multiplier": 0.65,
-      "guard": "Only cuts velocity when player state is 'jump' (not during fall/idle)"
+    "without_sword": {
+      "stance": "Boxing guard — fists raised at chest height, slight forward lean",
+      "attack": "Punch (12×20 hitbox, 0.25s) — tiered by guard type",
+      "block": "Ctrl — X-guard arms crossed"
     },
-    "input_pattern": {
-      "description": "Edge detection via wasPressed tracking",
-      "jump": "jumpKeyWasPressed tracks previous frame state; bufferJump() on press edge, onJumpRelease() on release edge"
-    }
+    "damage_routing": {
+      "sword_vs_recruit": "3 damage (instant kill, permanent death)",
+      "sword_vs_others": "Normal damage (Crystal Heart = 2x)",
+      "punch_vs_recruit": "1 damage per punch, KO at 0 HP (5s recovery, not permanent)",
+      "punch_vs_soldier": "No damage. Every 3rd punch → stagger + 24px knockback",
+      "punch_vs_veteran_plus": "No effect. Armor clank feedback"
+    },
+    "knockback": "Position-based direction: guard.centerX >= player.centerX ? right : left"
   },
-  "render_pipeline": {
+  "item_progression": {
+    "ancient_blade_W": "L1: Enables sword attack in combat mode. Behind gate puzzle.",
+    "iron_armor_A": "L2: +2 max health (3→5). Visual armor on sprite.",
+    "dash_boots_V": "L3: Ctrl outside combat mode = dash with i-frames.",
+    "crystal_heart_K": "L4: Sword deals 2x damage. Blade glows pink.",
+    "persistence": "Items saved to localStorage. New Game resets. Death keeps items.",
+    "pickup_flow": "Collect item → story dialogue → item_raise animation (1.5s sword overhead)"
+  },
+  "level_5_design": {
+    "name": "Heart of Crystal",
+    "size": "80×22 tiles",
+    "zones": {
+      "A_descent": "Cols 1-18: Dash boots platforming test — zigzag platforms, 3 chompers, spike gaps, loose floors",
+      "B_gauntlet": "Cols 19-36: Combat mastery — 3 veteran guards, spike pits, journal",
+      "C_labyrinth": "Cols 37-54: Puzzle mastery — wall columns at 44/54, Red+Blue gate puzzles, switches on upper platforms",
+      "D_shadow_arena": "Cols 55-78: Open boss arena, Owl on pedestal (row 4 col 67), Shadow boss (row 19 col 67), door at col 78"
+    },
+    "entities": "5 guards, 26 gems, 3 HP potions, 1 max HP potion, 2 time crystals, 3 chompers, 10 skeletons, 9 spectral crystals, 14 torches, 2 inscriptions, 1 fallen seeker, 1 journal, 1 owl, 1 door"
+  },
+  "rendering_pipeline": {
     "order": [
-      "1. parallaxBackground.render() - Level-themed background with 4 parallax layers",
-      "2. renderTiles() - Stone, walls, torches, platforms, etc.",
-      "3. renderGates() - Color-coded gates with open/close animation",
+      "1. parallaxBackground.render() — 4 parallax layers",
+      "2. renderTiles() — stone, walls, torches, platforms",
+      "3. renderGates() — color-coded gates with animation",
       "4. Traps (spikes, chompers, loose floors)",
       "5. Collectibles (gems, potions, time crystals, owl)",
       "6. Guards (with boss health bars)",
       "7. Player (Kael)",
       "8. Particles",
-      "9. lighting.renderLightingOverlay() - Darkness + light cutouts + colored glows"
+      "9. lighting.renderLightingOverlay() — darkness + light cutouts"
     ],
-    "ui_layer_on_top": [
-      "Screen flash / Phase flash",
-      "HUD (health, timer, score, gems, sword indicator)",
-      "Boss health bar",
-      "State overlays (level_intro, level_complete, victory, game_over, story)",
-      "Banner, Achievement toast"
-    ]
+    "ui_on_top": ["Screen flash", "HUD", "Boss health bar", "State overlays", "Banner/toast"]
   },
-  "story_system": {
-    "data_file": "src/games/platform-adventure/levels/StoryData.ts",
-    "trigger_types": {
-      "level_start": "Fires when level begins",
-      "tile_proximity": "Fires when player near specific tile type (follows tiles wherever placed)",
-      "position": "Legacy fixed x,y coordinate trigger",
-      "boss_alert": "When boss enters combat",
-      "boss_defeat": "When boss is killed",
-      "boss_phase": "When Shadow Guardian changes phase",
-      "kael_response": "Kael's combat dialogue during Shadow fight",
-      "victory": "When Golden Owl collected",
-      "defeat": "When player dies on Level 5"
-    },
-    "ui": "Bottom overlay panel; SPACE advances; blocks gameplay while shown"
-  },
-  "boss_battle_system": {
-    "captain_level_3": {
-      "hp": 5,
-      "effects": "Slowmo, screen shake (CAPTAIN_DEATH preset), victory banner",
-      "door_lock": "Door locked until Captain defeated, shows chains/bars visual"
-    },
-    "shadow_guardian_level_5": {
-      "hp": 10,
-      "phases": {
-        "phase_1": ">70% HP - Defensive",
-        "phase_2": "30-70% HP - Aggressive, banner + phase flash",
-        "phase_3": "<30% HP - Desperate, unpredictable"
-      },
-      "effects": "Extended slowmo, screen shake (SHADOW_DEATH preset), screen flash, particles"
-    }
-  },
-  "level_editor": {
-    "route": "/dev/level-editor",
-    "features": [
-      "All tile types including story tiles",
-      "Game-accurate colors (uses TILE_COLORS.primary)",
-      "Brush, Fill, and Erase tools",
-      "Undo/Redo with Ctrl+Z/Ctrl+Y",
-      "Alt+click to pick tile",
-      "Snap Guards to ground",
-      "Import/Export ASCII and LevelData formats"
-    ]
+  "flash_rendering_pattern": {
+    "technique": "Offscreen HTMLCanvasElement with source-atop compositing",
+    "critical_detail": "For left-facing sprites, use translate(bufW, 0) NOT translate(this.width, 0). Buffer width includes padding.",
+    "applies_to": ["Player.ts render()", "Guard.ts drawBody()"]
   },
   "controls": {
     "move": "Left/Right or A/D",
-    "jump": "Up or W (with coyote time + jump buffer)",
-    "attack": "Space",
-    "block": "Ctrl",
-    "sword_toggle": "Shift",
+    "jump": "Up or W (coyote time + jump buffer, disabled in combat mode)",
+    "attack": "Space (must be in combat mode)",
+    "block": "Ctrl (in combat mode — sword block or fist X-guard)",
+    "dash": "Ctrl (outside combat mode, requires Dash Boots)",
+    "combat_toggle": "Shift (always works, toggles inCombatMode)",
     "drop_through": "Down (on platforms)"
+  },
+  "localStorage_keys": {
+    "crystal-caverns-stats": "totalBlocksEver, totalGemsEver",
+    "crystal-caverns-leaderboard": "Top 10 scores",
+    "crystal-caverns-progress": "unlockedLevels, levelBestScores[], levelBestTimes[]",
+    "crystal-caverns-inventory": "hasBlade, hasArmor, hasBoots, hasHeart"
   },
   "type_check": {
     "command": "npx tsc --noEmit",
-    "platform_adventure_errors": "None",
+    "platform_adventure_errors": "None (zero errors)",
     "known_errors_other_games": [
-      "jest.setup.ts mock types",
       "AsteroidsGame sound names",
       "MiniGolfGame InputManager methods",
       "TowerBuilderGame InputManager methods",
       "AchievementService casing issue",
       "useSupabaseAuth OTP type"
+    ]
+  },
+  "phase3_progress": {
+    "P3-1.1_parallax_backgrounds": "DONE",
+    "P3-1.2_dynamic_lighting": "DONE",
+    "P3-1.3_particle_enhancements": "DONE (7 effects: dust, sparks, shimmer, footstep, landing, death, owl)",
+    "P3-1.4_character_animation": "DONE (breathing, jump anticipation, squash, glow, stagger, death)",
+    "P3-2_audio_music": "NOT STARTED (saved for last)",
+    "P3-3.1_camera_screen_effects": "DONE",
+    "P3-3.2_hit_feedback": "DONE (white flash, directional knockback, scaled hit stop, boss feedback)",
+    "P3-3.3_movement_polish": "DONE",
+    "P3-4_progression": "DONE (score breakdown, leaderboard, level unlock persistence)",
+    "P3-5_level_design": "DONE (all 5 levels revamped, L5 fully redesigned)",
+    "P3-6_ui_ux": "DONE (HUD animations, story typewriter, pause menu, level select, game over)",
+    "P3-7_performance_qa": "NOT STARTED",
+    "P3-8_launch_prep": "NOT STARTED"
+  },
+  "remaining_work": {
+    "P3-2_audio": [
+      "Create/source music tracks (cavern ambience, boss themes, victory)",
+      "Implement MusicManager with crossfade transitions",
+      "Create/source missing SFX (gem pickup, traps, story, level complete)",
+      "Audio mixing (master/music/SFX volume controls)",
+      "Hook boss fight music triggers + phase transitions"
+    ],
+    "P3-7_performance_qa": [
+      "Profile rendering performance (target 60 FPS stable)",
+      "Object pooling for particles",
+      "Optimize collision detection",
+      "Test on low-end devices",
+      "Full playtesting protocol"
+    ],
+    "P3-8_launch_prep": [
+      "Zero critical/high bugs",
+      "All content finalized",
+      "Difficulty curve balanced"
     ]
   },
   "routes": {
@@ -244,49 +245,12 @@
     "src/games/platform-adventure/CRYSTAL_CAVERNS_PHASE3.md",
     "src/games/platform-adventure/CRYSTAL_CAVERNS_STORY.md"
   ],
-  "completion_status": {
-    "core_gameplay": "95%",
-    "story_system": "90%",
-    "boss_battles": "85%",
-    "visual_atmosphere": "90% - parallax, lighting, moonlight all working",
-    "game_feel": "85% - camera, shake, movement polish done; hit feedback could improve",
-    "audio": "40% - basic SFX only, no music system yet",
-    "level_design": "80%",
-    "progression_systems": "30% - basic scoring exists, no achievements/leaderboard UI",
-    "ui_ux": "50% - functional HUD, menus need polish",
-    "overall": "75%"
-  },
-  "phase3_progress": {
-    "P3-1.1_parallax_backgrounds": "DONE",
-    "P3-1.2_dynamic_lighting": "DONE (torch, crystal, spectral, owl, player_torch, moonlight)",
-    "P3-1.3_particle_enhancements": "NOT STARTED",
-    "P3-1.4_character_animation": "NOT STARTED",
-    "P3-2_audio_music": "NOT STARTED (saved for last)",
-    "P3-3.1_camera_screen_effects": "DONE",
-    "P3-3.2_hit_feedback": "PARTIAL (hit stop exists, could add more juice)",
-    "P3-3.3_movement_polish": "DONE",
-    "P3-4_progression_systems": "NOT STARTED",
-    "P3-5_level_design_polish": "NOT STARTED",
-    "P3-6_ui_ux_refinement": "NOT STARTED",
-    "P3-7_performance_qa": "NOT STARTED",
-    "P3-8_launch_prep": "NOT STARTED"
-  },
-  "next_steps": [
-    "P3-1.3: Particle system enhancements (ambient dust, torch sparks, crystal shimmer)",
-    "P3-1.4: Character animation polish (breathing idle, jump anticipation, landing squash)",
-    "P3-3.2: Hit feedback improvements (white flash on hit, directional knockback particles)",
-    "P3-4: Achievement system + leaderboard UI",
-    "P3-5: Level design pass - balance, secrets, visual landmarks",
-    "P3-6: Menu system, pause menu, settings, HUD animations",
-    "P3-7: Performance profiling, object pooling, QA testing",
-    "P3-2: Audio & Music (saved for last - music system, crossfade, boss music)",
-    "P3-8: Launch prep - final testing, polish, marketing assets"
-  ],
   "architecture_notes": {
-    "PlatformGame.ts": "Main game file, ~2500+ lines. Read in sections (offset/limit). Contains game loop, level loading, collision, rendering orchestration.",
-    "Player.ts": "Player entity with states (idle, walk, jump, attack, block, hurt, dead). Movement polish properties at class level.",
-    "Guard.ts": "Enemy AI with types (skeleton, armored, captain, shadow). Boss phase system for shadow.",
-    "rendering_folder": "New in Phase 3 - ParallaxBackground.ts, Camera.ts, DynamicLighting.ts. All self-contained classes instantiated in PlatformGame.",
-    "edge_detection_pattern": "Input tracked with wasPressed boolean. Check current && !wasPressed for press edge, !current && wasPressed for release edge. Used for jump (jumpKeyWasPressed) and sword toggle (swordKeyWasPressed)."
+    "PlatformGame.ts": "Main game file, 4211 lines. Read in ~500 line chunks with offset/limit.",
+    "Player.ts": "Player entity, 1050 lines. States, combat mode, stances, rendering, movement polish.",
+    "Guard.ts": "Guard AI, 980 lines. 5 types, KO system, punch immunity tiers, boss phases.",
+    "rendering_folder": "ParallaxBackground.ts, Camera.ts, DynamicLighting.ts — self-contained classes instantiated in PlatformGame.",
+    "edge_detection_pattern": "Input tracked with wasPressed booleans. Check current && !wasPressed for press edge, !current && wasPressed for release edge.",
+    "tile_map_validation": "Use a Node.js script to validate all rows have correct column count. Windows find conflicts with unix — use findstr."
   }
 }

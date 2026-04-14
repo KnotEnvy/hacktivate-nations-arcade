@@ -23,10 +23,16 @@ import { AudioSettings } from './AudioSettings';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
+import { useArcadeUnlockState } from '@/hooks/useArcadeUnlockState';
 import { LeaderboardsTab } from './LeaderboardsTab';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { AVAILABLE_GAMES } from '@/data/Games';
+import {
+  PLAYABLE_GAME_CATALOG,
+  hasImplementedGamesInTier,
+  isGameImplemented,
+} from '@/lib/gameCatalog';
 import {
   DEFAULT_UNLOCKED_GAME_IDS,
   getTierUnlockCost,
@@ -69,6 +75,8 @@ interface GameEndData {
   total_bricks_broken?: number;
 }
 
+type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';
+
 const LOCAL_OWNER_KEY = 'hacktivate-session-owner';
 const LOCAL_OWNER_GUEST = 'guest';
 const LOCAL_STORAGE_KEYS = [
@@ -85,14 +93,10 @@ const LOCAL_STORAGE_KEYS = [
 export function ArcadeHub() {
   const [currentGame, setCurrentGame] = useState<GameModule | null>(null);
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
-  const [unlockedTiers, setUnlockedTiers] = useState<number[]>([0]); // Tier 0 is always unlocked
-  const [unlockedGames, setUnlockedGames] = useState<string[]>(Array.from(DEFAULT_UNLOCKED_GAME_IDS));
   const [currencyService] = useState(new CurrencyService());
   const [currentCoins, setCurrentCoins] = useState(0);
   const [showHub, setShowHub] = useState(true);
-  const [activeTab, setActiveTab] = useState<'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile'>(
-    'games'
-  );
+  const [activeTab, setActiveTab] = useState<ArcadeTab>('games');
   const [challenges, setChallenges] = useState<Challenge[]>([]);
 
   // Services
@@ -104,10 +108,6 @@ export function ArcadeHub() {
   const challengeSyncTimeoutRef = useRef<number | null>(null);
   const isHydratingRef = useRef(false);
   const hasHydratedRef = useRef(false);
-  const unlocksRef = useRef<{ tiers: number[]; games: string[] }>({
-    tiers: unlockedTiers,
-    games: unlockedGames,
-  });
   
   // Notifications
   const [notifications, setNotifications] = useState<Array<{
@@ -206,20 +206,19 @@ export function ArcadeHub() {
         )
         .catch(error => console.warn('Supabase player state sync failed:', error));
     }, 600);
+  // `unlocksRef` is a stable ref object returned by a custom hook.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, supabaseService, userService]);
 
-  useEffect(() => {
-    unlocksRef.current = { tiers: unlockedTiers, games: unlockedGames };
-  }, [unlockedGames, unlockedTiers]);
-
-  const saveUnlockState = useCallback((tiers: number[], games: string[], options?: { sync?: boolean }) => {
-    setUnlockedTiers(tiers);
-    setUnlockedGames(games);
-    localStorage.setItem('hacktivate-unlocks-v2', JSON.stringify({ tiers, games }));
-    if (options?.sync !== false) {
-      schedulePlayerSync({ unlockedTiers: tiers, unlockedGames: games });
-    }
-  }, [schedulePlayerSync]);
+  const {
+    unlockedTiers,
+    unlockedGames,
+    unlocksRef,
+    saveUnlockState,
+  } = useArcadeUnlockState({
+    achievementService,
+    schedulePlayerSync,
+  });
 
   const resetLocalState = useCallback(() => {
     const wasHydrating = isHydratingRef.current;
@@ -500,8 +499,8 @@ export function ArcadeHub() {
                 nextProfile.lastActiveAt && nextProfile.lastActiveAt.getTime() > 0
                   ? nextProfile.lastActiveAt.toISOString()
                   : null,
-              unlockedTiers,
-              unlockedGames,
+              unlockedTiers: unlocksRef.current.tiers,
+              unlockedGames: unlocksRef.current.games,
               stats: nextStats as unknown as Json,
             },
             { accessToken }
@@ -601,6 +600,8 @@ export function ArcadeHub() {
     return () => {
       active = false;
     };
+  // `unlocksRef` is a stable ref object returned by a custom hook.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     achievementService,
     challengeService,
@@ -666,58 +667,10 @@ export function ArcadeHub() {
     }
   }, []);
 
-  useEffect(() => {
-    const savedV2 = localStorage.getItem('hacktivate-unlocks-v2');
-    if (savedV2) {
-      try {
-        const parsed = JSON.parse(savedV2) as { tiers?: number[]; games?: string[] };
-        const tiers = Array.isArray(parsed.tiers) ? parsed.tiers : [0];
-        const games = Array.isArray(parsed.games)
-          ? Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...parsed.games]))
-          : Array.from(DEFAULT_UNLOCKED_GAME_IDS);
-
-        const normalizedTiers = tiers.includes(0) ? tiers : [0, ...tiers];
-        saveUnlockState(normalizedTiers, games);
-
-        const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
-        if (paidUnlocked > 0) {
-          achievementService.checkAchievement('games_unlocked', paidUnlocked);
-        }
-        if (games.length >= AVAILABLE_GAMES.length) {
-          achievementService.checkAchievement('all_games_unlocked', 1);
-        }
-      } catch (error) {
-        console.warn('Failed to load unlock state:', error);
-      }
-      return;
-    }
-
-    const legacy = localStorage.getItem('hacktivate-unlocked-tiers');
-    if (legacy) {
-      try {
-        const legacyTiers = JSON.parse(legacy) as number[];
-        const tiers = Array.from(new Set([0, ...legacyTiers])).sort((a, b) => a - b);
-        const legacyGames = AVAILABLE_GAMES.filter(g => tiers.includes(g.tier)).map(g => g.id);
-        const games = Array.from(new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...legacyGames]));
-
-        saveUnlockState(tiers, games);
-
-        const paidUnlocked = games.filter(id => !isDefaultUnlockedGame(id)).length;
-        if (paidUnlocked > 0) {
-          achievementService.checkAchievement('games_unlocked', paidUnlocked);
-        }
-        if (games.length >= AVAILABLE_GAMES.length) {
-          achievementService.checkAchievement('all_games_unlocked', 1);
-        }
-      } catch (error) {
-        console.warn('Failed to migrate unlock tiers:', error);
-      }
-    }
-  }, [achievementService, saveUnlockState]);
-
   const handleGameSelect = async (gameId: string) => {
     try {
       audioManager.playSound('click');
+      if (!isGameImplemented(gameId)) return;
       if (!isGameUnlocked(gameId, unlockedTiers, unlockedGames)) return;
       const game = await gameLoader.loadGame(gameId);
       if (game) {
@@ -741,6 +694,7 @@ export function ArcadeHub() {
   };
 
   const handleTierUnlock = (tier: number, cost: number) => {
+    if (!hasImplementedGamesInTier(tier)) return;
     if (currencyService.spendCoins(cost, `unlock_tier_${tier}`)) {
       if (!unlockedTiers.includes(tier)) {
         audioManager.playSound('unlock');
@@ -754,6 +708,7 @@ export function ArcadeHub() {
   const handleGameUnlock = (gameId: string, cost: number) => {
     const game = AVAILABLE_GAMES.find(g => g.id === gameId);
     if (!game) return;
+    if (!isGameImplemented(gameId)) return;
     if (!unlockedTiers.includes(game.tier)) return;
     if (unlockedGames.includes(gameId) || isDefaultUnlockedGame(gameId)) return;
 
@@ -764,7 +719,7 @@ export function ArcadeHub() {
 
       const paidUnlocked = newGames.filter(id => !isDefaultUnlockedGame(id)).length;
       achievementService.checkAchievement('games_unlocked', paidUnlocked);
-      if (newGames.length >= AVAILABLE_GAMES.length) {
+      if (newGames.length >= PLAYABLE_GAME_CATALOG.length) {
         achievementService.checkAchievement('all_games_unlocked', 1);
       }
 
@@ -1034,7 +989,7 @@ export function ArcadeHub() {
     alert('\u{1F3AE} All progress reset! Welcome back to the beginning.');
   };
 
-  const tabButtons = [
+  const tabButtons: Array<{ id: ArcadeTab; label: string; icon: string }> = [
     { id: 'games', label: 'Games', icon: '\u{1F3AE}' },
     { id: 'leaderboards', label: 'Leaderboards', icon: '\u{1F3C6}' },
     { id: 'challenges', label: 'Challenges', icon: '\u{1F3AF}' },
@@ -1052,15 +1007,18 @@ export function ArcadeHub() {
     await signInWithEmail(email);
   };
 
-  const tiers = Array.from(new Set(AVAILABLE_GAMES.map(g => g.tier))).sort((a, b) => a - b);
-  const nextTierToUnlock = tiers.find(t => t !== 0 && !unlockedTiers.includes(t));
+  const releasedTiers = Array.from(new Set(PLAYABLE_GAME_CATALOG.map(g => g.tier))).sort(
+    (a, b) => a - b
+  );
+  const nextTierToUnlock = releasedTiers.find(t => t !== 0 && !unlockedTiers.includes(t));
   const nextUnlockMessage =
     nextTierToUnlock != null
       ? `Next tier unlock: ${getTierUnlockCost(nextTierToUnlock)} coins (Tier ${nextTierToUnlock})`
-      : 'All tiers unlocked';
+      : 'All released tiers unlocked';
   const daily = challenges.filter(c => c.type === 'daily');
   const dailyCompleted = daily.filter(c => c.completed).length;
-  const unlockedGameCount = unlockedGames.length;
+  const unlockedReleasedTierCount = releasedTiers.filter(tier => unlockedTiers.includes(tier)).length;
+  const unlockedGameCount = unlockedGames.filter(isGameImplemented).length;
 
   return (
     <div
@@ -1209,7 +1167,7 @@ export function ArcadeHub() {
                     onClick={() => {
                       if (activeTab !== tab.id) {
                         audioManager.playSound('click');
-                        setActiveTab(tab.id as any);
+                        setActiveTab(tab.id);
                       }
                     }}
                     className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
@@ -1259,11 +1217,11 @@ export function ArcadeHub() {
                           Unlock Progress
                         </div>
                         <div className="mt-2 text-2xl font-bold text-white">
-                          {unlockedGameCount}/{AVAILABLE_GAMES.length}
+                          {unlockedGameCount}/{PLAYABLE_GAME_CATALOG.length}
                         </div>
-                        <div className="mt-1 text-sm text-gray-300">games unlocked</div>
+                        <div className="mt-1 text-sm text-gray-300">released games unlocked</div>
                         <div className="mt-2 text-xs text-gray-400">
-                          Tiers open: {unlockedTiers.length}/{tiers.length}
+                          Tiers open: {unlockedReleasedTierCount}/{releasedTiers.length}
                         </div>
                         <div className="mt-3 w-full rounded-lg bg-white/10 border border-white/10 text-white/90 text-sm font-semibold py-2 text-center">
                           {nextUnlockMessage}
@@ -1309,7 +1267,7 @@ export function ArcadeHub() {
                       supabaseService={supabaseService}
                       signedIn={!!session}
                       authDisabled={authDisabled}
-                      games={AVAILABLE_GAMES}
+                      games={PLAYABLE_GAME_CATALOG}
                       unlockedTiers={unlockedTiers}
                       unlockedGames={unlockedGames}
                       onPlayGame={(gameId) => void handleGameSelect(gameId)}

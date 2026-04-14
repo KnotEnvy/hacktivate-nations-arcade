@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import type { Database } from '@/lib/supabase.types';
 import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
@@ -192,10 +192,13 @@ export function LeaderboardsTab({
     [games, selectedGameId]
   );
 
-  const isGameUnlocked = (game: GameManifest) => {
-    if (isDefaultUnlockedGame(game.id)) return true;
-    return isTierUnlocked(game.tier, unlockedTiers) && unlockedGames.includes(game.id);
-  };
+  const isGameUnlocked = useCallback(
+    (game: GameManifest) => {
+      if (isDefaultUnlockedGame(game.id)) return true;
+      return isTierUnlocked(game.tier, unlockedTiers) && unlockedGames.includes(game.id);
+    },
+    [unlockedGames, unlockedTiers]
+  );
 
   const filteredGames = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -210,7 +213,7 @@ export function LeaderboardsTab({
         );
       })
       .sort((a, b) => a.tier - b.tier || a.title.localeCompare(b.title));
-  }, [games, query, showUnlockedOnly, unlockedGames, unlockedTiers]);
+  }, [games, isGameUnlocked, query, showUnlockedOnly]);
 
   const gamesByTier = useMemo(() => {
     const grouped = new Map<number, GameManifest[]>();

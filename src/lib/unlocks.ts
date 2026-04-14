@@ -1,4 +1,5 @@
 import { AVAILABLE_GAMES } from '@/data/Games';
+import { PLAYABLE_GAME_CATALOG, isGameImplemented } from '@/lib/gameCatalog';
 import { TIER_GAME_COST_INCREMENTS, TIER_UNLOCK_COSTS } from './constants';
 
 export const DEFAULT_UNLOCKED_GAME_IDS = ['runner'] as const;
@@ -19,7 +20,7 @@ export const getNextGameUnlockCost = (tier: number, unlockedPaidInTier: number):
 
 export const getPaidUnlockedCountInTier = (tier: number, unlockedGameIds: string[]): number => {
   const byId = new Set(unlockedGameIds);
-  return AVAILABLE_GAMES.filter(
+  return PLAYABLE_GAME_CATALOG.filter(
     g => g.tier === tier && !isDefaultUnlockedGame(g.id) && byId.has(g.id)
   ).length;
 };
@@ -32,9 +33,9 @@ export const isGameUnlocked = (
   unlockedTiers: number[],
   unlockedGameIds: string[]
 ): boolean => {
+  if (!isGameImplemented(gameId)) return false;
   if (isDefaultUnlockedGame(gameId)) return true;
   const game = AVAILABLE_GAMES.find(g => g.id === gameId);
   if (!game) return false;
   return isTierUnlocked(game.tier, unlockedTiers) && unlockedGameIds.includes(gameId);
 };
-

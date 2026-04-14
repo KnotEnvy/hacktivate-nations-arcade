@@ -48,10 +48,7 @@ export const metadata: Metadata = {
   authors: [{ name: 'KnotNVS' }],
   icons: {
     icon: '/favicon.ico',
-    apple: '/apple-touch-icon.png',
   },
-
-  manifest: '/manifest.json',
 };
 
 // Separate viewport export is correct

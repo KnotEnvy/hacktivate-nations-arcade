@@ -17,6 +17,17 @@ export type SoundName =
   | 'success'
   | 'unlock'
   | 'error'
+  // Compatibility aliases used by existing game code
+  | 'shoot'
+  | 'enemyShoot'
+  | 'playerHit'
+  | 'powerUp'
+  | 'extraLife'
+  | 'bomb'
+  | 'ufoSpawn'
+  | 'waveComplete'
+  | 'whoosh'
+  | 'achievement'
   // New game-specific sounds
   | 'explosion'
   | 'hit'
@@ -255,6 +266,32 @@ export class AudioManager {
         break;
       case 'error':
         this.playErrorSound(volume, now);
+        break;
+      case 'shoot':
+      case 'enemyShoot':
+        this.playLaserSound(volume, now);
+        break;
+      case 'playerHit':
+        this.playHitSound(volume, now);
+        break;
+      case 'powerUp':
+        this.playPowerupSound(volume, now);
+        break;
+      case 'extraLife':
+        this.playUnlockSound(volume, now);
+        break;
+      case 'bomb':
+        this.playExplosionSound(volume, now);
+        break;
+      case 'ufoSpawn':
+        this.playPowerupSound(volume, now);
+        break;
+      case 'waveComplete':
+      case 'achievement':
+        this.playSuccessSound(volume, now);
+        break;
+      case 'whoosh':
+        this.playJumpSound(volume, now);
         break;
       case 'explosion':
         this.playExplosionSound(volume, now);

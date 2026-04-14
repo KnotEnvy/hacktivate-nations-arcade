@@ -115,12 +115,20 @@ export class InputManager {
     return this.state.mouse.buttons.has(button);
   }
 
+  isMouseDown(button: number = 0): boolean {
+    return this.isMousePressed(button);
+  }
+
   getMousePosition(): { x: number; y: number } {
     return { ...this.state.mouse };
   }
 
   getTouches(): Array<{ id: number; x: number; y: number }> {
     return [...this.state.touch];
+  }
+
+  isTouchActive(): boolean {
+    return this.state.touch.length > 0;
   }
 
   // Convenience methods
