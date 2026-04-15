@@ -272,11 +272,15 @@ export class UserService {
 
     this.profile.experience = Math.min(this.profile.experience + amount, maxExperience);
     let newLevel = this.profile.level;
+    let leveledUp = false;
 
-    // Level up once per call when crossing the next threshold
-    const nextLevelExp = UserService.experienceForLevel(this.profile.level + 1);
-    const leveledUp = this.profile.experience >= nextLevelExp && this.profile.level < MAX_LEVEL;
-    if (leveledUp) {
+    while (this.profile.level < MAX_LEVEL) {
+      const nextLevelExp = UserService.experienceForLevel(this.profile.level + 1);
+      if (this.profile.experience < nextLevelExp) {
+        break;
+      }
+
+      leveledUp = true;
       this.profile.level += 1;
       newLevel = this.profile.level;
       this.notifyLevelUp(this.profile.level);
@@ -304,9 +308,9 @@ export class UserService {
     return LEVEL_MILESTONES.filter(milestone => milestone.level > previousLevel && milestone.level <= newLevel);
   }
 
-  public getPerkModifiers(): PerkModifiers {
-    const unlockedPerks = UserService.getUnlockedPerksForLevel(this.profile.level);
-    const unlockedMilestones = UserService.getMilestonesForLevel(this.profile.level);
+  public static getPerkModifiersForLevel(level: number): PerkModifiers {
+    const unlockedPerks = UserService.getUnlockedPerksForLevel(level);
+    const unlockedMilestones = UserService.getMilestonesForLevel(level);
 
     const modifiers: PerkModifiers = {
       coinMultiplier: 1,
@@ -316,9 +320,12 @@ export class UserService {
       bonusCoinsPerScore: 0,
     };
 
-    const allModifiers = [...unlockedPerks.map(perk => perk.modifiers), ...unlockedMilestones.map(m => m.modifiers)];
+    const allModifiers = [
+      ...unlockedPerks.map(perk => perk.modifiers),
+      ...unlockedMilestones.map(milestone => milestone.modifiers),
+    ];
 
-    allModifiers.forEach((perk) => {
+    allModifiers.forEach(perk => {
       if (perk.coinMultiplier) {
         modifiers.coinMultiplier += perk.coinMultiplier;
       }
@@ -329,7 +336,10 @@ export class UserService {
         modifiers.challengeRewardMultiplier += perk.challengeRewardMultiplier;
       }
       if (perk.minCoinsPerGame) {
-        modifiers.minCoinsPerGame = Math.max(modifiers.minCoinsPerGame, perk.minCoinsPerGame);
+        modifiers.minCoinsPerGame = Math.max(
+          modifiers.minCoinsPerGame,
+          perk.minCoinsPerGame
+        );
       }
       if (perk.bonusCoinsPerScore) {
         modifiers.bonusCoinsPerScore += perk.bonusCoinsPerScore;
@@ -337,6 +347,10 @@ export class UserService {
     });
 
     return modifiers;
+  }
+
+  public getPerkModifiers(): PerkModifiers {
+    return UserService.getPerkModifiersForLevel(this.profile.level);
   }
 
   getProfile(): UserProfile {

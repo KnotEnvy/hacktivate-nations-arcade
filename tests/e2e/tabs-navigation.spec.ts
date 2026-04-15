@@ -26,15 +26,15 @@ test.describe('Tabs Navigation', () => {
     await expect(page.getByTestId('game-carousel')).toBeVisible();
 
     // Challenges
-    await page.getByRole('button', { name: /Challenges/i }).click();
+    await page.getByTestId('arcade-tab-challenges').click();
     await expect(page.getByTestId('daily-challenges')).toBeVisible();
 
     // Achievements
-    await page.getByRole('button', { name: /Achievements/i }).click();
+    await page.getByTestId('arcade-tab-achievements').click();
     await expect(page.getByTestId('achievements-panel')).toBeVisible();
 
     // Back to Games
-    await page.getByRole('button', { name: /Games/i }).first().click();
+    await page.getByTestId('arcade-tab-games').click();
     await expect(page.getByTestId('game-carousel')).toBeVisible();
   });
 });

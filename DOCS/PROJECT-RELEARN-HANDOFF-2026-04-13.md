@@ -43,15 +43,38 @@ Verified on April 14, 2026 after the next consolidation pass:
 - `next.config.ts` no longer skips lint during production builds
 - `cmd /c npm run type-check` is now self-sufficient via `scripts/ensure-next-type-stubs.js`, so it no longer depends on a previous build to populate `.next/types`
 
+Verified on April 14, 2026 after the trusted-progression hardening pass:
+
+- signed-in payout-sensitive writes now go through `src/app/api/arcade/progression/route.ts` instead of direct browser wallet / leaderboard mutation calls
+- the new trusted route validates registered game ids, achievement ids, typed daily challenge ids, and server-owned unlock purchase costs before mutating Supabase rows
+- `ArcadeHub.tsx` now reconciles signed-in wallet / unlock state from trusted API responses instead of pushing arbitrary wallet balances on every coin change
+- daily challenge templates now live in `src/lib/challenges.ts`, and `ChallengeService` progress updates no longer depend on description string matching
+- focused Jest coverage now exists for typed challenge progress and trusted progression validation helpers
+
+Verified on April 15, 2026 after the offline sync hardening pass:
+
+- signed-in sync failures now queue into `src/services/SupabaseSyncOutbox.ts` instead of being dropped after a warning
+- queued writes replay automatically while a valid session is active and when the browser regains connectivity
+- signed-in unlock purchases and reward claims now fall back to optimistic local progression plus queued replay instead of leaving the player stuck when the network path fails
+- the hub now shows pending sync count near the auth state so queued work is visible
+- focused Jest coverage now exists for outbox merge/replay behavior
+
+Verified on April 15, 2026 after the CI + progression cleanup pass:
+
+- `.github/workflows/ci.yml` now runs type-check, lint, full Jest, production build, and Playwright on push / pull request
+- Playwright tab navigation coverage now uses stable `arcade-tab-*` test ids instead of ambiguous text matching
+- `UserService.addExperience()` now levels through every crossed XP threshold in one call, so large rewards no longer drop intermediate level-ups / callbacks
+- Jest audio mocks were updated to match the current procedural music analyzer path, so the full unit suite is green again
+
 ## Current Reality
 
 ### Stack
 
 - Frontend: Next.js App Router, React 19, TypeScript, Tailwind
-- State/persistence: localStorage-heavy local-first services, some Zustand stores
+- State/persistence: localStorage-heavy local-first services plus `useArcadeUnlockState` for tier/game unlock persistence
 - Backend: Supabase auth + Postgres schema + RLS + leaderboard RPCs
 - Rendering: HTML5 canvas mini-games with shared base classes and services
-- Testing: Jest + ts-jest for unit tests, Playwright for basic E2E
+- Testing: Jest + ts-jest for unit tests, Playwright for E2E; lint/type-check/build gates are green
 
 ### What Players Can Do Today
 
@@ -140,6 +163,7 @@ These docs are helpful, but no longer fully represent current truth:
 
 Best current references:
 
+- `DOCS/START-HERE.md`
 - live code
 - `DOCS/ActionPlan.md`
 - `DOCS/UserSystemsHandoff.md`
@@ -177,21 +201,22 @@ Actions:
 - rotate anon/service-role keys if the previous values ever left a trusted local machine
 - avoid using a committed `.env` as a setup path going forward
 
-### 2. TypeScript Is Green, Build Is Green, Lint Debt Remains
+### 2. Verification Gates Are Green Again
 
-Verified on April 13, 2026:
+Verified on April 14, 2026:
 
+- `cmd /c npm run lint` passes
 - `cmd /c npm run type-check` passes
 - `cmd /c npm run build` passes
 
-The concrete TypeScript blockers that were fixed include:
+The concrete build-health blockers that were fixed include:
 
 - case-sensitive achievement import mismatch
 - missing `SoundName` aliases used by games
 - missing `InputManager` compatibility methods referenced by games
 - Supabase auth resend type mismatch in `useSupabaseAuth.ts`
 - strict typing issues in `jest.setup.ts`
-- flaky post-build type-check behavior caused by incremental `.next` type state
+- flaky standalone type-check behavior caused by generated `.next` type state
 
 Important caveat:
 
@@ -236,14 +261,16 @@ Remaining action:
 
 ### 5. Client Trust Is Still Too High
 
-Supabase sync is wired, but the app still trusts the client heavily for:
+Status update after April 14 hardening:
 
-- coin economy
-- achievements
-- challenge progression
-- leaderboard submissions
+- signed-in leaderboard submissions, session coin awards, challenge reward claims, achievement reward claims, and unlock purchases now flow through a server route that validates catalog/template ids and reconciles wallet state server-side
+- this materially reduces the risk of arbitrary browser-side wallet and leaderboard writes
 
-RLS helps, but it does not replace server-side validation.
+Remaining risk:
+
+- gameplay-derived achievement unlocks and challenge completion are still detected client-side first, then claimed through the trusted route
+- RLS still does not replace full server-side gameplay validation
+- queued `record-session` replay uses best-effort duplicate suppression stored in `player_state.settings`, but the route still is not fully transactional / atomic across wallet + leaderboard + replay-marker writes
 
 ### 6. State Ownership Is Split
 
@@ -265,8 +292,8 @@ Status update:
 
 - `BaseGame.destroy()` can still flow through end-of-game reward logic
 - leaderboard UI can show generated placeholder rows, which is demo-friendly but can confuse real users
-- challenge progress logic depends on string/description matching instead of typed requirement definitions
 - `UserServices.addExperience()` only levels once per call, even if a large XP reward crosses multiple thresholds
+- trusted progression writes still use route-level read/modify/write updates for wallet state; if real multi-device concurrency matters, move wallet deltas into database-side atomic RPCs
 
 ## Recommended Production Plan
 

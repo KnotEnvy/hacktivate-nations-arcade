@@ -24,7 +24,7 @@ describe('UserService', () => {
       const existingProfile = {
         username: 'TestPlayer',
         level: 5,
-        experience: 2500,
+        experience: UserService.experienceForLevel(5),
         totalCoins: 1000,
         avatar: '🚀',
         joinedAt: new Date('2024-01-01'),
@@ -39,7 +39,7 @@ describe('UserService', () => {
       
       expect(profile.username).toBe('TestPlayer');
       expect(profile.level).toBe(5);
-      expect(profile.experience).toBe(2500);
+      expect(profile.experience).toBe(UserService.experienceForLevel(5));
       expect(profile.avatar).toBe('🚀');
     });
   });
@@ -93,6 +93,17 @@ describe('UserService', () => {
       
       const profile = userService.getProfile();
       expect(profile.level).toBe(3);
+    });
+
+    test('handles large one-shot experience grants across multiple levels', () => {
+      const level4Exp = UserService.experienceForLevel(4);
+
+      const result = userService.addExperience(level4Exp);
+
+      const profile = userService.getProfile();
+      expect(result).toEqual({ leveledUp: true, newLevel: 4 });
+      expect(profile.level).toBe(4);
+      expect(profile.experience).toBe(level4Exp);
     });
 
     test('notifies listeners when level changes', () => {
@@ -324,6 +335,15 @@ describe('UserService', () => {
       
       expect(allLevelUps).toEqual([2, 3]);
       expect(evenLevelUps).toEqual([2]);
+    });
+
+    test('fires level up callbacks for each threshold crossed in one grant', () => {
+      const levelUps: number[] = [];
+      userService.onLevelUp(level => levelUps.push(level));
+
+      userService.addExperience(UserService.experienceForLevel(4));
+
+      expect(levelUps).toEqual([2, 3, 4]);
     });
   });
 });

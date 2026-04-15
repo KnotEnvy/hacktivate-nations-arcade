@@ -58,6 +58,15 @@ const createMockBuffer = (length: number, sampleRate: number): AudioBuffer => ({
   copyToChannel: jest.fn(),
 });
 
+const createMockAnalyser = () => ({
+  connect: jest.fn(),
+  fftSize: 0,
+  smoothingTimeConstant: 0,
+  frequencyBinCount: 128,
+  getByteFrequencyData: jest.fn(),
+  getByteTimeDomainData: jest.fn(),
+});
+
 // Tracked creations for test assertions
 let oscillatorsCreated = 0;
 let gainsCreated = 0;
@@ -80,6 +89,7 @@ const mockAudioContext = {
   createBuffer: jest.fn((channels: number, length: number, sampleRate: number) =>
     createMockBuffer(length, sampleRate)
   ),
+  createAnalyser: jest.fn(() => createMockAnalyser()),
   currentTime: 0,
   destination: {},
   sampleRate: 44100,
@@ -154,12 +164,13 @@ describe('AudioManager', () => {
     });
 
     test('respects mute state', () => {
+      const gainsBeforePlay = gainsCreated;
       audioManager.setMute(true);
       audioManager.playSound('coin');
 
       // When muted, should not create any oscillators
       expect(oscillatorsCreated).toBe(0);
-      expect(gainsCreated).toBe(0);
+      expect(gainsCreated).toBe(gainsBeforePlay);
     });
 
     test('handles unknown sound effects with fallback', () => {

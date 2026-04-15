@@ -8,7 +8,7 @@ module.exports = {
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   transform: {
-    '^.+\\.(t|j)sx?$': ['ts-jest', { tsconfig: 'tsconfig.json', isolatedModules: true }],
+    '^.+\\.(t|j)sx?$': ['ts-jest', { tsconfig: 'tsconfig.json' }],
   },
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
@@ -18,4 +18,3 @@ module.exports = {
     '!src/components/**/*', // Exclude React components for now
   ],
 };
-

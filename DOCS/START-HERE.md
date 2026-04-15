@@ -1,0 +1,57 @@
+# Start Here
+
+Last updated: April 14, 2026
+
+This is the minimal handoff set for the next team. Start here instead of browsing every doc in `DOCS/`.
+
+## Read Order
+
+1. `README.md`
+2. `DOCS/PROJECT-RELEARN-HANDOFF-2026-04-13.md`
+3. `DOCS/ActionPlan.md`
+4. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, or local save ownership
+5. `DOCS/AUDIO-SYSTEM-HANDOFF.md` only if you are touching the procedural audio/music system
+
+## Current Verified Repo State
+
+Verified on April 14, 2026:
+
+- `npm run lint` passes
+- `npm run type-check` passes
+- `npm run build` passes
+- the hub only allows purchase/play for games that are registered in `src/games/registry.ts`
+- incomplete PWA/install metadata has been removed until the asset/service-worker surface is real
+- unlock persistence now lives in `src/hooks/useArcadeUnlockState.ts`
+- the unused Zustand stores under `src/stores/` were removed
+
+Verified on April 15, 2026:
+
+- `npm test -- --runInBand` passes
+- `npm run e2e` passes
+- `.github/workflows/ci.yml` now exists and mirrors the local verification gates
+- large XP grants now level through every crossed threshold instead of only one level per call
+
+## What To Work On Next
+
+Highest-value remaining work:
+
+1. Continue server-trust hardening so gameplay-derived achievement/challenge unlock conditions move off the client, not just payout-sensitive writes.
+2. Strengthen the new offline retry/outbox path with more atomic server-side replay guarantees and better diagnostics.
+3. Continue reducing `ArcadeHub.tsx` complexity and move more progression/reward ownership out of the component.
+4. Finish the typed challenge migration for future challenge variants and server-seeded schedules.
+5. Expand tests around auth, persistence, unlocks, progression, and sync.
+
+## Docs To Ignore Unless You Need Deep History
+
+These are not the right starting point for day-to-day execution:
+
+- `DOCS/DevelopmentPlan.md`
+- `DOCS/DevelopmentPlan_2.md`
+- `DOCS/BUBBLE-POP-SESSION-HANDOFF.md`
+- `DOCS/FROG-HOP-SESSION-HANDOFF.md`
+- `DOCS/UI_Review_and_Suggestions.md`
+- `DOCS/Test101.md`
+- `DOCS/projectSetup.md`
+- `DOCS/HacktivateNations Arcade – Product Requirements Document v2.md`
+
+Use those only if you need historical context for a specific subsystem or product decision.

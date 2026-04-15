@@ -65,6 +65,17 @@ export interface LeaderboardQuery {
   limit?: number;
 }
 
+export interface TrustedChallengeSyncInput {
+  challengeId: string;
+  progress: number;
+  completed: boolean;
+}
+
+export interface TrustedWalletMutationResult {
+  balance: number;
+  rewardAwarded?: number;
+}
+
 interface SupabaseRequestOptions {
   accessToken?: string;
 }
@@ -310,5 +321,127 @@ export class SupabaseArcadeService {
 
     throwOnError(error, 'fetchLeaderboard');
     return data ?? [];
+  }
+
+  private async postTrustedProgression<TResponse>(
+    payload: Record<string, unknown>,
+    options?: SupabaseRequestOptions
+  ): Promise<TResponse> {
+    if (!options?.accessToken) {
+      throw new Error('Trusted progression requests require an access token.');
+    }
+
+    const response = await fetch('/api/arcade/progression', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${options.accessToken}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = (await response.json().catch(() => null)) as
+      | { error?: string }
+      | null;
+    if (!response.ok) {
+      throw new Error(
+        body?.error || `[Trusted progression] request failed with ${response.status}`
+      );
+    }
+
+    return body as TResponse;
+  }
+
+  async recordTrustedGameSession(
+    input: LeaderboardScoreInput & { pickups: number; clientMutationId?: string },
+    options?: SupabaseRequestOptions
+  ) {
+    return this.postTrustedProgression<TrustedWalletMutationResult>(
+      {
+        action: 'record-session',
+        gameId: input.gameId,
+        score: input.score,
+        pickups: input.pickups,
+        clientMutationId: input.clientMutationId,
+      },
+      options
+    );
+  }
+
+  async claimAchievements(
+    achievementIds: string[],
+    options?: SupabaseRequestOptions
+  ) {
+    return this.postTrustedProgression<{
+      achievementIds: string[];
+      balance: number;
+      rewardAwarded: number;
+    }>(
+      {
+        action: 'claim-achievements',
+        achievementIds,
+      },
+      options
+    );
+  }
+
+  async syncChallengesTrusted(
+    challenges: TrustedChallengeSyncInput[],
+    options?: SupabaseRequestOptions
+  ) {
+    return this.postTrustedProgression<{ synced: number }>(
+      {
+        action: 'sync-challenges',
+        challenges,
+      },
+      options
+    );
+  }
+
+  async claimChallenge(
+    challengeId: string,
+    progress: number,
+    options?: SupabaseRequestOptions
+  ) {
+    return this.postTrustedProgression<{
+      alreadyClaimed: boolean;
+      balance: number;
+      rewardAwarded: number;
+    }>(
+      {
+        action: 'claim-challenge',
+        challengeId,
+        progress,
+      },
+      options
+    );
+  }
+
+  async unlockTierTrusted(tier: number, options?: SupabaseRequestOptions) {
+    return this.postTrustedProgression<{
+      balance: number;
+      unlockedGames: string[];
+      unlockedTiers: number[];
+    }>(
+      {
+        action: 'unlock-tier',
+        tier,
+      },
+      options
+    );
+  }
+
+  async unlockGameTrusted(gameId: string, options?: SupabaseRequestOptions) {
+    return this.postTrustedProgression<{
+      balance: number;
+      unlockedGames: string[];
+      unlockedTiers: number[];
+    }>(
+      {
+        action: 'unlock-game',
+        gameId,
+      },
+      options
+    );
   }
 }
