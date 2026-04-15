@@ -75,6 +75,33 @@ interface GameEndData {
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';
 
+const TRUSTED_SESSION_CORE_FIELDS = new Set([
+  'score',
+  'pickups',
+  'coinsEarned',
+  'timePlayedMs',
+]);
+
+const getTrustedSessionMetrics = (gameData: GameEndData): Record<string, number> => {
+  const metrics: Record<string, number> = {};
+
+  Object.entries(gameData as Record<string, unknown>).forEach(([key, value]) => {
+    if (TRUSTED_SESSION_CORE_FIELDS.has(key)) {
+      return;
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      metrics[key] = value;
+    }
+  });
+
+  if (Array.isArray(gameData.powerupTypesUsed)) {
+    metrics.powerup_types = gameData.powerupTypesUsed.length;
+  }
+
+  return metrics;
+};
+
 const LOCAL_STORAGE_KEYS = [
   'hacktivate-unlocks-v2',
   'hacktivate-unlocked-tiers',
@@ -185,6 +212,53 @@ export function ArcadeHub() {
       });
     },
     [achievementService, currencyService]
+  );
+
+  const applyTrustedAchievementUnlocks = useCallback(
+    (achievementIds: string[]) => {
+      if (achievementIds.length === 0) {
+        return;
+      }
+
+      const currentUnlockedIds = achievementService.getUnlockedAchievementIds();
+      const currentUnlockedSet = new Set(currentUnlockedIds);
+      const nextUnlockedIds = Array.from(
+        new Set([...currentUnlockedIds, ...achievementIds])
+      );
+      const newlyUnlockedIds = achievementIds.filter(
+        achievementId => !currentUnlockedSet.has(achievementId)
+      );
+
+      if (newlyUnlockedIds.length === 0) {
+        return;
+      }
+
+      runWhileHydratingRef.current(() => {
+        achievementService.setUnlockedAchievements(
+          nextUnlockedIds.map(id => ({ id }))
+        );
+        userService.updateStats({
+          achievementsUnlocked: nextUnlockedIds.length,
+        });
+      });
+
+      newlyUnlockedIds.forEach(achievementId => {
+        const achievement = achievementService
+          .getAchievements()
+          .find(entry => entry.id === achievementId);
+        if (!achievement) {
+          return;
+        }
+
+        audioManager.playSound('success');
+        addNotification(
+          'achievement',
+          achievement.title,
+          `+${achievement.reward} coins`
+        );
+      });
+    },
+    [achievementService, addNotification, audioManager, userService]
   );
 
   const resetLocalState = useCallback(() => {
@@ -731,6 +805,8 @@ export function ArcadeHub() {
       userService.updateStats({ achievementsUnlocked: current + newlyUnlocked.length });
     }
 
+    const trustedSessionMetrics = getTrustedSessionMetrics(gameData);
+
     // Persist score and economy-sensitive rewards through the trusted server path.
     if (supabaseService && session?.access_token) {
       void (async () => {
@@ -745,6 +821,8 @@ export function ArcadeHub() {
               gameId: selectedGameId,
               score: gameData.score || 0,
               pickups: gameData.pickups || 0,
+              timePlayedMs: gameData.timePlayedMs || 0,
+              metrics: trustedSessionMetrics,
               clientMutationId,
             },
             {
@@ -752,6 +830,7 @@ export function ArcadeHub() {
             }
           );
           reconcileTrustedBalance(sessionResult.balance);
+          applyTrustedAchievementUnlocks(sessionResult.achievementIds ?? []);
         } catch (error) {
           console.warn('Trusted session sync failed:', error);
           queueSyncOperation({
@@ -760,32 +839,14 @@ export function ArcadeHub() {
               gameId: selectedGameId,
               score: gameData.score || 0,
               pickups: gameData.pickups || 0,
+              timePlayedMs: gameData.timePlayedMs || 0,
+              metrics: trustedSessionMetrics,
               clientMutationId,
             },
           });
-        }
-
-        if (trustedAchievementIds.length === 0) {
-          return;
-        }
-
-        try {
-          const achievementResult = await supabaseService.claimAchievements(
-            trustedAchievementIds,
-            {
-              accessToken: session.access_token,
-            }
-          );
-          reconcileTrustedBalance(achievementResult.balance);
-        } catch (error) {
-          console.warn('Trusted achievement sync failed:', error);
-          queueSyncOperation({
-            kind: 'trusted-achievement-claim',
-            payload: {
-              achievementIds: trustedAchievementIds,
-            },
-          });
-          applyLocalAchievementRewards(trustedAchievementIds);
+          if (trustedAchievementIds.length > 0) {
+            applyLocalAchievementRewards(trustedAchievementIds);
+          }
         }
       })();
     }

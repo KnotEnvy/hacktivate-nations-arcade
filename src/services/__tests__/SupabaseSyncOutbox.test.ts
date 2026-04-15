@@ -25,13 +25,40 @@ const makeServiceMock = () =>
     }),
   }) as unknown as jest.Mocked<SupabaseArcadeService>;
 
+const makeRichTrustedSessionRecord = (
+  overrides: Partial<{
+    gameId: string;
+    score: number;
+    pickups: number;
+    timePlayedMs: number;
+    metrics: Record<string, number>;
+    clientMutationId: string;
+  }> = {}
+) =>
+  ({
+    kind: 'trusted-session-record',
+    payload: {
+      gameId: 'runner',
+      score: 100,
+      pickups: 4,
+      timePlayedMs: 12_345,
+      metrics: {
+        distance: 500,
+        combo: 8,
+        powerup_types: 2,
+      },
+      clientMutationId: 'session-1',
+      ...overrides,
+    },
+  }) as Parameters<SupabaseSyncOutbox['enqueue']>[0];
+
 describe('SupabaseSyncOutbox', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.restoreAllMocks();
   });
 
-  test('merges replaceable operations and preserves queued session records', () => {
+  test('merges replaceable operations and preserves queued rich session records', () => {
     const outbox = new SupabaseSyncOutbox();
 
     outbox.enqueue({
@@ -51,22 +78,20 @@ describe('SupabaseSyncOutbox', () => {
       payload: { achievementIds: ['coin_collector', 'first_jump'] },
     });
     outbox.enqueue({
-      kind: 'trusted-session-record',
-      payload: {
-        gameId: 'runner',
-        score: 100,
-        pickups: 4,
-        clientMutationId: 'session-1',
-      },
+      ...makeRichTrustedSessionRecord(),
     });
     outbox.enqueue({
-      kind: 'trusted-session-record',
-      payload: {
-        gameId: 'runner',
+      ...makeRichTrustedSessionRecord({
         score: 200,
         pickups: 6,
+        timePlayedMs: 15_000,
+        metrics: {
+          distance: 900,
+          combo: 12,
+          powerup_types: 4,
+        },
         clientMutationId: 'session-2',
-      },
+      }),
     });
 
     const items = outbox.getItems();
@@ -84,6 +109,69 @@ describe('SupabaseSyncOutbox', () => {
     expect(
       items.filter(item => item.kind === 'trusted-session-record')
     ).toHaveLength(2);
+    expect(
+      items.filter(item => item.kind === 'trusted-session-record').map(item => item.payload)
+    ).toEqual([
+      {
+        gameId: 'runner',
+        score: 100,
+        pickups: 4,
+        timePlayedMs: 12_345,
+        metrics: {
+          distance: 500,
+          combo: 8,
+          powerup_types: 2,
+        },
+        clientMutationId: 'session-1',
+      },
+      {
+        gameId: 'runner',
+        score: 200,
+        pickups: 6,
+        timePlayedMs: 15_000,
+        metrics: {
+          distance: 900,
+          combo: 12,
+          powerup_types: 4,
+        },
+        clientMutationId: 'session-2',
+      },
+    ]);
+  });
+
+  test('replaces richer trusted session retries using the mutation id', () => {
+    const outbox = new SupabaseSyncOutbox();
+
+    const first = makeRichTrustedSessionRecord({
+      score: 100,
+      pickups: 4,
+      timePlayedMs: 10_000,
+      metrics: {
+        distance: 250,
+        combo: 5,
+        powerup_types: 1,
+      },
+      clientMutationId: 'session-dup',
+    });
+    const retry = makeRichTrustedSessionRecord({
+      score: 180,
+      pickups: 9,
+      timePlayedMs: 11_500,
+      metrics: {
+        distance: 600,
+        combo: 10,
+        powerup_types: 3,
+      },
+      clientMutationId: 'session-dup',
+    });
+
+    outbox.enqueue(first);
+    outbox.enqueue(retry);
+
+    const [stored] = outbox.getItems();
+
+    expect(outbox.getItems()).toHaveLength(1);
+    expect(stored.payload).toEqual(retry.payload);
   });
 
   test('flush replays queued operations and reconciles balances/unlocks', async () => {
@@ -92,15 +180,8 @@ describe('SupabaseSyncOutbox', () => {
     const balances: number[] = [];
     const unlocks: Array<{ tiers: number[]; games: string[] }> = [];
 
-    outbox.enqueue({
-      kind: 'trusted-session-record',
-      payload: {
-        gameId: 'runner',
-        score: 100,
-        pickups: 4,
-        clientMutationId: 'session-1',
-      },
-    });
+    const richSessionRecord = makeRichTrustedSessionRecord();
+    outbox.enqueue(richSessionRecord);
     outbox.enqueue({
       kind: 'trusted-game-unlock',
       payload: { gameId: 'snake' },
@@ -113,12 +194,7 @@ describe('SupabaseSyncOutbox', () => {
 
     expect(result).toEqual({ processed: 2, remaining: 0 });
     expect(service.recordTrustedGameSession).toHaveBeenCalledWith(
-      {
-        gameId: 'runner',
-        score: 100,
-        pickups: 4,
-        clientMutationId: 'session-1',
-      },
+      richSessionRecord.payload,
       { accessToken: 'token' }
     );
     expect(service.unlockGameTrusted).toHaveBeenCalledWith('snake', {
@@ -143,12 +219,10 @@ describe('SupabaseSyncOutbox', () => {
 
     outbox.enqueue({
       kind: 'trusted-session-record',
-      payload: {
-        gameId: 'runner',
-        score: 100,
-        pickups: 4,
-        clientMutationId: 'session-1',
-      },
+      payload: makeRichTrustedSessionRecord().payload as Extract<
+        Parameters<SupabaseSyncOutbox['enqueue']>[0],
+        { kind: 'trusted-session-record' }
+      >['payload'],
     });
     outbox.enqueue({
       kind: 'trusted-achievement-claim',

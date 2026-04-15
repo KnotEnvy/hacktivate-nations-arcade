@@ -3,6 +3,7 @@ import type {
   ProfileUpsertInput,
   SupabaseArcadeService,
   TrustedChallengeSyncInput,
+  TrustedSessionMetrics,
 } from '@/services/SupabaseArcadeService';
 
 const OUTBOX_STORAGE_KEY = 'hacktivate-supabase-sync-outbox-v1';
@@ -20,15 +21,17 @@ type OutboxOperation =
       kind: 'trusted-challenge-sync';
       payload: TrustedChallengeSyncInput[];
     }
-  | {
-      kind: 'trusted-session-record';
-      payload: {
-        gameId: string;
-        score: number;
-        pickups: number;
-        clientMutationId: string;
-      };
-    }
+    | {
+        kind: 'trusted-session-record';
+        payload: {
+          gameId: string;
+          score: number;
+          pickups: number;
+          timePlayedMs: number;
+          metrics?: TrustedSessionMetrics;
+          clientMutationId: string;
+        };
+      }
   | {
       kind: 'trusted-achievement-claim';
       payload: {

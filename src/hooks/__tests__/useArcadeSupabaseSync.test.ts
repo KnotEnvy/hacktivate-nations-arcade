@@ -175,6 +175,7 @@ const renderSupabaseSyncHook = (
 
 describe('useArcadeSupabaseSync', () => {
   beforeEach(() => {
+    localStorage.clear();
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     mockedGetSupabaseBrowserClient.mockReturnValue({} as never);
     mockHydrationQueries();
@@ -273,6 +274,51 @@ describe('useArcadeSupabaseSync', () => {
       ['runner', 'space'],
       { sync: false }
     );
+  });
+
+  it('queues rich trusted session payloads without dropping gameplay metrics', async () => {
+    const session = {
+      ...createSession(),
+      access_token: '',
+    } as Session;
+    const { result } = renderSupabaseSyncHook({ session });
+
+    await flushEffects();
+    await waitFor(() => {
+      expect(result.current.supabaseService).not.toBeNull();
+    });
+
+    const richSessionRecord = {
+      kind: 'trusted-session-record',
+      payload: {
+        gameId: 'runner',
+        score: 999.8,
+        pickups: 14.2,
+        timePlayedMs: 12_345,
+        metrics: {
+          distance: 5_000,
+          combo: 20,
+          powerup_types: 4,
+        },
+        clientMutationId: 'session-queue-1',
+      },
+    } as Parameters<typeof result.current.queueSyncOperation>[0];
+
+    act(() => {
+      result.current.queueSyncOperation(richSessionRecord);
+    });
+
+    await flushEffects();
+
+    expect(result.current.pendingSyncCount).toBe(1);
+    const queued = JSON.parse(
+      localStorage.getItem(OUTBOX_STORAGE_KEY) ?? '[]'
+    ) as Array<{ kind: string; payload?: Record<string, unknown> }>;
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      kind: 'trusted-session-record',
+      payload: richSessionRecord.payload,
+    });
   });
 
   it('resets local state when the authenticated owner changes', async () => {

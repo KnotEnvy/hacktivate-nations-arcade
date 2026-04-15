@@ -71,9 +71,21 @@ export interface TrustedChallengeSyncInput {
   completed: boolean;
 }
 
+export interface TrustedSessionMetrics {
+  [metric: string]: number;
+}
+
+export interface TrustedGameSessionInput extends LeaderboardScoreInput {
+  pickups: number;
+  timePlayedMs: number;
+  metrics?: TrustedSessionMetrics;
+  clientMutationId?: string;
+}
+
 export interface TrustedWalletMutationResult {
   balance: number;
   rewardAwarded?: number;
+  achievementIds?: string[];
 }
 
 interface SupabaseRequestOptions {
@@ -353,7 +365,7 @@ export class SupabaseArcadeService {
   }
 
   async recordTrustedGameSession(
-    input: LeaderboardScoreInput & { pickups: number; clientMutationId?: string },
+    input: TrustedGameSessionInput,
     options?: SupabaseRequestOptions
   ) {
     return this.postTrustedProgression<TrustedWalletMutationResult>(
@@ -362,6 +374,8 @@ export class SupabaseArcadeService {
         gameId: input.gameId,
         score: input.score,
         pickups: input.pickups,
+        timePlayedMs: input.timePlayedMs,
+        metrics: input.metrics ?? {},
         clientMutationId: input.clientMutationId,
       },
       options

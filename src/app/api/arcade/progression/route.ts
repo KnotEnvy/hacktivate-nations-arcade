@@ -8,11 +8,17 @@ import {
   sanitizeUnlockedGameIds,
 } from '@/lib/gameCatalog';
 import {
+  appendProcessedSessionMutationId,
+  buildTrustedChallengeProgressUpdate,
+  buildTrustedSessionProgressionState,
   calculateTrustedGameReward,
   validateAchievementIds,
   validateTrustedChallengeSync,
   validateTrustedGameSession,
   getAchievementDefinition,
+  getProcessedSessionMutationIds,
+  getTrustedProgressionSettings,
+  getTrustedSessionAchievementIds,
 } from '@/lib/trustedProgression';
 import {
   DEFAULT_UNLOCKED_GAME_IDS,
@@ -31,6 +37,8 @@ type ProgressionAction =
       gameId: string;
       score: number;
       pickups: number;
+      timePlayedMs: number;
+      metrics?: Record<string, number>;
       clientMutationId?: string;
     }
   | {
@@ -83,31 +91,6 @@ const parseBearerToken = (request: Request): string | null => {
   }
 
   return token;
-};
-
-const getPlayerStateSettings = (
-  settings: unknown
-): Record<string, unknown> => (typeof settings === 'object' && settings !== null
-  ? { ...(settings as Record<string, unknown>) }
-  : {});
-
-const getProcessedSessionMutationIds = (settings: unknown): string[] => {
-  const value = getPlayerStateSettings(settings).processedSessionMutationIds;
-  return Array.isArray(value)
-    ? value.filter((entry): entry is string => typeof entry === 'string')
-    : [];
-};
-
-const appendProcessedSessionMutationId = (
-  settings: unknown,
-  mutationId: string
-): Record<string, unknown> => {
-  const nextSettings = getPlayerStateSettings(settings);
-  const processedIds = Array.from(
-    new Set([...getProcessedSessionMutationIds(settings), mutationId])
-  ).slice(-100);
-  nextSettings.processedSessionMutationIds = processedIds;
-  return nextSettings;
 };
 
 const ensureWalletRow = async (
@@ -301,14 +284,23 @@ const updateUnlockState = async (
 const updatePlayerStateSettings = async (
   client: ReturnType<typeof createSupabaseServerClient>,
   currentPlayerState: Awaited<ReturnType<typeof ensurePlayerStateRow>>,
-  settings: Record<string, unknown>
+  updates: {
+    gamesPlayed?: number;
+    totalPlayTime?: number;
+    stats?: unknown;
+    settings: Record<string, unknown>;
+  }
 ) => {
   const { data, error } = await client
     .from('player_state')
     .upsert(
       {
         ...currentPlayerState,
-        settings: settings as Json,
+        games_played: updates.gamesPlayed ?? currentPlayerState.games_played,
+        total_play_time:
+          updates.totalPlayTime ?? currentPlayerState.total_play_time,
+        stats: (updates.stats ?? currentPlayerState.stats) as Json,
+        settings: updates.settings as Json,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id' }
@@ -357,7 +349,7 @@ export async function POST(request: Request) {
     switch (payload.action) {
       case 'record-session': {
         const session = validateTrustedGameSession(payload);
-        const mutationId = payload.clientMutationId?.trim();
+        const mutationId = session.clientMutationId;
         const processedMutationIds = getProcessedSessionMutationIds(
           playerState.settings
         );
@@ -371,7 +363,7 @@ export async function POST(request: Request) {
 
         const { data: challengeRows, error: challengeError } = await privilegedClient
           .from('challenge_assignments')
-          .select('type, progress, target, completed_at')
+          .select('*')
           .eq('user_id', user.id)
           .gte('expires_at', new Date().toISOString());
 
@@ -388,12 +380,167 @@ export async function POST(request: Request) {
           ),
         });
 
+        const nextSettings = getTrustedProgressionSettings(playerState.settings);
+
+        const nextProgressionState = buildTrustedSessionProgressionState({
+          currentStats: playerState.stats,
+          currentSettings: nextSettings,
+          currentGamesPlayed: playerState.games_played,
+          currentTotalPlayTime: playerState.total_play_time,
+          session,
+          rewardAwarded: reward,
+        });
+        const nextPlayerStateSettings = {
+          ...(typeof playerState.settings === 'object' && playerState.settings !== null
+            ? (playerState.settings as Record<string, unknown>)
+            : {}),
+          processedSessionMutationIds:
+            nextProgressionState.settings.processedSessionMutationIds,
+          playedGameIds: nextProgressionState.settings.playedGameIds,
+          bestScoresByGame: nextProgressionState.settings.bestScoresByGame,
+        };
+
+        const { data: existingAchievementRows, error: existingAchievementError } =
+          await privilegedClient
+            .from('achievements')
+            .select('achievement_id')
+            .eq('user_id', user.id);
+
+        if (existingAchievementError) {
+          throw new Error(
+            `Failed to load existing achievements: ${existingAchievementError.message}`
+          );
+        }
+
+        const achievementIds = getTrustedSessionAchievementIds({
+          session,
+          totalPlayTime: nextProgressionState.totalPlayTime,
+          stats: nextProgressionState.stats,
+          settings: nextProgressionState.settings,
+          existingAchievementIds: (existingAchievementRows ?? []).map(
+            row => row.achievement_id
+          ),
+        });
+
+        const achievementReward = achievementIds.reduce((total, achievementId) => {
+          const achievement = getAchievementDefinition(achievementId);
+          return total + (achievement?.reward ?? 0);
+        }, 0);
+
+        await updatePlayerStateSettings(privilegedClient, playerState, {
+          gamesPlayed: nextProgressionState.gamesPlayed,
+          totalPlayTime: nextProgressionState.totalPlayTime,
+          stats: nextProgressionState.stats,
+          settings: nextPlayerStateSettings,
+        });
+
+        const challengeUpdates = (challengeRows ?? [])
+          .map(row =>
+            buildTrustedChallengeProgressUpdate({
+              challengeId: row.challenge_id,
+              currentProgress: row.progress,
+              session,
+              rewardAwarded: reward,
+            })
+          )
+          .filter(
+            (
+              update
+            ): update is NonNullable<typeof update> =>
+              Boolean(update)
+          )
+          .filter(update => {
+            const existingRow = (challengeRows ?? []).find(
+              row => row.challenge_id === update.challengeId
+            );
+            return (
+              existingRow &&
+              (existingRow.progress !== update.progress ||
+                Boolean(existingRow.completed_at) !== update.completed)
+            );
+          });
+
+        if (challengeUpdates.length > 0) {
+          const { error: challengeUpdateError } = await privilegedClient
+            .from('challenge_assignments')
+            .upsert(
+              challengeUpdates.map(update => {
+                const existingRow = (challengeRows ?? []).find(
+                  row => row.challenge_id === update.challengeId
+                );
+                return {
+                  user_id: user.id,
+                  challenge_id: update.challengeId,
+                  title: update.title,
+                  description: update.description,
+                  type: update.type,
+                  game_id: update.gameId,
+                  target: update.target,
+                  progress: update.progress,
+                  reward: update.reward,
+                  completed_at: existingRow?.completed_at ?? null,
+                  expires_at: update.expiresAt,
+                  updated_at: new Date().toISOString(),
+                };
+              }),
+              { onConflict: 'user_id,challenge_id' }
+            );
+
+          if (challengeUpdateError) {
+            throw new Error(
+              `Failed to update trusted challenge progress: ${challengeUpdateError.message}`
+            );
+          }
+        }
+
+        if (achievementIds.length > 0) {
+          const now = new Date().toISOString();
+          const { error: achievementUpsertError } = await privilegedClient
+            .from('achievements')
+            .upsert(
+              achievementIds.map(achievementId => {
+                const achievement = getAchievementDefinition(achievementId);
+                return {
+                  user_id: user.id,
+                  achievement_id: achievementId,
+                  progress: achievement?.requirement.value ?? null,
+                  unlocked_at: now,
+                  updated_at: now,
+                };
+              }),
+              { onConflict: 'user_id,achievement_id' }
+            );
+
+          if (achievementUpsertError) {
+            throw new Error(
+              `Failed to upsert trusted session achievements: ${achievementUpsertError.message}`
+            );
+          }
+        }
+
         const updatedWallet = await upsertWalletBalance(
           privilegedClient,
           user.id,
-          wallet.balance + reward,
-          wallet.lifetime_earned + reward
+          wallet.balance + reward + achievementReward,
+          wallet.lifetime_earned + reward + achievementReward
         );
+
+        if (mutationId) {
+          const processedSettings = {
+            ...nextPlayerStateSettings,
+            processedSessionMutationIds: appendProcessedSessionMutationId(
+              nextPlayerStateSettings,
+              mutationId
+            ).processedSessionMutationIds,
+          };
+
+          await updatePlayerStateSettings(privilegedClient, playerState, {
+            gamesPlayed: nextProgressionState.gamesPlayed,
+            totalPlayTime: nextProgressionState.totalPlayTime,
+            stats: nextProgressionState.stats,
+            settings: processedSettings,
+          });
+        }
 
         const { error } = await authClient.rpc('record_leaderboard_score', {
           game_id: session.gameId,
@@ -404,17 +551,10 @@ export async function POST(request: Request) {
           throw new Error(`Failed to record leaderboard score: ${error.message}`);
         }
 
-        if (mutationId) {
-          await updatePlayerStateSettings(
-            privilegedClient,
-            playerState,
-            appendProcessedSessionMutationId(playerState.settings, mutationId)
-          );
-        }
-
         return NextResponse.json({
           balance: updatedWallet.balance,
           rewardAwarded: reward,
+          achievementIds,
         });
       }
       case 'claim-achievements': {
