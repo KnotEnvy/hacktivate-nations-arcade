@@ -26,10 +26,11 @@ This document is a quick orientation for the Hacktivate Arcade user systems so a
 - Trusted progression route: `src/app/api/arcade/progression/route.ts`
 - Persistent sync outbox: `src/services/SupabaseSyncOutbox.ts`
 - Auth hook: `src/hooks/useSupabaseAuth.ts`
+- Signed-in Supabase sync hook: `src/hooks/useArcadeSupabaseSync.ts`
 - Auth UI: `src/components/auth/AuthModal.tsx`, `src/components/auth/WelcomeBanner.tsx`
 - Auth callback: `src/app/auth/callback/page.tsx`
 - Supabase API wrapper: `src/services/SupabaseArcadeService.ts`
-- Hydration + sync: `src/components/arcade/ArcadeHub.tsx`
+- Hub integration: `src/components/arcade/ArcadeHub.tsx`
 - Local user services: `src/services/UserServices.ts`, `CurrencyService.ts`, `AchievementService.ts`, `ChallengeService.ts`
 
 ## Supabase Schema Summary
@@ -59,7 +60,7 @@ Defined in `supabase/001_init.sql`:
 
 ## Local State vs Supabase
 - Local services keep the game playable offline.
-- ArcadeHub hydrates from Supabase when session exists and seeds Supabase if missing.
+- `useArcadeSupabaseSync` hydrates from Supabase when session exists and seeds Supabase if missing.
 - Unlock persistence is handled by `src/hooks/useArcadeUnlockState.ts`.
 - Local storage keys:
   - hacktivate-unlocks-v2
@@ -73,16 +74,18 @@ Defined in `supabase/001_init.sql`:
   - hacktivate-session-owner
   - When the session user changes (or guest -> user), local storage is reset to avoid cross-account bleed.
 
-## Sync Strategy (ArcadeHub)
+## Sync Strategy (`useArcadeSupabaseSync`)
+- Service bootstrap: create the browser `SupabaseArcadeService` only when a session exists.
 - Hydration: load profile, player_state, wallet, achievements, challenges from Supabase.
   - If missing, seed Supabase from local.
   - Uses isHydratingRef/hasHydratedRef to avoid loops.
-- Debounced sync for profile + player_state (schedulePlayerSync).
+- Debounced sync for profile + player_state (`schedulePlayerSync`).
 - Unlock tier/game state now comes from `useArcadeUnlockState`, which owns normalization and legacy migration before sync.
 - Challenge progress sync now goes through the trusted API route and uses template-backed validation instead of direct browser upserts.
 - Signed-in leaderboard submissions, game-session coin awards, challenge reward claims, achievement reward claims, and tier/game unlock purchases now go through `POST /api/arcade/progression`.
 - Direct wallet-on-coin-change sync was removed for signed-in users so browser state no longer pushes arbitrary balances to Supabase.
 - Failed signed-in sync/mutation calls now enqueue into `hacktivate-supabase-sync-outbox-v1` and replay automatically on reconnect / polling while a session is active.
+- The hook also owns guest/user ownership resets via `hacktivate-session-owner` so local save state is cleared on account changes.
 - The hub shows a small pending-sync status next to the auth state when queued writes exist.
 - Hydration/bootstrap seeding still uses direct Supabase upserts when rows are missing so guest/local progress can initialize a new account.
 
@@ -114,7 +117,7 @@ Defined in `supabase/001_init.sql`:
 
 ## Known Pitfalls
 - If `supabase.types.ts` is missing `Relationships` or if a view is listed under Tables, Postgrest generics infer `never` and cause errors like "property does not exist on type 'never'".
-- `player_state.stats` expects `Json`, so UserStats is cast as `unknown as Json` in ArcadeHub.
+- `player_state.stats` expects `Json`, so `UserStats` is cast as `unknown as Json` inside `useArcadeSupabaseSync`.
 - Ensure `leaderboards_view` type references `Database.public.Views` in UI.
 
 ## User Experience Notes

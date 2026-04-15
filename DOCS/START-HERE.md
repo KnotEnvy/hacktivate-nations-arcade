@@ -1,6 +1,6 @@
 # Start Here
 
-Last updated: April 14, 2026
+Last updated: April 15, 2026
 
 This is the minimal handoff set for the next team. Start here instead of browsing every doc in `DOCS/`.
 
@@ -30,6 +30,8 @@ Verified on April 15, 2026:
 - `npm run e2e` passes
 - `.github/workflows/ci.yml` now exists and mirrors the local verification gates
 - large XP grants now level through every crossed threshold instead of only one level per call
+- signed-in Supabase hydration/sync/outbox ownership now lives in `src/hooks/useArcadeSupabaseSync.ts`
+- Playwright smoke coverage is configured to run serially for stability against the local `next dev` server
 
 ## What To Work On Next
 
@@ -38,6 +40,7 @@ Highest-value remaining work:
 1. Continue server-trust hardening so gameplay-derived achievement/challenge unlock conditions move off the client, not just payout-sensitive writes.
 2. Strengthen the new offline retry/outbox path with more atomic server-side replay guarantees and better diagnostics.
 3. Continue reducing `ArcadeHub.tsx` complexity and move more progression/reward ownership out of the component.
+   The signed-in Supabase sync block is already extracted; next likely targets are end-of-game reward and progression orchestration.
 4. Finish the typed challenge migration for future challenge variants and server-seeded schedules.
 5. Expand tests around auth, persistence, unlocks, progression, and sync.
 

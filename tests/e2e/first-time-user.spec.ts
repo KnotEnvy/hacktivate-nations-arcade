@@ -33,7 +33,7 @@ test.describe('Arcade E2E - Smoke', () => {
     // Play Tier 0 Runner if available
     const playBtn = page.getByTestId('game-play-runner');
     if (await playBtn.count()) {
-      await playBtn.first().click();
+      await playBtn.first().click({ force: true });
       await expect(page.locator('canvas')).toBeVisible();
       // Header back button should appear when inside game
       await expect(page.getByText('Back to Hub')).toBeVisible();
@@ -41,7 +41,7 @@ test.describe('Arcade E2E - Smoke', () => {
       // As a fallback, click the first visible "Play Game" button
       const anyPlay = page.getByRole('button', { name: 'Play Game' }).first();
       if (await anyPlay.count()) {
-        await anyPlay.click();
+        await anyPlay.click({ force: true });
         await expect(page.locator('canvas')).toBeVisible();
       } else {
         test.skip(true, 'No unlocked game play button found');

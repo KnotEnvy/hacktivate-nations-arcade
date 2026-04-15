@@ -66,6 +66,13 @@ Verified on April 15, 2026 after the CI + progression cleanup pass:
 - `UserService.addExperience()` now levels through every crossed XP threshold in one call, so large rewards no longer drop intermediate level-ups / callbacks
 - Jest audio mocks were updated to match the current procedural music analyzer path, so the full unit suite is green again
 
+Verified on April 15, 2026 after the sync-consolidation pass:
+
+- signed-in Supabase hydration, debounced profile/player sync, trusted challenge sync, outbox replay, and account-owner reset logic now live in `src/hooks/useArcadeSupabaseSync.ts`
+- `ArcadeHub.tsx` no longer carries the large inline Supabase bootstrap/hydration/sync effect cluster that previously owned that flow
+- focused hook coverage now exists for the extracted signed-in sync bridge
+- Playwright smoke tests were hardened and the suite now runs serially to avoid `next dev` concurrency flake during local/CI verification
+
 ## Current Reality
 
 ### Stack
@@ -104,7 +111,7 @@ Practical meaning:
 ### Core UI
 
 - `src/app/page.tsx` is thin and simply mounts `ArcadeHub`
-- `src/components/arcade/ArcadeHub.tsx` is the real orchestrator
+- `src/components/arcade/ArcadeHub.tsx` is still the main orchestrator, but signed-in Supabase sync now lives in `src/hooks/useArcadeSupabaseSync.ts`
 - `src/components/arcade/GameCarousel.tsx` handles tier/game unlock flow
 - `src/components/arcade/ThemedGameCanvas.tsx` owns in-game shell, overlays, and game end handling
 
@@ -125,6 +132,7 @@ Practical meaning:
 ### Backend / Sync
 
 - `src/hooks/useSupabaseAuth.ts` manages session bootstrap and auth actions
+- `src/hooks/useArcadeSupabaseSync.ts` manages signed-in Supabase hydration, debounced sync, outbox replay, and owner-reset handling
 - `src/services/SupabaseArcadeService.ts` wraps Supabase reads/writes
 - `supabase/001_init.sql` defines schema, RLS, leaderboard view, and score RPCs
 
@@ -137,7 +145,7 @@ Practical meaning:
 ### Testing
 
 - Jest covers services and a few lib modules
-- Playwright covers a small set of smoke flows
+- Playwright covers a small set of smoke flows and now runs serially for stability against the local `next dev` web server
 - app/components/game engines are still lightly verified compared with the service layer
 
 ## What Is Strong
@@ -171,7 +179,7 @@ Best current references:
 
 ### Structural Drift
 
-- `ArcadeHub.tsx` is now a large monolith at roughly 1,300 lines
+- `ArcadeHub.tsx` is still a large monolith, but the signed-in Supabase sync block has now been extracted into `useArcadeSupabaseSync`
 - `AudioSettings.tsx` is also very large at roughly 1,900 lines
 - there are legacy or duplicate UI surfaces that are no longer the main path
 
@@ -179,6 +187,7 @@ Recent cleanup:
 
 - the unused Zustand store path was retired, which removes one of the duplicate progression models
 - unlock persistence logic is now extracted into a focused hook instead of sitting inline in `ArcadeHub`
+- signed-in Supabase hydration/sync/outbox ownership is also extracted into a focused hook instead of staying embedded in `ArcadeHub`
 
 ## Production Blockers
 

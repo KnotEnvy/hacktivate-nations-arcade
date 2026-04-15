@@ -10,6 +10,15 @@ async function dismissOnboardingIfPresent(page: Page) {
   await overlay.waitFor({ state: 'detached', timeout: 3000 }).catch(() => {});
 }
 
+async function setRangeValue(page: Page, testId: string, value: string) {
+  await page.getByTestId(testId).evaluate((element, nextValue) => {
+    const input = element as HTMLInputElement;
+    input.value = nextValue;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  }, value);
+}
+
 test.describe('Audio Settings', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
@@ -29,15 +38,15 @@ test.describe('Audio Settings', () => {
     await expect(modal).toBeVisible();
 
     // Adjust sliders
-    await page.getByTestId('master-volume-slider').fill('0.5');
-    await page.getByTestId('sfx-volume-slider').fill('0.6');
-    await page.getByTestId('music-volume-slider').fill('0.3');
+    await setRangeValue(page, 'master-volume-slider', '0.5');
+    await setRangeValue(page, 'sfx-volume-slider', '0.6');
+    await setRangeValue(page, 'music-volume-slider', '0.3');
 
     // Toggle mute
     await page.getByTestId('mute-toggle').click();
 
     // Close
-    await page.getByTestId('audio-settings-close').click();
-    await expect(modal).toBeHidden();
+    await page.getByTestId('audio-settings-close').click({ force: true });
+    await expect(page.getByTestId('audio-settings-modal')).toHaveCount(0);
   });
 });

@@ -1,6 +1,6 @@
 # HacktivateNations Arcade - Action Plan
 
-Last updated: April 14, 2026
+Last updated: April 15, 2026
 
 This is the current execution checklist. It should reflect the live repo, not the original roadmap.
 
@@ -22,6 +22,9 @@ This is the current execution checklist. It should reflect the live repo, not th
 - [x] Failed signed-in sync/mutation writes now enqueue into `src/services/SupabaseSyncOutbox.ts` and replay automatically on reconnect / polling
 - [x] Large XP grants now level through every crossed threshold instead of stopping after one level
 - [x] GitHub Actions CI now runs type-check, lint, Jest, build, and Playwright via `.github/workflows/ci.yml`
+- [x] Signed-in Supabase hydration/sync/outbox orchestration was extracted from `ArcadeHub.tsx` into `src/hooks/useArcadeSupabaseSync.ts`
+- [x] Focused hook coverage now exists for owner-reset handling and queued Supabase sync replay
+- [x] Playwright config/tests were hardened so the smoke suite passes reliably under the local `npm run e2e` path
 
 ## Current Priority
 
@@ -32,15 +35,21 @@ This is the current execution checklist. It should reflect the live repo, not th
 - [~] Add a real offline outbox/retry strategy for Supabase sync failures.
   - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically.
   - Remaining: strengthen server-side idempotency/atomicity for queued session replay and consider surfacing richer sync diagnostics / manual retry UX.
-- [ ] Expand automated coverage for auth, persistence, unlocks, progression, and sync.
+- [~] Expand automated coverage for auth, persistence, unlocks, progression, and sync.
+  - Current state: service/lib coverage is solid, and hook coverage now exists for the extracted signed-in Supabase sync bridge.
+  - Remaining: add broader auth and persistence integration coverage beyond the current focused hook/service tests.
 - [x] Add CI gates for lint, type-check, Jest, and Playwright.
 
 ### Platform Consolidation
-- [ ] Continue breaking `src/components/arcade/ArcadeHub.tsx` into focused hooks/components.
+- [~] Continue breaking `src/components/arcade/ArcadeHub.tsx` into focused hooks/components.
+  - Current state: unlock persistence lives in `src/hooks/useArcadeUnlockState.ts`, and signed-in Supabase hydration/sync/outbox ownership now lives in `src/hooks/useArcadeSupabaseSync.ts`.
+  - Remaining: move more reward-flow and end-of-game progression orchestration out of the hub.
 - [~] Replace string-matching challenge logic with typed requirement logic.
   - Current state: daily challenge templates and live progress updates are typed.
   - Remaining: finish the migration for any future non-daily/server-seeded challenge variants and trim more challenge/progression logic out of `ArcadeHub.tsx`.
-- [ ] Tighten reward-flow ownership so progression-critical logic is not split awkwardly across services and hub code.
+- [~] Tighten reward-flow ownership so progression-critical logic is not split awkwardly across services and hub code.
+  - Current state: trusted sync ownership is no longer embedded across multiple large `ArcadeHub` effects.
+  - Remaining: end-of-game reward, achievement, and challenge completion orchestration still mostly lives in the hub.
 - [ ] Decide whether placeholder leaderboard rows remain acceptable in production.
 
 ### Product / Launch Readiness
