@@ -86,6 +86,11 @@ export interface TrustedWalletMutationResult {
   balance: number;
   rewardAwarded?: number;
   achievementIds?: string[];
+  duplicate?: boolean;
+  diagnostics?: {
+    challengeUpdatesApplied?: number;
+    mutationId?: string | null;
+  };
 }
 
 interface SupabaseRequestOptions {

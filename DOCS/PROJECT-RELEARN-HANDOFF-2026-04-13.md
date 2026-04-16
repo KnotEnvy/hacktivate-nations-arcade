@@ -73,6 +73,14 @@ Verified on April 15, 2026 after the sync-consolidation pass:
 - focused hook coverage now exists for the extracted signed-in sync bridge
 - Playwright smoke tests were hardened and the suite now runs serially to avoid `next dev` concurrency flake during local/CI verification
 
+Verified on April 15, 2026 after the trusted-session hardening pass:
+
+- trusted `record-session` now accepts richer gameplay telemetry and derives server-side progression from that payload instead of only validating payout-sensitive ids
+- gameplay-derived session progression now commits through the atomic `public.commit_trusted_game_session(...)` RPC in `supabase/001_init.sql` instead of route-level multi-write persistence
+- duplicate queued session suppression now happens inside the DB commit path via `player_state.settings.processedSessionMutationIds`
+- focused Jest coverage now exists for the trusted progression route session happy path, duplicate replay response, and missing-RPC failure
+- `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` now documents how to apply and verify the live Supabase schema before signed-in testing
+
 ## Current Reality
 
 ### Stack
@@ -277,9 +285,9 @@ Status update after April 14 hardening:
 
 Remaining risk:
 
-- gameplay-derived achievement unlocks and challenge completion are still detected client-side first, then claimed through the trusted route
+- not every progression source has moved into server-derived validation yet; the strongest coverage is now the trusted game-session path
 - RLS still does not replace full server-side gameplay validation
-- queued `record-session` replay uses best-effort duplicate suppression stored in `player_state.settings`, but the route still is not fully transactional / atomic across wallet + leaderboard + replay-marker writes
+- the hosted Supabase project must actually have the new SQL applied; until then the route will fail on the missing RPC even though local tests/build are green
 
 ### 6. State Ownership Is Split
 

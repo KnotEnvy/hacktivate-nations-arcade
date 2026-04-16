@@ -1,8 +1,10 @@
 import { ECONOMY } from '@/lib/constants';
 import {
+  appendProcessedSessionMutationId,
   buildTrustedChallengeProgressUpdate,
   buildTrustedSessionProgressionState,
   calculateTrustedGameReward,
+  getProcessedSessionMutationIds,
   getTrustedSessionAchievementIds,
   validateAchievementIds,
   validateTrustedChallengeSync,
@@ -120,6 +122,22 @@ describe('trustedProgression helpers', () => {
     );
   });
 
+  test('appendProcessedSessionMutationId keeps replay ids unique', () => {
+    const settings = {
+      processedSessionMutationIds: ['session-1', 'session-2'],
+      playedGameIds: ['runner'],
+      bestScoresByGame: { runner: 500 },
+    };
+
+    expect(getProcessedSessionMutationIds(settings)).toEqual(['session-1', 'session-2']);
+    expect(
+      appendProcessedSessionMutationId(settings, 'session-2').processedSessionMutationIds
+    ).toEqual(['session-1', 'session-2']);
+    expect(
+      appendProcessedSessionMutationId(settings, 'session-3').processedSessionMutationIds
+    ).toEqual(['session-1', 'session-2', 'session-3']);
+  });
+
   test('validateTrustedChallengeSync validates template-backed daily challenges', () => {
     const [validated] = validateTrustedChallengeSync([
       {
@@ -181,6 +199,7 @@ describe('trustedProgression helpers', () => {
         coinsEarned: 90,
       },
       currentSettings: {
+        processedSessionMutationIds: ['session-1'],
         playedGameIds: ['runner'],
         bestScoresByGame: { runner: 500 },
       },
@@ -217,7 +236,7 @@ describe('trustedProgression helpers', () => {
         coinsEarned: 130,
       },
       settings: {
-        processedSessionMutationIds: [],
+        processedSessionMutationIds: ['session-1'],
         playedGameIds: ['runner', 'snake'],
         bestScoresByGame: { runner: 500, snake: 1500 },
       },

@@ -25,18 +25,20 @@ This is the current execution checklist. It should reflect the live repo, not th
 - [x] Signed-in Supabase hydration/sync/outbox orchestration was extracted from `ArcadeHub.tsx` into `src/hooks/useArcadeSupabaseSync.ts`
 - [x] Focused hook coverage now exists for owner-reset handling and queued Supabase sync replay
 - [x] Playwright config/tests were hardened so the smoke suite passes reliably under the local `npm run e2e` path
+- [x] Trusted `record-session` now evaluates gameplay-derived progression server-side and commits wallet/player-state/achievement/challenge/leaderboard writes through the atomic `public.commit_trusted_game_session(...)` RPC
+- [x] Focused API route coverage now exists for the atomic trusted session path, duplicate replay responses, and missing-RPC failures
 
 ## Current Priority
 
 ### Platform Hardening
 - [~] Add server-side validation for economy, leaderboards, achievements, and challenge-sensitive writes.
-  - Current state: payout-sensitive writes now route through the server with catalog/template validation and authoritative wallet reconciliation.
-  - Remaining: move unlock-condition evaluation itself off the client so the server can validate gameplay-derived achievements/challenge completion, not just payout/id legitimacy.
+  - Current state: gameplay-derived trusted session progression is now validated server-side and committed atomically through the database RPC, not as route-level multi-writes.
+  - Remaining: expand server-derived coverage for progression that still originates outside trusted game-session metrics, such as non-session feature unlock flows.
 - [~] Add a real offline outbox/retry strategy for Supabase sync failures.
-  - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically.
-  - Remaining: strengthen server-side idempotency/atomicity for queued session replay and consider surfacing richer sync diagnostics / manual retry UX.
+  - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically; queued trusted sessions now replay against an atomic DB commit with duplicate suppression.
+  - Remaining: surface richer sync diagnostics / manual retry UX and validate the new RPC path against the real hosted Supabase project.
 - [~] Expand automated coverage for auth, persistence, unlocks, progression, and sync.
-  - Current state: service/lib coverage is solid, and hook coverage now exists for the extracted signed-in Supabase sync bridge.
+  - Current state: service/lib coverage is solid, hook coverage exists for the extracted signed-in Supabase sync bridge, and route coverage now exists for the trusted progression API session path.
   - Remaining: add broader auth and persistence integration coverage beyond the current focused hook/service tests.
 - [x] Add CI gates for lint, type-check, Jest, and Playwright.
 
@@ -55,9 +57,12 @@ This is the current execution checklist. It should reflect the live repo, not th
 ### Product / Launch Readiness
 - [ ] Rotate Supabase keys if any prior real values were ever shared or committed outside the current git index.
 - [ ] Provision and validate a real production Supabase project and apply `supabase/001_init.sql`.
+  - Use `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` for the current apply + verification sequence.
 - [ ] Add error tracking and deploy-time monitoring.
 - [ ] Reintroduce PWA metadata only after shipping real icons, screenshots, and service-worker/offline behavior.
-- [ ] Publish deployment/runbook steps for Vercel preview and production.
+- [~] Publish deployment/runbook steps for Vercel preview and production.
+  - Current state: the Supabase apply/test runbook now exists at `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md`.
+  - Remaining: publish the matching Vercel preview/production deployment runbook.
 
 ## Lower Priority / Post-Beta
 

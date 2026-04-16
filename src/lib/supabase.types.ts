@@ -216,6 +216,28 @@ export interface Database {
       };
     };
     Functions: {
+      commit_trusted_game_session: {
+        Args: {
+          _user_id: string;
+          _game_id: string;
+          _score: number;
+          _reward_awarded: number;
+          _games_played: number;
+          _total_play_time: number;
+          _stats: Json;
+          _settings: Json;
+          _achievement_unlocks?: Json;
+          _challenge_updates?: Json;
+          _client_mutation_id?: string | null;
+        };
+        Returns: {
+          balance: number;
+          reward_awarded: number;
+          duplicate: boolean;
+          achievement_ids: string[];
+          challenge_updates_applied: number;
+        }[];
+      };
       record_leaderboard_score: {
         Args: {
           game_id: string;

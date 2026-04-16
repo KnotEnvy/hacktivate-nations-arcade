@@ -8,7 +8,6 @@ import {
   sanitizeUnlockedGameIds,
 } from '@/lib/gameCatalog';
 import {
-  appendProcessedSessionMutationId,
   buildTrustedChallengeProgressUpdate,
   buildTrustedSessionProgressionState,
   calculateTrustedGameReward,
@@ -16,7 +15,6 @@ import {
   validateTrustedChallengeSync,
   validateTrustedGameSession,
   getAchievementDefinition,
-  getProcessedSessionMutationIds,
   getTrustedProgressionSettings,
   getTrustedSessionAchievementIds,
 } from '@/lib/trustedProgression';
@@ -281,40 +279,6 @@ const updateUnlockState = async (
   return data;
 };
 
-const updatePlayerStateSettings = async (
-  client: ReturnType<typeof createSupabaseServerClient>,
-  currentPlayerState: Awaited<ReturnType<typeof ensurePlayerStateRow>>,
-  updates: {
-    gamesPlayed?: number;
-    totalPlayTime?: number;
-    stats?: unknown;
-    settings: Record<string, unknown>;
-  }
-) => {
-  const { data, error } = await client
-    .from('player_state')
-    .upsert(
-      {
-        ...currentPlayerState,
-        games_played: updates.gamesPlayed ?? currentPlayerState.games_played,
-        total_play_time:
-          updates.totalPlayTime ?? currentPlayerState.total_play_time,
-        stats: (updates.stats ?? currentPlayerState.stats) as Json,
-        settings: updates.settings as Json,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to update player state settings: ${error.message}`);
-  }
-
-  return data;
-};
-
 const isDailyChallengeMultiplierActive = (
   challenges: Array<{ type: string; progress: number; target: number; completed_at: string | null }>
 ) => {
@@ -326,6 +290,14 @@ const isDailyChallengeMultiplierActive = (
         Boolean(challenge.completed_at) || challenge.progress >= challenge.target
     )
   );
+};
+
+const getRpcRow = <TRow>(data: TRow | TRow[] | null): TRow | null => {
+  if (Array.isArray(data)) {
+    return data[0] ?? null;
+  }
+
+  return data;
 };
 
 export async function POST(request: Request) {
@@ -349,17 +321,7 @@ export async function POST(request: Request) {
     switch (payload.action) {
       case 'record-session': {
         const session = validateTrustedGameSession(payload);
-        const mutationId = session.clientMutationId;
-        const processedMutationIds = getProcessedSessionMutationIds(
-          playerState.settings
-        );
-        if (mutationId && processedMutationIds.includes(mutationId)) {
-          return NextResponse.json({
-            balance: wallet.balance,
-            rewardAwarded: 0,
-            duplicate: true,
-          });
-        }
+        const mutationId = session.clientMutationId ?? null;
 
         const { data: challengeRows, error: challengeError } = await privilegedClient
           .from('challenge_assignments')
@@ -397,7 +359,7 @@ export async function POST(request: Request) {
           processedSessionMutationIds:
             nextProgressionState.settings.processedSessionMutationIds,
           playedGameIds: nextProgressionState.settings.playedGameIds,
-          bestScoresByGame: nextProgressionState.settings.bestScoresByGame,
+            bestScoresByGame: nextProgressionState.settings.bestScoresByGame,
         };
 
         const { data: existingAchievementRows, error: existingAchievementError } =
@@ -422,18 +384,6 @@ export async function POST(request: Request) {
           ),
         });
 
-        const achievementReward = achievementIds.reduce((total, achievementId) => {
-          const achievement = getAchievementDefinition(achievementId);
-          return total + (achievement?.reward ?? 0);
-        }, 0);
-
-        await updatePlayerStateSettings(privilegedClient, playerState, {
-          gamesPlayed: nextProgressionState.gamesPlayed,
-          totalPlayTime: nextProgressionState.totalPlayTime,
-          stats: nextProgressionState.stats,
-          settings: nextPlayerStateSettings,
-        });
-
         const challengeUpdates = (challengeRows ?? [])
           .map(row =>
             buildTrustedChallengeProgressUpdate({
@@ -451,8 +401,8 @@ export async function POST(request: Request) {
           )
           .filter(update => {
             const existingRow = (challengeRows ?? []).find(
-              row => row.challenge_id === update.challengeId
-            );
+                row => row.challenge_id === update.challengeId
+              );
             return (
               existingRow &&
               (existingRow.progress !== update.progress ||
@@ -460,101 +410,65 @@ export async function POST(request: Request) {
             );
           });
 
-        if (challengeUpdates.length > 0) {
-          const { error: challengeUpdateError } = await privilegedClient
-            .from('challenge_assignments')
-            .upsert(
-              challengeUpdates.map(update => {
-                const existingRow = (challengeRows ?? []).find(
-                  row => row.challenge_id === update.challengeId
-                );
-                return {
-                  user_id: user.id,
-                  challenge_id: update.challengeId,
-                  title: update.title,
-                  description: update.description,
-                  type: update.type,
-                  game_id: update.gameId,
-                  target: update.target,
-                  progress: update.progress,
-                  reward: update.reward,
-                  completed_at: existingRow?.completed_at ?? null,
-                  expires_at: update.expiresAt,
-                  updated_at: new Date().toISOString(),
-                };
-              }),
-              { onConflict: 'user_id,challenge_id' }
-            );
-
-          if (challengeUpdateError) {
-            throw new Error(
-              `Failed to update trusted challenge progress: ${challengeUpdateError.message}`
-            );
+        const achievementUnlockPayload = achievementIds.map(achievementId => {
+          const achievement = getAchievementDefinition(achievementId);
+          return {
+            achievementId,
+            progress: achievement?.requirement.value ?? null,
+            reward: achievement?.reward ?? 0,
+          };
+        });
+        const challengeUpdatePayload = challengeUpdates.map(update => ({
+          challengeId: update.challengeId,
+          title: update.title,
+          description: update.description,
+          type: update.type,
+          gameId: update.gameId,
+          target: update.target,
+          progress: update.progress,
+          reward: update.reward,
+          expiresAt: update.expiresAt,
+        }));
+        const { data: rpcData, error: rpcError } = await privilegedClient.rpc(
+          'commit_trusted_game_session',
+          {
+          _user_id: user.id,
+          _game_id: session.gameId,
+          _score: session.score,
+          _reward_awarded: reward,
+          _games_played: nextProgressionState.gamesPlayed,
+          _total_play_time: nextProgressionState.totalPlayTime,
+          _stats: nextProgressionState.stats as unknown as Json,
+          _settings: nextPlayerStateSettings as Json,
+          _achievement_unlocks: achievementUnlockPayload as unknown as Json,
+          _challenge_updates: challengeUpdatePayload as unknown as Json,
+          _client_mutation_id: mutationId,
           }
-        }
-
-        if (achievementIds.length > 0) {
-          const now = new Date().toISOString();
-          const { error: achievementUpsertError } = await privilegedClient
-            .from('achievements')
-            .upsert(
-              achievementIds.map(achievementId => {
-                const achievement = getAchievementDefinition(achievementId);
-                return {
-                  user_id: user.id,
-                  achievement_id: achievementId,
-                  progress: achievement?.requirement.value ?? null,
-                  unlocked_at: now,
-                  updated_at: now,
-                };
-              }),
-              { onConflict: 'user_id,achievement_id' }
-            );
-
-          if (achievementUpsertError) {
-            throw new Error(
-              `Failed to upsert trusted session achievements: ${achievementUpsertError.message}`
-            );
-          }
-        }
-
-        const updatedWallet = await upsertWalletBalance(
-          privilegedClient,
-          user.id,
-          wallet.balance + reward + achievementReward,
-          wallet.lifetime_earned + reward + achievementReward
         );
 
-        if (mutationId) {
-          const processedSettings = {
-            ...nextPlayerStateSettings,
-            processedSessionMutationIds: appendProcessedSessionMutationId(
-              nextPlayerStateSettings,
-              mutationId
-            ).processedSessionMutationIds,
-          };
-
-          await updatePlayerStateSettings(privilegedClient, playerState, {
-            gamesPlayed: nextProgressionState.gamesPlayed,
-            totalPlayTime: nextProgressionState.totalPlayTime,
-            stats: nextProgressionState.stats,
-            settings: processedSettings,
-          });
+        if (rpcError) {
+          throw new Error(
+            `Failed to commit trusted game session atomically: ${rpcError.message}`
+          );
         }
 
-        const { error } = await authClient.rpc('record_leaderboard_score', {
-          game_id: session.gameId,
-          score: session.score,
-        });
+        const rpcResult = getRpcRow(
+          rpcData
+        );
 
-        if (error) {
-          throw new Error(`Failed to record leaderboard score: ${error.message}`);
+        if (!rpcResult) {
+          throw new Error('Trusted session commit did not return a result row.');
         }
 
         return NextResponse.json({
-          balance: updatedWallet.balance,
-          rewardAwarded: reward,
-          achievementIds,
+          balance: rpcResult.balance,
+          rewardAwarded: rpcResult.reward_awarded,
+          duplicate: rpcResult.duplicate,
+          achievementIds: rpcResult.achievement_ids ?? [],
+          diagnostics: {
+            challengeUpdatesApplied: rpcResult.challenge_updates_applied,
+            mutationId,
+          },
         });
       }
       case 'claim-achievements': {

@@ -24,6 +24,7 @@ This document is a quick orientation for the Hacktivate Arcade user systems so a
 - Supabase client wrappers: `src/lib/supabase.ts`
 - Trusted progression validation + challenge definitions: `src/lib/trustedProgression.ts`, `src/lib/challenges.ts`
 - Trusted progression route: `src/app/api/arcade/progression/route.ts`
+- Supabase apply/test runbook: `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md`
 - Persistent sync outbox: `src/services/SupabaseSyncOutbox.ts`
 - Auth hook: `src/hooks/useSupabaseAuth.ts`
 - Signed-in Supabase sync hook: `src/hooks/useArcadeSupabaseSync.ts`
@@ -43,6 +44,7 @@ Defined in `supabase/001_init.sql`:
 - leaderboard_scores: per-user aggregated period scores
 - leaderboards_view: join of leaderboard_scores + profiles for UI
 - RPC: `record_leaderboard_score(game_id, score)` updates all periods
+- RPC: `commit_trusted_game_session(...)` now atomically commits trusted session replay results across player_state, wallets, achievements, challenge_assignments, and leaderboards
 - RLS: users can only read/write their own private rows; leaderboards are public read
 
 ## Auth + Registration Flow
@@ -88,6 +90,7 @@ Defined in `supabase/001_init.sql`:
 - The hook also owns guest/user ownership resets via `hacktivate-session-owner` so local save state is cleared on account changes.
 - The hub shows a small pending-sync status next to the auth state when queued writes exist.
 - Hydration/bootstrap seeding still uses direct Supabase upserts when rows are missing so guest/local progress can initialize a new account.
+- Trusted session replay now sends richer gameplay metrics (`timePlayedMs` + metric bag) so the server can derive progression from the session payload before the atomic DB commit.
 
 ## Source Of Truth
 - `UserService` is the active client owner for profile/stats/perks.
@@ -111,9 +114,10 @@ Defined in `supabase/001_init.sql`:
   - `unlock-tier`
   - `unlock-game`
 - The route ensures profile/player_state/wallet rows exist before applying mutations and validates against the registered game catalog, achievement catalog, and typed daily challenge templates.
-- `record-session` now accepts an optional client mutation id and stores recently processed ids in `player_state.settings.processedSessionMutationIds` as a best-effort replay guard for queued retries.
-- Remaining gap: challenge and achievement unlock conditions are still discovered client-side first; the server now owns payout/id validation, but it does not yet independently replay gameplay metrics.
-- Remaining gap: queued session replay protection is best-effort, not fully atomic. A future DB-side transactional RPC would be stronger than route-level multi-write handling.
+- `record-session` now accepts an optional client mutation id plus richer gameplay metrics, derives server-trusted progression from the payload, then commits through `public.commit_trusted_game_session(...)`.
+- Duplicate suppression for queued trusted sessions now happens inside the database RPC via `player_state.settings.processedSessionMutationIds`, so replay protection is part of the atomic commit instead of a route-only guard.
+- The route now has focused coverage for the atomic session happy path, duplicate replay response, and missing-RPC failure mode.
+- Remaining gap: any target Supabase project must have the updated `supabase/001_init.sql` applied before signed-in testing, or `record-session` will fail with a missing-RPC error.
 
 ## Known Pitfalls
 - If `supabase.types.ts` is missing `Relationships` or if a view is listed under Tables, Postgrest generics infer `never` and cause errors like "property does not exist on type 'never'".
@@ -129,6 +133,7 @@ Defined in `supabase/001_init.sql`:
 - Missing emails: configure Supabase SMTP, verify redirect URL, check spam.
 - Auth state not updating: confirm `useSupabaseAuth` hook is mounted and session changes propagate.
 - Leaderboards empty: ensure `record_leaderboard_score` RPC exists in Supabase and RLS allows select.
+- Trusted session errors mentioning `commit_trusted_game_session`: apply the latest `supabase/001_init.sql` and regenerate `src/lib/supabase.types.ts`.
 
 ## Suggested Commands
 - Type check: `npm run type-check`
