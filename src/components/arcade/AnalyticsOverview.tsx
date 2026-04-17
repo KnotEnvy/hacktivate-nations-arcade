@@ -8,21 +8,25 @@ import {
   type ConversionMetrics,
 } from '@/services/Analytics';
 
-export function AnalyticsOverview() {
+interface AnalyticsOverviewProps {
+  analyticsOwnerId?: string | null;
+}
+
+export function AnalyticsOverview({ analyticsOwnerId }: AnalyticsOverviewProps) {
   const [insights, setInsights] = useState<PlayerInsights | null>(null);
   const [conversion, setConversion] = useState<ConversionMetrics | null>(null);
   const [metrics, setMetrics] = useState<PlayerMetrics | null>(null);
   const [recommended, setRecommended] = useState<string[]>([]);
 
   useEffect(() => {
-    const analytics = new Analytics();
+    const analytics = new Analytics(analyticsOwnerId);
     void analytics.init().then(() => {
       setInsights(analytics.getPlayerInsights());
       setConversion(analytics.getConversionMetrics());
       setMetrics(analytics.getPlayerMetrics());
       setRecommended(analytics.getRecommendedGames());
     });
-  }, []);
+  }, [analyticsOwnerId]);
 
   if (!insights || !conversion || !metrics) return null;
 

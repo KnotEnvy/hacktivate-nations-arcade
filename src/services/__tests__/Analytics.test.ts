@@ -2,10 +2,12 @@ import { Analytics } from '@/services/Analytics';
 
 describe('Analytics', () => {
   let analytics: Analytics;
+  let storageKey: string;
 
   beforeEach(() => {
-    analytics = new Analytics();
     localStorage.clear();
+    analytics = new Analytics();
+    storageKey = Analytics.getStorageKey();
   });
 
   describe('initialization', () => {
@@ -27,7 +29,7 @@ describe('Analytics', () => {
           'snake': { plays: 2, totalTime: 4000 }
         }
       };
-      localStorage.setItem('hacktivate-analytics', JSON.stringify(existingData));
+      localStorage.setItem(storageKey, JSON.stringify(existingData));
 
       await analytics.init();
       const metrics = analytics.getPlayerMetrics();
@@ -174,7 +176,7 @@ describe('Analytics', () => {
       analytics.trackGameStart('runner');
       analytics.trackGameEnd('runner', 1000, 50, 'completed');
       
-      const saved = localStorage.getItem('hacktivate-analytics');
+      const saved = localStorage.getItem(storageKey);
       expect(saved).toBeDefined();
       
       const data = JSON.parse(saved!);
@@ -192,6 +194,37 @@ describe('Analytics', () => {
       
       const metrics = newAnalytics.getPlayerMetrics();
       expect(metrics.gamesPlayed).toBe(1);
+    });
+
+    test('uses owner-scoped storage and ignores the legacy guest bucket', async () => {
+      localStorage.setItem('hacktivate-session-owner', 'user-123');
+      localStorage.setItem(
+        'hacktivate-analytics',
+        JSON.stringify({
+          gamesPlayed: 99,
+          totalPlayTime: 999999,
+          gameStats: {
+            runner: { plays: 99, totalTime: 999999, totalScore: 0, coinsEarned: 0, lastPlayed: 1 },
+          },
+        })
+      );
+      localStorage.setItem(
+        Analytics.getStorageKey('user-123'),
+        JSON.stringify({
+          gamesPlayed: 2,
+          totalPlayTime: 2000,
+          gameStats: {
+            snake: { plays: 2, totalTime: 2000, totalScore: 0, coinsEarned: 0, lastPlayed: 1 },
+          },
+        })
+      );
+
+      const accountAnalytics = new Analytics();
+      await accountAnalytics.init();
+
+      const metrics = accountAnalytics.getPlayerMetrics();
+      expect(metrics.gamesPlayed).toBe(2);
+      expect(metrics.favoriteGame).toBe('snake');
     });
   });
 

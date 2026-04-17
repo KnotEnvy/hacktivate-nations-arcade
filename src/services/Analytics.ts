@@ -63,8 +63,13 @@ export interface PlayerInsights {
   achievements: string[];
 }
 
+const LEGACY_STORAGE_KEY = 'hacktivate-analytics';
+const STORAGE_KEY_PREFIX = 'hacktivate-analytics';
+const SESSION_OWNER_KEY = 'hacktivate-session-owner';
+const DEFAULT_OWNER_KEY = 'guest';
+
 export class Analytics {
-  private storageKey = 'hacktivate-analytics';
+  private storageKey: string;
   private metrics: StoredAnalytics = {
     gamesPlayed: 0,
     totalPlayTime: 0,
@@ -83,6 +88,19 @@ export class Analytics {
   private currentSession: GameSession | null = null;
   private sessionDurations: number[] = [];
   private maxRecentScores = 30;
+
+  constructor(ownerId?: string | null) {
+    this.storageKey = Analytics.getStorageKey(ownerId);
+  }
+
+  static getStorageKey(ownerId?: string | null): string {
+    return `${STORAGE_KEY_PREFIX}:${Analytics.resolveOwnerId(ownerId)}`;
+  }
+
+  static clearLegacyMetrics(): void {
+    if (typeof window === 'undefined') return;
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+  }
 
   async init(): Promise<void> {
     this.metrics = this.loadStoredMetrics();
@@ -319,6 +337,20 @@ export class Analytics {
     if (typeof window === 'undefined') return;
     const payload: StoredAnalytics = { ...this.metrics };
     localStorage.setItem(this.storageKey, JSON.stringify(payload));
+  }
+
+  private static resolveOwnerId(ownerId?: string | null): string {
+    const normalizedOwner = ownerId?.trim();
+    if (normalizedOwner) {
+      return normalizedOwner;
+    }
+
+    if (typeof window === 'undefined') {
+      return DEFAULT_OWNER_KEY;
+    }
+
+    const storedOwner = localStorage.getItem(SESSION_OWNER_KEY)?.trim();
+    return storedOwner || DEFAULT_OWNER_KEY;
   }
 
   private recordReturnVisit(): void {

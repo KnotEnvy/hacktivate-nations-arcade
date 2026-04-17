@@ -7,9 +7,10 @@ import { Analytics } from '@/services/Analytics';
 
 interface UserProfileProps {
   userService: UserService;
+  analyticsOwnerId?: string | null;
 }
 
-export function UserProfile({ userService }: UserProfileProps) {
+export function UserProfile({ userService, analyticsOwnerId }: UserProfileProps) {
   const [profile, setProfile] = useState<UserProfileType>(userService.getProfile());
   const [stats, setStats] = useState<UserStats>(userService.getStats());
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
@@ -32,12 +33,12 @@ export function UserProfile({ userService }: UserProfileProps) {
   }, []);
 
   useEffect(() => {
-    const analytics = new Analytics();
+    const analytics = new Analytics(analyticsOwnerId);
     void analytics.init().then(() => {
       setInsights(analytics.getPlayerInsights());
       setMetrics(analytics.getPlayerMetrics());
     });
-  }, []);
+  }, [analyticsOwnerId]);
 
   const isMaxLevel = profile.level >= MAX_LEVEL;
   const currentLevelXp = UserService.experienceForLevel(profile.level);

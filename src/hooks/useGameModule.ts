@@ -12,7 +12,8 @@ export function useGameModule(
   game: GameModule | null,
   currencyService: CurrencyService,
   audioManager: AudioManager,
-  achievementService: AchievementService
+  achievementService: AchievementService,
+  analyticsOwnerId?: string | null
 ) {
   const { input } = useInput(canvas);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -26,7 +27,7 @@ export function useGameModule(
 
     // Initialize services
     const audio = audioManager; // Use the passed AudioManager instance
-    const analytics = new Analytics();
+    const analytics = new Analytics(analyticsOwnerId);
     const currency = currencyService;
     const achievements = achievementService;
 
@@ -44,7 +45,7 @@ export function useGameModule(
     return () => {
       game.destroy?.();
     };
-  }, [canvas, game, currencyService, audioManager, achievementService, input]);
+  }, [canvas, game, currencyService, audioManager, achievementService, input, analyticsOwnerId]);
 
   useEffect(() => {
     if (!isInitialized || !game) return;

@@ -111,6 +111,7 @@ const LOCAL_STORAGE_KEYS = [
   'hacktivate-achievements',
   'hacktivate-challenges',
   'hacktivate-coins',
+  'hacktivate-analytics',
   'hacktivate-supabase-sync-outbox-v1',
 ];
 
@@ -1278,7 +1279,10 @@ export function ArcadeHub() {
                     />
                   </div>
                   <div>
-                    <UserProfile userService={userService} />
+                    <UserProfile
+                      userService={userService}
+                      analyticsOwnerId={session?.user.id}
+                    />
                   </div>
                 </>
               )}
@@ -1298,7 +1302,10 @@ export function ArcadeHub() {
                     />
                   </div>
                   <div>
-                    <UserProfile userService={userService} />
+                    <UserProfile
+                      userService={userService}
+                      analyticsOwnerId={session?.user.id}
+                    />
                   </div>
                 </>
               )}
@@ -1312,7 +1319,10 @@ export function ArcadeHub() {
                     />
                   </div>
                   <div>
-                    <UserProfile userService={userService} />
+                    <UserProfile
+                      userService={userService}
+                      analyticsOwnerId={session?.user.id}
+                    />
                   </div>
                 </>
               )}
@@ -1323,7 +1333,10 @@ export function ArcadeHub() {
                     <AchievementPanel achievementService={achievementService} />
                   </div>
                   <div>
-                    <UserProfile userService={userService} />
+                    <UserProfile
+                      userService={userService}
+                      analyticsOwnerId={session?.user.id}
+                    />
                   </div>
                 </>
               )}
@@ -1337,11 +1350,14 @@ export function ArcadeHub() {
                         onChallengeComplete={handleChallengeComplete}
                       />
                       <AchievementPanel achievementService={achievementService} />
-                      <AnalyticsOverview />
+                      <AnalyticsOverview analyticsOwnerId={session?.user.id} />
                     </div>
                   </div>
                   <div>
-                    <UserProfile userService={userService} />
+                    <UserProfile
+                      userService={userService}
+                      analyticsOwnerId={session?.user.id}
+                    />
                   </div>
                 </>
               )}
@@ -1365,6 +1381,7 @@ export function ArcadeHub() {
               currencyService={currencyService}
               audioManager={audioManager}
               achievementService={achievementService}
+              analyticsOwnerId={session?.user.id}
               onGameEnd={handleGameEnd}
             />
           </div>

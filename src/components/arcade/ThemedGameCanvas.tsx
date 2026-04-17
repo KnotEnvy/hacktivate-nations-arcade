@@ -16,17 +16,26 @@ interface ThemedGameCanvasProps {
   currencyService: CurrencyService;
   audioManager: AudioManager;
   achievementService: AchievementService;
+  analyticsOwnerId?: string | null;
   onGameEnd?: (stats?: GameScore) => void;
 }
 
-export function ThemedGameCanvas({ game, onGameEnd, currencyService, audioManager, achievementService }: ThemedGameCanvasProps) {
+export function ThemedGameCanvas({
+  game,
+  onGameEnd,
+  currencyService,
+  audioManager,
+  achievementService,
+  analyticsOwnerId,
+}: ThemedGameCanvasProps) {
   const { canvasRef } = useCanvas(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
   const { isInitialized, isRunning, startGame, stopGame, pauseGame, resumeGame } = useGameModule(
     canvasRef.current,
     game,
     currencyService,
     audioManager,
-    achievementService
+    achievementService,
+    analyticsOwnerId
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');
