@@ -8,7 +8,10 @@ import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { getChallengeTemplate } from '@/lib/challenges';
 import { DEFAULT_UNLOCKED_GAME_IDS } from '@/lib/unlocks';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
-import { SupabaseSyncOutbox } from '@/services/SupabaseSyncOutbox';
+import {
+  SupabaseSyncOutbox,
+  type SyncOutboxDiagnostics,
+} from '@/services/SupabaseSyncOutbox';
 import type { AchievementService } from '@/services/AchievementService';
 import type { ChallengeService } from '@/services/ChallengeService';
 import type { CurrencyService } from '@/services/CurrencyService';
@@ -48,10 +51,13 @@ interface UseArcadeSupabaseSyncResult {
   supabaseService: SupabaseArcadeService | null;
   pendingSyncCount: number;
   isSyncingPending: boolean;
+  isBrowserOffline: boolean;
+  syncDiagnostics: SyncOutboxDiagnostics;
   isHydratingRef: MutableRefObject<boolean>;
   runWhileHydrating: (callback: () => void) => void;
   schedulePlayerSync: (overrides?: UnlockSyncOverrides) => void;
   queueSyncOperation: (operation: SyncOperation) => void;
+  retryPendingSyncs: () => Promise<void>;
   reconcileTrustedBalance: (balance: number) => void;
 }
 
@@ -69,11 +75,22 @@ export function useArcadeSupabaseSync({
   const [supabaseService, setSupabaseService] = useState<SupabaseArcadeService | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isSyncingPending, setIsSyncingPending] = useState(false);
+  const [isBrowserOffline, setIsBrowserOffline] = useState(
+    () => typeof navigator !== 'undefined' && navigator.onLine === false
+  );
+  const [syncDiagnostics, setSyncDiagnostics] = useState<SyncOutboxDiagnostics>(() =>
+    syncOutbox.getDiagnostics()
+  );
+  const saveUnlockStateRef = useRef(saveUnlockState);
   const syncTimeoutRef = useRef<number | null>(null);
   const challengeSyncTimeoutRef = useRef<number | null>(null);
   const flushOutboxInProgressRef = useRef(false);
   const isHydratingRef = useRef(false);
   const hasHydratedRef = useRef(false);
+
+  useEffect(() => {
+    saveUnlockStateRef.current = saveUnlockState;
+  }, [saveUnlockState]);
 
   const enqueueSyncOnly = useCallback(
     (operation: SyncOperation) => {
@@ -190,6 +207,12 @@ export function useArcadeSupabaseSync({
       return;
     }
 
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setIsBrowserOffline(true);
+      setIsSyncingPending(false);
+      return;
+    }
+
     flushOutboxInProgressRef.current = true;
     setIsSyncingPending(true);
 
@@ -197,17 +220,17 @@ export function useArcadeSupabaseSync({
       await syncOutbox.flush(supabaseService, session.access_token, {
         onBalanceReconciled: reconcileTrustedBalance,
         onUnlockStateReconciled: (tiers, games) => {
-          saveUnlockState(tiers, games, { sync: false });
+          saveUnlockStateRef.current(tiers, games, { sync: false });
         },
       });
     } finally {
       flushOutboxInProgressRef.current = false;
       setPendingSyncCount(syncOutbox.getPendingCount());
+      setSyncDiagnostics(syncOutbox.getDiagnostics());
       setIsSyncingPending(false);
     }
   }, [
     reconcileTrustedBalance,
-    saveUnlockState,
     session?.access_token,
     supabaseService,
     syncOutbox,
@@ -228,12 +251,36 @@ export function useArcadeSupabaseSync({
     [enqueueSyncOnly, flushPendingSyncs, session?.access_token, supabaseService]
   );
 
+  const retryPendingSyncs = useCallback(async () => {
+    await flushPendingSyncs();
+  }, [flushPendingSyncs]);
+
   useEffect(() => {
     const unsubscribe = syncOutbox.onChanged(queue => {
       setPendingSyncCount(queue.length);
+      setSyncDiagnostics(syncOutbox.getDiagnostics());
     });
     return unsubscribe;
   }, [syncOutbox]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncOnlineState = () => {
+      setIsBrowserOffline(navigator.onLine === false);
+    };
+
+    syncOnlineState();
+    window.addEventListener('online', syncOnlineState);
+    window.addEventListener('offline', syncOnlineState);
+
+    return () => {
+      window.removeEventListener('online', syncOnlineState);
+      window.removeEventListener('offline', syncOnlineState);
+    };
+  }, []);
 
   useEffect(() => {
     if (!supabaseService || !session?.access_token) {
@@ -572,10 +619,13 @@ export function useArcadeSupabaseSync({
     supabaseService,
     pendingSyncCount,
     isSyncingPending,
+    isBrowserOffline,
+    syncDiagnostics,
     isHydratingRef,
     runWhileHydrating,
     schedulePlayerSync,
     queueSyncOperation,
+    retryPendingSyncs,
     reconcileTrustedBalance,
   };
 }

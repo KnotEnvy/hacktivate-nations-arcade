@@ -238,4 +238,34 @@ describe('SupabaseSyncOutbox', () => {
     expect(remaining.lastError).toContain('network down');
     expect(service.claimAchievements).not.toHaveBeenCalled();
   });
+
+  test('reports diagnostics for queued failures', async () => {
+    const outbox = new SupabaseSyncOutbox();
+    const service = makeServiceMock();
+    service.recordTrustedGameSession.mockRejectedValueOnce(
+      new Error('timeout while replaying session')
+    );
+
+    outbox.enqueue({
+      kind: 'trusted-session-record',
+      payload: makeRichTrustedSessionRecord().payload as Extract<
+        Parameters<SupabaseSyncOutbox['enqueue']>[0],
+        { kind: 'trusted-session-record' }
+      >['payload'],
+    });
+    outbox.enqueue({
+      kind: 'trusted-achievement-claim',
+      payload: { achievementIds: ['first_jump'] },
+    });
+
+    await outbox.flush(service, 'token');
+
+    expect(outbox.getDiagnostics()).toMatchObject({
+      pendingCount: 2,
+      failedCount: 1,
+      highestRetryCount: 1,
+      lastError: expect.stringContaining('timeout while replaying session'),
+    });
+    expect(outbox.getDiagnostics().lastErrorAt).toEqual(expect.any(String));
+  });
 });

@@ -134,10 +134,12 @@ export function ArcadeHub() {
   const runWhileHydratingRef = useRef<(callback: () => void) => void>(callback => {
     callback();
   });
-  void useArcadeSupabaseSync;
-  void schedulePlayerSyncRef.current;
-  void runWhileHydratingRef.current;
-  
+  const schedulePlayerSyncAdapter = useCallback(
+    (overrides?: { unlockedTiers?: number[]; unlockedGames?: string[] }) => {
+      schedulePlayerSyncRef.current(overrides);
+    },
+    []
+  );
   // Notifications
   const [notifications, setNotifications] = useState<Array<{
     id: string;
@@ -194,7 +196,7 @@ export function ArcadeHub() {
     saveUnlockState,
   } = useArcadeUnlockState({
     achievementService,
-    schedulePlayerSync: overrides => schedulePlayerSyncRef.current(overrides),
+    schedulePlayerSync: schedulePlayerSyncAdapter,
   });
 
   const applyLocalAchievementRewards = useCallback(
@@ -285,10 +287,13 @@ export function ArcadeHub() {
     supabaseService,
     pendingSyncCount,
     isSyncingPending,
+    isBrowserOffline,
+    syncDiagnostics,
     isHydratingRef,
     runWhileHydrating,
     schedulePlayerSync,
     queueSyncOperation,
+    retryPendingSyncs,
     reconcileTrustedBalance,
   } = useArcadeSupabaseSync({
     session,
@@ -997,10 +1002,32 @@ export function ArcadeHub() {
                 )}
               </div>
               {session && pendingSyncCount > 0 && (
-                <div className="text-[11px] text-amber-200 mt-1 max-w-[220px]">
-                  {isSyncingPending
-                    ? `Syncing ${pendingSyncCount} pending change${pendingSyncCount === 1 ? '' : 's'}...`
-                    : `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} queued for sync`}
+                <div className="text-[11px] text-amber-200 mt-1 max-w-[260px]">
+                  <div>
+                    {isSyncingPending
+                      ? `Syncing ${pendingSyncCount} pending change${pendingSyncCount === 1 ? '' : 's'}...`
+                      : isBrowserOffline
+                        ? `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} waiting for reconnect`
+                        : syncDiagnostics.failedCount > 0
+                          ? `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} queued after ${syncDiagnostics.highestRetryCount} failed sync attempt${syncDiagnostics.highestRetryCount === 1 ? '' : 's'}`
+                          : `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} queued for sync`}
+                  </div>
+                  {syncDiagnostics.lastError && (
+                    <div className="text-[10px] text-red-200 mt-1">
+                      Last sync error: {syncDiagnostics.lastError}
+                    </div>
+                  )}
+                  {!isSyncingPending && (
+                    <button
+                      onClick={() => {
+                        void retryPendingSyncs();
+                      }}
+                      disabled={isBrowserOffline}
+                      className="text-[10px] text-purple-100 underline hover:text-white disabled:text-gray-400 disabled:no-underline mt-1"
+                    >
+                      {isBrowserOffline ? 'Retry unavailable offline' : 'Retry sync now'}
+                    </button>
+                  )}
                 </div>
               )}
               {authError && (

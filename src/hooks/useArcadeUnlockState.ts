@@ -50,10 +50,15 @@ export function useArcadeUnlockState({
   const [unlockedGames, setUnlockedGames] = useState<string[]>(
     Array.from(DEFAULT_UNLOCKED_GAME_IDS)
   );
+  const schedulePlayerSyncRef = useRef(schedulePlayerSync);
   const unlocksRef = useRef<UnlockState>({
     tiers: [0],
     games: Array.from(DEFAULT_UNLOCKED_GAME_IDS),
   });
+
+  useEffect(() => {
+    schedulePlayerSyncRef.current = schedulePlayerSync;
+  }, [schedulePlayerSync]);
 
   useEffect(() => {
     unlocksRef.current = { tiers: unlockedTiers, games: unlockedGames };
@@ -71,13 +76,13 @@ export function useArcadeUnlockState({
         JSON.stringify({ tiers: normalizedTiers, games: normalizedGames })
       );
       if (options?.sync !== false) {
-        schedulePlayerSync({
+        schedulePlayerSyncRef.current({
           unlockedTiers: normalizedTiers,
           unlockedGames: normalizedGames,
         });
       }
     },
-    [schedulePlayerSync]
+    []
   );
 
   useEffect(() => {

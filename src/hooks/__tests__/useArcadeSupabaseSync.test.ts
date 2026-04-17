@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
+import { SupabaseSyncOutbox } from '@/services/SupabaseSyncOutbox';
 import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
 
 jest.mock('@/lib/supabase', () => ({
@@ -321,6 +322,112 @@ describe('useArcadeSupabaseSync', () => {
     });
   });
 
+  it('captures sync diagnostics after a failed replay and allows manual retry', async () => {
+    jest
+      .spyOn(SupabaseArcadeService.prototype, 'unlockGameTrusted')
+      .mockRejectedValueOnce(new Error('rpc unavailable'))
+      .mockResolvedValue({
+        balance: 77,
+        unlockedTiers: [0, 2],
+        unlockedGames: ['runner', 'space'],
+      });
+
+    const { result, services, saveUnlockState } = renderSupabaseSyncHook();
+
+    await flushEffects();
+    await waitFor(() => {
+      expect(result.current.supabaseService).not.toBeNull();
+    });
+
+    await act(async () => {
+      result.current.queueSyncOperation({
+        kind: 'trusted-game-unlock',
+        payload: { gameId: 'space' },
+      });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingSyncCount).toBe(1);
+    });
+    expect(result.current.syncDiagnostics).toMatchObject({
+      pendingCount: 1,
+      failedCount: 1,
+      highestRetryCount: 1,
+      lastError: expect.stringContaining('rpc unavailable'),
+    });
+
+    await act(async () => {
+      await result.current.retryPendingSyncs();
+    });
+
+    await waitFor(() => {
+      expect(result.current.pendingSyncCount).toBe(0);
+    });
+    expect(result.current.syncDiagnostics).toMatchObject({
+      pendingCount: 0,
+      failedCount: 0,
+      highestRetryCount: 0,
+      lastError: null,
+    });
+    expect(services.currencyService.setBalance).toHaveBeenLastCalledWith(77);
+    expect(saveUnlockState).toHaveBeenLastCalledWith(
+      [0, 2],
+      ['runner', 'space'],
+      { sync: false }
+    );
+  });
+
+  it('tracks offline state and keeps queued sync work local until connectivity returns', async () => {
+    const originalOnLine = navigator.onLine;
+    try {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: false,
+      });
+
+      const { result } = renderSupabaseSyncHook();
+
+      await flushEffects();
+      await waitFor(() => {
+        expect(result.current.supabaseService).not.toBeNull();
+      });
+      expect(result.current.isBrowserOffline).toBe(true);
+
+      act(() => {
+        result.current.queueSyncOperation({
+          kind: 'trusted-game-unlock',
+          payload: { gameId: 'space' },
+        });
+      });
+
+      await flushEffects();
+
+      expect(result.current.pendingSyncCount).toBe(1);
+      expect(SupabaseArcadeService.prototype.unlockGameTrusted).not.toHaveBeenCalled();
+
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: true,
+      });
+
+      await act(async () => {
+        window.dispatchEvent(new Event('online'));
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(result.current.pendingSyncCount).toBe(0);
+      });
+      expect(result.current.isBrowserOffline).toBe(false);
+    } finally {
+      Object.defineProperty(window.navigator, 'onLine', {
+        configurable: true,
+        value: originalOnLine,
+      });
+    }
+  });
+
   it('resets local state when the authenticated owner changes', async () => {
     localStorage.setItem('hacktivate-session-owner', 'guest');
     const session = createSession('signed-in-user');
@@ -335,5 +442,56 @@ describe('useArcadeSupabaseSync', () => {
       expect(resetLocalState).toHaveBeenCalledTimes(1);
     });
     expect(localStorage.getItem('hacktivate-session-owner')).toBe('signed-in-user');
+  });
+
+  it('does not reflush pending sync work when saveUnlockState identity changes', async () => {
+    const services = createServices();
+    const flushSpy = jest
+      .spyOn(SupabaseSyncOutbox.prototype, 'flush')
+      .mockResolvedValue({ processed: 0, remaining: 0 });
+
+    const baseOptions = {
+      session: createSession(),
+      achievementService: services.achievementService as never,
+      challengeService: services.challengeService as never,
+      currencyService: services.currencyService as never,
+      userService: services.userService as never,
+      unlocksRef: {
+        current: {
+          tiers: [0],
+          games: ['runner'],
+        },
+      },
+      resetLocalState: jest.fn(),
+    };
+
+    const { result, rerender } = renderHook<
+      ReturnType<typeof useArcadeSupabaseSync>,
+      { saveUnlockState: HookOptions['saveUnlockState'] }
+    >(
+      ({ saveUnlockState }) =>
+        useArcadeSupabaseSync({
+          ...baseOptions,
+          saveUnlockState,
+        }),
+      {
+        initialProps: {
+          saveUnlockState: jest.fn(),
+        },
+      }
+    );
+
+    await flushEffects();
+    await waitFor(() => {
+      expect(result.current.supabaseService).not.toBeNull();
+    });
+    await waitFor(() => {
+      expect(flushSpy).toHaveBeenCalledTimes(1);
+    });
+
+    rerender({ saveUnlockState: jest.fn() });
+    await flushEffects();
+
+    expect(flushSpy).toHaveBeenCalledTimes(1);
   });
 });

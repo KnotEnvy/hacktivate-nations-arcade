@@ -66,6 +66,14 @@ export type StoredOutboxOperation = OutboxOperation & {
   lastError?: string;
 };
 
+export interface SyncOutboxDiagnostics {
+  pendingCount: number;
+  failedCount: number;
+  highestRetryCount: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
+}
+
 interface FlushCallbacks {
   onBalanceReconciled?: (balance: number) => void;
   onUnlockStateReconciled?: (unlockedTiers: number[], unlockedGames: string[]) => void;
@@ -134,6 +142,25 @@ export class SupabaseSyncOutbox {
   getPendingCount(): number {
     this.ensureLoaded();
     return this.queue.length;
+  }
+
+  getDiagnostics(): SyncOutboxDiagnostics {
+    this.ensureLoaded();
+    const failedEntries = this.queue.filter(entry => Boolean(entry.lastError));
+    const latestFailedEntry = [...failedEntries].sort((left, right) =>
+      right.updatedAt.localeCompare(left.updatedAt)
+    )[0];
+
+    return {
+      pendingCount: this.queue.length,
+      failedCount: failedEntries.length,
+      highestRetryCount: this.queue.reduce(
+        (highest, entry) => Math.max(highest, entry.retryCount),
+        0
+      ),
+      lastError: latestFailedEntry?.lastError ?? null,
+      lastErrorAt: latestFailedEntry?.updatedAt ?? null,
+    };
   }
 
   onChanged(callback: (queue: StoredOutboxOperation[]) => void): () => void {
