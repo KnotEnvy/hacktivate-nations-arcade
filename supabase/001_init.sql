@@ -451,13 +451,13 @@ begin
     raise exception 'Failed to update player state.';
   end if;
 
-  update public.wallets
+  update public.wallets as wallets
   set
-    balance = balance + _reward_awarded,
-    lifetime_earned = lifetime_earned + _reward_awarded,
+    balance = wallets.balance + _reward_awarded,
+    lifetime_earned = wallets.lifetime_earned + _reward_awarded,
     updated_at = v_now
   where user_id = _user_id
-  returning balance into v_updated_balance;
+  returning wallets.balance into v_updated_balance;
 
   if not found then
     raise exception 'Failed to update wallet.';
