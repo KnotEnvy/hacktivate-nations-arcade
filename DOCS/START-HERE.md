@@ -37,6 +37,10 @@ Verified on April 15, 2026:
 - atomic session replay now commits through `public.commit_trusted_game_session(...)` in `supabase/001_init.sql`
 - focused route coverage now exists for the trusted progression API happy path, duplicate replay response, and missing-RPC failure
 
+Verified on April 16, 2026:
+
+- queued signed-in sync work now surfaces offline/failed replay diagnostics and a manual retry action in the hub header
+
 ## What To Work On Next
 
 Highest-value remaining work:

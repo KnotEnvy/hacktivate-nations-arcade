@@ -24,11 +24,35 @@ const createSession = (userId = 'user-1'): Session =>
     },
   }) as Session;
 
-const createServices = () => {
+const createServices = (overrides: {
+  profile?: {
+    username: string;
+    avatar: string;
+    level: number;
+    experience: number;
+    totalPlayTime: number;
+    gamesPlayed: number;
+    totalCoins: number;
+    joinedAt: Date;
+    lastActiveAt: Date;
+  };
+  stats?: {
+    gamesPlayed: number;
+    coinsEarned: number;
+    achievementsUnlocked: number;
+    challengesCompleted: number;
+    totalDistance?: number;
+    maxSpeed?: number;
+    maxCombo?: number;
+    totalJumps?: number;
+    powerupsUsed?: number;
+  };
+} = {}) => {
   const challengeCallbacks: Array<(value: Array<{ id: string; progress: number; completed: boolean }>) => void> = [];
   const userCallbacks: Array<() => void> = [];
 
   const challengeService = {
+    init: jest.fn(),
     onChallengesChanged: jest.fn(callback => {
       challengeCallbacks.push(callback);
       return () => {
@@ -52,7 +76,7 @@ const createServices = () => {
     getCurrentCoins: jest.fn(() => 25),
   };
 
-  const profile = {
+  const profile = overrides.profile ?? {
     username: 'Player',
     avatar: '🕹️',
     level: 3,
@@ -64,7 +88,7 @@ const createServices = () => {
     lastActiveAt: new Date('2026-04-15T00:00:00.000Z'),
   };
 
-  const stats = {
+  const stats = overrides.stats ?? {
     gamesPlayed: 7,
     coinsEarned: 120,
     achievementsUnlocked: 0,
@@ -190,6 +214,9 @@ describe('useArcadeSupabaseSync', () => {
       .spyOn(SupabaseArcadeService.prototype, 'upsertPlayerState')
       .mockResolvedValue({ user_id: 'user-1' } as never);
     jest
+      .spyOn(SupabaseArcadeService.prototype, 'upsertWallet')
+      .mockResolvedValue({ user_id: 'user-1' } as never);
+    jest
       .spyOn(SupabaseArcadeService.prototype, 'unlockGameTrusted')
       .mockResolvedValue({
         balance: 77,
@@ -212,15 +239,11 @@ describe('useArcadeSupabaseSync', () => {
       .spyOn(SupabaseArcadeService.prototype, 'upsertPlayerState')
       .mockRejectedValue(new Error('state write failed'));
 
-    const { result, services } = renderSupabaseSyncHook();
+    const { result } = renderSupabaseSyncHook();
 
     await flushEffects();
     await waitFor(() => {
       expect(result.current.supabaseService).not.toBeNull();
-    });
-    await waitFor(() => {
-      expect(services.userService.setProfile).toHaveBeenCalled();
-      expect(services.userService.setStats).toHaveBeenCalled();
     });
 
     act(() => {
@@ -378,6 +401,98 @@ describe('useArcadeSupabaseSync', () => {
     );
   });
 
+  it('hydrates a first-time signed-in account with clean defaults instead of local guest stats', async () => {
+    jest
+      .spyOn(SupabaseArcadeService.prototype, 'fetchProfile')
+      .mockResolvedValue(null as never);
+    jest
+      .spyOn(SupabaseArcadeService.prototype, 'fetchPlayerState')
+      .mockResolvedValue(null as never);
+    jest
+      .spyOn(SupabaseArcadeService.prototype, 'fetchWallet')
+      .mockResolvedValue(null as never);
+
+    const services = createServices({
+      profile: {
+        username: 'GuestCarryover',
+        avatar: '🎯',
+        level: 12,
+        experience: 9_999,
+        totalPlayTime: 4_200,
+        gamesPlayed: 88,
+        totalCoins: 777,
+        joinedAt: new Date('2026-01-01T00:00:00.000Z'),
+        lastActiveAt: new Date('2026-04-15T00:00:00.000Z'),
+      },
+      stats: {
+        gamesPlayed: 88,
+        coinsEarned: 777,
+        achievementsUnlocked: 9,
+        challengesCompleted: 6,
+        totalDistance: 10_000,
+        maxSpeed: 200,
+        maxCombo: 50,
+        totalJumps: 500,
+        powerupsUsed: 99,
+      },
+    });
+    const saveUnlockState = jest.fn();
+
+    const { result } = renderSupabaseSyncHook({
+      achievementService: services.achievementService as never,
+      challengeService: services.challengeService as never,
+      currencyService: services.currencyService as never,
+      userService: services.userService as never,
+      saveUnlockState,
+    });
+
+    await flushEffects();
+    await waitFor(() => {
+      expect(result.current.supabaseService).not.toBeNull();
+    });
+
+    await waitFor(() => {
+      expect(SupabaseArcadeService.prototype.upsertPlayerState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 1,
+          experience: 0,
+          totalPlayTime: 0,
+          gamesPlayed: 0,
+        }),
+        { accessToken: 'token-123' }
+      );
+    });
+
+    expect(SupabaseArcadeService.prototype.upsertWallet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        balance: 0,
+        lifetimeEarned: 0,
+      }),
+      { accessToken: 'token-123' }
+    );
+    expect(services.userService.setProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'player',
+        level: 1,
+        experience: 0,
+        totalCoins: 0,
+      })
+    );
+    expect(services.userService.setStats).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gamesPlayed: 0,
+        coinsEarned: 0,
+        achievementsUnlocked: 0,
+        challengesCompleted: 0,
+      })
+    );
+    expect(saveUnlockState).toHaveBeenCalledWith(
+      [0],
+      expect.arrayContaining(['runner']),
+      { sync: false }
+    );
+  });
+
   it('tracks offline state and keeps queued sync work local until connectivity returns', async () => {
     const originalOnLine = navigator.onLine;
     try {
@@ -442,6 +557,22 @@ describe('useArcadeSupabaseSync', () => {
       expect(resetLocalState).toHaveBeenCalledTimes(1);
     });
     expect(localStorage.getItem('hacktivate-session-owner')).toBe('signed-in-user');
+  });
+
+  it('resets local state when switching between authenticated owners', async () => {
+    localStorage.setItem('hacktivate-session-owner', 'signed-in-user-a');
+    const session = createSession('signed-in-user-b');
+    const resetLocalState = jest.fn();
+
+    renderSupabaseSyncHook({
+      session,
+      resetLocalState,
+    });
+
+    await waitFor(() => {
+      expect(resetLocalState).toHaveBeenCalledTimes(1);
+    });
+    expect(localStorage.getItem('hacktivate-session-owner')).toBe('signed-in-user-b');
   });
 
   it('does not reflush pending sync work when saveUnlockState identity changes', async () => {

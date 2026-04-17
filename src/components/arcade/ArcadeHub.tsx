@@ -189,6 +189,17 @@ export function ArcadeHub() {
     }
   }, [session, showAuthModal]);
 
+  useEffect(() => {
+    if (!session && !showHub) {
+      setShowHub(true);
+      setCurrentGame(null);
+      setSelectedGameId(null);
+      setActiveTab('games');
+      audioManager.stopHubMusicRotation();
+      audioManager.stopMusic(0.2);
+    }
+  }, [audioManager, session, showHub]);
+
   const {
     unlockedTiers,
     unlockedGames,
@@ -287,6 +298,7 @@ export function ArcadeHub() {
     supabaseService,
     pendingSyncCount,
     isSyncingPending,
+    isAccountHydrating,
     isBrowserOffline,
     syncDiagnostics,
     isHydratingRef,
@@ -434,8 +446,19 @@ export function ArcadeHub() {
     }
   }, []);
 
+  const requireSignedIn = useCallback(() => {
+    if (session) {
+      return true;
+    }
+
+    audioManager.playSound('click');
+    setShowAuthModal(true);
+    return false;
+  }, [audioManager, session]);
+
   const handleGameSelect = async (gameId: string) => {
     try {
+      if (!requireSignedIn()) return;
       audioManager.playSound('click');
       if (!isGameImplemented(gameId)) return;
       if (!isGameUnlocked(gameId, unlockedTiers, unlockedGames)) return;
@@ -461,6 +484,7 @@ export function ArcadeHub() {
   };
 
   const handleTierUnlock = async (tier: number, cost: number) => {
+    if (!requireSignedIn()) return;
     if (!hasImplementedGamesInTier(tier)) return;
 
     const applyLocalUnlock = () => {
@@ -494,10 +518,10 @@ export function ArcadeHub() {
       return;
     }
 
-    applyLocalUnlock();
   };
 
   const handleGameUnlock = async (gameId: string, cost: number) => {
+    if (!requireSignedIn()) return;
     const game = AVAILABLE_GAMES.find(g => g.id === gameId);
     if (!game) return;
     if (!isGameImplemented(gameId)) return;
@@ -549,7 +573,6 @@ export function ArcadeHub() {
       return;
     }
 
-    applyLocalUnlock();
   };
 
   const handleBackToHub = () => {
@@ -565,6 +588,11 @@ export function ArcadeHub() {
 
   const handleChallengeComplete = useCallback(
     (challenge: Challenge) => {
+      if (!session) {
+        setShowAuthModal(true);
+        return;
+      }
+
       const applyDailyChallengeBonus = () => {
         if (!challengeService.areAllDailyChallengesCompleted()) {
           return;
@@ -625,18 +653,6 @@ export function ArcadeHub() {
         return;
       }
 
-      const modifiers = userService.getPerkModifiers();
-      const reward = Math.floor(challenge.reward * modifiers.challengeRewardMultiplier);
-      audioManager.playSound('success');
-      addNotification(
-        'challenge',
-        'Challenge Complete!',
-        `${challenge.title} - +${reward} coins`
-      );
-      currencyService.addCoins(reward, `challenge_${challenge.id}`);
-      const current = userService.getStats().challengesCompleted;
-      userService.updateStats({ challengesCompleted: current + 1 });
-      applyDailyChallengeBonus();
     },
     [
       addNotification,
@@ -662,6 +678,11 @@ export function ArcadeHub() {
 
   const handleGameEnd = (gameData?: GameEndData) => {
     if (!gameData || !selectedGameId) return;
+    if (!session?.access_token || !supabaseService) {
+      setShowAuthModal(true);
+      handleBackToHub();
+      return;
+    }
     
     const stats = userService.getStats();
     const profile = userService.getProfile();
@@ -795,14 +816,7 @@ export function ArcadeHub() {
         achievement.title,
         `+${achievement.reward} coins`
       );
-      if (supabaseService && session?.access_token) {
-        trustedAchievementIds.push(achievement.id);
-      } else {
-        currencyService.addCoins(
-          achievement.reward,
-          `achievement_${achievement.id}`
-        );
-      }
+      trustedAchievementIds.push(achievement.id);
     });
 
     if (newlyUnlocked.length > 0) {
@@ -813,48 +827,46 @@ export function ArcadeHub() {
     const trustedSessionMetrics = getTrustedSessionMetrics(gameData);
 
     // Persist score and economy-sensitive rewards through the trusted server path.
-    if (supabaseService && session?.access_token) {
-      void (async () => {
-        const clientMutationId =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    void (async () => {
+      const clientMutationId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-        try {
-          const sessionResult = await supabaseService.recordTrustedGameSession(
-            {
-              gameId: selectedGameId,
-              score: gameData.score || 0,
-              pickups: gameData.pickups || 0,
-              timePlayedMs: gameData.timePlayedMs || 0,
-              metrics: trustedSessionMetrics,
-              clientMutationId,
-            },
-            {
-              accessToken: session.access_token,
-            }
-          );
-          reconcileTrustedBalance(sessionResult.balance);
-          applyTrustedAchievementUnlocks(sessionResult.achievementIds ?? []);
-        } catch (error) {
-          console.warn('Trusted session sync failed:', error);
-          queueSyncOperation({
-            kind: 'trusted-session-record',
-            payload: {
-              gameId: selectedGameId,
-              score: gameData.score || 0,
-              pickups: gameData.pickups || 0,
-              timePlayedMs: gameData.timePlayedMs || 0,
-              metrics: trustedSessionMetrics,
-              clientMutationId,
-            },
-          });
-          if (trustedAchievementIds.length > 0) {
-            applyLocalAchievementRewards(trustedAchievementIds);
+      try {
+        const sessionResult = await supabaseService.recordTrustedGameSession(
+          {
+            gameId: selectedGameId,
+            score: gameData.score || 0,
+            pickups: gameData.pickups || 0,
+            timePlayedMs: gameData.timePlayedMs || 0,
+            metrics: trustedSessionMetrics,
+            clientMutationId,
+          },
+          {
+            accessToken: session.access_token,
           }
+        );
+        reconcileTrustedBalance(sessionResult.balance);
+        applyTrustedAchievementUnlocks(sessionResult.achievementIds ?? []);
+      } catch (error) {
+        console.warn('Trusted session sync failed:', error);
+        queueSyncOperation({
+          kind: 'trusted-session-record',
+          payload: {
+            gameId: selectedGameId,
+            score: gameData.score || 0,
+            pickups: gameData.pickups || 0,
+            timePlayedMs: gameData.timePlayedMs || 0,
+            metrics: trustedSessionMetrics,
+            clientMutationId,
+          },
+        });
+        if (trustedAchievementIds.length > 0) {
+          applyLocalAchievementRewards(trustedAchievementIds);
         }
-      })();
-    }
+      }
+    })();
 
   };
 
@@ -888,11 +900,15 @@ export function ArcadeHub() {
     profile?.username ||
     session?.user.email?.split('@')[0] ||
     session?.user.user_metadata?.preferred_username ||
-    'Guest';
+    'Player';
 
   const handleEmailSignIn = async (email: string) => {
     await signInWithEmail(email);
   };
+
+  const showAuthGate = !authLoading && !authDisabled && !session;
+  const showAuthUnavailable = authDisabled;
+  const showAccountLoading = authLoading || (!!session && isAccountHydrating);
 
   const releasedTiers = Array.from(new Set(PLAYABLE_GAME_CATALOG.map(g => g.tier))).sort(
     (a, b) => a - b
@@ -952,7 +968,7 @@ export function ArcadeHub() {
             Audio
           </button>
           {/* Debug buttons for development */}
-          {process.env.NODE_ENV === 'development' && (
+          {process.env.NODE_ENV === 'development' && session && (
             <div className="flex gap-1">
               <button
                 onClick={() => currencyService.addCoins(500, 'debug_test')}
@@ -982,7 +998,7 @@ export function ArcadeHub() {
           {!authDisabled ? (
             <div className="text-right">
               <div className="text-sm text-white font-semibold">
-                {session ? `Signed in as ${welcomeName}` : 'Guest mode (local save)'}
+                {session ? `Signed in as ${welcomeName}` : 'Sign in required'}
               </div>
               <div className="flex justify-end gap-2">
                 {session ? (
@@ -997,7 +1013,7 @@ export function ArcadeHub() {
                     onClick={() => setShowAuthModal(true)}
                     className="text-xs text-purple-200 underline hover:text-white"
                   >
-                    Sign in
+                    Open sign in
                   </button>
                 )}
               </div>
@@ -1038,10 +1054,10 @@ export function ArcadeHub() {
             </div>
           ) : (
             <div className="text-right text-xs text-orange-200 max-w-[200px]">
-              Supabase not configured; running in offline mode.
+              Supabase not configured; authentication is required.
             </div>
           )}
-          <CurrencyDisplay currencyService={currencyService} />
+          {session && <CurrencyDisplay currencyService={currencyService} />}
         </div>
       </header>
 
@@ -1066,7 +1082,97 @@ export function ArcadeHub() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto" data-testid="arcade-hub">
-        {showHub ? (
+        {showAccountLoading ? (
+          <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-8 text-center text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">
+              Account Sync
+            </div>
+            <h2 className="mt-4 text-3xl font-black">Loading your arcade profile</h2>
+            <p className="mt-3 text-sm text-gray-300">
+              Pulling down your wallet, unlocks, challenges, and achievements before the
+              arcade opens.
+            </p>
+          </div>
+        ) : showAuthUnavailable ? (
+          <div className="mx-auto max-w-3xl rounded-3xl border border-orange-400/30 bg-orange-500/10 backdrop-blur-xl p-8 text-center text-orange-100 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="text-xs uppercase tracking-[0.3em] text-orange-200/80">
+              Authentication Unavailable
+            </div>
+            <h2 className="mt-4 text-3xl font-black text-white">
+              This build cannot open the arcade right now
+            </h2>
+            <p className="mt-3 text-sm text-orange-100/90">
+              Supabase auth is not configured. Production access now requires a signed-in
+              account, so the guest path has been removed.
+            </p>
+          </div>
+        ) : showAuthGate ? (
+          <div className="mx-auto max-w-4xl rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-8 md:p-10 text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+            <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">
+                  Production Access
+                </div>
+                <h2 className="mt-4 text-3xl md:text-5xl font-black leading-tight">
+                  Sign in to enter the arcade
+                </h2>
+                <p className="mt-4 max-w-2xl text-sm md:text-base text-gray-300 leading-relaxed">
+                  Guest play has been retired. Every session now runs against an authenticated
+                  player record so wallet balance, unlocks, achievements, challenges, and
+                  leaderboards stay tied to the correct account.
+                </p>
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
+                      Wallet
+                    </div>
+                    <div className="mt-2 text-sm text-gray-200">
+                      Trusted coin balance and unlock state.
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
+                      Progress
+                    </div>
+                    <div className="mt-2 text-sm text-gray-200">
+                      Challenges, achievements, and stats follow your account.
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
+                      Leaderboards
+                    </div>
+                    <div className="mt-2 text-sm text-gray-200">
+                      Scores post under the signed-in player identity.
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+                <WelcomeBanner
+                  name={welcomeName}
+                  authenticated={false}
+                  onSignIn={() => setShowAuthModal(true)}
+                />
+                <button
+                  onClick={() => setShowAuthModal(true)}
+                  className="mt-5 w-full rounded-xl bg-white text-gray-950 py-3 font-semibold hover:bg-gray-100 transition-colors"
+                >
+                  Open sign in
+                </button>
+                <div className="mt-3 text-xs text-gray-400 leading-relaxed">
+                  Use one of the provisioned accounts for testing, or your assigned development
+                  account while we finish launch hardening.
+                </div>
+                {authError && (
+                  <div className="mt-4 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+                    {authError}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : showHub ? (
           <div className="space-y-6">
             <WelcomeBanner
               name={welcomeName}

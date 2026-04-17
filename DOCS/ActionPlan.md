@@ -27,6 +27,7 @@ This is the current execution checklist. It should reflect the live repo, not th
 - [x] Playwright config/tests were hardened so the smoke suite passes reliably under the local `npm run e2e` path
 - [x] Trusted `record-session` now evaluates gameplay-derived progression server-side and commits wallet/player-state/achievement/challenge/leaderboard writes through the atomic `public.commit_trusted_game_session(...)` RPC
 - [x] Focused API route coverage now exists for the atomic trusted session path, duplicate replay responses, and missing-RPC failures
+- [x] Signed-in sync status now surfaces offline/failed replay diagnostics and offers a manual retry action from the hub auth status area
 
 ## Current Priority
 
@@ -35,8 +36,8 @@ This is the current execution checklist. It should reflect the live repo, not th
   - Current state: gameplay-derived trusted session progression is now validated server-side and committed atomically through the database RPC, not as route-level multi-writes.
   - Remaining: expand server-derived coverage for progression that still originates outside trusted game-session metrics, such as non-session feature unlock flows.
 - [~] Add a real offline outbox/retry strategy for Supabase sync failures.
-  - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically; queued trusted sessions now replay against an atomic DB commit with duplicate suppression.
-  - Remaining: surface richer sync diagnostics / manual retry UX and validate the new RPC path against the real hosted Supabase project.
+  - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically; queued trusted sessions now replay against an atomic DB commit with duplicate suppression; the hub now surfaces offline/failed replay diagnostics and a manual retry action.
+  - Remaining: validate the new RPC path against the real hosted Supabase project and decide whether a larger sync history/debug surface is worth adding before launch.
 - [~] Expand automated coverage for auth, persistence, unlocks, progression, and sync.
   - Current state: service/lib coverage is solid, hook coverage exists for the extracted signed-in Supabase sync bridge, and route coverage now exists for the trusted progression API session path.
   - Remaining: add broader auth and persistence integration coverage beyond the current focused hook/service tests.

@@ -15,10 +15,9 @@ import {
 import type { AchievementService } from '@/services/AchievementService';
 import type { ChallengeService } from '@/services/ChallengeService';
 import type { CurrencyService } from '@/services/CurrencyService';
-import type { UserService, UserStats } from '@/services/UserServices';
+import { UserService, type UserStats } from '@/services/UserServices';
 
 const LOCAL_OWNER_KEY = 'hacktivate-session-owner';
-const LOCAL_OWNER_GUEST = 'guest';
 
 type UnlockSyncOverrides = {
   unlockedTiers?: number[];
@@ -51,6 +50,7 @@ interface UseArcadeSupabaseSyncResult {
   supabaseService: SupabaseArcadeService | null;
   pendingSyncCount: number;
   isSyncingPending: boolean;
+  isAccountHydrating: boolean;
   isBrowserOffline: boolean;
   syncDiagnostics: SyncOutboxDiagnostics;
   isHydratingRef: MutableRefObject<boolean>;
@@ -75,6 +75,7 @@ export function useArcadeSupabaseSync({
   const [supabaseService, setSupabaseService] = useState<SupabaseArcadeService | null>(null);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isSyncingPending, setIsSyncingPending] = useState(false);
+  const [isAccountHydrating, setIsAccountHydrating] = useState(false);
   const [isBrowserOffline, setIsBrowserOffline] = useState(
     () => typeof navigator !== 'undefined' && navigator.onLine === false
   );
@@ -372,20 +373,19 @@ export function useArcadeSupabaseSync({
 
   useEffect(() => {
     hasHydratedRef.current = false;
+    setIsAccountHydrating(Boolean(session?.user.id));
   }, [session?.user.id]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const nextOwner = session?.user.id ?? LOCAL_OWNER_GUEST;
+    if (typeof window === 'undefined' || !session?.user.id) {
+      return;
+    }
+    const nextOwner = session.user.id;
     const storedOwner = localStorage.getItem(LOCAL_OWNER_KEY);
-    const currentOwner = storedOwner ?? LOCAL_OWNER_GUEST;
-    if (!storedOwner) {
-      localStorage.setItem(LOCAL_OWNER_KEY, currentOwner);
-    }
-    if (currentOwner !== nextOwner) {
+    if (!storedOwner || storedOwner !== nextOwner) {
       resetLocalState();
-      localStorage.setItem(LOCAL_OWNER_KEY, nextOwner);
     }
+    localStorage.setItem(LOCAL_OWNER_KEY, nextOwner);
   }, [resetLocalState, session?.user.id]);
 
   useEffect(() => {
@@ -393,6 +393,7 @@ export function useArcadeSupabaseSync({
     const accessToken = session.access_token;
     if (!accessToken) {
       console.warn('Supabase hydration skipped: missing access token.');
+      setIsAccountHydrating(false);
       return;
     }
     if (hasHydratedRef.current) return;
@@ -400,8 +401,13 @@ export function useArcadeSupabaseSync({
     let active = true;
     const hydrate = async () => {
       isHydratingRef.current = true;
+      setIsAccountHydrating(true);
       try {
         const userId = session.user.id;
+        const fallbackUsername =
+          session.user.user_metadata?.preferred_username ||
+          session.user.email?.split('@')[0] ||
+          'Player';
         const [
           profileRow,
           playerStateRow,
@@ -418,23 +424,27 @@ export function useArcadeSupabaseSync({
 
         if (!active) return;
 
-        const localProfile = userService.getProfile();
-        const localStats = userService.getStats();
-        let nextProfile = { ...localProfile };
-        let nextStats: UserStats = { ...localStats };
+        let nextProfile = UserService.createDefaultProfile({
+          username: fallbackUsername,
+        });
+        let nextStats: UserStats = UserService.createDefaultStats();
 
         if (profileRow) {
           nextProfile = {
             ...nextProfile,
-            username: profileRow.username || nextProfile.username,
+            username: profileRow.username || fallbackUsername,
             avatar: profileRow.avatar ?? nextProfile.avatar,
             joinedAt: profileRow.created_at ? new Date(profileRow.created_at) : nextProfile.joinedAt,
           };
         } else {
+          nextProfile = {
+            ...nextProfile,
+            username: fallbackUsername,
+          };
           await supabaseService.upsertProfile(
             {
               id: userId,
-              username: nextProfile.username,
+              username: fallbackUsername,
               avatar: nextProfile.avatar,
             },
             { accessToken }
@@ -468,8 +478,10 @@ export function useArcadeSupabaseSync({
           const games = Array.from(
             new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...(playerStateRow.unlocked_games ?? [])])
           );
-          saveUnlockState(tiers, games);
+          saveUnlockState(tiers, games, { sync: false });
         } else {
+          const defaultUnlockedGames = Array.from(DEFAULT_UNLOCKED_GAME_IDS);
+          saveUnlockState([0], defaultUnlockedGames, { sync: false });
           await supabaseService.upsertPlayerState(
             {
               userId,
@@ -481,8 +493,8 @@ export function useArcadeSupabaseSync({
                 nextProfile.lastActiveAt && nextProfile.lastActiveAt.getTime() > 0
                   ? nextProfile.lastActiveAt.toISOString()
                   : null,
-              unlockedTiers: unlocksRef.current.tiers,
-              unlockedGames: unlocksRef.current.games,
+              unlockedTiers: [0],
+              unlockedGames: defaultUnlockedGames,
               stats: nextStats as unknown as Json,
             },
             { accessToken }
@@ -493,11 +505,13 @@ export function useArcadeSupabaseSync({
           currencyService.setBalance(walletRow.balance);
           nextProfile = { ...nextProfile, totalCoins: walletRow.balance };
         } else {
+          currencyService.setBalance(0);
+          nextProfile = { ...nextProfile, totalCoins: 0 };
           await supabaseService.upsertWallet(
             {
               userId,
-              balance: currencyService.getCurrentCoins(),
-              lifetimeEarned: nextStats.coinsEarned,
+              balance: 0,
+              lifetimeEarned: 0,
             },
             { accessToken }
           );
@@ -512,20 +526,7 @@ export function useArcadeSupabaseSync({
           );
           nextStats = { ...nextStats, achievementsUnlocked: achievementRows.length };
         } else {
-          const localAchievementIds = achievementService.getUnlockedAchievementIds();
-          if (localAchievementIds.length > 0) {
-            await Promise.all(
-              localAchievementIds.map(achievementId =>
-                supabaseService.upsertAchievement(
-                  {
-                    userId,
-                    achievementId,
-                  },
-                  { accessToken }
-                )
-              )
-            );
-          }
+          achievementService.setUnlockedAchievements([]);
         }
 
         if (challengeRows.length > 0) {
@@ -548,6 +549,10 @@ export function useArcadeSupabaseSync({
             challengesCompleted: mapped.filter(challenge => challenge.completed).length,
           };
         } else {
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('hacktivate-challenges');
+          }
+          challengeService.init();
           const localChallenges = challengeService.getChallenges();
           if (localChallenges.length > 0) {
             await supabaseService.upsertChallenges(
@@ -574,8 +579,12 @@ export function useArcadeSupabaseSync({
       } catch (error) {
         console.warn('Supabase hydration failed:', error);
       } finally {
+        if (!active) {
+          return;
+        }
         isHydratingRef.current = false;
         hasHydratedRef.current = true;
+        setIsAccountHydrating(false);
       }
     };
 
@@ -619,6 +628,7 @@ export function useArcadeSupabaseSync({
     supabaseService,
     pendingSyncCount,
     isSyncingPending,
+    isAccountHydrating,
     isBrowserOffline,
     syncDiagnostics,
     isHydratingRef,

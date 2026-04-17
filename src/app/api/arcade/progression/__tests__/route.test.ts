@@ -187,7 +187,6 @@ describe('POST /api/arcade/progression', () => {
           reward_awarded: 115,
           duplicate: false,
           achievement_ids: ['first_game', 'speed_demon'],
-          challenge_updates_applied: 1,
         },
       ],
     });
@@ -231,10 +230,8 @@ describe('POST /api/arcade/progression', () => {
         _game_id: 'runner',
         _score: 6000,
         _client_mutation_id: 'mut-1',
-        _achievement_unlocks: expect.arrayContaining([
-          expect.objectContaining({ achievementId: 'first_game' }),
-        ]),
-        _challenge_updates: [
+        _achievement_ids: expect.arrayContaining(['first_game']),
+        _challenge_progress_payload: [
           expect.objectContaining({
             challengeId: 'daily-2026-04-14-cross_high_scorer',
             progress: 5000,
@@ -252,7 +249,6 @@ describe('POST /api/arcade/progression', () => {
           reward_awarded: 0,
           duplicate: true,
           achievement_ids: null,
-          challenge_updates_applied: 0,
         },
       ],
     });

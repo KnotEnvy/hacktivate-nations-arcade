@@ -81,6 +81,12 @@ Verified on April 15, 2026 after the trusted-session hardening pass:
 - focused Jest coverage now exists for the trusted progression route session happy path, duplicate replay response, and missing-RPC failure
 - `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` now documents how to apply and verify the live Supabase schema before signed-in testing
 
+Verified on April 16, 2026 after the sync-diagnostics pass:
+
+- the hub auth status now surfaces queued sync count, offline waiting state, failed replay diagnostics, and a manual retry action for signed-in outbox work
+- `useArcadeSupabaseSync` now exposes explicit outbox diagnostics plus `retryPendingSyncs()` so sync state is actionable instead of only showing a count
+- focused hook/outbox coverage now exists for failed replay diagnostics, offline queue retention, and manual retry recovery
+
 ## Current Reality
 
 ### Stack

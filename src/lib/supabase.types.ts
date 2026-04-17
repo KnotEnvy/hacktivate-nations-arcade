@@ -222,12 +222,12 @@ export interface Database {
           _game_id: string;
           _score: number;
           _reward_awarded: number;
-          _games_played: number;
-          _total_play_time: number;
-          _stats: Json;
-          _settings: Json;
-          _achievement_unlocks?: Json;
-          _challenge_updates?: Json;
+          _achievement_ids: string[];
+          _next_games_played: number;
+          _next_total_play_time: number;
+          _next_stats: Json;
+          _next_settings: Json;
+          _challenge_progress_payload?: Json;
           _client_mutation_id?: string | null;
         };
         Returns: {
@@ -235,7 +235,6 @@ export interface Database {
           reward_awarded: number;
           duplicate: boolean;
           achievement_ids: string[];
-          challenge_updates_applied: number;
         }[];
       };
       record_leaderboard_score: {

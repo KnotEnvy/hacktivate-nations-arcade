@@ -29,11 +29,10 @@ export function AuthModal({
   emailSentMode,
   pendingEmail,
 }: AuthModalProps) {
+  void onPasswordSignUp;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [username, setUsername] = useState('');
-  const [mode, setMode] = useState<'magic' | 'signin' | 'signup'>('magic');
+  const [mode, setMode] = useState<'magic' | 'signin'>('signin');
   const [localError, setLocalError] = useState<string | null>(null);
 
   if (!open) return null;
@@ -53,21 +52,12 @@ export function AuthModal({
       return;
     }
 
-    if (mode === 'signup') {
-      if (password !== confirmPassword) {
-        setLocalError('Passwords do not match.');
-        return;
-      }
-      await onPasswordSignUp(email, password, username.trim() || undefined);
-      return;
-    }
-
     await onPasswordSignIn(email, password);
   };
 
   const activeEmail = pendingEmail || email;
   const showEmailScreen = !!emailSentMode;
-  const handleModeChange = (nextMode: 'magic' | 'signin' | 'signup') => {
+  const handleModeChange = (nextMode: 'magic' | 'signin') => {
     setMode(nextMode);
     setLocalError(null);
     if (emailSentMode) {
@@ -77,7 +67,7 @@ export function AuthModal({
   const handleBackFromEmail = (nextMode: 'magic' | 'signin' | 'signup') => {
     onClearMessages();
     setLocalError(null);
-    setMode(nextMode);
+    setMode(nextMode === 'signup' ? 'signin' : nextMode);
   };
 
   return (
@@ -89,15 +79,15 @@ export function AuthModal({
               {showEmailScreen
                 ? emailSentMode === 'magic'
                   ? 'Check your email'
-                  : 'Confirm your account'
+                  : 'Sign in required'
                 : 'Sign in to Hacktivate Arcade'}
             </h2>
             <p className="text-sm text-gray-300 mt-1">
               {showEmailScreen
                 ? emailSentMode === 'magic'
                   ? 'We sent a magic link to finish signing you in.'
-                  : 'We sent a confirmation link to finish your registration.'
-                : 'Use a magic link or email/password to sync your arcade progress.'}
+                  : 'Use the link to finish signing in with your approved account.'
+                : 'Use a magic link or email/password to access the arcade and sync your progress.'}
             </p>
           </div>
           <button
@@ -163,9 +153,9 @@ export function AuthModal({
                     ? 'border-purple-500 bg-purple-900/60'
                     : 'border-gray-700 bg-gray-800'
                 }`}
-              >
-                Magic link
-              </button>
+                >
+                  Magic link
+                </button>
               <button
                 type="button"
                 onClick={() => handleModeChange('signin')}
@@ -176,17 +166,6 @@ export function AuthModal({
                 }`}
               >
                 Sign in
-              </button>
-              <button
-                type="button"
-                onClick={() => handleModeChange('signup')}
-                className={`flex-1 rounded-lg px-3 py-2 border ${
-                  mode === 'signup'
-                    ? 'border-purple-500 bg-purple-900/60'
-                    : 'border-gray-700 bg-gray-800'
-                }`}
-              >
-                Sign up
               </button>
             </div>
 
@@ -212,39 +191,12 @@ export function AuthModal({
                       type="password"
                       value={password}
                       onChange={event => setPassword(event.target.value)}
-                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                      autoComplete="current-password"
                       className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       placeholder="Enter password"
                       required
                     />
                   </label>
-                  {mode === 'signup' && (
-                    <>
-                      <label className="block text-sm text-gray-200 font-medium">
-                        Confirm Password
-                        <input
-                          type="password"
-                          value={confirmPassword}
-                          onChange={event => setConfirmPassword(event.target.value)}
-                          autoComplete="new-password"
-                          className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="Confirm password"
-                          required
-                        />
-                      </label>
-                      <label className="block text-sm text-gray-200 font-medium">
-                        Username (optional)
-                        <input
-                          type="text"
-                          value={username}
-                          onChange={event => setUsername(event.target.value)}
-                          autoComplete="username"
-                          className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                          placeholder="ArcadeHero"
-                        />
-                      </label>
-                    </>
-                  )}
                 </>
               )}
               <button
@@ -256,9 +208,7 @@ export function AuthModal({
                   ? 'Working...'
                   : mode === 'magic'
                     ? 'Send magic link'
-                    : mode === 'signin'
-                      ? 'Sign in'
-                      : 'Create account'}
+                    : 'Sign in'}
               </button>
             </form>
 
@@ -269,7 +219,7 @@ export function AuthModal({
             )}
 
             <div className="text-xs text-gray-400">
-              Tip: Stay signed in to sync coins, achievements, and leaderboard entries across devices.
+              Tip: Keep this account signed in to sync coins, achievements, and leaderboard entries across devices.
             </div>
           </>
         )}

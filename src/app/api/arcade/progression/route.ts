@@ -410,14 +410,6 @@ export async function POST(request: Request) {
             );
           });
 
-        const achievementUnlockPayload = achievementIds.map(achievementId => {
-          const achievement = getAchievementDefinition(achievementId);
-          return {
-            achievementId,
-            progress: achievement?.requirement.value ?? null,
-            reward: achievement?.reward ?? 0,
-          };
-        });
         const challengeUpdatePayload = challengeUpdates.map(update => ({
           challengeId: update.challengeId,
           title: update.title,
@@ -436,12 +428,12 @@ export async function POST(request: Request) {
           _game_id: session.gameId,
           _score: session.score,
           _reward_awarded: reward,
-          _games_played: nextProgressionState.gamesPlayed,
-          _total_play_time: nextProgressionState.totalPlayTime,
-          _stats: nextProgressionState.stats as unknown as Json,
-          _settings: nextPlayerStateSettings as Json,
-          _achievement_unlocks: achievementUnlockPayload as unknown as Json,
-          _challenge_updates: challengeUpdatePayload as unknown as Json,
+          _achievement_ids: achievementIds,
+          _next_games_played: nextProgressionState.gamesPlayed,
+          _next_total_play_time: nextProgressionState.totalPlayTime,
+          _next_stats: nextProgressionState.stats as unknown as Json,
+          _next_settings: nextPlayerStateSettings as Json,
+          _challenge_progress_payload: challengeUpdatePayload as unknown as Json,
           _client_mutation_id: mutationId,
           }
         );
@@ -466,7 +458,9 @@ export async function POST(request: Request) {
           duplicate: rpcResult.duplicate,
           achievementIds: rpcResult.achievement_ids ?? [],
           diagnostics: {
-            challengeUpdatesApplied: rpcResult.challenge_updates_applied,
+            challengeUpdatesApplied: rpcResult.duplicate
+              ? 0
+              : challengeUpdatePayload.length,
             mutationId,
           },
         });

@@ -12,12 +12,16 @@ export function WelcomeBanner({ name, authenticated, onSignIn, onSignOut }: Welc
     <div className="w-full bg-white/5 border border-white/10 backdrop-blur rounded-2xl p-5 text-white shadow-lg">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <p className="text-sm text-purple-200 uppercase tracking-wide">Welcome</p>
-          <h3 className="text-xl font-bold">{name}</h3>
+          <p className="text-sm text-purple-200 uppercase tracking-wide">
+            {authenticated ? 'Welcome' : 'Sign in required'}
+          </p>
+          <h3 className="text-xl font-bold">
+            {authenticated ? name : 'Use an approved account to continue'}
+          </h3>
           <p className="text-sm text-gray-200 mt-1">
             {authenticated
               ? 'Your coins and achievements are ready to sync across devices.'
-              : 'Guest mode: progress saves locally on this device. Sign in to sync across devices.'}
+              : 'This arcade now requires sign in. Use your assigned account to access progress, leaderboards, and sync.'}
           </p>
         </div>
         <div className="flex gap-2">

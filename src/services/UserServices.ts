@@ -126,8 +126,8 @@ export class UserService {
   private levelUpListeners: Array<(level: number) => void> = [];
 
   constructor() {
-    this.profile = this.getDefaultProfile();
-    this.stats = this.getDefaultStats();
+    this.profile = UserService.createDefaultProfile();
+    this.stats = UserService.createDefaultStats();
   }
 
   init(): void {
@@ -144,7 +144,7 @@ export class UserService {
     this.notifyListeners();
   }
 
-  private getDefaultProfile(): UserProfile {
+  static createDefaultProfile(overrides: Partial<UserProfile> = {}): UserProfile {
     const placeholderDate = new Date(0);
     const currentDate = new Date();
     const date = typeof window === 'undefined' ? placeholderDate : currentDate;
@@ -158,10 +158,11 @@ export class UserService {
       gamesPlayed: 0,
       joinedAt: date,
       lastActiveAt: date,
+      ...overrides,
     };
   }
 
-  private getDefaultStats(): UserStats {
+  static createDefaultStats(overrides: Partial<UserStats> = {}): UserStats {
     return {
       totalDistance: 0,
       maxSpeed: 0,
@@ -172,6 +173,7 @@ export class UserService {
       challengesCompleted: 0,
       gamesPlayed: 0,
       coinsEarned: 0,
+      ...overrides,
     };
   }
 
@@ -206,7 +208,7 @@ export class UserService {
           data.gamesPlayed = data.gameplayed;
           delete data.gameplayed;
         }
-        this.stats = { ...this.getDefaultStats(), ...data };
+        this.stats = { ...UserService.createDefaultStats(), ...data };
       } catch (error) {
         console.warn('Failed to load user stats:', error);
       }
@@ -224,6 +226,22 @@ export class UserService {
     if (typeof window === 'undefined') return;
     localStorage.setItem('hacktivate-user-profile', JSON.stringify(this.profile));
     localStorage.setItem('hacktivate-user-stats', JSON.stringify(this.stats));
+  }
+
+  resetToDefaults(options?: { persist?: boolean; clearPersistedData?: boolean }): void {
+    this.profile = UserService.createDefaultProfile();
+    this.stats = UserService.createDefaultStats();
+
+    if (typeof window !== 'undefined') {
+      if (options?.clearPersistedData !== false) {
+        localStorage.removeItem('hacktivate-user-profile');
+        localStorage.removeItem('hacktivate-user-stats');
+      } else if (options?.persist) {
+        this.saveUserData();
+      }
+    }
+
+    this.notifyListeners();
   }
 
   setProfile(profile: UserProfile, persist: boolean = true): void {

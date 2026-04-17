@@ -88,8 +88,9 @@ Defined in `supabase/001_init.sql`:
 - Direct wallet-on-coin-change sync was removed for signed-in users so browser state no longer pushes arbitrary balances to Supabase.
 - Failed signed-in sync/mutation calls now enqueue into `hacktivate-supabase-sync-outbox-v1` and replay automatically on reconnect / polling while a session is active.
 - The hook also owns guest/user ownership resets via `hacktivate-session-owner` so local save state is cleared on account changes.
-- The hub shows a small pending-sync status next to the auth state when queued writes exist.
+- The hub now shows pending-sync status, offline/failed replay diagnostics, and a manual retry action next to the auth state when queued writes exist.
 - Hydration/bootstrap seeding still uses direct Supabase upserts when rows are missing so guest/local progress can initialize a new account.
+- `useArcadeSupabaseSync` now exposes outbox diagnostics (`failedCount`, highest retry count, last error) plus `retryPendingSyncs()` and current offline state for UI surfaces.
 - Trusted session replay now sends richer gameplay metrics (`timePlayedMs` + metric bag) so the server can derive progression from the session payload before the atomic DB commit.
 
 ## Source Of Truth
