@@ -1,56 +1,56 @@
 # Start Here
 
-Last updated: April 15, 2026
+Last updated: April 16, 2026
 
-This is the minimal handoff set for the next team. Start here instead of browsing every doc in `DOCS/`.
+This is the minimal handoff set for the next team. The production-hardening pass is largely complete. The main delivery left before public launch is the final shipped game plus release validation.
 
 ## Read Order
 
 1. `README.md`
 2. `DOCS/PROJECT-RELEARN-HANDOFF-2026-04-13.md`
 3. `DOCS/ActionPlan.md`
-4. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, or local save ownership
-5. `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` if you need to apply or verify the live Supabase schema before signed-in testing or deployment
+4. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, analytics ownership, or local-save boundaries
+5. `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` if you need to change the live Supabase schema or verify the trusted progression RPC path
 6. `DOCS/AUDIO-SYSTEM-HANDOFF.md` only if you are touching the procedural audio/music system
 
 ## Current Verified Repo State
-
-Verified on April 14, 2026:
-
-- `npm run lint` passes
-- `npm run type-check` passes
-- `npm run build` passes
-- the hub only allows purchase/play for games that are registered in `src/games/registry.ts`
-- incomplete PWA/install metadata has been removed until the asset/service-worker surface is real
-- unlock persistence now lives in `src/hooks/useArcadeUnlockState.ts`
-- the unused Zustand stores under `src/stores/` were removed
 
 Verified on April 15, 2026:
 
 - `npm test -- --runInBand` passes
 - `npm run e2e` passes
-- `.github/workflows/ci.yml` now exists and mirrors the local verification gates
-- large XP grants now level through every crossed threshold instead of only one level per call
-- signed-in Supabase hydration/sync/outbox ownership now lives in `src/hooks/useArcadeSupabaseSync.ts`
-- Playwright smoke coverage is configured to run serially for stability against the local `next dev` server
-- trusted `record-session` now validates gameplay-derived progression server-side instead of only payout ids
-- atomic session replay now commits through `public.commit_trusted_game_session(...)` in `supabase/001_init.sql`
-- focused route coverage now exists for the trusted progression API happy path, duplicate replay response, and missing-RPC failure
+- `.github/workflows/ci.yml` now mirrors the local verification gates
+- trusted `record-session` derives gameplay progression server-side and commits through `public.commit_trusted_game_session(...)`
 
 Verified on April 16, 2026:
 
-- queued signed-in sync work now surfaces offline/failed replay diagnostics and a manual retry action in the hub header
+- `npm run lint` passes
+- `npm run type-check` passes
+- `npm run build` passes
+- the arcade now runs as a signed-in product flow; the guest gameplay/profile path has been retired from the main UX
+- first-time signed-in accounts hydrate clean defaults instead of inheriting stale guest/local stats
+- queued sync work surfaces offline state, failed replay diagnostics, and a manual retry action in the hub
+- the route/RPC contract for `commit_trusted_game_session(...)` is aligned with the deployed SQL, and the wallet update ambiguity in `supabase/001_init.sql` is fixed
+- analytics storage is now account-scoped via `hacktivate-analytics:<ownerId>` and no longer reads the legacy shared guest bucket
+- the catalog still lists 27 entries, while `src/games/registry.ts` currently registers 16 playable games
 
 ## What To Work On Next
 
 Highest-value remaining work:
 
-1. Continue server-trust hardening so gameplay-derived achievement/challenge unlock conditions move off the client, not just payout-sensitive writes.
-2. Continue reducing `ArcadeHub.tsx` complexity and move more progression/reward ownership out of the component.
-   The signed-in Supabase sync block is already extracted; next likely targets are end-of-game reward and progression orchestration.
-3. Finish the typed challenge migration for future challenge variants and server-seeded schedules.
-4. Expand tests around auth, persistence, unlocks, progression, and sync.
-5. Apply `supabase/001_init.sql` to the real Supabase project, regenerate `src/lib/supabase.types.ts`, and run signed-in smoke validation.
+1. Add the final game to the shipped set.
+   - Build the module under `src/games/<id>`
+   - Register it in `src/games/registry.ts`
+   - Align or update the catalog entry in `src/data/Games.ts`
+   - Add the real thumbnail asset under `public/games/<id>/`
+   - Verify the end-of-game payload reports score, reward, and any stats needed for achievements/challenges/analytics
+2. Run signed-in QA against the final game and the shared systems.
+   - Verify auth, wallet updates, leaderboard writes, achievements, daily challenges, analytics ownership, queued sync retry, and sign-out/sign-in account reset
+3. Finish release-only operational polish.
+   - Publish the Vercel preview/production deployment runbook
+   - Decide whether placeholder leaderboard rows remain acceptable in production
+   - Add monitoring/error tracking if that is still part of launch scope
+4. Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned after any future SQL change.
 
 ## Docs To Ignore Unless You Need Deep History
 
@@ -63,6 +63,6 @@ These are not the right starting point for day-to-day execution:
 - `DOCS/UI_Review_and_Suggestions.md`
 - `DOCS/Test101.md`
 - `DOCS/projectSetup.md`
-- `DOCS/HacktivateNations Arcade – Product Requirements Document v2.md`
+- the Product Requirements document in `DOCS/`
 
 Use those only if you need historical context for a specific subsystem or product decision.

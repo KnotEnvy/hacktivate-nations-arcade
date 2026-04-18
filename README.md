@@ -1,12 +1,14 @@
 # HacktivateNations Arcade
 
-HacktivateNations Arcade is a Next.js + TypeScript arcade hub for modular retro mini-games. Players can move between games, earn a shared currency, unlock tiers, and optionally sync progress through Supabase.
+HacktivateNations Arcade is a Next.js + TypeScript arcade hub for modular retro mini-games. Players sign in, move between games, earn a shared currency, unlock tiers, and sync progression through Supabase.
 
 ## Current State
 
-- The arcade hub, progression loop, auth flow, and leaderboard plumbing are already implemented.
-- The live registry currently contains the shipped games. The broader catalog also includes roadmap entries that are now marked as coming soon in the UI.
-- PWA install/offline claims are intentionally disabled until the required assets and service worker surface are completed.
+- The arcade hub, progression loop, auth flow, trusted progression route, sync outbox, and leaderboard plumbing are already implemented.
+- `src/games/registry.ts` currently registers 16 playable games.
+- `src/data/Games.ts` still lists a broader 27-entry catalog, with the unregistered items rendered as coming soon in the UI.
+- The production UX is sign-in-first; the old guest gameplay/profile flow is no longer the intended path.
+- PWA install/offline claims are intentionally disabled until the required assets and service-worker surface are complete.
 
 ## Installation
 
@@ -36,35 +38,41 @@ SUPABASE_SERVICE_ROLE_KEY=... # server-only, never expose to the client
 
 Required files and services:
 
-- `src/lib/supabase.ts` initializes the browser client.
-- `src/lib/supabase.types.ts` contains generated database typings.
-- `src/services/SupabaseArcadeService.ts` centralizes profile, wallet, achievement, challenge, and leaderboard calls.
-- `src/hooks/useSupabaseAuth.ts` owns auth bootstrap and resend/sign-in flows.
-- `supabase/001_init.sql` provisions the expected schema, view, RPC, and RLS policies.
+- `src/lib/supabase.ts` initializes the browser client
+- `src/lib/supabase.types.ts` contains generated database typings
+- `src/services/SupabaseArcadeService.ts` centralizes profile, wallet, achievement, challenge, and leaderboard calls
+- `src/hooks/useSupabaseAuth.ts` owns auth bootstrap and auth actions
+- `supabase/001_init.sql` provisions the expected schema, views, RPCs, and RLS policies
 
-If Supabase env vars are absent, the arcade runs in guest mode with local-only persistence.
+After any SQL change, apply `supabase/001_init.sql` to the target project and regenerate `src/lib/supabase.types.ts`.
 
-## Game Development
+If Supabase env vars are absent or broken, auth is unavailable and the app remains behind the sign-in gate.
 
-1. Create a folder under `src/games/<id>`.
-2. Implement the `GameModule` interface or extend `src/games/shared/BaseGame.ts`.
-3. Register the game in `src/games/registry.ts`.
-4. Add a thumbnail under `public/games/<id>/<id>-thumb.svg`.
-5. Reuse shared services from `src/services` for input, audio, analytics, achievements, and currency.
-6. Run `npm run dev` and verify the game through the hub.
+## Adding The Final Game
+
+1. Create the game folder under `src/games/<id>`
+2. Implement the `GameModule` interface or extend `src/games/shared/BaseGame.ts`
+3. Register the game in `src/games/registry.ts`
+4. Align the catalog entry in `src/data/Games.ts`
+5. Add the thumbnail under `public/games/<id>/<id>-thumb.svg`
+6. Verify the end-of-game payload reports the score, reward, and any stats needed for shared progression/analytics
+7. Run the verification commands and test the game through the signed-in hub
+
+If you are replacing an existing coming-soon catalog entry, keep the id aligned across `src/data/Games.ts`, `src/games/registry.ts`, any thumbnail path, and any game-specific challenge or analytics references.
 
 ## Scripts
 
-- `npm run dev` starts the development server.
-- `npm run build` creates a production build.
-- `npm start` runs the production build.
-- `npm run lint` runs ESLint.
-- `npm run type-check` runs TypeScript without emitting files.
-- `npm test` runs Jest.
-- `npm run e2e` runs Playwright.
+- `npm run dev` starts the development server
+- `npm run build` creates a production build
+- `npm start` runs the production build
+- `npm run lint` runs ESLint
+- `npm run type-check` runs TypeScript without emitting files
+- `npm test -- --runInBand` runs Jest serially
+- `npm run e2e` runs Playwright
 
 ## Production Notes
 
-- Do not commit populated `.env` files.
-- Keep `SUPABASE_SERVICE_ROLE_KEY` out of the client bundle and deployment logs.
-- Treat `src/games/registry.ts` as the source of truth for what is actually playable.
+- Do not commit populated `.env` files
+- Keep `SUPABASE_SERVICE_ROLE_KEY` out of the client bundle and deployment logs
+- Treat `src/games/registry.ts` as the source of truth for what is actually playable
+- Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned

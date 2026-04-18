@@ -1,13 +1,15 @@
 # HacktivateNations Arcade - Action Plan
 
-Last updated: April 15, 2026
+Last updated: April 16, 2026
 
-This is the current execution checklist. It should reflect the live repo, not the original roadmap.
+This is the live execution checklist. It reflects the current repo state after the production-hardening pass, not the original roadmap.
 
 ## Completed Recently
 
 - [x] `npm run lint` passes
 - [x] `npm run type-check` passes
+- [x] `npm test -- --runInBand` passes
+- [x] `npm run e2e` passes
 - [x] `npm run build` passes
 - [x] Case-sensitive import and Windows-only TypeScript blockers were fixed
 - [x] Unregistered catalog games are now non-purchasable and non-launchable
@@ -18,57 +20,57 @@ This is the current execution checklist. It should reflect the live repo, not th
 - [x] Unused Zustand stores were removed
 - [x] Signed-in leaderboard submissions, game-session rewards, challenge reward claims, achievement reward claims, and tier/game unlock purchases now flow through `src/app/api/arcade/progression/route.ts`
 - [x] Daily challenge definitions now live in `src/lib/challenges.ts` and `ChallengeService` no longer depends on description string matching for live progress updates
-- [x] Focused Jest coverage was added for typed challenge progression and trusted progression validation helpers
 - [x] Failed signed-in sync/mutation writes now enqueue into `src/services/SupabaseSyncOutbox.ts` and replay automatically on reconnect / polling
 - [x] Large XP grants now level through every crossed threshold instead of stopping after one level
 - [x] GitHub Actions CI now runs type-check, lint, Jest, build, and Playwright via `.github/workflows/ci.yml`
 - [x] Signed-in Supabase hydration/sync/outbox orchestration was extracted from `ArcadeHub.tsx` into `src/hooks/useArcadeSupabaseSync.ts`
-- [x] Focused hook coverage now exists for owner-reset handling and queued Supabase sync replay
-- [x] Playwright config/tests were hardened so the smoke suite passes reliably under the local `npm run e2e` path
-- [x] Trusted `record-session` now evaluates gameplay-derived progression server-side and commits wallet/player-state/achievement/challenge/leaderboard writes through the atomic `public.commit_trusted_game_session(...)` RPC
+- [x] Trusted `record-session` now evaluates gameplay-derived progression server-side and commits through the atomic `public.commit_trusted_game_session(...)` RPC
 - [x] Focused API route coverage now exists for the atomic trusted session path, duplicate replay responses, and missing-RPC failures
 - [x] Signed-in sync status now surfaces offline/failed replay diagnostics and offers a manual retry action from the hub auth status area
+- [x] The main product flow now requires sign-in; the guest gameplay/profile path has been retired
+- [x] First-time signed-in accounts now hydrate clean default profile/player-state/wallet rows instead of inheriting stale local guest data
+- [x] The route-side RPC call now matches the live SQL function signature for `commit_trusted_game_session(...)`
+- [x] The wallet update ambiguity inside `supabase/001_init.sql` was fixed and signed-in session replay now works against the current schema
+- [x] Analytics storage is account-scoped and no longer leaks legacy guest metrics into signed-in profiles
+- [x] Focused auth/sync/analytics coverage now exists for the signed-in production model
 
 ## Current Priority
 
-### Platform Hardening
-- [~] Add server-side validation for economy, leaderboards, achievements, and challenge-sensitive writes.
-  - Current state: gameplay-derived trusted session progression is now validated server-side and committed atomically through the database RPC, not as route-level multi-writes.
-  - Remaining: expand server-derived coverage for progression that still originates outside trusted game-session metrics, such as non-session feature unlock flows.
-- [~] Add a real offline outbox/retry strategy for Supabase sync failures.
-  - Current state: signed-in profile/player-state sync, trusted challenge sync, reward claims, unlock purchases, and session records queue locally and replay automatically; queued trusted sessions now replay against an atomic DB commit with duplicate suppression; the hub now surfaces offline/failed replay diagnostics and a manual retry action.
-  - Remaining: validate the new RPC path against the real hosted Supabase project and decide whether a larger sync history/debug surface is worth adding before launch.
-- [~] Expand automated coverage for auth, persistence, unlocks, progression, and sync.
-  - Current state: service/lib coverage is solid, hook coverage exists for the extracted signed-in Supabase sync bridge, and route coverage now exists for the trusted progression API session path.
-  - Remaining: add broader auth and persistence integration coverage beyond the current focused hook/service tests.
-- [x] Add CI gates for lint, type-check, Jest, and Playwright.
+### Final Game Integration
 
-### Platform Consolidation
-- [~] Continue breaking `src/components/arcade/ArcadeHub.tsx` into focused hooks/components.
-  - Current state: unlock persistence lives in `src/hooks/useArcadeUnlockState.ts`, and signed-in Supabase hydration/sync/outbox ownership now lives in `src/hooks/useArcadeSupabaseSync.ts`.
-  - Remaining: move more reward-flow and end-of-game progression orchestration out of the hub.
-- [~] Replace string-matching challenge logic with typed requirement logic.
-  - Current state: daily challenge templates and live progress updates are typed.
-  - Remaining: finish the migration for any future non-daily/server-seeded challenge variants and trim more challenge/progression logic out of `ArcadeHub.tsx`.
-- [~] Tighten reward-flow ownership so progression-critical logic is not split awkwardly across services and hub code.
-  - Current state: trusted sync ownership is no longer embedded across multiple large `ArcadeHub` effects.
-  - Remaining: end-of-game reward, achievement, and challenge completion orchestration still mostly lives in the hub.
-- [ ] Decide whether placeholder leaderboard rows remain acceptable in production.
+- [ ] Decide whether the final ship target uses an existing coming-soon catalog id or introduces a new id
+- [ ] Implement the final game under `src/games/<id>`
+- [ ] Register the final game in `src/games/registry.ts`
+- [ ] Align the catalog entry in `src/data/Games.ts` and replace the placeholder thumbnail with a real asset under `public/games/<id>/`
+- [ ] Verify the game end payload reports score, reward, and any game-specific stats needed for shared progression, challenges, or analytics
+- [ ] Add or update targeted tests if the game introduces new shared logic or persistence surfaces
 
-### Product / Launch Readiness
-- [ ] Rotate Supabase keys if any prior real values were ever shared or committed outside the current git index.
-- [ ] Provision and validate a real production Supabase project and apply `supabase/001_init.sql`.
-  - Use `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` for the current apply + verification sequence.
-- [ ] Add error tracking and deploy-time monitoring.
-- [ ] Reintroduce PWA metadata only after shipping real icons, screenshots, and service-worker/offline behavior.
-- [~] Publish deployment/runbook steps for Vercel preview and production.
-  - Current state: the Supabase apply/test runbook now exists at `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md`.
-  - Remaining: publish the matching Vercel preview/production deployment runbook.
+### Release Validation
 
-## Lower Priority / Post-Beta
+- [ ] Run the local verification gates again after the final game lands: `npm run type-check`, `npm run lint`, `npm test -- --runInBand`, `npm run build`, `npm run e2e`
+- [ ] Smoke test signed-in flows with real accounts: auth, play session, wallet, leaderboard, achievements, challenges, analytics, sign-out/sign-in reset
+- [ ] Simulate dropped-network replay and verify queued sync retry still drains cleanly
+- [ ] Decide whether placeholder leaderboard rows remain acceptable in production
+- [ ] Publish the matching Vercel preview/production deployment runbook
+- [ ] Add error tracking and deploy-time monitoring if still required for launch
 
-- [ ] Move challenge generation to a server-seeded model with stable schedules.
-- [ ] Add analytics/feature-flag integration.
-- [ ] Add i18n scaffolding.
-- [ ] Revisit economy tuning with live analytics.
-- [ ] Decide on realtime/multiplayer direction.
+### Ongoing Hardening
+
+- [~] Continue breaking `src/components/arcade/ArcadeHub.tsx` into focused hooks/components
+  - Current state: unlock persistence and signed-in Supabase sync ownership are already extracted
+  - Remaining: more end-of-game orchestration and reward-flow logic can still move out of the hub
+- [~] Expand automated coverage for auth, persistence, unlocks, progression, and sync
+  - Current state: route/service/hook coverage is solid for the hardened paths
+  - Remaining: broader integration coverage around end-to-end signed-in flows would still be valuable
+- [~] Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned
+  - Current state: the current hosted schema supports the atomic trusted session path
+  - Remaining: any future SQL edit must be followed by a live apply, type regeneration, and a replay test
+- [ ] Rotate Supabase keys if any prior real values were ever shared or committed outside the current git index
+
+## Lower Priority / Post-Launch
+
+- [ ] Move challenge generation to a server-seeded model with stable schedules
+- [ ] Add external analytics and feature-flag integration beyond the current local/account-scoped metrics
+- [ ] Add i18n scaffolding
+- [ ] Revisit economy tuning with real player data
+- [ ] Decide on realtime/multiplayer direction
