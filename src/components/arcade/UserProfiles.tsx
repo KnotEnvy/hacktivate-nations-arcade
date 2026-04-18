@@ -3,21 +3,17 @@
 
 import { useEffect, useState } from 'react';
 import { MAX_LEVEL, UserProfile as UserProfileType, UserStats, UserService } from '@/services/UserServices';
-import { Analytics } from '@/services/Analytics';
 
 interface UserProfileProps {
   userService: UserService;
-  analyticsOwnerId?: string | null;
 }
 
-export function UserProfile({ userService, analyticsOwnerId }: UserProfileProps) {
+export function UserProfile({ userService }: UserProfileProps) {
   const [profile, setProfile] = useState<UserProfileType>(userService.getProfile());
   const [stats, setStats] = useState<UserStats>(userService.getStats());
   const [showAvatarSelect, setShowAvatarSelect] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [insights, setInsights] = useState<ReturnType<Analytics['getPlayerInsights']> | null>(null);
-  const [metrics, setMetrics] = useState<ReturnType<Analytics['getPlayerMetrics']> | null>(null);
 
   useEffect(() => {
     const unsubscribe = userService.onUserDataChanged((newProfile, newStats) => {
@@ -31,14 +27,6 @@ export function UserProfile({ userService, analyticsOwnerId }: UserProfileProps)
   useEffect(() => {
     setMounted(true);
   }, []);
-
-  useEffect(() => {
-    const analytics = new Analytics(analyticsOwnerId);
-    void analytics.init().then(() => {
-      setInsights(analytics.getPlayerInsights());
-      setMetrics(analytics.getPlayerMetrics());
-    });
-  }, [analyticsOwnerId]);
 
   const isMaxLevel = profile.level >= MAX_LEVEL;
   const currentLevelXp = UserService.experienceForLevel(profile.level);
@@ -180,43 +168,6 @@ export function UserProfile({ userService, analyticsOwnerId }: UserProfileProps)
               ? 'Last active N/A'
               : `Last active ${profile.lastActiveAt.toLocaleDateString()} at ${profile.lastActiveAt.toLocaleTimeString()}`}
           </div>
-          {insights && metrics && (
-            <div className="mt-4 space-y-2 text-sm">
-              <h4 className="text-purple-400 font-semibold text-center">Analytics</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300">{insights.skillLevel}</div>
-                  <div className="text-gray-400 text-xs">Skill</div>
-                </div>
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300 capitalize">{insights.preferredGameLength}</div>
-                  <div className="text-gray-400 text-xs">Pref Length</div>
-                </div>
-                <div className="bg-gray-800 p-2 rounded-lg col-span-2">
-                  <div className="font-bold text-purple-300">{insights.mostPlayedGame}</div>
-                  <div className="text-gray-400 text-xs">Top Game</div>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300">{metrics.gamesPlayed}</div>
-                  <div className="text-gray-400 text-xs">Games Played</div>
-                </div>
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300">{Math.floor(metrics.totalPlayTime / 60000)}m</div>
-                  <div className="text-gray-400 text-xs">Play Time</div>
-                </div>
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300">{Math.round(metrics.averageSessionLength / 60000)}m</div>
-                  <div className="text-gray-400 text-xs">Avg Session</div>
-                </div>
-                <div className="bg-gray-800 p-2 rounded-lg">
-                  <div className="font-bold text-purple-300">{metrics.favoriteGame}</div>
-                  <div className="text-gray-400 text-xs">Favorite Game</div>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
     </div>

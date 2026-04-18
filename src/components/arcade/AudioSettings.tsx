@@ -2,6 +2,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { PLAYABLE_GAME_CATALOG } from '@/lib/gameCatalog';
 import { AudioManager } from '@/services/AudioManager';
 import { AchievementService } from '@/services/AchievementService';
 
@@ -159,19 +160,35 @@ const saveGameMusicPrefs = (prefs: Record<string, GameMusicPreference>): void =>
   }
 };
 
-// List of games for the selector (subset for UI)
-const GAME_LIST = [
-  { id: 'runner', name: 'Endless Runner', icon: '🏃' },
-  { id: 'snake', name: 'Snake', icon: '🐍' },
-  { id: 'breakout', name: 'Breakout', icon: '🧱' },
-  { id: 'minesweeper', name: 'Minesweeper', icon: '💣' },
-  { id: 'memory', name: 'Memory Match', icon: '🧠' },
-  { id: 'tetris', name: 'Tetris', icon: '🟦' },
-  { id: 'space_invaders', name: 'Space Invaders', icon: '👾' },
-  { id: 'pong', name: 'Pong', icon: '🏓' },
-  { id: 'sudoku', name: 'Sudoku', icon: '🔢' },
-  { id: 'crossword', name: 'Crossword', icon: '📝' },
-];
+// Game selector is derived from the live shipped catalog to avoid stale ids.
+const GAME_ICONS: Record<string, string> = {
+  runner: 'RUN',
+  snake: 'SNK',
+  minesweeper: 'MIN',
+  breakout: 'BRK',
+  memory: 'MEM',
+  tapdodge: 'TAP',
+  puzzle: 'PUZ',
+  'color-drop': 'CLR',
+  'tower-builder': 'TWR',
+  'mini-golf': 'GLF',
+  bubble: 'BUB',
+  bowling: 'BWL',
+  space: 'SPC',
+  asteroids: 'AST',
+  'frog-hop': 'FRG',
+  'platform-adventure': 'ADV',
+  'speed-racer': 'SPD',
+};
+
+const GAME_LIST = PLAYABLE_GAME_CATALOG
+  .slice()
+  .sort((left, right) => left.tier - right.tier || left.title.localeCompare(right.title))
+  .map(game => ({
+    id: game.id,
+    name: game.title,
+    icon: GAME_ICONS[game.id] ?? 'GAME',
+  }));
 
 // ============= SHAREABLE CODE SYSTEM =============
 

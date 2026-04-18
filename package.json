@@ -18,20 +18,14 @@
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install",
-    "e2e:report": "playwright show-report",
-    "analyze": "cross-env ANALYZE=true next build"
+    "e2e:report": "playwright show-report"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",
-    "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "framer-motion": "^12.19.2",
-    "glsl-canvas-js": "^0.2.9",
-    "lucide-react": "^0.517.0",
     "next": "15.3.3",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zustand": "^5.0.5"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

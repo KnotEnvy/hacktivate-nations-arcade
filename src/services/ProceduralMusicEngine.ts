@@ -518,7 +518,7 @@ export const GAME_TRACK_MAPPING: Record<string, { primary: string; secondary: st
   'color-drop': { primary: 'puzzle_discovery', secondary: 'casual_playful' },
   'tower-builder': { primary: 'casual_playful', secondary: 'arcade_bounce' },
   'mini-golf': { primary: 'casual_chill', secondary: 'casual_playful' },
-  'bubble-pop': { primary: 'casual_playful', secondary: 'arcade_bounce' },
+  'bubble': { primary: 'casual_playful', secondary: 'arcade_bounce' },
 
   // Tier 2
   'space': { primary: 'space_battle', secondary: 'space_exploration' },

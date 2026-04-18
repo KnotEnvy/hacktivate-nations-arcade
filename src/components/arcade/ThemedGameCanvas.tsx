@@ -11,6 +11,13 @@ import { AudioManager } from '@/services/AudioManager';
 import { AchievementService } from '@/services/AchievementService';
 import { getGameTheme, GameTheme } from '@/lib/gameThemes';
 
+const EMPTY_SCORE: GameScore = {
+  score: 0,
+  pickups: 0,
+  timePlayedMs: 0,
+  coinsEarned: 0,
+};
+
 interface ThemedGameCanvasProps {
   game: GameModule | null;
   currencyService: CurrencyService;
@@ -39,20 +46,26 @@ export function ThemedGameCanvas({
   );
 
   const [gameState, setGameState] = useState<'loading' | 'ready' | 'playing' | 'paused' | 'ended'>('loading');
+  const [currentScore, setCurrentScore] = useState<GameScore>(EMPTY_SCORE);
   const hasHandledGameOverRef = useRef(false);
   const theme: GameTheme = game ? getGameTheme(game.manifest.id) : getGameTheme('default');
 
   useEffect(() => {
     if (isInitialized && game) {
       setGameState('ready');
+      setCurrentScore(game.getScore?.() || EMPTY_SCORE);
     }
   }, [isInitialized, game]);
 
   useEffect(() => {
     hasHandledGameOverRef.current = false;
+    setCurrentScore(game?.getScore?.() || EMPTY_SCORE);
   }, [game]);
 
   useEffect(() => {
+    // Once a run has ended, never allow auto-transitions to flip the state
+    // back to playing/paused — that race was the cause of the blank end screen.
+    if (gameState === 'ended') return;
     if (isRunning) {
       setGameState('playing');
     } else if (gameState === 'playing') {
@@ -65,6 +78,7 @@ export function ThemedGameCanvas({
     if (!game || !isInitialized) return;
 
     const checkGameOver = () => {
+      setCurrentScore(game.getScore?.() || EMPTY_SCORE);
       const isGameOver = game.isGameOver?.();
       if (isGameOver) {
         if (hasHandledGameOverRef.current) return;
@@ -82,6 +96,30 @@ export function ThemedGameCanvas({
     const interval = setInterval(checkGameOver, 100);
     return () => clearInterval(interval);
   }, [game, isInitialized, stopGame, onGameEnd]);
+
+  useEffect(() => {
+    if (!game || !isInitialized) {
+      setCurrentScore(EMPTY_SCORE);
+      return;
+    }
+
+    const syncScore = () => {
+      setCurrentScore(previous => {
+        const next = game.getScore?.() || EMPTY_SCORE;
+        if (
+          previous.score === next.score &&
+          previous.coinsEarned === next.coinsEarned
+        ) {
+          return previous;
+        }
+        return next;
+      });
+    };
+
+    syncScore();
+    const interval = window.setInterval(syncScore, 100);
+    return () => window.clearInterval(interval);
+  }, [game, isInitialized]);
 
   const handleStart = () => {
     if (gameState === 'ended') {
@@ -106,8 +144,6 @@ export function ThemedGameCanvas({
       </div>
     );
   }
-
-  const currentScore = game.getScore?.() || { score: 0, coinsEarned: 0 };
 
   return (
     <div 

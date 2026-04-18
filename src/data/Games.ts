@@ -154,11 +154,11 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'speed-racer',
     title: 'Speed Racer',
-    thumbnail: '/games/coming-soon-thumb.svg',
+    thumbnail: '/games/speed-racer/speed-racer-thumb.svg',
     inputSchema: ['keyboard'],
     assetBudgetKB: 130,
     tier: 2,
-    description: 'Coming soon!'
+    description: 'Spy-Hunter style vehicular combat racer. Dodge enemies, collect weapons, survive the highway.'
   },
 
   // Tier 3

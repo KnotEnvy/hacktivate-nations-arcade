@@ -6,10 +6,9 @@ import { Challenge, ChallengeService } from '@/services/ChallengeService';
 
 interface DailyChallengesProps {
   challengeService: ChallengeService;
-  onChallengeComplete?: (challenge: Challenge) => void;
 }
 
-export function DailyChallenges({ challengeService, onChallengeComplete }: DailyChallengesProps) {
+export function DailyChallenges({ challengeService }: DailyChallengesProps) {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
 
   useEffect(() => {
@@ -17,15 +16,11 @@ export function DailyChallenges({ challengeService, onChallengeComplete }: Daily
     const unsubscribe = challengeService.onChallengesChanged((newChallenges) => {
       setChallenges(newChallenges);
     });
-    const unsubscribeComplete = challengeService.onChallengeCompleted((challenge) => {
-      onChallengeComplete?.(challenge);
-    });
 
     return () => {
       unsubscribe();
-      unsubscribeComplete();
     };
-  }, [challengeService, onChallengeComplete]);
+  }, [challengeService]);
 
   const dailyChallenges = challenges.filter(c => c.type === 'daily');
   

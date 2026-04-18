@@ -1,6 +1,7 @@
 ﻿// ===== src/components/arcade/ArcadeHub.tsx =====
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { GameModule } from '@/lib/types';
 import { gameLoader } from '@/games/registry';
@@ -18,7 +19,6 @@ import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
 import { AnalyticsOverview } from './AnalyticsOverview';
 import { OnboardingOverlay } from './OnboardingOverlay';
-import { AudioSettings } from './AudioSettings';
 import { AuthModal } from '@/components/auth/AuthModal';
 import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
@@ -37,6 +37,11 @@ import {
   isDefaultUnlockedGame,
   isGameUnlocked,
 } from '@/lib/unlocks';
+
+const AudioSettings = dynamic(
+  () => import('./AudioSettings').then(module => module.AudioSettings),
+  { ssr: false }
+);
 
 interface GameEndData {
   score?: number;
@@ -152,6 +157,8 @@ export function ArcadeHub() {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAudioSettings, setShowAudioSettings] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const audioInitPromiseRef = useRef<Promise<void> | null>(null);
+  const audioInitializedRef = useRef(false);
   const addNotification = useCallback((type: 'achievement' | 'challenge' | 'levelup', title: string, message: string) => {
     const notification = {
       id: `${Date.now()}-${Math.random()}`,
@@ -200,6 +207,20 @@ export function ArcadeHub() {
       audioManager.stopMusic(0.2);
     }
   }, [audioManager, session, showHub]);
+
+  const ensureAudioInitialized = useCallback(async () => {
+    if (audioInitializedRef.current) {
+      return;
+    }
+
+    if (!audioInitPromiseRef.current) {
+      audioInitPromiseRef.current = audioManager.init().then(() => {
+        audioInitializedRef.current = true;
+      });
+    }
+
+    await audioInitPromiseRef.current;
+  }, [audioManager]);
 
   const {
     unlockedTiers,
@@ -326,15 +347,6 @@ export function ArcadeHub() {
     challengeService.init();
     achievementService.init();
     userService.init();
-    
-    // Initialize audio manager
-    audioManager.init().then(() => {
-      // Start hub music with auto-rotation after a brief delay
-      // Tracks will automatically change every 4 minutes for variety
-      setTimeout(() => {
-        audioManager.startHubMusicRotation(4); // 4 minutes between track changes
-      }, 1000);
-    });
 
     setCurrentCoins(currencyService.getCurrentCoins());
 
@@ -414,6 +426,30 @@ export function ArcadeHub() {
   ]);
 
   useEffect(() => {
+    if (!showHub || audioInitializedRef.current) {
+      return;
+    }
+
+    let active = true;
+    const unlockAudio = () => {
+      void ensureAudioInitialized().then(() => {
+        if (active && showHub && !currentGame) {
+          audioManager.startHubMusicRotation(4);
+        }
+      });
+    };
+
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+    window.addEventListener('keydown', unlockAudio, { once: true });
+
+    return () => {
+      active = false;
+      window.removeEventListener('pointerdown', unlockAudio);
+      window.removeEventListener('keydown', unlockAudio);
+    };
+  }, [audioManager, currentGame, ensureAudioInitialized, showHub]);
+
+  useEffect(() => {
     const applyPerkModifiers = () => {
       const modifiers = userService.getPerkModifiers();
       currencyService.setRewardModifiers({
@@ -460,6 +496,7 @@ export function ArcadeHub() {
   const handleGameSelect = async (gameId: string) => {
     try {
       if (!requireSignedIn()) return;
+      await ensureAudioInitialized();
       audioManager.playSound('click');
       if (!isGameImplemented(gameId)) return;
       if (!isGameUnlocked(gameId, unlockedTiers, unlockedGames)) return;
@@ -519,6 +556,11 @@ export function ArcadeHub() {
       return;
     }
 
+    queueSyncOperation({
+      kind: 'trusted-tier-unlock',
+      payload: { tier },
+    });
+    applyLocalUnlock();
   };
 
   const handleGameUnlock = async (gameId: string, cost: number) => {
@@ -574,6 +616,11 @@ export function ArcadeHub() {
       return;
     }
 
+    queueSyncOperation({
+      kind: 'trusted-game-unlock',
+      payload: { gameId },
+    });
+    applyLocalUnlock();
   };
 
   const handleBackToHub = () => {
@@ -584,7 +631,9 @@ export function ArcadeHub() {
     setActiveTab('games');
 
     // Return to hub music with auto-rotation
-    audioManager.startHubMusicRotation(4);
+    if (audioInitializedRef.current) {
+      audioManager.startHubMusicRotation(4);
+    }
   };
 
   const handleChallengeComplete = useCallback(
@@ -654,6 +703,27 @@ export function ArcadeHub() {
         return;
       }
 
+      queueSyncOperation({
+        kind: 'trusted-challenge-claim',
+        payload: {
+          challengeId: challenge.id,
+          progress: challenge.progress,
+        },
+      });
+      const current = userService.getStats().challengesCompleted;
+      const modifiers = userService.getPerkModifiers();
+      const reward = Math.floor(
+        challenge.reward * modifiers.challengeRewardMultiplier
+      );
+      audioManager.playSound('success');
+      addNotification(
+        'challenge',
+        'Challenge Complete!',
+        `${challenge.title} - +${reward} coins`
+      );
+      currencyService.addCoins(reward, `challenge_${challenge.id}`);
+      userService.updateStats({ challengesCompleted: current + 1 });
+      applyDailyChallengeBonus();
     },
     [
       addNotification,
@@ -1279,10 +1349,7 @@ export function ArcadeHub() {
                     />
                   </div>
                   <div>
-                    <UserProfile
-                      userService={userService}
-                      analyticsOwnerId={session?.user.id}
-                    />
+                    <UserProfile userService={userService} />
                   </div>
                 </>
               )}
@@ -1302,10 +1369,7 @@ export function ArcadeHub() {
                     />
                   </div>
                   <div>
-                    <UserProfile
-                      userService={userService}
-                      analyticsOwnerId={session?.user.id}
-                    />
+                    <UserProfile userService={userService} />
                   </div>
                 </>
               )}
@@ -1313,16 +1377,10 @@ export function ArcadeHub() {
               {activeTab === 'challenges' && (
                 <>
                   <div className="lg:col-span-2">
-                    <DailyChallenges
-                      challengeService={challengeService}
-                      onChallengeComplete={handleChallengeComplete}
-                    />
+                    <DailyChallenges challengeService={challengeService} />
                   </div>
                   <div>
-                    <UserProfile
-                      userService={userService}
-                      analyticsOwnerId={session?.user.id}
-                    />
+                    <UserProfile userService={userService} />
                   </div>
                 </>
               )}
@@ -1333,10 +1391,7 @@ export function ArcadeHub() {
                     <AchievementPanel achievementService={achievementService} />
                   </div>
                   <div>
-                    <UserProfile
-                      userService={userService}
-                      analyticsOwnerId={session?.user.id}
-                    />
+                    <UserProfile userService={userService} />
                   </div>
                 </>
               )}
@@ -1347,17 +1402,13 @@ export function ArcadeHub() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <DailyChallenges
                         challengeService={challengeService}
-                        onChallengeComplete={handleChallengeComplete}
                       />
                       <AchievementPanel achievementService={achievementService} />
                       <AnalyticsOverview analyticsOwnerId={session?.user.id} />
                     </div>
                   </div>
                   <div>
-                    <UserProfile
-                      userService={userService}
-                      analyticsOwnerId={session?.user.id}
-                    />
+                    <UserProfile userService={userService} />
                   </div>
                 </>
               )}
