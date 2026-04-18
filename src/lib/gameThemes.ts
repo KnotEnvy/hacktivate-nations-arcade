@@ -199,6 +199,39 @@ export const GAME_THEMES: Record<string, GameTheme> = {
     },
   },
 
+  'speed-racer': {
+    id: 'speed-racer',
+    name: 'Synthwave Highway',
+    colors: {
+      primary: '#FF0080',      // Deep neon pink (distinct from puzzle's #FF1493)
+      secondary: '#00FFFF',    // Electric cyan
+      accent: '#FFFF00',       // Headlight yellow
+      background: '#0D001A',   // Deep purple/black
+      surface: '#1A0033',      // Dark purple surface
+      text: '#FFFFFF',
+      textSecondary: '#C0C0FF',
+      success: '#39FF14',
+      warning: '#FFD700',
+      error: '#FF3030',
+    },
+    fonts: {
+      primary: 'var(--font-orbitron)',
+      secondary: 'var(--font-exo)',
+      mono: 'var(--font-source-code-pro)',
+    },
+    effects: {
+      glow: true,
+      particles: true,
+      scanlines: true,
+      chromatic: true,
+    },
+    animations: {
+      fast: '0.1s ease-out',
+      medium: '0.25s ease-in-out',
+      slow: '0.5s ease-in-out',
+    },
+  },
+
   // Default theme for unthemed games
   default: {
     id: 'default',
