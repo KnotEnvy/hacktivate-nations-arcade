@@ -284,6 +284,7 @@ const HARBOR_RUN: SectionDef = {
     civilianSpawnInterval: 2.4,
     vanIntervalMin: 17,
     vanIntervalMax: 24,
+    enemyVisual: 'jetboat',
   },
 };
 

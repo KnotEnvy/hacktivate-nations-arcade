@@ -292,8 +292,10 @@ export class SpeedRacerGame extends BaseGame {
   }
 
   private applyTerrainHandling(): void {
-    const profile = TERRAIN_HANDLING[this.currentSection.terrain ?? 'road'];
+    const terrain = this.currentSection.terrain ?? 'road';
+    const profile = TERRAIN_HANDLING[terrain];
     this.player.setHandling(profile.steerMul, profile.decelMul);
+    this.player.setVisual(terrain === 'water' ? 'boat' : 'car');
   }
 
   private armBanner(section: SectionDef): void {

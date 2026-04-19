@@ -125,11 +125,9 @@ PLAYER:
 
 ## 6. Deferred v1 polish (tweaks flagged during playtest)
 
-> **TBD — fill in before handoff.** The product owner identified several gameplay tweaks during v1 playtest that should land before v2 scope begins. List them here with enough detail (symptom + desired behavior) for the next team to execute without a re-test pass.
+**Status: intentionally deferred past v2.** Product owner reviewed the v1 build and confirmed the outstanding tweaks were "mainly cosmetic and minor" — not gating for the v2 scope below. The v2 team built §7.1–§7.8 directly without re-litigating v1 polish, and v3 handoff inherits this same posture.
 
-- [ ] _add tweak_
-- [ ] _add tweak_
-- [ ] _add tweak_
+If you want to revisit, fresh playtest is the right starting point — the section progression, lives system, and terrain handling that landed in v2 changed the moment-to-moment feel enough that v1 polish notes may no longer apply. See `SPEED-RACER-V3-HANDOFF.md` for the current state of the codebase.
 
 ---
 

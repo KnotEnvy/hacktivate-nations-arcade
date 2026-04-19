@@ -32,7 +32,12 @@ All §7 v2 scope items from the v2 doc are now in. v1 invariants (recap flow, wo
 
 **Extra lives (§7.5).** `STARTING_LIVES = 1`, `MAX_LIVES = 5`. `LIFE_BONUS_SCORES = [10000, 25000, 50000, 100000]` — each crossed threshold awards +1 life (capped). `triggerDeath` decrements when `lives > 1` and `cause !== 'self_end'` (ESC always ends the run), then calls `respawn()` which clears enemies/projectiles/bombs, drops the combo, resets `civiliansLost`, and arms `RESPAWN_INVULN_DURATION = 2.0s` of invulnerability. Player flickers during invuln (12 Hz). UI: 5 small car icons (`renderLivesIcons`); red vignette `LIFE LOST` overlay (`renderLifeLostOverlay`); gold pulse `EXTRA LIFE` overlay (`renderExtraLifeOverlay`).
 
-**Touch controls (§7.6).** Manifest is now `inputSchema: ['keyboard', 'touch']`. `systems/TouchControls.ts` renders a translucent on-canvas D-pad (left side) + FIRE circle + WEAPON pill (right side). Layout is canvas-space (800×600). Auto-hides until first touch is observed so desktop play stays uncluttered. The game ORs `tc.leftHeld()` etc. into a tiny `DirectionalInput` adapter passed to `player.update()`. Secondary fire is edge-triggered via `tc.consumeSecondaryPress()` so a held finger doesn't burn ammo.
+**Touch controls (§7.6).** Manifest is now `inputSchema: ['keyboard', 'touch']` and the catalog entry in `src/data/Games.ts` matches. `systems/TouchControls.ts` renders a translucent on-canvas D-pad (left side) + FIRE circle + WEAPON pill (right side). Layout is canvas-space (800×600). Auto-hides until first touch is observed so desktop play stays uncluttered. The game ORs `tc.leftHeld()` etc. into a tiny `DirectionalInput` adapter passed to `player.update()`. Secondary fire is edge-triggered via `tc.consumeSecondaryPress()` so a held finger doesn't burn ammo.
+
+**Terrain visuals (§7 finish pass).** Player and enemies now swap sprites on water sections so the section feels like a different vehicle, not just floatier handling.
+- `PlayerCar` gained `PlayerVisual = 'car' | 'boat'` and `setVisual(visual)`. `applyTerrainHandling()` switches to `'boat'` whenever `terrain === 'water'`. Boat sprite has trailing wake foam, pointed bow hull, cyan waterline glow, twin bow guns, and a stern outboard motor. AI/physics are unchanged — purely a render swap.
+- `EnemyCar` gained `EnemyVisual = 'car' | 'jetboat'` (4th constructor param, defaults `'car'`). Jet-boat render echoes type-specific accents (ram bow prongs, armored hull plating + turret, shooter stern gun) so silhouette still telegraphs threat. AI is identical to the road-car variants.
+- `EnemySpawner` exposes `enemyVisual: EnemyVisual` on `SpawnerOptions`. `HARBOR_RUN` sets `enemyVisual: 'jetboat'`. `configure()` defaults `enemyVisual` back to `'car'` on every section change unless the new section explicitly opts in — prevents jet-boat sprite leak when advancing past harbor.
 
 **Bespoke daily challenges (§7.7).** 6 templates added in `src/lib/challenges.ts` — all `gameId: 'speed-racer'`, `aggregation: 'max'`. Metric union extended with `enemies_destroyed | van_pickups | sections_cleared`. `ArcadeHub.tsx` updates progress for these inside the `selectedGameId === 'speed-racer'` block.
 
@@ -60,8 +65,8 @@ src/games/speed-racer/
 │   ├── secondaryWeapons.ts
 │   └── sections.ts                # NEW — SectionDef, palette, terrain, SECTIONS array
 ├── entities/
-│   ├── PlayerCar.ts               # + setHandling(steerMul, decelMul); takes DirectionalInput
-│   ├── EnemyCar.ts
+│   ├── PlayerCar.ts               # + setHandling/setVisual; takes DirectionalInput; renderBoat()
+│   ├── EnemyCar.ts                # + visual: 'car' | 'jetboat'; renderJetboat()
 │   ├── Civilian.ts
 │   ├── WeaponVan.ts
 │   ├── Projectile.ts
@@ -158,10 +163,11 @@ Bomb Chopper is the only boss. Add 1–2 more on the same `BossSpawner` schedule
 `BossSpawner` already owns the cooldown; extend it with a `pickBoss()` weighted picker and a small registry of boss classes that share `update / render / getBounds / takeHit`.
 
 ### 5.3 Boat/Ice gameplay deepening
-Current water + ice sections only modify steering and visuals. Could add:
-- **Water-only enemies** (jet-boats with wake trails). Add to `ENEMY_CONFIGS` and have `EnemySpawner.configure` accept an `enemyTypes` whitelist (already does — just plumb new types).
+Current water + ice sections modify steering and visuals (player swaps to boat, enemies to jet-boats on water). Visual differentiation is in; **gameplay** differentiation is still shallow. Could add:
+- **Water-unique enemy AI** — jet-boats currently share the road-car AI behind a sprite swap. Add an aquatic variant (e.g. weaving sine-path patroller, depth-charge dropper) by introducing a new `EnemyType` in `ENEMY_CONFIGS` and gating it via the existing `enemyTypes` whitelist on `SpawnerOptions`.
 - **Ice patches** — discrete hazards that briefly zero out `decelMul` until you cross. Could reuse the `Hazard` system.
 - **Snowfall as visibility nerf** — vignette + reduced reticle range. Would need a small `WeatherSystem` (mentioned in the v2 doc, never built).
+- **Wake/wave hazards** — moving foam streaks on water that nudge the player laterally; ice cracks on frost pass that telegraph a slip.
 
 ### 5.4 Section-exit reward
 Right now clearing a section is just a banner + slight shake + powerup chime. Consider:

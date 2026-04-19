@@ -1,4 +1,4 @@
-import { EnemyCar, EnemyType } from '../entities/EnemyCar';
+import { EnemyCar, EnemyType, EnemyVisual } from '../entities/EnemyCar';
 import { Civilian } from '../entities/Civilian';
 import { Projectile } from '../entities/Projectile';
 import { WeaponVan } from '../entities/WeaponVan';
@@ -16,6 +16,9 @@ export interface SpawnerOptions {
   civilianSpawnInterval: number; // independent civilian timer
   vanIntervalMin: number;
   vanIntervalMax: number;
+  // Render mode for enemies — sections set this to 'jetboat' on water.
+  // AI is unchanged; only the sprite differs.
+  enemyVisual: EnemyVisual;
 }
 
 export class EnemySpawner {
@@ -34,6 +37,7 @@ export class EnemySpawner {
     civilianSpawnInterval: 2.2,
     vanIntervalMin: 22,
     vanIntervalMax: 35,
+    enemyVisual: 'car',
   };
 
   reset(): void {
@@ -47,7 +51,10 @@ export class EnemySpawner {
   }
 
   configure(opts: Partial<SpawnerOptions>): void {
-    this.opts = { ...this.opts, ...opts };
+    // enemyVisual defaults back to 'car' on each section change unless the
+    // section explicitly opts in. Otherwise advancing from HARBOR_RUN back to
+    // a road section would inherit jetboat sprites.
+    this.opts = { ...this.opts, enemyVisual: 'car', ...opts };
   }
 
   update(dt: number, playerSpeed: number, playerX: number, playerY: number): void {
@@ -122,7 +129,7 @@ export class EnemySpawner {
       const x = ROAD.X_MIN + laneWidth * (lane + 0.5);
       if (!this.isLaneBlocked(x, laneWidth)) {
         const type = this.pickType();
-        this.enemies.push(new EnemyCar(type, x, SPAWN_Y));
+        this.enemies.push(new EnemyCar(type, x, SPAWN_Y, this.opts.enemyVisual));
         return;
       }
     }

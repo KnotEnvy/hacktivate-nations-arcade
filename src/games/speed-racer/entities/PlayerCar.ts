@@ -7,6 +7,8 @@ export interface DirectionalInput {
   isDownPressed(): boolean;
 }
 
+export type PlayerVisual = 'car' | 'boat';
+
 export class PlayerCar {
   x: number;
   y: number;
@@ -15,6 +17,8 @@ export class PlayerCar {
   // Handling multipliers — sections with water/ice terrain reduce traction.
   private steerMul = 1;
   private decelMul = 1;
+  private visual: PlayerVisual = 'car';
+  private wakeT = 0; // accumulator for boat wake animation
 
   readonly width = PLAYER.WIDTH;
   readonly height = PLAYER.HEIGHT;
@@ -30,11 +34,17 @@ export class PlayerCar {
     this.speed = PLAYER.BASE_SPEED;
     this.steerMul = 1;
     this.decelMul = 1;
+    this.visual = 'car';
+    this.wakeT = 0;
   }
 
   setHandling(steerMul: number, decelMul: number): void {
     this.steerMul = steerMul;
     this.decelMul = decelMul;
+  }
+
+  setVisual(visual: PlayerVisual): void {
+    this.visual = visual;
   }
 
   getBounds(): { x: number; y: number; w: number; h: number } {
@@ -86,9 +96,19 @@ export class PlayerCar {
     } else if (this.speed > targetSpeed) {
       this.speed = Math.max(targetSpeed, this.speed - PLAYER.SPEED_DECEL * dt);
     }
+
+    this.wakeT += dt * (1 + this.speed / PLAYER.BOOST_SPEED);
   }
 
   render(ctx: CanvasRenderingContext2D): void {
+    if (this.visual === 'boat') {
+      this.renderBoat(ctx);
+      return;
+    }
+    this.renderCar(ctx);
+  }
+
+  private renderCar(ctx: CanvasRenderingContext2D): void {
     const x = this.x - this.width / 2;
     const y = this.y - this.height / 2;
     const w = this.width;
@@ -153,6 +173,105 @@ export class PlayerCar {
     }
 
     ctx.restore();
+  }
+
+  private renderBoat(ctx: CanvasRenderingContext2D): void {
+    const x = this.x - this.width / 2;
+    const y = this.y - this.height / 2;
+    const w = this.width;
+    const h = this.height;
+
+    ctx.save();
+
+    // Trailing wake — two foam streaks behind the hull, animated
+    const wakeAlpha = 0.45;
+    for (let i = 0; i < 5; i++) {
+      const t = (this.wakeT * 1.6 + i * 0.18) % 1;
+      const yy = y + h + 6 + t * 50;
+      const spread = 4 + t * 18;
+      ctx.globalAlpha = wakeAlpha * (1 - t);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(this.x - spread - 2, yy, 3, 2);
+      ctx.fillRect(this.x + spread - 1, yy, 3, 2);
+    }
+    ctx.globalAlpha = 1;
+
+    // Hull shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    this.boatHullPath(ctx, x + 4, y + 6, w, h);
+    ctx.fill();
+
+    // Hull body — chrome white tapering to a pointed bow
+    const bodyGrad = ctx.createLinearGradient(x, y, x, y + h);
+    bodyGrad.addColorStop(0, '#FFFFFF');
+    bodyGrad.addColorStop(0.5, '#D8D8E8');
+    bodyGrad.addColorStop(1, '#7a7a90');
+    ctx.fillStyle = bodyGrad;
+    this.boatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Bow waterline accent (cyan glow)
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 1.5;
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 22);
+    ctx.lineTo(this.x, y + 4);
+    ctx.lineTo(x + w - 6, y + 22);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Cockpit / windshield
+    ctx.fillStyle = '#0a0a14';
+    this.roundRectPath(ctx, x + 8, y + 22, w - 16, 22, 4);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,255,255,0.30)';
+    this.roundRectPath(ctx, x + 10, y + 24, w - 20, 7, 3);
+    ctx.fill();
+
+    // Hot pink racing stripe down the centerline
+    ctx.fillStyle = '#FF1493';
+    ctx.fillRect(this.x - 1.5, y + 6, 3, h - 18);
+
+    // Twin-mounted machine guns flanking the bow
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(x + 10, y - 6, 5, 12);
+    ctx.fillRect(x + w - 15, y - 6, 5, 12);
+
+    // Stern outboard motor block
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(x + 10, y + h - 6, w - 20, 6);
+
+    // Steering tilt cue (mirrors the car version)
+    if (Math.abs(this.vx) > 50) {
+      const intensity = Math.min(0.5, Math.abs(this.vx) / PLAYER.STEER_MAX_SPEED * 0.5);
+      ctx.fillStyle = `rgba(0,255,255,${intensity})`;
+      const tiltX = this.vx > 0 ? x : x + w - 4;
+      ctx.fillRect(tiltX, y + 14, 4, h - 28);
+    }
+
+    ctx.restore();
+  }
+
+  private boatHullPath(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    // Pointed bow (top), squared stern (bottom)
+    const bowDepth = 18;
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2, y);             // bow tip
+    ctx.lineTo(x + w, y + bowDepth);      // right shoulder
+    ctx.lineTo(x + w, y + h - 4);
+    ctx.arcTo(x + w, y + h, x + w - 4, y + h, 4); // stern corner
+    ctx.lineTo(x + 4, y + h);
+    ctx.arcTo(x, y + h, x, y + h - 4, 4);
+    ctx.lineTo(x, y + bowDepth);
+    ctx.closePath();
   }
 
   private roundRectPath(
