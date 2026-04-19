@@ -7,8 +7,12 @@ import { EnemySpawner } from './systems/EnemySpawner';
 import { SecondaryWeaponSystem } from './systems/SecondaryWeaponSystem';
 import { ParticleSystem } from './systems/Particles';
 import { CameraShake } from './systems/CameraShake';
+import { BossSpawner } from './systems/BossSpawner';
+import { TouchControls } from './systems/TouchControls';
+import { CHOPPER_SCORE_REWARD, CHOPPER_COIN_REWARD } from './entities/BombChopper';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
 import { PLAYER } from './data/constants';
+import { SECTIONS, getSection, TERRAIN_HANDLING, type SectionDef } from './data/sections';
 
 interface AABB {
   x: number;
@@ -29,7 +33,21 @@ const SMOKE_SLOW_DURATION = 1.5;
 const RECAP_INPUT_LOCKOUT = 1.2; // seconds before player can dismiss recap
 const RECAP_AUTO_DISMISS = 12; // seconds before recap auto-finalizes
 
-type DeathCause = 'enemy_ram' | 'enemy_bullet' | 'civilian_spree' | 'self_end';
+// Section banner animation timing (seconds)
+const BANNER_FADE_IN = 0.45;
+const BANNER_HOLD = 1.6;
+const BANNER_FADE_OUT = 0.55;
+const BANNER_TOTAL = BANNER_FADE_IN + BANNER_HOLD + BANNER_FADE_OUT;
+
+// Lives + extra-life thresholds
+const STARTING_LIVES = 1;
+const MAX_LIVES = 5;
+const LIFE_BONUS_SCORES: readonly number[] = [10000, 25000, 50000, 100000];
+const RESPAWN_INVULN_DURATION = 2.0; // seconds of post-respawn invulnerability
+const LIFE_LOST_FLASH_DURATION = 1.2; // seconds the "LIFE LOST" overlay holds
+const LIFE_BONUS_FLASH_DURATION = 1.6; // seconds the "EXTRA LIFE" overlay holds
+
+type DeathCause = 'enemy_ram' | 'enemy_bullet' | 'civilian_spree' | 'self_end' | 'chopper_bomb';
 
 interface RecapStats {
   cause: DeathCause;
@@ -49,7 +67,7 @@ export class SpeedRacerGame extends BaseGame {
     id: 'speed-racer',
     title: 'Speed Racer',
     thumbnail: '/games/speed-racer/speed-racer-thumb.svg',
-    inputSchema: ['keyboard'],
+    inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 130,
     tier: 2,
     description:
@@ -63,6 +81,8 @@ export class SpeedRacerGame extends BaseGame {
   private secondary!: SecondaryWeaponSystem;
   private particles!: ParticleSystem;
   private shake!: CameraShake;
+  private boss!: BossSpawner;
+  private touch!: TouchControls;
   private muzzleTimer = 0;
 
   private distance = 0;
@@ -83,6 +103,21 @@ export class SpeedRacerGame extends BaseGame {
   private recapStats: RecapStats | null = null;
   private recapDismissArmed = false;
 
+  // Section progression state
+  private sectionIndex = 0;
+  private sectionProgress = 0; // pixel-units accumulated within the active section
+  private sectionsCleared = 0;
+  private currentSection: SectionDef = SECTIONS[0];
+  private bannerTimer = 0; // counts up; <= 0 means no banner showing
+  private bannerSection: SectionDef | null = null;
+
+  // Lives system
+  private lives = STARTING_LIVES;
+  private nextLifeBonusIndex = 0; // index into LIFE_BONUS_SCORES we have not yet awarded
+  private respawnInvuln = 0; // seconds remaining where player ignores collisions
+  private lifeLostFlash = 0; // counts down; > 0 means LIFE LOST overlay shows
+  private lifeBonusFlash = 0; // counts down; > 0 means EXTRA LIFE overlay shows
+
   protected onInit(): void {
     this.player = new PlayerCar();
     this.road = new RoadRenderer();
@@ -91,16 +126,16 @@ export class SpeedRacerGame extends BaseGame {
     this.secondary = new SecondaryWeaponSystem();
     this.particles = new ParticleSystem();
     this.shake = new CameraShake();
+    this.boss = new BossSpawner();
+    this.touch = new TouchControls();
     this.muzzleTimer = 0;
-    this.spawner.configure({
-      spawnInterval: 1.4,
-      enemyTypes: ['ram', 'shooter', 'armored'],
-      enemyTypeWeights: [6, 3, 1],
-      civilianChance: 0.7,
-      civilianSpawnInterval: 2.4,
-      vanIntervalMin: 18,
-      vanIntervalMax: 28,
-    });
+    this.sectionIndex = 0;
+    this.sectionProgress = 0;
+    this.sectionsCleared = 0;
+    this.currentSection = getSection(this.sectionIndex);
+    this.spawner.configure(this.currentSection.spawnerConfig);
+    this.applyTerrainHandling();
+    this.armBanner(this.currentSection);
     this.distance = 0;
     this.maxSpeed = 0;
     this.enemiesDestroyed = 0;
@@ -115,6 +150,11 @@ export class SpeedRacerGame extends BaseGame {
     this.recapTimer = 0;
     this.recapStats = null;
     this.recapDismissArmed = false;
+    this.lives = STARTING_LIVES;
+    this.nextLifeBonusIndex = 0;
+    this.respawnInvuln = 0;
+    this.lifeLostFlash = 0;
+    this.lifeBonusFlash = 0;
 
     this.endHandler = (e) => {
       if (!this.isRunning || this.isPaused) return;
@@ -134,10 +174,18 @@ export class SpeedRacerGame extends BaseGame {
       return;
     }
     const input = this.services.input;
-    this.player.update(dt, input);
+    this.touch.update(input.getTouches());
+    const tc = this.touch;
+    const playerInput = {
+      isLeftPressed: () => input.isLeftPressed() || tc.leftHeld(),
+      isRightPressed: () => input.isRightPressed() || tc.rightHeld(),
+      isUpPressed: () => input.isUpPressed() || tc.upHeld(),
+      isDownPressed: () => input.isDownPressed() || tc.downHeld(),
+    };
+    this.player.update(dt, playerInput);
     this.road.update(this.player.speed, dt);
 
-    const firing = input.isKeyPressed('Space');
+    const firing = input.isKeyPressed('Space') || tc.fireHeld();
     const bulletsBefore = this.weapon.getProjectiles().filter((b) => b.alive).length;
     this.weapon.update(dt, firing, this.player.x, this.player.y);
     const bulletsAfter = this.weapon.getProjectiles().filter((b) => b.alive).length;
@@ -153,9 +201,11 @@ export class SpeedRacerGame extends BaseGame {
       this.muzzleTimer = 0;
     }
 
-    // Edge-detect Q for secondary weapon
+    // Edge-detect Q for secondary weapon (or virtual WEAPON button)
     const secondaryDown = input.isKeyPressed('KeyQ');
-    if (secondaryDown && !this.secondaryFireWasDown) {
+    const touchSecondary = tc.consumeSecondaryPress();
+    const secondaryEdge = touchSecondary || (secondaryDown && !this.secondaryFireWasDown);
+    if (secondaryEdge) {
       const result = this.secondary.fire(this.player.x, this.player.y, this.player.height);
       if (result.fired) {
         this.services?.audio?.playSound?.(result.missile ? 'laser' : 'whoosh', { volume: 0.4 });
@@ -166,6 +216,7 @@ export class SpeedRacerGame extends BaseGame {
     this.secondary.update(dt, this.player.speed);
 
     this.spawner.update(dt, this.player.speed, this.player.x, this.player.y);
+    this.boss.update(dt, this.sectionsCleared, this.player.x);
 
     this.particles.update(dt);
     this.shake.update(dt);
@@ -179,9 +230,41 @@ export class SpeedRacerGame extends BaseGame {
 
     this.resolveCollisions(dt);
 
-    this.distance += this.player.speed * dt;
+    const traveled = this.player.speed * dt;
+    this.distance += traveled;
+    this.sectionProgress += traveled;
     if (this.player.speed > this.maxSpeed) this.maxSpeed = this.player.speed;
     this.score = Math.floor(this.distance / 10) + this.enemiesDestroyed * 100;
+
+    if (this.sectionProgress >= this.currentSection.lengthMeters) {
+      this.advanceSection();
+    }
+
+    if (this.bannerTimer > 0) {
+      this.bannerTimer -= dt;
+      if (this.bannerTimer <= 0) {
+        this.bannerTimer = 0;
+        this.bannerSection = null;
+      }
+    }
+
+    // Tick life timers
+    if (this.respawnInvuln > 0) this.respawnInvuln = Math.max(0, this.respawnInvuln - dt);
+    if (this.lifeLostFlash > 0) this.lifeLostFlash = Math.max(0, this.lifeLostFlash - dt);
+    if (this.lifeBonusFlash > 0) this.lifeBonusFlash = Math.max(0, this.lifeBonusFlash - dt);
+
+    // Award extra life when score crosses next threshold
+    while (
+      this.nextLifeBonusIndex < LIFE_BONUS_SCORES.length &&
+      this.score >= LIFE_BONUS_SCORES[this.nextLifeBonusIndex]
+    ) {
+      this.nextLifeBonusIndex += 1;
+      if (this.lives < MAX_LIVES) {
+        this.lives += 1;
+        this.lifeBonusFlash = LIFE_BONUS_FLASH_DURATION;
+        this.services?.audio?.playSound?.('powerUp', { volume: 0.6 });
+      }
+    }
 
     this.extendedGameData = {
       distance: Math.floor(this.distance),
@@ -191,12 +274,43 @@ export class SpeedRacerGame extends BaseGame {
       enemies_destroyed: this.enemiesDestroyed,
       civilians_lost: this.civiliansLost,
       van_pickups: this.vanPickups,
-      sections_cleared: 0,
+      sections_cleared: this.sectionsCleared,
     };
+  }
+
+  private advanceSection(): void {
+    this.sectionsCleared += 1;
+    this.sectionIndex = (this.sectionIndex + 1) % SECTIONS.length;
+    this.sectionProgress = 0;
+    this.currentSection = getSection(this.sectionIndex);
+    this.spawner.configure(this.currentSection.spawnerConfig);
+    this.applyTerrainHandling();
+    this.armBanner(this.currentSection);
+    // Subtle visual punctuation for the transition
+    this.shake.add(0.18);
+    this.services?.audio?.playSound?.('powerUp', { volume: 0.35 });
+  }
+
+  private applyTerrainHandling(): void {
+    const profile = TERRAIN_HANDLING[this.currentSection.terrain ?? 'road'];
+    this.player.setHandling(profile.steerMul, profile.decelMul);
+  }
+
+  private armBanner(section: SectionDef): void {
+    this.bannerSection = section;
+    this.bannerTimer = BANNER_TOTAL;
   }
 
   private triggerDeath(cause: DeathCause): void {
     if (this.recapMode || !this.isRunning) return;
+
+    // Use an extra life if available (player-initiated 'self_end' always ends the run)
+    if (this.lives > 1 && cause !== 'self_end') {
+      this.lives -= 1;
+      this.respawn();
+      return;
+    }
+
     this.recapMode = true;
     this.recapTimer = 0;
     this.recapDismissArmed = false;
@@ -221,8 +335,22 @@ export class SpeedRacerGame extends BaseGame {
       enemies_destroyed: this.recapStats.kills,
       civilians_lost: this.recapStats.civilians,
       van_pickups: this.recapStats.vanPickups,
-      sections_cleared: 0,
+      sections_cleared: this.sectionsCleared,
     };
+  }
+
+  private respawn(): void {
+    // Clear immediate threats so the player isn't instantly killed again
+    for (const e of this.spawner.getEnemies()) e.alive = false;
+    for (const p of this.spawner.getProjectiles()) p.alive = false;
+    this.boss.reset();
+    // Reset civilian-spree counter so the next civilian doesn't end the run
+    this.civiliansLost = 0;
+    // Drop combo — death always breaks the chain
+    this.dropCombo();
+    // Arm invulnerability + UI flash
+    this.respawnInvuln = RESPAWN_INVULN_DURATION;
+    this.lifeLostFlash = LIFE_LOST_FLASH_DURATION;
   }
 
   private updateRecap(dt: number): void {
@@ -282,6 +410,7 @@ export class SpeedRacerGame extends BaseGame {
 
   private resolveCollisions(dt: number): void {
     const pb = this.player.getBounds();
+    const playerVulnerable = this.respawnInvuln <= 0;
 
     // Player bullets vs civilians/enemies
     for (const bullet of this.weapon.getProjectiles()) {
@@ -349,6 +478,41 @@ export class SpeedRacerGame extends BaseGame {
           break;
         }
       }
+      if (!missile.alive) continue;
+      // Missiles vs Bomb Chopper — high reward kill
+      for (const chopper of this.boss.getChoppers()) {
+        if (!chopper.alive) continue;
+        if (aabb(mb, chopper.getBounds())) {
+          missile.alive = false;
+          if (chopper.takeHit()) {
+            this.enemiesDestroyed += 1;
+            this.score += CHOPPER_SCORE_REWARD * this.combo;
+            this.pickups += CHOPPER_COIN_REWARD;
+            this.bumpCombo();
+            this.particles.burstExplosion(chopper.x, chopper.y, 2.2);
+            this.shake.add(0.6);
+            this.services?.audio?.playSound?.('explosion', { volume: 0.7 });
+          }
+          break;
+        }
+      }
+    }
+
+    // Bomb explosions vs player — single damage check on the frame they detonate
+    if (playerVulnerable) {
+      for (const bomb of this.boss.getBombs()) {
+        if (!bomb.justExploded) continue;
+        const c = bomb.getExplosionCenter();
+        const dx = this.player.x - c.x;
+        const dy = this.player.y - c.y;
+        if (dx * dx + dy * dy <= c.r * c.r) {
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
+          this.shake.add(0.95);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.7 });
+          this.triggerDeath('chopper_bomb');
+          return;
+        }
+      }
     }
 
     // Hazards (oil/smoke) vs enemies
@@ -383,30 +547,34 @@ export class SpeedRacerGame extends BaseGame {
     }
 
     // Player vs enemy collision = game over
-    for (const enemy of this.spawner.getEnemies()) {
-      if (!enemy.alive) continue;
-      if (aabb(pb, enemy.getBounds())) {
-        this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
-        this.shake.add(0.9);
-        this.services?.audio?.playSound?.('collision', { volume: 0.6 });
-        this.triggerDeath('enemy_ram');
-        return;
+    if (playerVulnerable) {
+      for (const enemy of this.spawner.getEnemies()) {
+        if (!enemy.alive) continue;
+        if (aabb(pb, enemy.getBounds())) {
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
+          this.shake.add(0.9);
+          this.services?.audio?.playSound?.('collision', { volume: 0.6 });
+          this.triggerDeath('enemy_ram');
+          return;
+        }
       }
     }
 
     // Player vs civilian — collateral
-    for (const civ of this.spawner.getCivilians()) {
-      if (!civ.alive) continue;
-      if (aabb(pb, civ.getBounds())) {
-        civ.alive = false;
-        this.civiliansLost += 1;
-        this.dropCombo();
-        this.particles.burstExplosion(civ.x, civ.y, 0.9);
-        this.shake.add(0.35);
-        this.services?.audio?.playSound?.('collision', { volume: 0.45 });
-        if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
-          this.triggerDeath('civilian_spree');
-          return;
+    if (playerVulnerable) {
+      for (const civ of this.spawner.getCivilians()) {
+        if (!civ.alive) continue;
+        if (aabb(pb, civ.getBounds())) {
+          civ.alive = false;
+          this.civiliansLost += 1;
+          this.dropCombo();
+          this.particles.burstExplosion(civ.x, civ.y, 0.9);
+          this.shake.add(0.35);
+          this.services?.audio?.playSound?.('collision', { volume: 0.45 });
+          if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
+            this.triggerDeath('civilian_spree');
+            return;
+          }
         }
       }
     }
@@ -426,15 +594,17 @@ export class SpeedRacerGame extends BaseGame {
     }
 
     // Enemy bullets vs player = game over
-    for (const proj of this.spawner.getProjectiles()) {
-      if (!proj.alive) continue;
-      if (aabb(proj.getBounds(), pb)) {
-        proj.alive = false;
-        this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
-        this.shake.add(0.85);
-        this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
-        this.triggerDeath('enemy_bullet');
-        return;
+    if (playerVulnerable) {
+      for (const proj of this.spawner.getProjectiles()) {
+        if (!proj.alive) continue;
+        if (aabb(proj.getBounds(), pb)) {
+          proj.alive = false;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
+          this.shake.add(0.85);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
+          this.triggerDeath('enemy_bullet');
+          return;
+        }
       }
     }
   }
@@ -444,11 +614,16 @@ export class SpeedRacerGame extends BaseGame {
     const h = this.canvas.height;
     ctx.save();
     this.shake.apply(ctx);
-    this.road.render(ctx, w, h);
+    this.road.render(ctx, w, h, this.currentSection.palette);
     this.renderMotionLines(ctx, w, h);
     this.secondary.render(ctx);
     this.spawner.render(ctx);
-    if (!this.recapMode) this.player.render(ctx);
+    this.boss.render(ctx);
+    if (!this.recapMode) {
+      // Flicker player while invulnerable post-respawn
+      const visible = this.respawnInvuln <= 0 || Math.floor(this.respawnInvuln * 12) % 2 === 0;
+      if (visible) this.player.render(ctx);
+    }
     this.weapon.render(ctx);
     this.particles.render(ctx);
     ctx.restore();
@@ -500,6 +675,7 @@ export class SpeedRacerGame extends BaseGame {
       enemy_bullet: 'GUNNED DOWN',
       civilian_spree: 'TOO MANY CIVILIANS',
       self_end: 'RUN ABANDONED',
+      chopper_bomb: 'BOMBED FROM ABOVE',
     };
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FF0080';
@@ -618,6 +794,24 @@ export class SpeedRacerGame extends BaseGame {
     ctx.fillText(`DIST ${Math.round(this.distance)}m`, this.canvas.width - 20, 65);
     ctx.fillText(`KILLS ${this.enemiesDestroyed}`, this.canvas.width - 20, 90);
 
+    // Section indicator + progress bar (right HUD)
+    const sectIdx = this.sectionIndex + 1;
+    const sectTotal = SECTIONS.length;
+    const sectColor = this.currentSection.palette.bannerColor;
+    ctx.fillStyle = sectColor;
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(`SECTION ${sectIdx}/${sectTotal}`, this.canvas.width - 20, 114);
+    const barW = 110;
+    const barH = 4;
+    const barX = this.canvas.width - 20 - barW;
+    const barY = 120;
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(barX, barY, barW, barH);
+    const pct = Math.min(1, this.sectionProgress / this.currentSection.lengthMeters);
+    ctx.fillStyle = sectColor;
+    ctx.fillRect(barX, barY, barW * pct, barH);
+    ctx.textAlign = 'right';
+
     // Combo meter
     ctx.textAlign = 'left';
     if (this.combo > 1) {
@@ -637,6 +831,9 @@ export class SpeedRacerGame extends BaseGame {
     ctx.fillStyle = this.civiliansLost > 0 ? '#FF6347' : '#FFFFFF88';
     ctx.font = 'bold 14px Arial';
     ctx.fillText(`CIVS ${this.civiliansLost}/${CIVILIANS_LOST_GAME_OVER}`, 20, 70);
+
+    // Lives indicator — small car icons
+    this.renderLivesIcons(ctx, 130, 60);
 
     // Secondary weapon
     if (this.secondary.active) {
@@ -659,6 +856,143 @@ export class SpeedRacerGame extends BaseGame {
       this.canvas.height - 12,
     );
     ctx.restore();
+
+    if (this.bannerTimer > 0 && this.bannerSection) {
+      this.renderSectionBanner(ctx, this.bannerSection);
+    }
+
+    if (this.lifeLostFlash > 0) this.renderLifeLostOverlay(ctx);
+    if (this.lifeBonusFlash > 0) this.renderExtraLifeOverlay(ctx);
+
+    this.touch.render(ctx);
+  }
+
+  private renderLivesIcons(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+    ctx.save();
+    const iconW = 8;
+    const iconH = 12;
+    const gap = 4;
+    for (let i = 0; i < MAX_LIVES; i++) {
+      const ix = x + i * (iconW + gap);
+      const owned = i < this.lives;
+      ctx.fillStyle = owned ? '#FF1493' : '#33334455';
+      ctx.fillRect(ix, y, iconW, iconH);
+      if (owned) {
+        // Pink windshield highlight to read as a tiny car
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(ix + 2, y + 3, iconW - 4, 3);
+      }
+    }
+    ctx.restore();
+  }
+
+  private renderLifeLostOverlay(ctx: CanvasRenderingContext2D): void {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const t = this.lifeLostFlash / LIFE_LOST_FLASH_DURATION; // 1 → 0
+    // Red vignette pulse
+    ctx.save();
+    ctx.globalAlpha = 0.35 * t;
+    const grad = ctx.createRadialGradient(w / 2, h / 2, h * 0.15, w / 2, h / 2, h * 0.7);
+    grad.addColorStop(0, 'rgba(255,40,80,0)');
+    grad.addColorStop(1, 'rgba(255,20,60,1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    // Headline
+    ctx.globalAlpha = t;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#FF003C';
+    ctx.shadowBlur = 18;
+    ctx.fillStyle = '#FF6680';
+    ctx.font = 'bold 38px Arial';
+    ctx.fillText('LIFE LOST', w / 2, h / 2 - 10);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#FFFFFFAA';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(`${this.lives} ${this.lives === 1 ? 'life' : 'lives'} remaining`, w / 2, h / 2 + 18);
+    ctx.restore();
+  }
+
+  private renderExtraLifeOverlay(ctx: CanvasRenderingContext2D): void {
+    const w = this.canvas.width;
+    const t = this.lifeBonusFlash / LIFE_BONUS_FLASH_DURATION; // 1 → 0
+    const eased = Math.sin(t * Math.PI); // peaks mid-flash
+    ctx.save();
+    ctx.globalAlpha = eased;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#FFD700';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 32px Arial';
+    ctx.fillText('★ EXTRA LIFE ★', w / 2, 230);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#FFFFFFCC';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(`${this.lives} / ${MAX_LIVES}`, w / 2, 250);
+    ctx.restore();
+  }
+
+  private renderSectionBanner(ctx: CanvasRenderingContext2D, section: SectionDef): void {
+    const elapsed = BANNER_TOTAL - this.bannerTimer;
+    let alpha = 1;
+    let slide = 0; // px offset, slides up from below
+    if (elapsed < BANNER_FADE_IN) {
+      const t = elapsed / BANNER_FADE_IN;
+      const eased = 1 - Math.pow(1 - t, 3);
+      alpha = eased;
+      slide = (1 - eased) * 24;
+    } else if (elapsed > BANNER_FADE_IN + BANNER_HOLD) {
+      const t = (elapsed - BANNER_FADE_IN - BANNER_HOLD) / BANNER_FADE_OUT;
+      const eased = Math.pow(t, 2);
+      alpha = 1 - eased;
+      slide = -eased * 12;
+    }
+    if (alpha <= 0.01) return;
+
+    const w = this.canvas.width;
+    const cx = w / 2;
+    const cy = 168 + slide;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+
+    // Eyebrow: "SECTION N/M"
+    const sectIdx = this.sectionIndex + 1;
+    ctx.fillStyle = '#FFFFFFCC';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText(`SECTION ${sectIdx} / ${SECTIONS.length}`, cx, cy - 36);
+
+    // Big headline with neon glow
+    ctx.shadowColor = section.palette.bannerGlow;
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = section.palette.bannerColor;
+    ctx.font = 'bold 44px Arial';
+    ctx.fillText(section.name, cx, cy);
+
+    // Second pass for extra glow punch
+    ctx.shadowBlur = 12;
+    ctx.fillText(section.name, cx, cy);
+    ctx.shadowBlur = 0;
+
+    // Animated underline — draws in during fade-in, stays during hold, fades during fade-out
+    let underlinePct = 1;
+    if (elapsed < BANNER_FADE_IN) {
+      underlinePct = elapsed / BANNER_FADE_IN;
+    }
+    const headlineWidth = ctx.measureText(section.name).width;
+    const underlineMax = Math.max(160, Math.min(headlineWidth + 60, w - 80));
+    const underlineW = underlineMax * underlinePct;
+    ctx.fillStyle = section.palette.bannerColor;
+    ctx.fillRect(cx - underlineW / 2, cy + 10, underlineW, 2);
+
+    // Subtitle
+    ctx.fillStyle = '#FFFFFFAA';
+    ctx.font = '13px Arial';
+    ctx.fillText(section.subtitle, cx, cy + 32);
+
+    ctx.restore();
   }
 
   protected onDestroy(): void {
@@ -676,6 +1010,8 @@ export class SpeedRacerGame extends BaseGame {
     this.secondary.reset();
     this.particles.reset();
     this.shake.reset();
+    this.boss.reset();
+    this.touch.reset();
     this.muzzleTimer = 0;
     this.distance = 0;
     this.maxSpeed = 0;
@@ -691,5 +1027,17 @@ export class SpeedRacerGame extends BaseGame {
     this.recapTimer = 0;
     this.recapStats = null;
     this.recapDismissArmed = false;
+    this.sectionIndex = 0;
+    this.sectionProgress = 0;
+    this.sectionsCleared = 0;
+    this.currentSection = getSection(0);
+    this.spawner.configure(this.currentSection.spawnerConfig);
+    this.applyTerrainHandling();
+    this.armBanner(this.currentSection);
+    this.lives = STARTING_LIVES;
+    this.nextLifeBonusIndex = 0;
+    this.respawnInvuln = 0;
+    this.lifeLostFlash = 0;
+    this.lifeBonusFlash = 0;
   }
 }

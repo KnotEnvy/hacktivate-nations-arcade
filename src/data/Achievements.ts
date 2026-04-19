@@ -686,6 +686,151 @@ export const ACHIEVEMENTS: Achievement[] = [
         unlocked: false
       },
 
+      // ===== Speed Racer Achievements =====
+      {
+        id: 'speedracer_first_blood',
+        title: 'First Blood',
+        description: 'Destroy 1 enemy in Speed Racer',
+        icon: '🚗',
+        gameId: 'speed-racer',
+        category: 'gameplay',
+        requirement: { type: 'enemies_destroyed', value: 1 },
+        reward: 50,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_road_warrior',
+        title: 'Road Warrior',
+        description: 'Destroy 25 enemies in one run',
+        icon: '⚔️',
+        gameId: 'speed-racer',
+        category: 'gameplay',
+        requirement: { type: 'enemies_destroyed', value: 25 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_highway_hero',
+        title: 'Highway Hero',
+        description: 'Destroy 50 enemies in one run',
+        icon: '🏆',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'enemies_destroyed', value: 50 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_distance_runner',
+        title: 'Distance Runner',
+        description: 'Travel 5,000m in one run',
+        icon: '🛣️',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'distance', value: 5000 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_long_haul',
+        title: 'Long Haul',
+        description: 'Travel 20,000m in one run',
+        icon: '🌃',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'distance', value: 20000 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_combo_starter',
+        title: 'Chain Reaction',
+        description: 'Reach a x3 combo',
+        icon: '🔗',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'max_combo', value: 3 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_combo_master',
+        title: 'Combo King',
+        description: 'Reach the max x5 combo',
+        icon: '🔥',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'max_combo', value: 5 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_top_speed',
+        title: 'Pedal to the Metal',
+        description: 'Reach top speed (640) in one run',
+        icon: '💨',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'max_speed', value: 640 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_van_collector',
+        title: 'Quartermaster',
+        description: 'Dock with 3 weapon vans in one run',
+        icon: '🚐',
+        gameId: 'speed-racer',
+        category: 'collection',
+        requirement: { type: 'van_pickups', value: 3 },
+        reward: 150,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_arsenal',
+        title: 'Full Arsenal',
+        description: 'Use 10 secondary weapons in one run',
+        icon: '🚀',
+        gameId: 'speed-racer',
+        category: 'gameplay',
+        requirement: { type: 'powerups_used', value: 10 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_section_one',
+        title: 'City Limits',
+        description: 'Clear Section 1 (Neon Highway)',
+        icon: '🌆',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'sections_cleared', value: 1 },
+        reward: 100,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_section_three',
+        title: 'Bridge Burner',
+        description: 'Clear 3 sections in one run',
+        icon: '🌉',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'sections_cleared', value: 3 },
+        reward: 250,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_full_loop',
+        title: 'Round Trip',
+        description: 'Clear all 5 sections and loop back',
+        icon: '🔁',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'sections_cleared', value: 5 },
+        reward: 500,
+        unlocked: false
+      },
+
       // Cross-Game Meta Achievements
       {
         id: 'game_explorer',

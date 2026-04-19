@@ -30,18 +30,7 @@ export const PLAYER = {
   SPEED_DECEL: 480,
 } as const;
 
-export const ROAD_RENDER = {
-  ROAD_COLOR: '#1a1a2e',
-  EDGE_COLOR: '#FF1493',
-  LANE_LINE_COLOR: '#00FFFF',
-  CENTER_LINE_COLOR: '#FFFF00',
-  GRASS_COLOR_TOP: '#0a001a',
-  GRASS_COLOR_BOTTOM: '#1a0033',
-  CENTER_LINE_LENGTH: 30,
-  CENTER_LINE_GAP: 22,
-  LANE_LINE_LENGTH: 24,
-  LANE_LINE_GAP: 28,
-} as const;
+// Per-section road palette lives in `data/sections.ts`.
 
 export const SCENERY = {
   POST_SPACING: 120,

@@ -7,7 +7,10 @@ export type ChallengeMetric =
   | 'score'
   | 'games_played'
   | 'time_played'
-  | 'coins_earned';
+  | 'coins_earned'
+  | 'enemies_destroyed'
+  | 'van_pickups'
+  | 'sections_cleared';
 
 export type ChallengeAggregation = 'sum' | 'max' | 'count';
 
@@ -113,6 +116,67 @@ export const DAILY_CHALLENGE_TEMPLATES: ReadonlyArray<ChallengeTemplate> = [
     target: 600,
     reward: 180,
     requirement: { metric: 'time_played', aggregation: 'sum' },
+  },
+  // ===== Speed Racer =====
+  {
+    templateId: 'speedracer_distance_haul',
+    title: 'Long Haul',
+    description: 'Travel 5,000m in a single Speed Racer run',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 5000,
+    reward: 250,
+    requirement: { metric: 'distance', aggregation: 'max' },
+  },
+  {
+    templateId: 'speedracer_demolisher',
+    title: 'Demolisher',
+    description: 'Destroy 20 enemies in a single Speed Racer run',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 20,
+    reward: 300,
+    requirement: { metric: 'enemies_destroyed', aggregation: 'max' },
+  },
+  {
+    templateId: 'speedracer_top_speed',
+    title: 'Pedal to the Metal',
+    description: 'Reach top speed in Speed Racer',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 640,
+    reward: 150,
+    requirement: { metric: 'speed', aggregation: 'max' },
+  },
+  {
+    templateId: 'speedracer_bridge_burner',
+    title: 'Section Hopper',
+    description: 'Clear 3 sections in one Speed Racer run',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 3,
+    reward: 350,
+    requirement: { metric: 'sections_cleared', aggregation: 'max' },
+  },
+  {
+    templateId: 'speedracer_quartermaster',
+    title: 'Quartermaster',
+    description: 'Dock with 3 weapon vans in one run',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 3,
+    reward: 200,
+    requirement: { metric: 'van_pickups', aggregation: 'max' },
+  },
+  {
+    templateId: 'speedracer_combo_chain',
+    title: 'Chain Reaction',
+    description: 'Reach a x4 combo in Speed Racer',
+    type: 'daily',
+    gameId: 'speed-racer',
+    target: 4,
+    reward: 200,
+    requirement: { metric: 'combo', aggregation: 'max' },
   },
 ];
 

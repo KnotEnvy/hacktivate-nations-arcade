@@ -1,11 +1,20 @@
-import { InputManager } from '@/services/InputManager';
 import { PLAYER, ROAD } from '../data/constants';
+
+export interface DirectionalInput {
+  isLeftPressed(): boolean;
+  isRightPressed(): boolean;
+  isUpPressed(): boolean;
+  isDownPressed(): boolean;
+}
 
 export class PlayerCar {
   x: number;
   y: number;
   vx = 0;
   speed: number = PLAYER.BASE_SPEED;
+  // Handling multipliers — sections with water/ice terrain reduce traction.
+  private steerMul = 1;
+  private decelMul = 1;
 
   readonly width = PLAYER.WIDTH;
   readonly height = PLAYER.HEIGHT;
@@ -19,6 +28,13 @@ export class PlayerCar {
     this.x = ROAD.CENTER;
     this.vx = 0;
     this.speed = PLAYER.BASE_SPEED;
+    this.steerMul = 1;
+    this.decelMul = 1;
+  }
+
+  setHandling(steerMul: number, decelMul: number): void {
+    this.steerMul = steerMul;
+    this.decelMul = decelMul;
   }
 
   getBounds(): { x: number; y: number; w: number; h: number } {
@@ -30,16 +46,17 @@ export class PlayerCar {
     };
   }
 
-  update(dt: number, input: InputManager): void {
+  update(dt: number, input: DirectionalInput): void {
     const left = input.isLeftPressed();
     const right = input.isRightPressed();
 
+    const steer = PLAYER.STEER_ACCEL * this.steerMul * dt;
     if (left && !right) {
-      this.vx -= PLAYER.STEER_ACCEL * dt;
+      this.vx -= steer;
     } else if (right && !left) {
-      this.vx += PLAYER.STEER_ACCEL * dt;
+      this.vx += steer;
     } else {
-      const decel = PLAYER.STEER_DECEL * dt;
+      const decel = PLAYER.STEER_DECEL * this.decelMul * dt;
       if (this.vx > 0) this.vx = Math.max(0, this.vx - decel);
       else if (this.vx < 0) this.vx = Math.min(0, this.vx + decel);
     }

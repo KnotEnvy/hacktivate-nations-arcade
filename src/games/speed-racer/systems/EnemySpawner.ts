@@ -8,7 +8,7 @@ import { ROAD } from '../data/constants';
 const SPAWN_Y = -80;
 const ENEMY_BULLET_SPEED = 520;
 
-interface SpawnerOptions {
+export interface SpawnerOptions {
   spawnInterval: number;
   enemyTypes: EnemyType[];
   enemyTypeWeights: number[];
