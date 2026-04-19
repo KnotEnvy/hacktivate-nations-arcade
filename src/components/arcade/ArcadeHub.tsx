@@ -11,20 +11,13 @@ import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
 import { AudioManager } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
-import { ThemedGameCanvas } from './ThemedGameCanvas';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
-import { DailyChallenges } from './DailyChallenges';
-import { AchievementPanel } from './AchievementPanel';
 import { UserProfile } from './UserProfiles';
-import { AnalyticsOverview } from './AnalyticsOverview';
-import { OnboardingOverlay } from './OnboardingOverlay';
-import { AuthModal } from '@/components/auth/AuthModal';
 import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { useArcadeUnlockState } from '@/hooks/useArcadeUnlockState';
 import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
-import { LeaderboardsTab } from './LeaderboardsTab';
 import { AVAILABLE_GAMES } from '@/data/Games';
 import {
   PLAYABLE_GAME_CATALOG,
@@ -40,6 +33,41 @@ import {
 
 const AudioSettings = dynamic(
   () => import('./AudioSettings').then(module => module.AudioSettings),
+  { ssr: false }
+);
+
+const AchievementPanel = dynamic(
+  () => import('./AchievementPanel').then(module => module.AchievementPanel),
+  { ssr: false }
+);
+
+const AnalyticsOverview = dynamic(
+  () => import('./AnalyticsOverview').then(module => module.AnalyticsOverview),
+  { ssr: false }
+);
+
+const AuthModal = dynamic(
+  () => import('@/components/auth/AuthModal').then(module => module.AuthModal),
+  { ssr: false }
+);
+
+const DailyChallenges = dynamic(
+  () => import('./DailyChallenges').then(module => module.DailyChallenges),
+  { ssr: false }
+);
+
+const LeaderboardsTab = dynamic(
+  () => import('./LeaderboardsTab').then(module => module.LeaderboardsTab),
+  { ssr: false }
+);
+
+const OnboardingOverlay = dynamic(
+  () => import('./OnboardingOverlay').then(module => module.OnboardingOverlay),
+  { ssr: false }
+);
+
+const ThemedGameCanvas = dynamic(
+  () => import('./ThemedGameCanvas').then(module => module.ThemedGameCanvas),
   { ssr: false }
 );
 
@@ -76,6 +104,11 @@ interface GameEndData {
   bricks_broken?: number;
   levels_cleared?: number;
   total_bricks_broken?: number;
+  // Speed Racer
+  van_pickups?: number;
+  powerups_used?: number;
+  sections_cleared?: number;
+  civilians_lost?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';
@@ -808,6 +841,15 @@ export function ArcadeHub() {
       challengeService.updateProgress('runner', 'combo', gameData.combo || 0);
       challengeService.updateProgress('runner', 'powerups_used', gameData.powerupsUsed || 0);
     }
+    if (selectedGameId === 'speed-racer') {
+      challengeService.updateProgress('speed-racer', 'distance', gameData.distance || 0);
+      challengeService.updateProgress('speed-racer', 'speed', gameData.speed || 0);
+      challengeService.updateProgress('speed-racer', 'combo', gameData.combo || 0);
+      challengeService.updateProgress('speed-racer', 'enemies_destroyed', gameData.enemies_destroyed || 0);
+      challengeService.updateProgress('speed-racer', 'powerups_used', gameData.powerups_used || 0);
+      challengeService.updateProgress('speed-racer', 'van_pickups', gameData.van_pickups || 0);
+      challengeService.updateProgress('speed-racer', 'sections_cleared', gameData.sections_cleared || 0);
+    }
     
     // Cross-game challenges
     challengeService.updateProgress('', 'score', gameData.score || 0);
@@ -875,6 +917,14 @@ export function ArcadeHub() {
             ...(gameData.fast_win
               ? achievementService.checkAchievement('fast_win', gameData.fast_win, selectedGameId)
               : []),
+          ]
+        : []),
+      ...(selectedGameId === 'speed-racer'
+        ? [
+            ...achievementService.checkAchievement('enemies_destroyed', gameData.enemies_destroyed || 0, selectedGameId),
+            ...achievementService.checkAchievement('van_pickups', gameData.van_pickups || 0, selectedGameId),
+            ...achievementService.checkAchievement('powerups_used', gameData.powerups_used || 0, selectedGameId),
+            ...achievementService.checkAchievement('sections_cleared', gameData.sections_cleared || 0, selectedGameId),
           ]
         : [])
     ];

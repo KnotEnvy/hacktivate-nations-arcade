@@ -4,29 +4,31 @@
   --background: #0a0a0a;
   --foreground: #ededed;
 
-  /* Game theme fonts */
-  --font-orbitron: 'Orbitron', monospace;
-  --font-exo: 'Exo', sans-serif;
-  --font-source-code-pro: 'Source Code Pro', monospace;
-  --font-space-mono: 'Space Mono', monospace;
-  --font-tomorrow: 'Tomorrow', sans-serif;
-  --font-fira-code: 'Fira Code', monospace;
-  --font-vt323: 'VT323', monospace;
-  --font-courier-prime: 'Courier Prime', monospace;
-  --font-anonymous-pro: 'Anonymous Pro', monospace;
-  --font-rajdhani: 'Rajdhani', sans-serif;
-  --font-audiowide: 'Audiowide', cursive;
-  --font-share-tech-mono: 'Share Tech Mono', monospace;
-  --font-playfair-display: 'Playfair Display', serif;
-  --font-crimson-text: 'Crimson Text', serif;
-  --font-inconsolata: 'Inconsolata', monospace;
-  --font-jetbrains-mono: 'JetBrains Mono', monospace;
+  /* Keep legacy theme tokens but back them with only three loaded families. */
+  --font-exo: var(--font-inter), system-ui, sans-serif;
+  --font-source-code-pro: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-space-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-tomorrow: var(--font-orbitron), system-ui, sans-serif;
+  --font-fira-code: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-vt323: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-courier-prime: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-anonymous-pro: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-rajdhani: var(--font-inter), system-ui, sans-serif;
+  --font-audiowide: var(--font-orbitron), system-ui, sans-serif;
+  --font-share-tech-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+  --font-playfair-display: Georgia, 'Times New Roman', serif;
+  --font-crimson-text: Georgia, 'Times New Roman', serif;
+  --font-inconsolata: var(--font-jetbrains-mono), ui-monospace, monospace;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+.font-arcade {
+  font-family: var(--font-orbitron), var(--font-inter), system-ui, sans-serif;
 }
 
 /* Arcade component styles using standard Tailwind classes */

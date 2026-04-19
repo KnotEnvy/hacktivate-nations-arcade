@@ -83,7 +83,8 @@ create table public.challenge_assignments (
   primary key (user_id, challenge_id)
 );
 
--- Aggregated leaderboard scores
+-- Leaderboard score entries. Each submitted session can occupy its own row,
+-- so one dominant player can hold multiple ranks for a title/period.
 create table public.leaderboard_scores (
   id uuid primary key default gen_random_uuid(),
   game_id text not null,
@@ -95,28 +96,34 @@ create table public.leaderboard_scores (
   updated_at timestamptz default now()
 );
 
-create unique index leaderboard_scores_unique
-  on public.leaderboard_scores (game_id, period, period_start, user_id);
-
 create index leaderboard_scores_rank
-  on public.leaderboard_scores (game_id, period, period_start, score desc);
+  on public.leaderboard_scores (game_id, period, period_start, score desc, created_at asc, id asc);
+
+create index leaderboard_scores_user_lookup
+  on public.leaderboard_scores (user_id, game_id, period, period_start);
 
 -- Leaderboard view for UI
 create or replace view public.leaderboards_view as
 select
+  ls.id,
   ls.game_id,
   ls.user_id,
   p.username,
   p.avatar,
   ls.score,
-  rank() over (partition by ls.game_id, ls.period, ls.period_start order by ls.score desc, ls.updated_at asc) as rank,
+  row_number() over (
+    partition by ls.game_id, ls.period, ls.period_start
+    order by ls.score desc, ls.created_at asc, ls.id asc
+  ) as rank,
   ls.period,
   ls.period_start,
-  ls.updated_at as created_at
+  ls.created_at,
+  ls.updated_at
 from public.leaderboard_scores ls
 join public.profiles p on p.id = ls.user_id;
 
--- Helper function to upsert a single period
+-- Helper function to append one score for a single period.
+-- The name is kept for app/type compatibility with existing route code.
 create or replace function public.upsert_leaderboard_score(
   _user_id uuid,
   _game_id text,
@@ -145,12 +152,7 @@ begin
     _score,
     now(),
     now()
-  )
-  on conflict (game_id, period, period_start, user_id)
-  do update set
-    score = excluded.score,
-    updated_at = now()
-  where excluded.score > public.leaderboard_scores.score;
+  );
 end;
 $$;
 

@@ -202,6 +202,7 @@ export interface Database {
     Views: {
       leaderboards_view: {
         Row: {
+          id: string;
           game_id: string;
           user_id: string;
           username: string;
@@ -211,6 +212,7 @@ export interface Database {
           period: Database['public']['Enums']['leaderboard_period'];
           period_start: string;
           created_at: string | null;
+          updated_at: string | null;
         };
         Relationships: [];
       };

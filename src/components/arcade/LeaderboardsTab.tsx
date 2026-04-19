@@ -129,6 +129,7 @@ const buildPlaceholderRows = (gameId: string, period: Period): DisplayRow[] => {
     const suffix = index < 9 ? '' : `#${index + 1}`;
 
     rows.push({
+      id: `sample-${seed}-${period}-${index}`,
       game_id: gameId,
       user_id: `npc-${seed}-${index}`,
       username: `${name}${suffix}`,
@@ -138,6 +139,7 @@ const buildPlaceholderRows = (gameId: string, period: Period): DisplayRow[] => {
       period,
       period_start: periodStart,
       created_at: null,
+      updated_at: null,
       isPlaceholder: true,
     });
   }
@@ -146,17 +148,14 @@ const buildPlaceholderRows = (gameId: string, period: Period): DisplayRow[] => {
 };
 
 const normalizeLeaderboardRows = (rows: LeaderboardRow[]): DisplayRow[] => {
-  const bestByUser = new Map<string, LeaderboardRow>();
-
-  rows.forEach(row => {
-    const existing = bestByUser.get(row.user_id);
-    if (!existing || row.score > existing.score) {
-      bestByUser.set(row.user_id, row);
-    }
-  });
-
-  return Array.from(bestByUser.values())
-    .sort((a, b) => b.score - a.score)
+  return [...rows]
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const createdA = a.created_at ? Date.parse(a.created_at) : Number.MAX_SAFE_INTEGER;
+      const createdB = b.created_at ? Date.parse(b.created_at) : Number.MAX_SAFE_INTEGER;
+      if (createdA !== createdB) return createdA - createdB;
+      return a.id.localeCompare(b.id);
+    })
     .slice(0, 25)
     .map((row, index) => ({
       ...row,
@@ -275,7 +274,7 @@ export function LeaderboardsTab({
   const selectedUnlocked = selectedGame ? isGameUnlocked(selectedGame) : false;
 
   const keyForRow = (row: DisplayRow, index: number) =>
-    `${row.period}:${row.game_id}:${row.user_id}:${row.rank}:${index}`;
+    row.id || `${row.period}:${row.game_id}:${row.user_id}:${row.rank}:${index}`;
 
   return (
     <div className="space-y-6">
@@ -284,7 +283,7 @@ export function LeaderboardsTab({
           <div>
             <h2 className="text-2xl font-bold text-white">Leaderboards</h2>
             <p className="text-sm text-gray-300 mt-1">
-              Browse top scores by game, tier, and season.
+              Browse top score entries by game, tier, and season.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

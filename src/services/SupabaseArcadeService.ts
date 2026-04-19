@@ -334,6 +334,8 @@ export class SupabaseArcadeService {
       .eq('period', period)
       .eq('period_start', periodStart)
       .order('score', { ascending: false })
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
       .limit(query.limit ?? 25);
 
     throwOnError(error, 'fetchLeaderboard');
