@@ -120,8 +120,11 @@ export class RoadRenderer {
     width: number,
   ): void {
     const cycle = dashLen + gapLen;
-    const offset = this.worldScroll % cycle;
-    let y = -offset;
+    // worldScroll grows as the car moves forward. The pattern must drift
+    // DOWN the screen (toward the player) so objects appear to come out of
+    // the horizon. Starting y at (offset - cycle) achieves that.
+    const offset = ((this.worldScroll % cycle) + cycle) % cycle;
+    let y = offset - cycle;
     ctx.strokeStyle = color;
     ctx.lineWidth = width;
     ctx.beginPath();
@@ -138,8 +141,10 @@ export class RoadRenderer {
     h: number,
     palette: SectionPalette,
   ): void {
-    const offset = this.worldScroll % SCENERY.POST_SPACING;
-    let y = -offset;
+    const offset =
+      ((this.worldScroll % SCENERY.POST_SPACING) + SCENERY.POST_SPACING) %
+      SCENERY.POST_SPACING;
+    let y = offset - SCENERY.POST_SPACING;
     while (y < h) {
       if (palette.sceneryStyle === 'buildings') {
         this.drawStreetLamp(ctx, ROAD.X_MIN - 14, y, palette);
@@ -232,7 +237,7 @@ export class RoadRenderer {
     ctx.strokeStyle = palette.sceneryAccent;
     ctx.globalAlpha = 0.4;
     ctx.lineWidth = 1;
-    for (let y = -offset; y < h; y += cycle) {
+    for (let y = offset - cycle; y < h; y += cycle) {
       this.drawWaveCurve(ctx, 14, y, 140);
       this.drawWaveCurve(ctx, 30, y + cycle * 0.5, 110);
       this.drawWaveCurve(ctx, w - 154, y + cycle * 0.25, 140);
@@ -246,7 +251,7 @@ export class RoadRenderer {
     const scrolled = this.worldScroll * parallax;
     const blockOffset = ((scrolled % blockH) + blockH) % blockH;
     let block = Math.floor(scrolled / blockH);
-    let y = -blockOffset;
+    let y = blockOffset - blockH;
     while (y < h + blockH) {
       this.drawBuoy(ctx, 80, y + 30, hash(block, 31), palette);
       this.drawBuoy(ctx, w - 80, y + 110, hash(block, 32), palette);
@@ -302,7 +307,7 @@ export class RoadRenderer {
     ctx.save();
     ctx.fillStyle = palette.sceneryAccent;
     ctx.globalAlpha = 0.85;
-    for (let y = -offset; y < h + cycle; y += cycle) {
+    for (let y = offset - cycle; y < h + cycle; y += cycle) {
       // Left bank
       ctx.beginPath();
       ctx.moveTo(0, y);
@@ -324,7 +329,7 @@ export class RoadRenderer {
     const scrolled = this.worldScroll * parallax;
     const blockOffset = ((scrolled % blockH) + blockH) % blockH;
     let block = Math.floor(scrolled / blockH);
-    let y = -blockOffset;
+    let y = blockOffset - blockH;
     while (y < h + blockH) {
       this.drawSnowyPine(ctx, 60, y + 30, hash(block, 41), palette);
       this.drawSnowyPine(ctx, 110, y + 110, hash(block, 42), palette);
@@ -397,8 +402,9 @@ export class RoadRenderer {
     h: number,
     palette: SectionPalette,
   ): void {
-    const offset = (this.worldScroll * SCENERY.TREE_PARALLAX) % SCENERY.TREE_SPACING;
-    let y = -offset;
+    const rawOffset = (this.worldScroll * SCENERY.TREE_PARALLAX) % SCENERY.TREE_SPACING;
+    const offset = (rawOffset + SCENERY.TREE_SPACING) % SCENERY.TREE_SPACING;
+    let y = offset - SCENERY.TREE_SPACING;
     while (y < h) {
       this.drawTree(ctx, 60, y, 14, palette);
       this.drawTree(ctx, 110, y + 90, 11, palette);
@@ -439,11 +445,13 @@ export class RoadRenderer {
   ): void {
     const parallax = SCENERY.TREE_PARALLAX;
     const scrolled = this.worldScroll * parallax;
-    const offset = scrolled % BUILDING_BLOCK_HEIGHT;
+    const offset =
+      ((scrolled % BUILDING_BLOCK_HEIGHT) + BUILDING_BLOCK_HEIGHT) %
+      BUILDING_BLOCK_HEIGHT;
     const baseBlock = Math.floor(scrolled / BUILDING_BLOCK_HEIGHT);
 
     // Render top-to-bottom; buildings further from the road are taller.
-    let screenY = -offset;
+    let screenY = offset - BUILDING_BLOCK_HEIGHT;
     let block = baseBlock;
     while (screenY < h + BUILDING_BLOCK_HEIGHT) {
       // Two buildings per side per block — back row + front row, offset vertically.
@@ -530,7 +538,7 @@ export class RoadRenderer {
     const scrolled = this.worldScroll * parallax;
     const offset = ((scrolled % blockH) + blockH) % blockH;
     let block = Math.floor(scrolled / blockH);
-    let y = -offset;
+    let y = offset - blockH;
     while (y < h + blockH) {
       this.drawBridgeTower(ctx, 50, y, block, palette);
       this.drawBridgeTower(ctx, w - 50, y, block + 1000, palette);
@@ -550,7 +558,7 @@ export class RoadRenderer {
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = palette.sceneryRimColor;
-    for (let y = -offset; y < h; y += cycle) {
+    for (let y = offset - cycle; y < h; y += cycle) {
       // Two thin shimmer lines on each off-road strip
       ctx.fillRect(10, y, 140, 1);
       ctx.fillRect(20, y + 30, 100, 1);
@@ -641,7 +649,7 @@ export class RoadRenderer {
     const scrolled = this.worldScroll * parallax;
     const offset = ((scrolled % blockH) + blockH) % blockH;
     let block = Math.floor(scrolled / blockH);
-    let y = -offset;
+    let y = offset - blockH;
 
     ctx.save();
     ctx.globalAlpha = opacity;
@@ -726,7 +734,7 @@ export class RoadRenderer {
     const scrolled = this.worldScroll * parallax;
     const offset = ((scrolled % blockH) + blockH) % blockH;
     let block = Math.floor(scrolled / blockH);
-    let y = -offset;
+    let y = offset - blockH;
     while (y < h + blockH) {
       this.drawPalmTree(ctx, 60, y + 20, hash(block, 21), palette);
       this.drawPalmTree(ctx, 120, y + 110, hash(block, 22), palette);
@@ -770,7 +778,7 @@ export class RoadRenderer {
     ctx.strokeStyle = palette.sceneryAccent;
     ctx.globalAlpha = 0.35;
     ctx.lineWidth = 1;
-    for (let y = -offset; y < h; y += cycle) {
+    for (let y = offset - cycle; y < h; y += cycle) {
       this.drawWaveCurve(ctx, 18, y, 130);
       this.drawWaveCurve(ctx, w - 148, y + cycle / 2, 130);
     }
