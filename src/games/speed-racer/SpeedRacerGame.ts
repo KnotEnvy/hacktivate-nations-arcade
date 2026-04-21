@@ -50,10 +50,17 @@ const BANNER_TOTAL = BANNER_FADE_IN + BANNER_HOLD + BANNER_FADE_OUT;
 // Lives + extra-life thresholds
 const STARTING_LIVES = 1;
 const MAX_LIVES = 5;
-const LIFE_BONUS_SCORES: readonly number[] = [10000, 25000, 50000, 100000];
+// First extra life comes early so rookie runs still get to see a second section.
+const LIFE_BONUS_SCORES: readonly number[] = [2500, 10000, 25000, 50000, 100000];
 const RESPAWN_INVULN_DURATION = 2.0; // seconds of post-respawn invulnerability
 const LIFE_LOST_FLASH_DURATION = 1.2; // seconds the "LIFE LOST" overlay holds
 const LIFE_BONUS_FLASH_DURATION = 1.6; // seconds the "EXTRA LIFE" overlay holds
+
+// Chassis HP — each life can soak MAX_HP lethal hits before dying. Gives the
+// player a tactile "damage meter" rather than one-shot kills.
+const MAX_HP = 3;
+const HIT_INVULN_DURATION = 1.1; // seconds of post-hit invulnerability (shorter than full respawn)
+const HIT_FLASH_DURATION = 0.5; // damage meter red-flash length after a hit
 
 // Section-clear reward (§5.4)
 const SECTION_CLEAR_BONUS_BASE = 500;
@@ -149,6 +156,11 @@ export class SpeedRacerGame extends BaseGame {
   private lifeLostFlash = 0; // counts down; > 0 means LIFE LOST overlay shows
   private lifeBonusFlash = 0; // counts down; > 0 means EXTRA LIFE overlay shows
 
+  // Chassis HP — per-life damage buffer. Hits chip away at HP; only when HP
+  // would go below zero does triggerDeath actually fire.
+  private hp = MAX_HP;
+  private hitFlash = 0; // damage-meter red flash timer
+
   // Section-clear flash state
   private sectionClearFlash = 0; // counts down; > 0 means SECTION CLEAR overlay shows
   private sectionClearBonusLast = 0; // most recent bonus amount (for overlay text)
@@ -202,6 +214,12 @@ export class SpeedRacerGame extends BaseGame {
     this.lifeBonusFlash = 0;
     this.sectionClearFlash = 0;
     this.sectionClearBonusLast = 0;
+    this.hp = MAX_HP;
+    this.hitFlash = 0;
+
+    // Make sure the first section delivers a weapon van early so new players
+    // see the pickup loop during the tutorial stretch.
+    this.spawner.scheduleVanIn(6);
 
     this.endHandler = (e) => {
       if (!this.isRunning || this.isPaused) return;
@@ -314,6 +332,7 @@ export class SpeedRacerGame extends BaseGame {
     if (this.lifeLostFlash > 0) this.lifeLostFlash = Math.max(0, this.lifeLostFlash - dt);
     if (this.lifeBonusFlash > 0) this.lifeBonusFlash = Math.max(0, this.lifeBonusFlash - dt);
     if (this.sectionClearFlash > 0) this.sectionClearFlash = Math.max(0, this.sectionClearFlash - dt);
+    if (this.hitFlash > 0) this.hitFlash = Math.max(0, this.hitFlash - dt);
 
     // Award extra life when score crosses next threshold
     while (
@@ -389,6 +408,34 @@ export class SpeedRacerGame extends BaseGame {
     this.bannerTimer = BANNER_TOTAL;
   }
 
+  // Funnel every lethal-hit site through here so the chassis HP system and
+  // respawn logic stay in one place. Returns true if the hit actually ended
+  // the run (so callers can early-out on `return`).
+  private takeDamage(cause: DeathCause): boolean {
+    if (this.recapMode || !this.isRunning) return true;
+    // Player-initiated end bypasses the HP system.
+    if (cause === 'self_end') {
+      this.triggerDeath(cause);
+      return true;
+    }
+    // Ignore damage during post-hit or post-respawn invulnerability.
+    if (this.respawnInvuln > 0) return false;
+
+    this.hp -= 1;
+    this.hitFlash = HIT_FLASH_DURATION;
+    this.respawnInvuln = HIT_INVULN_DURATION;
+    // A glancing hit breaks the combo — you lost control for a moment.
+    this.dropCombo();
+    this.shake.add(0.45);
+    this.services?.audio?.playSound?.('hit', { volume: 0.55 });
+
+    if (this.hp <= 0) {
+      this.triggerDeath(cause);
+      return true;
+    }
+    return false;
+  }
+
   private triggerDeath(cause: DeathCause): void {
     if (this.recapMode || !this.isRunning) return;
 
@@ -445,6 +492,9 @@ export class SpeedRacerGame extends BaseGame {
     this.civiliansLost = 0;
     // Drop combo — death always breaks the chain
     this.dropCombo();
+    // Full chassis restore on a new life.
+    this.hp = MAX_HP;
+    this.hitFlash = 0;
     // Arm invulnerability + UI flash
     this.respawnInvuln = RESPAWN_INVULN_DURATION;
     this.lifeLostFlash = LIFE_LOST_FLASH_DURATION;
@@ -695,10 +745,8 @@ export class SpeedRacerGame extends BaseGame {
         const dy = this.player.y - c.y;
         if (dx * dx + dy * dy <= c.r * c.r) {
           this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
-          this.shake.add(0.95);
           this.services?.audio?.playSound?.('explosion', { volume: 0.7 });
-          this.triggerDeath('chopper_bomb');
-          return;
+          if (this.takeDamage('chopper_bomb')) return;
         }
       }
     }
@@ -766,11 +814,14 @@ export class SpeedRacerGame extends BaseGame {
           continue;
         }
 
-        // Lethal: either armored (unmovable) or a head-on/rear-end collision.
-        this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
-        this.shake.add(0.9);
+        // Chassis hit: either armored (unmovable) or a head-on/rear-end
+        // collision. Chips HP; if HP drops to 0, the run actually ends.
+        this.particles.burstExplosion(this.player.x, this.player.y, 1.4);
         this.services?.audio?.playSound?.('collision', { volume: 0.6 });
-        this.triggerDeath('enemy_ram');
+        if (this.takeDamage('enemy_ram')) return;
+        // Non-lethal hit: remove the enemy that smacked us so we're not
+        // instantly re-hit after invulnerability ends.
+        enemy.alive = false;
         return;
       }
     }
@@ -815,11 +866,9 @@ export class SpeedRacerGame extends BaseGame {
         if (!proj.alive) continue;
         if (aabb(proj.getBounds(), pb)) {
           proj.alive = false;
-          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
-          this.shake.add(0.85);
-          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
-          this.triggerDeath('enemy_bullet');
-          return;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.2);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.55 });
+          if (this.takeDamage('enemy_bullet')) return;
         }
       }
     }
@@ -829,11 +878,9 @@ export class SpeedRacerGame extends BaseGame {
       for (const tank of this.boss.getTanks()) {
         if (!tank.alive) continue;
         if (aabb(pb, tank.getBounds())) {
-          this.particles.burstExplosion(this.player.x, this.player.y, 2.0);
-          this.shake.add(1.0);
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
           this.services?.audio?.playSound?.('collision', { volume: 0.7 });
-          this.triggerDeath('tank_shell');
-          return;
+          if (this.takeDamage('tank_shell')) return;
         }
       }
     }
@@ -844,11 +891,9 @@ export class SpeedRacerGame extends BaseGame {
         if (!shell.alive) continue;
         if (aabb(shell.getBounds(), pb)) {
           shell.alive = false;
-          this.particles.burstExplosion(this.player.x, this.player.y, 1.7);
-          this.shake.add(0.9);
-          this.services?.audio?.playSound?.('explosion', { volume: 0.65 });
-          this.triggerDeath('tank_shell');
-          return;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.3);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
+          if (this.takeDamage('tank_shell')) return;
         }
       }
     }
@@ -859,11 +904,9 @@ export class SpeedRacerGame extends BaseGame {
         if (!drone.alive || !drone.isSwooping()) continue;
         if (aabb(drone.getBounds(), pb)) {
           drone.alive = false;
-          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
-          this.shake.add(0.85);
-          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
-          this.triggerDeath('drone_swoop');
-          return;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.2);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.55 });
+          if (this.takeDamage('drone_swoop')) return;
         }
       }
     }
@@ -1119,6 +1162,9 @@ export class SpeedRacerGame extends BaseGame {
     // Lives indicator — small car icons
     this.renderLivesIcons(ctx, 130, 60);
 
+    // Chassis integrity — stylized armor-plate meter below the lives icons.
+    this.renderChassisMeter(ctx, 130, 78);
+
     // Secondary weapon
     if (this.secondary.active) {
       const cfg = SECONDARY_CONFIGS[this.secondary.active];
@@ -1150,6 +1196,80 @@ export class SpeedRacerGame extends BaseGame {
     if (this.sectionClearFlash > 0) this.renderSectionClearOverlay(ctx);
 
     this.touch.render(ctx);
+  }
+
+  // Chassis integrity meter — three angled armor plates that fill with neon
+  // green when healthy and shift to amber/red as you take hits. The most
+  // recently damaged plate glitches/flashes red briefly for impact feedback.
+  private renderChassisMeter(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+    const plates = MAX_HP;
+    const plateW = 16;
+    const plateH = 10;
+    const gap = 3;
+    const skew = 4; // parallelogram slant for stylized "armor panel" look
+    const flashT = this.hitFlash > 0 ? this.hitFlash / HIT_FLASH_DURATION : 0;
+
+    ctx.save();
+    ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#FFFFFF88';
+    ctx.fillText('CHASSIS', x, y - 10);
+
+    for (let i = 0; i < plates; i++) {
+      const px = x + i * (plateW + gap);
+      const intact = i < this.hp;
+      const isMostRecent = i === this.hp; // the plate we just lost
+
+      // Base plate (parallelogram)
+      ctx.beginPath();
+      ctx.moveTo(px + skew, y);
+      ctx.lineTo(px + plateW + skew, y);
+      ctx.lineTo(px + plateW, y + plateH);
+      ctx.lineTo(px, y + plateH);
+      ctx.closePath();
+
+      if (intact) {
+        // Green→amber gradient based on how much HP is left (panic colour as HP drops)
+        const hpRatio = this.hp / MAX_HP;
+        const fill =
+          hpRatio > 0.66 ? '#00FFA8' : hpRatio > 0.33 ? '#FFD700' : '#FF8040';
+        ctx.fillStyle = fill;
+        ctx.shadowColor = fill;
+        ctx.shadowBlur = 6;
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        // Rivet highlights
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        ctx.fillRect(px + skew + 2, y + 2, 1, 1);
+        ctx.fillRect(px + plateW + skew - 3, y + 2, 1, 1);
+      } else {
+        // Destroyed plate — dim red silhouette with a cracked diagonal line
+        ctx.fillStyle = isMostRecent && flashT > 0
+          ? `rgba(255,60,90,${0.4 + 0.5 * flashT})`
+          : 'rgba(60,20,30,0.55)';
+        ctx.fill();
+        ctx.strokeStyle = isMostRecent && flashT > 0 ? '#FF4060' : '#883344';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Crack line
+        ctx.beginPath();
+        ctx.moveTo(px + 2, y + plateH - 2);
+        ctx.lineTo(px + plateW - 2, y + 2);
+        ctx.strokeStyle = isMostRecent && flashT > 0 ? '#FFCCDD' : '#552233';
+        ctx.stroke();
+      }
+    }
+
+    // Global post-hit red sweep across the whole meter
+    if (flashT > 0) {
+      const totalW = plates * plateW + (plates - 1) * gap + skew;
+      ctx.globalAlpha = 0.45 * flashT;
+      ctx.fillStyle = '#FF2040';
+      ctx.fillRect(x - 2, y - 2, totalW + 4, plateH + 4);
+    }
+
+    ctx.restore();
   }
 
   private renderLivesIcons(ctx: CanvasRenderingContext2D, x: number, y: number): void {
@@ -1355,5 +1475,8 @@ export class SpeedRacerGame extends BaseGame {
     this.lifeBonusFlash = 0;
     this.sectionClearFlash = 0;
     this.sectionClearBonusLast = 0;
+    this.hp = MAX_HP;
+    this.hitFlash = 0;
+    this.spawner.scheduleVanIn(6);
   }
 }

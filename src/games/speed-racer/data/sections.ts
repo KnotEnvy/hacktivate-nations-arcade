@@ -94,13 +94,18 @@ const NEON_HIGHWAY: SectionDef = {
     bannerGlow: '#FF1493',
   },
   spawnerConfig: {
-    spawnInterval: 1.6,
+    // Gentle tutorial stretch: only ram-type enemies, spaced out, so new
+    // players can learn steering and side-swipe ramming without being
+    // sniped or walled off by armored. Civilians stay sparse for the same
+    // reason — too much traffic in section 1 feels unfair before the HUD
+    // is familiar. Other enemy types kick in starting in Section 2.
+    spawnInterval: 2.4,
     enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [6, 2, 0], // no armored in intro
-    civilianChance: 0.55,
-    civilianSpawnInterval: 2.6,
-    vanIntervalMin: 16,
-    vanIntervalMax: 22,
+    enemyTypeWeights: [1, 0, 0],
+    civilianChance: 0.35,
+    civilianSpawnInterval: 3.4,
+    vanIntervalMin: 12,
+    vanIntervalMax: 18,
   },
 };
 
