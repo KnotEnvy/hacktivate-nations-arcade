@@ -830,6 +830,50 @@ export const ACHIEVEMENTS: Achievement[] = [
         reward: 500,
         unlocked: false
       },
+      {
+        id: 'speedracer_pacifist_mile',
+        title: 'Pacifist Mile',
+        description: 'Travel 1,000m in one stretch without firing',
+        icon: '☮️',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'pacifist_distance', value: 1000 },
+        reward: 200,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_surgeon',
+        title: 'Surgeon',
+        description: 'Clear 3 sections with zero civilian losses',
+        icon: '🩺',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'perfect_sections', value: 3 },
+        reward: 300,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_boss_hunter',
+        title: 'Boss Hunter',
+        description: 'Destroy 3 bomb choppers in one run',
+        icon: '🚁',
+        gameId: 'speed-racer',
+        category: 'skill',
+        requirement: { type: 'choppers_killed', value: 3 },
+        reward: 350,
+        unlocked: false
+      },
+      {
+        id: 'speedracer_globetrotter',
+        title: 'Globetrotter',
+        description: 'Visit all 7 sections in one run',
+        icon: '🌍',
+        gameId: 'speed-racer',
+        category: 'progression',
+        requirement: { type: 'unique_sections_visited', value: 7 },
+        reward: 600,
+        unlocked: false
+      },
 
       // Cross-Game Meta Achievements
       {

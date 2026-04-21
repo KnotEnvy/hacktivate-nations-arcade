@@ -54,6 +54,8 @@ export interface SectionPalette {
   bannerGlow: string;
 }
 
+export type WeatherEffect = 'none' | 'snow';
+
 export interface SectionDef {
   id: string;
   name: string; // banner headline
@@ -62,6 +64,7 @@ export interface SectionDef {
   palette: SectionPalette;
   spawnerConfig: Partial<SpawnerOptions>;
   terrain?: Terrain; // affects player handling. Defaults to 'road'.
+  weather?: WeatherEffect; // atmospheric overlay. Defaults to 'none'.
 }
 
 // === Section 1 — gentle intro. No armored, sparse traffic. ===
@@ -278,8 +281,8 @@ const HARBOR_RUN: SectionDef = {
   },
   spawnerConfig: {
     spawnInterval: 1.5,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [6, 3, 1],
+    enemyTypes: ['ram', 'shooter', 'armored', 'patrol'],
+    enemyTypeWeights: [4, 2, 1, 5], // patrol-heavy on water
     civilianChance: 0.5,
     civilianSpawnInterval: 2.4,
     vanIntervalMin: 17,
@@ -295,6 +298,7 @@ const FROST_PASS: SectionDef = {
   subtitle: 'Black ice · Brake gently',
   lengthMeters: 7000,
   terrain: 'ice',
+  weather: 'snow',
   palette: {
     roadColor: '#3a4a6a',
     roadShadeColor: '#1f2a40',

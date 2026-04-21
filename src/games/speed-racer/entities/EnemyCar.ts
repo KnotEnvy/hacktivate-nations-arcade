@@ -1,11 +1,14 @@
 import { ROAD } from '../data/constants';
 
-export type EnemyType = 'ram' | 'shooter' | 'armored';
+export type EnemyType = 'ram' | 'shooter' | 'armored' | 'patrol';
 export type EnemyVisual = 'car' | 'jetboat';
 
 export interface EnemyConfig {
   type: EnemyType;
-  forwardSpeed: number;   // world-frame forward speed (px/sec)
+  forwardSpeed: number;   // cruise forward speed while far ahead of player (px/sec)
+  // How much slower than the player this enemy wants to move when adjacent.
+  // Smaller delta = hovers closer to the player (more aggressive blocking).
+  matchSpeedDelta: number;
   width: number;
   height: number;
   hp: number;
@@ -19,7 +22,8 @@ export interface EnemyConfig {
 export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
   ram: {
     type: 'ram',
-    forwardSpeed: 200,
+    forwardSpeed: 260,
+    matchSpeedDelta: 20,
     width: 42,
     height: 70,
     hp: 1,
@@ -31,7 +35,8 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
   },
   shooter: {
     type: 'shooter',
-    forwardSpeed: 290,
+    forwardSpeed: 300,
+    matchSpeedDelta: 60,
     width: 44,
     height: 74,
     hp: 2,
@@ -43,7 +48,8 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
   },
   armored: {
     type: 'armored',
-    forwardSpeed: 160,
+    forwardSpeed: 220,
+    matchSpeedDelta: 90,
     width: 58,
     height: 100,
     hp: Infinity,
@@ -53,7 +59,25 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     color: '#2a2a2a',
     accentColor: '#888888',
   },
+  // Aquatic weaving patroller — meant for water sections. Sine-path AI,
+  // 1 HP, faster than a ram. Fits the jet-boat sprite.
+  patrol: {
+    type: 'patrol',
+    forwardSpeed: 300,
+    matchSpeedDelta: 30,
+    width: 40,
+    height: 68,
+    hp: 1,
+    scoreValue: 180,
+    coinDrop: 2,
+    bulletproof: false,
+    color: '#00B0C8',
+    accentColor: '#FFFFFF',
+  },
 };
+
+const APPROACH_RANGE = 280; // px of distAhead below which enemies ramp to match
+const FORWARD_SPEED_ACCEL = 280; // px/sec^2 — how fast enemy changes its forward speed
 
 export class EnemyCar {
   x: number;
@@ -63,10 +87,15 @@ export class EnemyCar {
   hp: number;
   config: EnemyConfig;
   visual: EnemyVisual;
+  // Live forward speed — ramps from cruise toward player-match as the enemy closes in.
+  forwardSpeed: number;
   // Shooter-specific
   fireCooldown = 1.2;
   // Wake animation accumulator (jetboat only)
   private wakeT = Math.random() * 1.7;
+  // Patrol AI — sine-weave accumulators
+  private weaveT = Math.random() * Math.PI * 2;
+  private weaveCenterX: number;
 
   constructor(type: EnemyType, x: number, y: number, visual: EnemyVisual = 'car') {
     this.config = ENEMY_CONFIGS[type];
@@ -74,10 +103,33 @@ export class EnemyCar {
     this.y = y;
     this.hp = this.config.hp;
     this.visual = visual;
+    this.forwardSpeed = this.config.forwardSpeed;
+    this.weaveCenterX = x;
   }
 
   update(dt: number, playerSpeed: number, playerX: number, playerY: number): void {
-    this.vy = playerSpeed - this.config.forwardSpeed;
+    // Spy-Hunter approach: fall in fast while far ahead, then match the player's
+    // speed when adjacent so the enemy hovers alongside and tries to block.
+    const distAhead = playerY - this.y;
+    let targetForward: number;
+    if (distAhead > APPROACH_RANGE) {
+      targetForward = this.config.forwardSpeed;
+    } else {
+      const matchTarget = Math.max(
+        this.config.forwardSpeed,
+        playerSpeed - this.config.matchSpeedDelta,
+      );
+      const t = Math.max(0, Math.min(1, 1 - distAhead / APPROACH_RANGE));
+      targetForward = this.config.forwardSpeed + (matchTarget - this.config.forwardSpeed) * t;
+    }
+    const maxAccel = FORWARD_SPEED_ACCEL * dt;
+    if (this.forwardSpeed < targetForward) {
+      this.forwardSpeed = Math.min(targetForward, this.forwardSpeed + maxAccel);
+    } else if (this.forwardSpeed > targetForward) {
+      this.forwardSpeed = Math.max(targetForward, this.forwardSpeed - maxAccel);
+    }
+
+    this.vy = playerSpeed - this.forwardSpeed;
     this.y += this.vy * dt;
     this.wakeT += dt * 1.4;
 
@@ -87,6 +139,8 @@ export class EnemyCar {
       this.updateRamAI(dt, playerX, playerY);
     } else if (this.config.type === 'armored') {
       this.updateArmoredAI(dt, playerX);
+    } else if (this.config.type === 'patrol') {
+      this.updatePatrolAI(dt, playerX);
     }
     // Shooter AI handled by EnemySpawner (needs projectile spawning)
 
@@ -109,6 +163,19 @@ export class EnemyCar {
     const dx = playerX - this.x;
     const maxLateral = 70 * dt;
     this.x += Math.max(-maxLateral, Math.min(maxLateral, dx));
+  }
+
+  private updatePatrolAI(dt: number, playerX: number): void {
+    // Patrol weaves in a sine pattern around a center that drifts toward the player.
+    this.weaveT += dt * 2.2;
+    const centerDrift = (playerX - this.weaveCenterX) * 0.9 * dt;
+    this.weaveCenterX += centerDrift;
+    const halfW = this.config.width / 2;
+    if (this.weaveCenterX - halfW < ROAD.X_MIN + 40) this.weaveCenterX = ROAD.X_MIN + 40 + halfW;
+    else if (this.weaveCenterX + halfW > ROAD.X_MAX - 40) {
+      this.weaveCenterX = ROAD.X_MAX - 40 - halfW;
+    }
+    this.x = this.weaveCenterX + Math.sin(this.weaveT) * 70;
   }
 
   takeHit(damage: number): boolean {

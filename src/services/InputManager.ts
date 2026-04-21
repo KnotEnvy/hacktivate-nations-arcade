@@ -44,8 +44,10 @@ export class InputManager {
     // Mouse events
     const onMouseMove = (e: MouseEvent) => {
       const rect = this.canvas!.getBoundingClientRect();
-      this.state.mouse.x = e.clientX - rect.left;
-      this.state.mouse.y = e.clientY - rect.top;
+      const scaleX = this.canvas!.width / rect.width;
+      const scaleY = this.canvas!.height / rect.height;
+      this.state.mouse.x = (e.clientX - rect.left) * scaleX;
+      this.state.mouse.y = (e.clientY - rect.top) * scaleY;
     };
 
     const onMouseDown = (e: MouseEvent) => {
@@ -98,11 +100,16 @@ export class InputManager {
   private updateTouchState(e: TouchEvent): void {
     if (!this.canvas) return;
     const rect = this.canvas.getBoundingClientRect();
-    
+    // Canvas is frequently CSS-scaled (maxWidth: 100%), so map CSS-pixel
+    // touch coordinates back into the canvas's internal resolution. Without
+    // this, taps on virtual controls miss their buttons on small viewports.
+    const scaleX = rect.width > 0 ? this.canvas.width / rect.width : 1;
+    const scaleY = rect.height > 0 ? this.canvas.height / rect.height : 1;
+
     this.state.touch = Array.from(e.touches).map(touch => ({
       id: touch.identifier,
-      x: touch.clientX - rect.left,
-      y: touch.clientY - rect.top,
+      x: (touch.clientX - rect.left) * scaleX,
+      y: (touch.clientY - rect.top) * scaleY,
     }));
   }
 

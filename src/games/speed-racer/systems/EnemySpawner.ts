@@ -57,6 +57,12 @@ export class EnemySpawner {
     this.opts = { ...this.opts, enemyVisual: 'car', ...opts };
   }
 
+  // Arm an early van spawn (used by section-clear reward). Respects the
+  // existing "one van on screen at a time" gate.
+  scheduleVanIn(seconds: number): void {
+    if (this.vanTimer > seconds) this.vanTimer = seconds;
+  }
+
   update(dt: number, playerSpeed: number, playerX: number, playerY: number): void {
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {

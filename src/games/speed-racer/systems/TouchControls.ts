@@ -21,19 +21,22 @@ interface RectButton { kind: 'rect'; x: number; y: number; w: number; h: number;
 interface CircleButton { kind: 'circle'; x: number; y: number; r: number; label: string }
 type Button = RectButton | CircleButton;
 
-const PAD_CX = 110;
-const PAD_CY = 460;
-const PAD_BTN = 44; // size of each direction button
-const PAD_GAP = 6;
+// Sizes picked for comfortable thumb play. 44px is the absolute minimum
+// touch-target spec; we go larger here because CSS scaling on phones can
+// make the effective tappable area smaller than the rendered one.
+const PAD_CX = 120;
+const PAD_CY = 450;
+const PAD_BTN = 56;
+const PAD_GAP = 10;
 
-const FIRE_CX = CANVAS.WIDTH - 90;
-const FIRE_CY = 470;
-const FIRE_R = 52;
+const FIRE_CX = CANVAS.WIDTH - 100;
+const FIRE_CY = 465;
+const FIRE_R = 58;
 
-const SEC_CX = CANVAS.WIDTH - 90;
-const SEC_CY = 360;
-const SEC_W = 96;
-const SEC_H = 44;
+const SEC_CX = CANVAS.WIDTH - 100;
+const SEC_CY = 350;
+const SEC_W = 108;
+const SEC_H = 52;
 
 export class TouchControls {
   private revealed = false;

@@ -1,0 +1,402 @@
+// Additional boss units used by BossSpawner alongside BombChopper:
+//   - Tank: heavy armored blocker. Missile-kills only. Fires shells.
+//   - TankShell: projectile fired by Tank.
+//   - Drone: fast low-HP unit that hovers, then swoops. Bullets or missiles kill.
+//
+// All share lightweight "alive / update / render / getBounds / takeHit" shapes
+// so SpeedRacerGame can resolve collisions uniformly.
+
+import { ROAD } from '../data/constants';
+
+export const TANK_SCORE_REWARD = 2500;
+export const TANK_COIN_REWARD = 55;
+export const DRONE_SCORE_REWARD = 200;
+export const DRONE_COIN_REWARD = 4;
+
+const TANK_WIDTH = 88;
+const TANK_HEIGHT = 120;
+const TANK_HP = 3;
+const TANK_CRUISE_SPEED = 240;            // while far ahead of player
+const TANK_MATCH_DELTA = 70;              // stays slightly ahead of player
+const TANK_FORWARD_ACCEL = 240;
+const TANK_STEER_SPEED = 55;              // slow lateral drift to block player
+const TANK_FIRE_INTERVAL_MIN = 2.6;
+const TANK_FIRE_INTERVAL_MAX = 4.0;
+const TANK_APPROACH_RANGE = 320;
+
+const SHELL_SPEED = 560;                  // downward world-frame (toward player)
+const SHELL_WIDTH = 10;
+const SHELL_HEIGHT = 18;
+
+const DRONE_SIZE = 22;
+const DRONE_HOVER_Y_MIN = 90;
+const DRONE_HOVER_Y_MAX = 170;
+const DRONE_HOVER_SPEED = 160;
+const DRONE_SWOOP_SPEED = 520;
+const DRONE_RETREAT_SPEED = 260;
+
+export class Tank {
+  x: number;
+  y: number;
+  alive = true;
+  hp = TANK_HP;
+  forwardSpeed = TANK_CRUISE_SPEED;
+  vy = 0;
+  private fireTimer = 1.8;
+  private trackT = 0;
+
+  constructor(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
+
+  update(
+    dt: number,
+    playerSpeed: number,
+    playerX: number,
+    playerY: number,
+    onFireShell: (x: number, y: number) => void,
+  ): void {
+    if (!this.alive) return;
+    this.trackT += dt;
+
+    // Match-speed approach (same feel as EnemyCar)
+    const distAhead = playerY - this.y;
+    let targetForward: number;
+    if (distAhead > TANK_APPROACH_RANGE) {
+      targetForward = TANK_CRUISE_SPEED;
+    } else {
+      const matchTarget = Math.max(TANK_CRUISE_SPEED, playerSpeed - TANK_MATCH_DELTA);
+      const t = Math.max(0, Math.min(1, 1 - distAhead / TANK_APPROACH_RANGE));
+      targetForward = TANK_CRUISE_SPEED + (matchTarget - TANK_CRUISE_SPEED) * t;
+    }
+    const maxAccel = TANK_FORWARD_ACCEL * dt;
+    if (this.forwardSpeed < targetForward) {
+      this.forwardSpeed = Math.min(targetForward, this.forwardSpeed + maxAccel);
+    } else {
+      this.forwardSpeed = Math.max(targetForward, this.forwardSpeed - maxAccel);
+    }
+    this.vy = playerSpeed - this.forwardSpeed;
+    this.y += this.vy * dt;
+
+    // Lateral drift toward player to block lanes
+    const dx = playerX - this.x;
+    const maxLat = TANK_STEER_SPEED * dt;
+    this.x += Math.max(-maxLat, Math.min(maxLat, dx));
+
+    const halfW = TANK_WIDTH / 2;
+    if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
+    else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+
+    // Fire shells when on-screen
+    if (this.y > 40) {
+      this.fireTimer -= dt;
+      if (this.fireTimer <= 0) {
+        onFireShell(this.x, this.y + TANK_HEIGHT / 2);
+        this.fireTimer =
+          TANK_FIRE_INTERVAL_MIN + Math.random() * (TANK_FIRE_INTERVAL_MAX - TANK_FIRE_INTERVAL_MIN);
+      }
+    }
+
+    // Despawn if it falls off the bottom (player outran it somehow)
+    if (this.y > 780) this.alive = false;
+  }
+
+  takeHit(missile: boolean): boolean {
+    if (!this.alive) return false;
+    // Armored: bullets bounce, only missiles do damage
+    if (!missile) return false;
+    this.hp -= 1;
+    if (this.hp <= 0) {
+      this.alive = false;
+      return true;
+    }
+    return false;
+  }
+
+  isBulletproof(): boolean {
+    return true;
+  }
+
+  getBounds(): { x: number; y: number; w: number; h: number } {
+    return {
+      x: this.x - TANK_WIDTH / 2,
+      y: this.y - TANK_HEIGHT / 2,
+      w: TANK_WIDTH,
+      h: TANK_HEIGHT,
+    };
+  }
+
+  render(ctx: CanvasRenderingContext2D): void {
+    const w = TANK_WIDTH;
+    const h = TANK_HEIGHT;
+    const x = this.x - w / 2;
+    const y = this.y - h / 2;
+
+    ctx.save();
+
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(x + 5, y + 7, w, h);
+
+    // Treads (left/right)
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(x, y, 12, h);
+    ctx.fillRect(x + w - 12, y, 12, h);
+    // Tread segments animate down with y motion
+    ctx.fillStyle = '#3a3a48';
+    const treadT = (this.trackT * 4) % 1;
+    for (let i = 0; i < 8; i++) {
+      const ty = y + ((i + treadT) * (h / 8));
+      ctx.fillRect(x + 2, ty, 8, 6);
+      ctx.fillRect(x + w - 10, ty, 8, 6);
+    }
+
+    // Hull
+    ctx.fillStyle = '#4a4a58';
+    ctx.fillRect(x + 12, y + 10, w - 24, h - 20);
+    // Hull plating highlight
+    ctx.fillStyle = '#5a5a68';
+    ctx.fillRect(x + 14, y + 12, w - 28, 6);
+
+    // Turret base
+    ctx.fillStyle = '#2a2a32';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y + 6, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6a6a78';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y + 6, 18, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Cannon barrel (points down toward player)
+    ctx.fillStyle = '#1a1a22';
+    ctx.fillRect(this.x - 5, this.y + 6, 10, 36);
+    ctx.fillStyle = '#3a3a48';
+    ctx.fillRect(this.x - 7, this.y + 40, 14, 6);
+
+    // Warning chevrons
+    ctx.fillStyle = '#FFD700';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(x + 20 + i * 12, y + h - 18, 8, 3);
+    }
+
+    // HP pips (small indicator above turret)
+    for (let i = 0; i < TANK_HP; i++) {
+      ctx.fillStyle = i < this.hp ? '#FF6347' : '#332228';
+      ctx.fillRect(this.x - 10 + i * 8, y + 4, 5, 3);
+    }
+
+    ctx.restore();
+  }
+}
+
+export class TankShell {
+  x: number;
+  y: number;
+  alive = true;
+  readonly width = SHELL_WIDTH;
+  readonly height = SHELL_HEIGHT;
+
+  constructor(x: number, y: number) {
+    this.x = x;
+    this.y = y;
+  }
+
+  update(dt: number): void {
+    // Fixed screen velocity — keeps the shell readable at any player speed.
+    this.y += SHELL_SPEED * dt;
+    if (this.y > 720) this.alive = false;
+  }
+
+  getBounds(): { x: number; y: number; w: number; h: number } {
+    return {
+      x: this.x - this.width / 2,
+      y: this.y - this.height / 2,
+      w: this.width,
+      h: this.height,
+    };
+  }
+
+  render(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    // Tracer trail
+    ctx.fillStyle = 'rgba(255,200,80,0.5)';
+    ctx.fillRect(this.x - 2, this.y - 18, 4, 14);
+    // Shell body
+    ctx.fillStyle = '#FFCC44';
+    ctx.fillRect(this.x - this.width / 2, this.y - this.height / 2, this.width, this.height);
+    ctx.fillStyle = '#FF6600';
+    ctx.fillRect(this.x - this.width / 2, this.y + this.height / 2 - 4, this.width, 4);
+    ctx.restore();
+  }
+}
+
+type DroneState = 'enter' | 'hover' | 'swoop' | 'retreat';
+
+export class Drone {
+  x: number;
+  y: number;
+  alive = true;
+  hp = 1;
+  private hoverY: number;
+  private hoverX: number;
+  private state: DroneState = 'enter';
+  private stateTimer: number;
+  private swoopTargetX = 0;
+  private swoopTargetY = 0;
+  private pulse = 0;
+
+  constructor(x: number, hoverY?: number) {
+    this.x = x;
+    this.y = -40;
+    this.hoverY = hoverY ?? DRONE_HOVER_Y_MIN + Math.random() * (DRONE_HOVER_Y_MAX - DRONE_HOVER_Y_MIN);
+    this.hoverX = x;
+    // Staggered pre-hover delay so swarm drones don't all swoop at once
+    this.stateTimer = 0.6 + Math.random() * 1.8;
+  }
+
+  update(dt: number, playerX: number, playerY: number): void {
+    if (!this.alive) return;
+    this.pulse += dt * 6;
+
+    if (this.state === 'enter') {
+      // Fly toward hover position
+      const dy = this.hoverY - this.y;
+      this.y += Math.sign(dy) * Math.min(Math.abs(dy), DRONE_HOVER_SPEED * dt);
+      const dx = this.hoverX - this.x;
+      this.x += Math.sign(dx) * Math.min(Math.abs(dx), DRONE_HOVER_SPEED * dt);
+      if (Math.abs(dy) < 3 && Math.abs(dx) < 3) {
+        this.state = 'hover';
+      }
+    } else if (this.state === 'hover') {
+      // Bob and weave, slowly chase player x
+      const bob = Math.sin(this.pulse) * 6;
+      this.y = this.hoverY + bob;
+      const dx = playerX - this.x;
+      this.x += Math.sign(dx) * Math.min(Math.abs(dx), DRONE_HOVER_SPEED * 0.6 * dt);
+      this.stateTimer -= dt;
+      if (this.stateTimer <= 0) {
+        // Lock swoop target at player's current position
+        this.swoopTargetX = playerX;
+        this.swoopTargetY = playerY;
+        this.state = 'swoop';
+      }
+    } else if (this.state === 'swoop') {
+      const dx = this.swoopTargetX - this.x;
+      const dy = this.swoopTargetY - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 4 || this.y > playerY + 20) {
+        // Missed — retreat back to hover altitude
+        this.state = 'retreat';
+        this.stateTimer = 1.2 + Math.random() * 0.8;
+      } else {
+        this.x += (dx / dist) * DRONE_SWOOP_SPEED * dt;
+        this.y += (dy / dist) * DRONE_SWOOP_SPEED * dt;
+      }
+    } else if (this.state === 'retreat') {
+      const dy = this.hoverY - this.y;
+      this.y += Math.sign(dy) * Math.min(Math.abs(dy), DRONE_RETREAT_SPEED * dt);
+      if (Math.abs(dy) < 3) {
+        this.state = 'hover';
+        this.stateTimer = 2.0 + Math.random() * 1.4;
+      }
+    }
+
+    // Despawn if driven off-screen
+    if (this.y > 720) this.alive = false;
+  }
+
+  isSwooping(): boolean {
+    return this.state === 'swoop';
+  }
+
+  takeHit(_missile: boolean): boolean {
+    if (!this.alive) return false;
+    this.hp -= 1;
+    if (this.hp <= 0) {
+      this.alive = false;
+      return true;
+    }
+    return false;
+  }
+
+  isBulletproof(): boolean {
+    return false;
+  }
+
+  getBounds(): { x: number; y: number; w: number; h: number } {
+    return {
+      x: this.x - DRONE_SIZE / 2,
+      y: this.y - DRONE_SIZE / 2,
+      w: DRONE_SIZE,
+      h: DRONE_SIZE,
+    };
+  }
+
+  render(ctx: CanvasRenderingContext2D): void {
+    const r = DRONE_SIZE / 2;
+    ctx.save();
+
+    // Swoop telegraph — red ring under target when about to attack
+    if (this.state === 'hover' && this.stateTimer < 0.5) {
+      ctx.globalAlpha = 0.4 + 0.6 * (1 - this.stateTimer / 0.5);
+      ctx.strokeStyle = '#FF3366';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Rotor blades — spinning x shape
+    ctx.strokeStyle = 'rgba(200,200,255,0.4)';
+    ctx.lineWidth = 1.5;
+    const bladeAngle = this.pulse * 4;
+    for (let i = 0; i < 4; i++) {
+      const a = bladeAngle + (i * Math.PI) / 2;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x + Math.cos(a) * r, this.y + Math.sin(a) * r);
+      ctx.stroke();
+    }
+
+    // Body
+    ctx.shadowColor = this.state === 'swoop' ? '#FF0044' : '#00FFFF';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#2a1a3a';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Eye / sensor
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = this.state === 'swoop' ? '#FF3366' : '#88E5FF';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+}
+
+// Spawn helpers — used by BossSpawner
+
+export function spawnDroneSwarm(): Drone[] {
+  const count = 4;
+  const drones: Drone[] = [];
+  const laneWidth = ROAD.WIDTH / count;
+  for (let i = 0; i < count; i++) {
+    const x = ROAD.X_MIN + laneWidth * (i + 0.5);
+    const hoverY = DRONE_HOVER_Y_MIN + (i % 2) * 40;
+    drones.push(new Drone(x, hoverY));
+  }
+  return drones;
+}
+
+export function spawnTank(): Tank {
+  // Spawn above the road, slightly offset from center so it drifts in
+  const startX = ROAD.X_MIN + ROAD.WIDTH * (0.3 + Math.random() * 0.4);
+  return new Tank(startX, -TANK_HEIGHT / 2);
+}
+

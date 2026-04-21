@@ -109,6 +109,11 @@ interface GameEndData {
   powerups_used?: number;
   sections_cleared?: number;
   civilians_lost?: number;
+  pacifist_distance?: number;
+  choppers_killed?: number;
+  perfect_sections?: number;
+  unique_sections_visited?: number;
+  shots_fired?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';
@@ -925,6 +930,10 @@ export function ArcadeHub() {
             ...achievementService.checkAchievement('van_pickups', gameData.van_pickups || 0, selectedGameId),
             ...achievementService.checkAchievement('powerups_used', gameData.powerups_used || 0, selectedGameId),
             ...achievementService.checkAchievement('sections_cleared', gameData.sections_cleared || 0, selectedGameId),
+            ...achievementService.checkAchievement('pacifist_distance', gameData.pacifist_distance || 0, selectedGameId),
+            ...achievementService.checkAchievement('perfect_sections', gameData.perfect_sections || 0, selectedGameId),
+            ...achievementService.checkAchievement('choppers_killed', gameData.choppers_killed || 0, selectedGameId),
+            ...achievementService.checkAchievement('unique_sections_visited', gameData.unique_sections_visited || 0, selectedGameId),
           ]
         : [])
     ];

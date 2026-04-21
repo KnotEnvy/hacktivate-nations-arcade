@@ -290,6 +290,9 @@ export function ThemedGameCanvas({
             maxWidth: '100%',
             height: 'auto',
             backgroundColor: '#000000',
+            // Suppress browser-level touch gestures (pinch-zoom, swipe-back,
+            // double-tap zoom) over the canvas so the game owns every touch.
+            touchAction: 'none',
           }}
         />
         

@@ -17,6 +17,9 @@ export class PlayerCar {
   // Handling multipliers — sections with water/ice terrain reduce traction.
   private steerMul = 1;
   private decelMul = 1;
+  // Transient slip override (ice patches). Multiplies decelMul toward zero so
+  // steering damping nearly vanishes. Reset to false each frame by the game.
+  private slipping = false;
   private visual: PlayerVisual = 'car';
   private wakeT = 0; // accumulator for boat wake animation
 
@@ -34,6 +37,7 @@ export class PlayerCar {
     this.speed = PLAYER.BASE_SPEED;
     this.steerMul = 1;
     this.decelMul = 1;
+    this.slipping = false;
     this.visual = 'car';
     this.wakeT = 0;
   }
@@ -41,6 +45,10 @@ export class PlayerCar {
   setHandling(steerMul: number, decelMul: number): void {
     this.steerMul = steerMul;
     this.decelMul = decelMul;
+  }
+
+  setSlipping(slipping: boolean): void {
+    this.slipping = slipping;
   }
 
   setVisual(visual: PlayerVisual): void {
@@ -66,7 +74,8 @@ export class PlayerCar {
     } else if (right && !left) {
       this.vx += steer;
     } else {
-      const decel = PLAYER.STEER_DECEL * this.decelMul * dt;
+      const slipFactor = this.slipping ? 0.08 : 1;
+      const decel = PLAYER.STEER_DECEL * this.decelMul * slipFactor * dt;
       if (this.vx > 0) this.vx = Math.max(0, this.vx - decel);
       else if (this.vx < 0) this.vx = Math.min(0, this.vx + decel);
     }

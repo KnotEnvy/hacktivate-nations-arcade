@@ -8,8 +8,16 @@ import { SecondaryWeaponSystem } from './systems/SecondaryWeaponSystem';
 import { ParticleSystem } from './systems/Particles';
 import { CameraShake } from './systems/CameraShake';
 import { BossSpawner } from './systems/BossSpawner';
+import { TerrainHazardSystem } from './systems/TerrainHazards';
+import { WeatherSystem } from './systems/Weather';
 import { TouchControls } from './systems/TouchControls';
 import { CHOPPER_SCORE_REWARD, CHOPPER_COIN_REWARD } from './entities/BombChopper';
+import {
+  TANK_SCORE_REWARD,
+  TANK_COIN_REWARD,
+  DRONE_SCORE_REWARD,
+  DRONE_COIN_REWARD,
+} from './entities/BossEnemies';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
 import { PLAYER } from './data/constants';
 import { SECTIONS, getSection, TERRAIN_HANDLING, type SectionDef } from './data/sections';
@@ -47,7 +55,20 @@ const RESPAWN_INVULN_DURATION = 2.0; // seconds of post-respawn invulnerability
 const LIFE_LOST_FLASH_DURATION = 1.2; // seconds the "LIFE LOST" overlay holds
 const LIFE_BONUS_FLASH_DURATION = 1.6; // seconds the "EXTRA LIFE" overlay holds
 
-type DeathCause = 'enemy_ram' | 'enemy_bullet' | 'civilian_spree' | 'self_end' | 'chopper_bomb';
+// Section-clear reward (§5.4)
+const SECTION_CLEAR_BONUS_BASE = 500;
+const SECTION_CLEAR_BONUS_PER_COMBO_LIFE = 250; // bonus = base + combo * lives * this
+const SECTION_CLEAR_FLASH_DURATION = 1.8;
+const SECTION_CLEAR_VAN_DELAY = 2.2; // seconds into next section before guaranteed van
+
+type DeathCause =
+  | 'enemy_ram'
+  | 'enemy_bullet'
+  | 'civilian_spree'
+  | 'self_end'
+  | 'chopper_bomb'
+  | 'tank_shell'
+  | 'drone_swoop';
 
 interface RecapStats {
   cause: DeathCause;
@@ -82,6 +103,8 @@ export class SpeedRacerGame extends BaseGame {
   private particles!: ParticleSystem;
   private shake!: CameraShake;
   private boss!: BossSpawner;
+  private terrainHazards!: TerrainHazardSystem;
+  private weather!: WeatherSystem;
   private touch!: TouchControls;
   private muzzleTimer = 0;
 
@@ -94,6 +117,14 @@ export class SpeedRacerGame extends BaseGame {
   private comboTimer = 0;
   private vanPickups = 0;
   private secondaryFireWasDown = false;
+  // Achievement-pass v2 trackers
+  private shotsFired = 0;
+  private pacifistDistance = 0; // longest streak of distance without firing primary
+  private pacifistCurrent = 0;  // live accumulator for the current no-fire streak
+  private choppersKilled = 0;
+  private civiliansLostThisSection = 0;
+  private perfectSectionsCleared = 0; // sections cleared with 0 civilian losses
+  private visitedSections = new Set<number>();
   private endHandler?: (e: KeyboardEvent) => void;
   private slowedEnemies = new WeakMap<object, number>(); // enemy -> time remaining slowed
 
@@ -118,6 +149,10 @@ export class SpeedRacerGame extends BaseGame {
   private lifeLostFlash = 0; // counts down; > 0 means LIFE LOST overlay shows
   private lifeBonusFlash = 0; // counts down; > 0 means EXTRA LIFE overlay shows
 
+  // Section-clear flash state
+  private sectionClearFlash = 0; // counts down; > 0 means SECTION CLEAR overlay shows
+  private sectionClearBonusLast = 0; // most recent bonus amount (for overlay text)
+
   protected onInit(): void {
     this.player = new PlayerCar();
     this.road = new RoadRenderer();
@@ -127,6 +162,8 @@ export class SpeedRacerGame extends BaseGame {
     this.particles = new ParticleSystem();
     this.shake = new CameraShake();
     this.boss = new BossSpawner();
+    this.terrainHazards = new TerrainHazardSystem();
+    this.weather = new WeatherSystem();
     this.touch = new TouchControls();
     this.muzzleTimer = 0;
     this.sectionIndex = 0;
@@ -145,6 +182,14 @@ export class SpeedRacerGame extends BaseGame {
     this.comboTimer = 0;
     this.vanPickups = 0;
     this.secondaryFireWasDown = false;
+    this.shotsFired = 0;
+    this.pacifistDistance = 0;
+    this.pacifistCurrent = 0;
+    this.choppersKilled = 0;
+    this.civiliansLostThisSection = 0;
+    this.perfectSectionsCleared = 0;
+    this.visitedSections = new Set<number>();
+    this.visitedSections.add(this.sectionIndex);
     this.slowedEnemies = new WeakMap();
     this.recapMode = false;
     this.recapTimer = 0;
@@ -155,6 +200,8 @@ export class SpeedRacerGame extends BaseGame {
     this.respawnInvuln = 0;
     this.lifeLostFlash = 0;
     this.lifeBonusFlash = 0;
+    this.sectionClearFlash = 0;
+    this.sectionClearBonusLast = 0;
 
     this.endHandler = (e) => {
       if (!this.isRunning || this.isPaused) return;
@@ -200,6 +247,14 @@ export class SpeedRacerGame extends BaseGame {
     } else {
       this.muzzleTimer = 0;
     }
+    // Pacifist-mile tracking: any new primary bullet this frame resets the streak.
+    if (bulletsAfter > bulletsBefore) {
+      this.shotsFired += bulletsAfter - bulletsBefore;
+      if (this.pacifistCurrent > this.pacifistDistance) {
+        this.pacifistDistance = this.pacifistCurrent;
+      }
+      this.pacifistCurrent = 0;
+    }
 
     // Edge-detect Q for secondary weapon (or virtual WEAPON button)
     const secondaryDown = input.isKeyPressed('KeyQ');
@@ -216,7 +271,9 @@ export class SpeedRacerGame extends BaseGame {
     this.secondary.update(dt, this.player.speed);
 
     this.spawner.update(dt, this.player.speed, this.player.x, this.player.y);
-    this.boss.update(dt, this.sectionsCleared, this.player.x);
+    this.boss.update(dt, this.sectionsCleared, this.player.x, this.player.y, this.player.speed);
+    this.terrainHazards.update(dt, this.player.speed);
+    this.weather.update(dt);
 
     this.particles.update(dt);
     this.shake.update(dt);
@@ -233,6 +290,10 @@ export class SpeedRacerGame extends BaseGame {
     const traveled = this.player.speed * dt;
     this.distance += traveled;
     this.sectionProgress += traveled;
+    this.pacifistCurrent += traveled;
+    if (this.pacifistCurrent > this.pacifistDistance) {
+      this.pacifistDistance = this.pacifistCurrent;
+    }
     if (this.player.speed > this.maxSpeed) this.maxSpeed = this.player.speed;
     this.score = Math.floor(this.distance / 10) + this.enemiesDestroyed * 100;
 
@@ -252,6 +313,7 @@ export class SpeedRacerGame extends BaseGame {
     if (this.respawnInvuln > 0) this.respawnInvuln = Math.max(0, this.respawnInvuln - dt);
     if (this.lifeLostFlash > 0) this.lifeLostFlash = Math.max(0, this.lifeLostFlash - dt);
     if (this.lifeBonusFlash > 0) this.lifeBonusFlash = Math.max(0, this.lifeBonusFlash - dt);
+    if (this.sectionClearFlash > 0) this.sectionClearFlash = Math.max(0, this.sectionClearFlash - dt);
 
     // Award extra life when score crosses next threshold
     while (
@@ -275,17 +337,39 @@ export class SpeedRacerGame extends BaseGame {
       civilians_lost: this.civiliansLost,
       van_pickups: this.vanPickups,
       sections_cleared: this.sectionsCleared,
+      pacifist_distance: Math.floor(this.pacifistDistance),
+      choppers_killed: this.choppersKilled,
+      perfect_sections: this.perfectSectionsCleared,
+      unique_sections_visited: this.visitedSections.size,
+      shots_fired: this.shotsFired,
     };
   }
 
   private advanceSection(): void {
     this.sectionsCleared += 1;
+    if (this.civiliansLostThisSection === 0) {
+      this.perfectSectionsCleared += 1;
+    }
+    this.civiliansLostThisSection = 0;
+    // Award clear bonus before swapping section so the just-finished run's
+    // combo and lives determine the payout.
+    const bonus =
+      SECTION_CLEAR_BONUS_BASE +
+      this.combo * this.lives * SECTION_CLEAR_BONUS_PER_COMBO_LIFE;
+    this.score += bonus;
+    this.sectionClearBonusLast = bonus;
+    this.sectionClearFlash = SECTION_CLEAR_FLASH_DURATION;
+
     this.sectionIndex = (this.sectionIndex + 1) % SECTIONS.length;
     this.sectionProgress = 0;
     this.currentSection = getSection(this.sectionIndex);
+    this.visitedSections.add(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
     this.applyTerrainHandling();
     this.armBanner(this.currentSection);
+    // Guarantee a weapon van early in the next section so the reward loop
+    // always pays out something tangible.
+    this.spawner.scheduleVanIn(SECTION_CLEAR_VAN_DELAY);
     // Subtle visual punctuation for the transition
     this.shake.add(0.18);
     this.services?.audio?.playSound?.('powerUp', { volume: 0.35 });
@@ -296,6 +380,8 @@ export class SpeedRacerGame extends BaseGame {
     const profile = TERRAIN_HANDLING[terrain];
     this.player.setHandling(profile.steerMul, profile.decelMul);
     this.player.setVisual(terrain === 'water' ? 'boat' : 'car');
+    this.terrainHazards.setTerrain(terrain);
+    this.weather.setWeather(this.currentSection.weather ?? 'none');
   }
 
   private armBanner(section: SectionDef): void {
@@ -329,6 +415,10 @@ export class SpeedRacerGame extends BaseGame {
       timeMs: Date.now() - this.startTime,
     };
     // Make sure final extendedGameData reflects the run for the official end-of-game flow
+    // Bake in the final pacifist streak before freezing the payload.
+    if (this.pacifistCurrent > this.pacifistDistance) {
+      this.pacifistDistance = this.pacifistCurrent;
+    }
     this.extendedGameData = {
       distance: this.recapStats.distance,
       speed: this.recapStats.topSpeed,
@@ -338,6 +428,11 @@ export class SpeedRacerGame extends BaseGame {
       civilians_lost: this.recapStats.civilians,
       van_pickups: this.recapStats.vanPickups,
       sections_cleared: this.sectionsCleared,
+      pacifist_distance: Math.floor(this.pacifistDistance),
+      choppers_killed: this.choppersKilled,
+      perfect_sections: this.perfectSectionsCleared,
+      unique_sections_visited: this.visitedSections.size,
+      shots_fired: this.shotsFired,
     };
   }
 
@@ -414,6 +509,18 @@ export class SpeedRacerGame extends BaseGame {
     const pb = this.player.getBounds();
     const playerVulnerable = this.respawnInvuln <= 0;
 
+    // Terrain hazards — ice patches apply slip while overlapping, wake streaks
+    // push the player laterally on contact. Clear slip each frame; the ice
+    // overlap below re-sets it.
+    this.player.setSlipping(false);
+    for (const h of this.terrainHazards.getHazards()) {
+      if (!h.alive) continue;
+      const overlaps = aabb(pb, h.getBounds());
+      const impact = h.contact(overlaps);
+      if (impact.slip) this.player.setSlipping(true);
+      if (impact.nudgeX !== 0) this.player.vx += impact.nudgeX;
+    }
+
     // Player bullets vs civilians/enemies
     for (const bullet of this.weapon.getProjectiles()) {
       if (!bullet.alive) continue;
@@ -426,6 +533,7 @@ export class SpeedRacerGame extends BaseGame {
           bullet.alive = false;
           civ.alive = false;
           this.civiliansLost += 1;
+          this.civiliansLostThisSection += 1;
           this.dropCombo();
           this.particles.burstExplosion(civ.x, civ.y, 0.8);
           this.shake.add(0.25);
@@ -440,6 +548,7 @@ export class SpeedRacerGame extends BaseGame {
       }
       if (hitCiv) continue;
 
+      let hitEnemy = false;
       for (const enemy of this.spawner.getEnemies()) {
         if (!enemy.alive) continue;
         if (aabb(bb, enemy.getBounds())) {
@@ -447,6 +556,7 @@ export class SpeedRacerGame extends BaseGame {
           if (enemy.config.bulletproof) {
             this.particles.burstHit(bullet.x, bullet.y);
             this.services?.audio?.playSound?.('hit', { volume: 0.2 });
+            hitEnemy = true;
             break;
           }
           const killed = enemy.takeHit(bullet.damage);
@@ -463,6 +573,40 @@ export class SpeedRacerGame extends BaseGame {
             this.particles.burstHit(bullet.x, bullet.y);
             this.services?.audio?.playSound?.('hit', { volume: 0.2 });
           }
+          hitEnemy = true;
+          break;
+        }
+      }
+      if (hitEnemy) continue;
+
+      // Bullets vs drones (bullets kill them)
+      let hitDrone = false;
+      for (const drone of this.boss.getDrones()) {
+        if (!drone.alive) continue;
+        if (aabb(bb, drone.getBounds())) {
+          bullet.alive = false;
+          if (drone.takeHit(false)) {
+            this.enemiesDestroyed += 1;
+            this.score += DRONE_SCORE_REWARD * this.combo;
+            this.pickups += DRONE_COIN_REWARD;
+            this.bumpCombo();
+            this.particles.burstExplosion(drone.x, drone.y, 0.8);
+            this.shake.add(0.15);
+            this.services?.audio?.playSound?.('explosion', { volume: 0.35 });
+          }
+          hitDrone = true;
+          break;
+        }
+      }
+      if (hitDrone) continue;
+
+      // Bullets vs tanks — bounce (need missiles)
+      for (const tank of this.boss.getTanks()) {
+        if (!tank.alive) continue;
+        if (aabb(bb, tank.getBounds())) {
+          bullet.alive = false;
+          this.particles.burstHit(bullet.x, bullet.y);
+          this.services?.audio?.playSound?.('hit', { volume: 0.25 });
           break;
         }
       }
@@ -488,12 +632,54 @@ export class SpeedRacerGame extends BaseGame {
           missile.alive = false;
           if (chopper.takeHit()) {
             this.enemiesDestroyed += 1;
+            this.choppersKilled += 1;
             this.score += CHOPPER_SCORE_REWARD * this.combo;
             this.pickups += CHOPPER_COIN_REWARD;
             this.bumpCombo();
             this.particles.burstExplosion(chopper.x, chopper.y, 2.2);
             this.shake.add(0.6);
             this.services?.audio?.playSound?.('explosion', { volume: 0.7 });
+          }
+          break;
+        }
+      }
+      if (!missile.alive) continue;
+      // Missiles vs Tank (3 missiles to kill, armored)
+      for (const tank of this.boss.getTanks()) {
+        if (!tank.alive) continue;
+        if (aabb(mb, tank.getBounds())) {
+          missile.alive = false;
+          const killed = tank.takeHit(true);
+          if (killed) {
+            this.enemiesDestroyed += 1;
+            this.score += TANK_SCORE_REWARD * this.combo;
+            this.pickups += TANK_COIN_REWARD;
+            this.bumpCombo();
+            this.particles.burstExplosion(tank.x, tank.y, 2.6);
+            this.shake.add(0.7);
+            this.services?.audio?.playSound?.('explosion', { volume: 0.75 });
+          } else {
+            this.particles.burstHit(missile.x, missile.y);
+            this.shake.add(0.25);
+            this.services?.audio?.playSound?.('hit', { volume: 0.35 });
+          }
+          break;
+        }
+      }
+      if (!missile.alive) continue;
+      // Missiles vs Drones (overkill but allowed)
+      for (const drone of this.boss.getDrones()) {
+        if (!drone.alive) continue;
+        if (aabb(mb, drone.getBounds())) {
+          missile.alive = false;
+          if (drone.takeHit(true)) {
+            this.enemiesDestroyed += 1;
+            this.score += DRONE_SCORE_REWARD * this.combo;
+            this.pickups += DRONE_COIN_REWARD;
+            this.bumpCombo();
+            this.particles.burstExplosion(drone.x, drone.y, 0.9);
+            this.shake.add(0.18);
+            this.services?.audio?.playSound?.('explosion', { volume: 0.4 });
           }
           break;
         }
@@ -548,17 +734,44 @@ export class SpeedRacerGame extends BaseGame {
       }
     }
 
-    // Player vs enemy collision = game over
+    // Player vs enemy collision — Spy-Hunter style.
+    // Side-swipes against non-armored enemies push them off the road (ram kill).
+    // Head-on / rear-end hits, or any contact with armored, are still lethal.
     if (playerVulnerable) {
       for (const enemy of this.spawner.getEnemies()) {
         if (!enemy.alive) continue;
-        if (aabb(pb, enemy.getBounds())) {
-          this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
-          this.shake.add(0.9);
-          this.services?.audio?.playSound?.('collision', { volume: 0.6 });
-          this.triggerDeath('enemy_ram');
-          return;
+        const eb = enemy.getBounds();
+        if (!aabb(pb, eb)) continue;
+
+        const dx = this.player.x - enemy.x;
+        const dy = this.player.y - enemy.y;
+        const penX = (this.player.width + enemy.config.width) / 2 - Math.abs(dx);
+        const penY = (this.player.height + enemy.config.height) / 2 - Math.abs(dy);
+        const isSideSwipe = penX < penY;
+
+        if (isSideSwipe && !enemy.config.bulletproof) {
+          // Ram kill: enemy gets shoved off the road. Worth less than gun kills
+          // but keeps combo alive and gives a satisfying bump.
+          enemy.alive = false;
+          this.enemiesDestroyed += 1;
+          const reward = Math.floor(enemy.config.scoreValue * 0.5) * this.combo;
+          this.score += reward;
+          this.pickups += enemy.config.coinDrop;
+          this.bumpCombo();
+          this.particles.burstExplosion(enemy.x, enemy.y, 0.9);
+          this.shake.add(0.28);
+          this.services?.audio?.playSound?.('collision', { volume: 0.45 });
+          // Nudge player laterally away from the impact for tactile feedback
+          this.player.vx += Math.sign(dx) * 80;
+          continue;
         }
+
+        // Lethal: either armored (unmovable) or a head-on/rear-end collision.
+        this.particles.burstExplosion(this.player.x, this.player.y, 1.8);
+        this.shake.add(0.9);
+        this.services?.audio?.playSound?.('collision', { volume: 0.6 });
+        this.triggerDeath('enemy_ram');
+        return;
       }
     }
 
@@ -569,6 +782,7 @@ export class SpeedRacerGame extends BaseGame {
         if (aabb(pb, civ.getBounds())) {
           civ.alive = false;
           this.civiliansLost += 1;
+          this.civiliansLostThisSection += 1;
           this.dropCombo();
           this.particles.burstExplosion(civ.x, civ.y, 0.9);
           this.shake.add(0.35);
@@ -609,6 +823,50 @@ export class SpeedRacerGame extends BaseGame {
         }
       }
     }
+
+    // Tank body vs player — lethal head-on contact
+    if (playerVulnerable) {
+      for (const tank of this.boss.getTanks()) {
+        if (!tank.alive) continue;
+        if (aabb(pb, tank.getBounds())) {
+          this.particles.burstExplosion(this.player.x, this.player.y, 2.0);
+          this.shake.add(1.0);
+          this.services?.audio?.playSound?.('collision', { volume: 0.7 });
+          this.triggerDeath('tank_shell');
+          return;
+        }
+      }
+    }
+
+    // Tank shells vs player — lethal
+    if (playerVulnerable) {
+      for (const shell of this.boss.getShells()) {
+        if (!shell.alive) continue;
+        if (aabb(shell.getBounds(), pb)) {
+          shell.alive = false;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.7);
+          this.shake.add(0.9);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.65 });
+          this.triggerDeath('tank_shell');
+          return;
+        }
+      }
+    }
+
+    // Drone swoops vs player — only lethal while actively swooping
+    if (playerVulnerable) {
+      for (const drone of this.boss.getDrones()) {
+        if (!drone.alive || !drone.isSwooping()) continue;
+        if (aabb(drone.getBounds(), pb)) {
+          drone.alive = false;
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
+          this.shake.add(0.85);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
+          this.triggerDeath('drone_swoop');
+          return;
+        }
+      }
+    }
   }
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
@@ -618,6 +876,7 @@ export class SpeedRacerGame extends BaseGame {
     this.shake.apply(ctx);
     this.road.render(ctx, w, h, this.currentSection.palette);
     this.renderMotionLines(ctx, w, h);
+    this.terrainHazards.render(ctx);
     this.secondary.render(ctx);
     this.spawner.render(ctx);
     this.boss.render(ctx);
@@ -628,7 +887,11 @@ export class SpeedRacerGame extends BaseGame {
     }
     this.weapon.render(ctx);
     this.particles.render(ctx);
+    this.weather.render(ctx);
     ctx.restore();
+
+    // Vignette on top of shake transform (so it doesn't jitter with the camera)
+    this.weather.renderVignette(ctx);
 
     if (this.recapMode) this.renderRecap(ctx, w, h);
   }
@@ -678,6 +941,8 @@ export class SpeedRacerGame extends BaseGame {
       civilian_spree: 'TOO MANY CIVILIANS',
       self_end: 'RUN ABANDONED',
       chopper_bomb: 'BOMBED FROM ABOVE',
+      tank_shell: 'SHELLED BY TANK',
+      drone_swoop: 'DRONE KAMIKAZE',
     };
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FF0080';
@@ -742,7 +1007,24 @@ export class SpeedRacerGame extends BaseGame {
   }
 
   private improvementHint(s: RecapStats): string {
-    if (s.civilians >= CIVILIANS_LOST_GAME_OVER) return 'Aim before you fire — civilians end runs fast.';
+    // Cause-specific hints come first — they speak to what just killed you.
+    switch (s.cause) {
+      case 'chopper_bomb':
+        return 'Watch the reticle — bombs lock to a fixed spot. Keep moving.';
+      case 'civilian_spree':
+        return 'Hold fire when civilians are in your lane.';
+      case 'enemy_bullet':
+        return 'Strafe early — Shooter bullets track your last position.';
+      case 'enemy_ram':
+        return 'Side-swipe cars to shove them off the road — head-on still totals you.';
+      case 'tank_shell':
+        return 'Missile the tank fast — its shells will wear you down otherwise.';
+      case 'drone_swoop':
+        return 'Drones telegraph with a red ring before they swoop — move then.';
+      case 'self_end':
+        // Fall through to generic advice below.
+        break;
+    }
     if (s.vanPickups === 0) return 'Find weapon vans for missiles, oil, and smoke.';
     if (s.combo < 3) return 'Chain kills without civilian hits to multiply your score.';
     if (s.kills < 5) return 'Hold SPACE to autofire — clear the road.';
@@ -865,6 +1147,7 @@ export class SpeedRacerGame extends BaseGame {
 
     if (this.lifeLostFlash > 0) this.renderLifeLostOverlay(ctx);
     if (this.lifeBonusFlash > 0) this.renderExtraLifeOverlay(ctx);
+    if (this.sectionClearFlash > 0) this.renderSectionClearOverlay(ctx);
 
     this.touch.render(ctx);
   }
@@ -912,6 +1195,25 @@ export class SpeedRacerGame extends BaseGame {
     ctx.fillStyle = '#FFFFFFAA';
     ctx.font = 'bold 14px Arial';
     ctx.fillText(`${this.lives} ${this.lives === 1 ? 'life' : 'lives'} remaining`, w / 2, h / 2 + 18);
+    ctx.restore();
+  }
+
+  private renderSectionClearOverlay(ctx: CanvasRenderingContext2D): void {
+    const w = this.canvas.width;
+    const t = this.sectionClearFlash / SECTION_CLEAR_FLASH_DURATION; // 1 → 0
+    const eased = Math.sin(t * Math.PI); // peaks mid-flash
+    ctx.save();
+    ctx.globalAlpha = eased;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00FFCC';
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = '#00FFCC';
+    ctx.font = 'bold 28px Arial';
+    ctx.fillText('SECTION CLEAR', w / 2, 260);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#FFD700';
+    ctx.font = 'bold 22px Arial';
+    ctx.fillText(`+${this.sectionClearBonusLast.toLocaleString()}`, w / 2, 288);
     ctx.restore();
   }
 
@@ -1013,6 +1315,8 @@ export class SpeedRacerGame extends BaseGame {
     this.particles.reset();
     this.shake.reset();
     this.boss.reset();
+    this.terrainHazards.reset();
+    this.weather.reset();
     this.touch.reset();
     this.muzzleTimer = 0;
     this.distance = 0;
@@ -1024,6 +1328,13 @@ export class SpeedRacerGame extends BaseGame {
     this.comboTimer = 0;
     this.vanPickups = 0;
     this.secondaryFireWasDown = false;
+    this.shotsFired = 0;
+    this.pacifistDistance = 0;
+    this.pacifistCurrent = 0;
+    this.choppersKilled = 0;
+    this.civiliansLostThisSection = 0;
+    this.perfectSectionsCleared = 0;
+    this.visitedSections = new Set<number>();
     this.slowedEnemies = new WeakMap();
     this.recapMode = false;
     this.recapTimer = 0;
@@ -1033,6 +1344,7 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionProgress = 0;
     this.sectionsCleared = 0;
     this.currentSection = getSection(0);
+    this.visitedSections.add(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
     this.applyTerrainHandling();
     this.armBanner(this.currentSection);
@@ -1041,5 +1353,7 @@ export class SpeedRacerGame extends BaseGame {
     this.respawnInvuln = 0;
     this.lifeLostFlash = 0;
     this.lifeBonusFlash = 0;
+    this.sectionClearFlash = 0;
+    this.sectionClearBonusLast = 0;
   }
 }
