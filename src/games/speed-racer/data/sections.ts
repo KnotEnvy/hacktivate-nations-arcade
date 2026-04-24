@@ -180,6 +180,8 @@ const STEEL_SPAN: SectionDef = {
     civilianSpawnInterval: 2.7,
     vanIntervalMin: 14, // generous van cadence — you need missiles
     vanIntervalMax: 20,
+    shooterBurstChance: 0.2,
+    formationChance: 0.15,
   },
 };
 
@@ -217,6 +219,8 @@ const ALPINE_PASS: SectionDef = {
     civilianSpawnInterval: 1.7,
     vanIntervalMin: 18,
     vanIntervalMax: 26,
+    shooterBurstChance: 0.2,
+    formationChance: 0.12,
   },
 };
 
@@ -254,6 +258,8 @@ const SUNSET_COAST: SectionDef = {
     civilianSpawnInterval: 2.0,
     vanIntervalMin: 16,
     vanIntervalMax: 22,
+    shooterBurstChance: 0.35,
+    formationChance: 0.2,
   },
 };
 
@@ -293,6 +299,8 @@ const HARBOR_RUN: SectionDef = {
     vanIntervalMin: 17,
     vanIntervalMax: 24,
     enemyVisual: 'jetboat',
+    shooterBurstChance: 0.25,
+    formationChance: 0.12,
   },
 };
 
@@ -332,6 +340,8 @@ const FROST_PASS: SectionDef = {
     civilianSpawnInterval: 2.2,
     vanIntervalMin: 18,
     vanIntervalMax: 26,
+    shooterBurstChance: 0.3,
+    formationChance: 0.15,
   },
 };
 

@@ -288,7 +288,13 @@ export class SpeedRacerGame extends BaseGame {
     this.secondaryFireWasDown = secondaryDown;
     this.secondary.update(dt, this.player.speed);
 
-    this.spawner.update(dt, this.player.speed, this.player.x, this.player.y);
+    this.spawner.update(
+      dt,
+      this.player.speed,
+      this.player.x,
+      this.player.y,
+      this.player.vx,
+    );
     this.boss.update(dt, this.sectionsCleared, this.player.x, this.player.y, this.player.speed);
     this.terrainHazards.update(dt, this.player.speed);
     this.weather.update(dt);
@@ -635,7 +641,7 @@ export class SpeedRacerGame extends BaseGame {
         if (!drone.alive) continue;
         if (aabb(bb, drone.getBounds())) {
           bullet.alive = false;
-          if (drone.takeHit(false)) {
+          if (drone.takeHit()) {
             this.enemiesDestroyed += 1;
             this.score += DRONE_SCORE_REWARD * this.combo;
             this.pickups += DRONE_COIN_REWARD;
@@ -722,7 +728,7 @@ export class SpeedRacerGame extends BaseGame {
         if (!drone.alive) continue;
         if (aabb(mb, drone.getBounds())) {
           missile.alive = false;
-          if (drone.takeHit(true)) {
+          if (drone.takeHit()) {
             this.enemiesDestroyed += 1;
             this.score += DRONE_SCORE_REWARD * this.combo;
             this.pickups += DRONE_COIN_REWARD;

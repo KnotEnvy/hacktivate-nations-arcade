@@ -17,6 +17,8 @@ export interface EnemyConfig {
   bulletproof: boolean;
   color: string;
   accentColor: string;
+  // Shooter-only: projectile speed in px/sec. Omitted for non-firing types.
+  bulletSpeed?: number;
 }
 
 export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
@@ -45,11 +47,14 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     bulletproof: false,
     color: '#FB8C00',
     accentColor: '#1a1a2e',
+    bulletSpeed: 520,
   },
   armored: {
     type: 'armored',
     forwardSpeed: 220,
-    matchSpeedDelta: 90,
+    // Tighter delta than v3 (was 90) so armored hovers closer to the player
+    // and enforces its blocking role. Tank still matches tighter at 70.
+    matchSpeedDelta: 60,
     width: 58,
     height: 100,
     hp: Infinity,
@@ -79,6 +84,13 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
 const APPROACH_RANGE = 280; // px of distAhead below which enemies ramp to match
 const FORWARD_SPEED_ACCEL = 280; // px/sec^2 — how fast enemy changes its forward speed
 
+// Ram AI — telegraph + commit
+const RAM_LOCK_TRIGGER = 300; // distY at which a cruising ram enters lock phase
+const RAM_LOCK_DURATION = 0.4; // seconds of telegraph before charge commits
+const RAM_CHARGE_LATERAL = 320; // px/sec lateral once committed — faster than the old linear tracker
+
+type RamState = 'cruise' | 'lock' | 'charge';
+
 export class EnemyCar {
   x: number;
   y: number;
@@ -91,11 +103,19 @@ export class EnemyCar {
   forwardSpeed: number;
   // Shooter-specific
   fireCooldown = 1.2;
+  // How many shots per burst. 1 = classic single-shot; 3 = burst variant.
+  burstCount = 1;
+  // Shots fired so far in the current burst (resets when burst completes).
+  shotsInBurst = 0;
   // Wake animation accumulator (jetboat only)
   private wakeT = Math.random() * 1.7;
   // Patrol AI — sine-weave accumulators
   private weaveT = Math.random() * Math.PI * 2;
   private weaveCenterX: number;
+  // Ram AI — state machine
+  ramState: RamState = 'cruise';
+  ramLockTimer = 0;
+  ramTargetX = 0;
 
   constructor(type: EnemyType, x: number, y: number, visual: EnemyVisual = 'car') {
     this.config = ENEMY_CONFIGS[type];
@@ -138,7 +158,7 @@ export class EnemyCar {
     if (this.config.type === 'ram') {
       this.updateRamAI(dt, playerX, playerY);
     } else if (this.config.type === 'armored') {
-      this.updateArmoredAI(dt, playerX);
+      this.updateArmoredAI(dt, playerX, playerY);
     } else if (this.config.type === 'patrol') {
       this.updatePatrolAI(dt, playerX);
     }
@@ -151,17 +171,43 @@ export class EnemyCar {
 
   private updateRamAI(dt: number, playerX: number, playerY: number): void {
     const distY = playerY - this.y;
-    if (distY > 0 && distY < 260) {
-      const dx = playerX - this.x;
-      const maxLateral = 230 * dt;
-      this.x += Math.max(-maxLateral, Math.min(maxLateral, dx));
+    switch (this.ramState) {
+      case 'cruise':
+        if (distY > 0 && distY < RAM_LOCK_TRIGGER) {
+          this.ramState = 'lock';
+          this.ramLockTimer = RAM_LOCK_DURATION;
+          this.ramTargetX = playerX;
+        }
+        break;
+      case 'lock':
+        this.ramLockTimer -= dt;
+        if (this.ramLockTimer <= 0) this.ramState = 'charge';
+        break;
+      case 'charge': {
+        const dx = this.ramTargetX - this.x;
+        const maxLateral = RAM_CHARGE_LATERAL * dt;
+        if (Math.abs(dx) <= maxLateral) this.x = this.ramTargetX;
+        else this.x += Math.sign(dx) * maxLateral;
+        break;
+      }
     }
   }
 
-  private updateArmoredAI(dt: number, playerX: number): void {
-    // Armored drifts slowly toward player to block them
-    const dx = playerX - this.x;
-    const maxLateral = 70 * dt;
+  private updateArmoredAI(dt: number, playerX: number, playerY: number): void {
+    // Armored is a lane-blocker. Lock onto the player's current lane center
+    // (not raw X) and sit in it. Only engages once close enough in Y — far-ahead
+    // armored stays in its spawn lane so the player can see what to dodge.
+    const distY = playerY - this.y;
+    if (distY > 420) return;
+
+    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
+    const playerLane = Math.floor((playerX - ROAD.X_MIN) / laneWidth);
+    const lane = Math.max(0, Math.min(ROAD.LANE_COUNT - 1, playerLane));
+    const targetX = ROAD.X_MIN + laneWidth * (lane + 0.5);
+
+    const dx = targetX - this.x;
+    if (Math.abs(dx) < 4) return; // deadband — avoid jitter when parked in lane
+    const maxLateral = 110 * dt;
     this.x += Math.max(-maxLateral, Math.min(maxLateral, dx));
   }
 
@@ -216,6 +262,8 @@ export class EnemyCar {
     const h = c.height;
     const x = this.x - w / 2;
     const y = this.y - h / 2;
+    const isRamLocking = c.type === 'ram' && this.ramState === 'lock';
+    const lockFlash = isRamLocking && Math.sin(this.ramLockTimer * 40) > 0;
     ctx.save();
 
     // Shadow
@@ -223,8 +271,8 @@ export class EnemyCar {
     this.roundRect(ctx, x + 4, y + 5, w, h, 6);
     ctx.fill();
 
-    // Body
-    ctx.fillStyle = c.color;
+    // Body — flash bright yellow during ram lock telegraph
+    ctx.fillStyle = lockFlash ? '#FFEA00' : c.color;
     this.roundRect(ctx, x, y, w, h, 6);
     ctx.fill();
 
@@ -271,6 +319,19 @@ export class EnemyCar {
       ctx.fillRect(x + w / 2 - 3, y + h - 14, 6, 14);
       ctx.fillStyle = '#444';
       ctx.fillRect(x + w / 2 - 2, y + h, 4, 8);
+    }
+
+    // Ram lock telegraph — dashed tracer from ram's back bumper toward the
+    // committed lane, so the player can read and dodge the charge.
+    if (isRamLocking) {
+      ctx.strokeStyle = lockFlash ? '#FFEA00' : 'rgba(255,80,80,0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(this.x, y + h);
+      ctx.lineTo(this.ramTargetX, y + h + 150);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     ctx.restore();

@@ -3,6 +3,7 @@ export type ProjectileOwner = 'player' | 'enemy';
 export class Projectile {
   x: number;
   y: number;
+  vx: number;
   vy: number;
   alive = true;
   readonly width: number;
@@ -10,9 +11,17 @@ export class Projectile {
   readonly damage: number;
   readonly owner: ProjectileOwner;
 
-  constructor(x: number, y: number, vy: number, owner: ProjectileOwner = 'player', damage = 1) {
+  constructor(
+    x: number,
+    y: number,
+    vy: number,
+    owner: ProjectileOwner = 'player',
+    damage = 1,
+    vx = 0,
+  ) {
     this.x = x;
     this.y = y;
+    this.vx = vx;
     this.vy = vy;
     this.owner = owner;
     this.damage = damage;
@@ -21,8 +30,11 @@ export class Projectile {
   }
 
   update(dt: number): void {
+    this.x += this.vx * dt;
     this.y += this.vy * dt;
     if (this.y + this.height < -20 || this.y > 720) this.alive = false;
+    // Despawn when clearly off-road so angled enemy shots don't linger off-screen
+    if (this.x < 80 || this.x > 720) this.alive = false;
   }
 
   getBounds(): { x: number; y: number; w: number; h: number } {

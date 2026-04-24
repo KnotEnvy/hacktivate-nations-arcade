@@ -311,7 +311,7 @@ export class Drone {
     return this.state === 'swoop';
   }
 
-  takeHit(_missile: boolean): boolean {
+  takeHit(): boolean {
     if (!this.alive) return false;
     this.hp -= 1;
     if (this.hp <= 0) {
