@@ -136,9 +136,13 @@ const NEON_CITY: SectionDef = {
     bannerGlow: '#00D9FF',
   },
   spawnerConfig: {
+    // Section 2 eases shooters in gently (was [5, 4, 1]) and defers armored
+    // to section 3. Players just learned to survive rams in section 1 — a
+    // 4x shooter jump plus an armored blocker was the "I just learned the
+    // game and now I'm dying" cliff called out in the v3 handoff §5.2.
     spawnInterval: 1.4,
     enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [5, 4, 1],
+    enemyTypeWeights: [5, 2, 0],
     civilianChance: 0.65,
     civilianSpawnInterval: 2.3,
     vanIntervalMin: 16,

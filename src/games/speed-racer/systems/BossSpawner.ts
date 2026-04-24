@@ -12,6 +12,16 @@ const COOLDOWN_MAX = 58;
 
 type BossKind = 'chopper' | 'tank' | 'drones';
 
+// Per-section boss weights — tuned so each terrain has a signature threat.
+// Order matches the picker: [chopper, drones, tank]. Sections not listed fall
+// back to DEFAULT_BOSS_WEIGHTS (the v3 baseline).
+const DEFAULT_BOSS_WEIGHTS: readonly [number, number, number] = [0.45, 0.3, 0.25];
+const BOSS_WEIGHTS_BY_SECTION: Record<string, readonly [number, number, number]> = {
+  'harbor-run': [0.6, 0.3, 0.1],  // chopper-heavy — air strikes over water read well
+  'alpine-pass': [0.25, 0.2, 0.55], // tank-heavy — mountain road corridors favor tanks
+  'steel-span': [0.45, 0.3, 0.25],  // balanced baseline (explicit for clarity)
+};
+
 export class BossSpawner {
   private choppers: BombChopper[] = [];
   private bombs: Bomb[] = [];
@@ -37,11 +47,12 @@ export class BossSpawner {
     playerX: number,
     playerY: number,
     playerSpeed: number,
+    sectionId: string,
   ): void {
     if (sectionsCleared >= 1) {
       this.cooldown -= dt;
       if (this.cooldown <= 0 && this.isClearOfBosses()) {
-        this.spawnBoss(playerX);
+        this.spawnBoss(playerX, sectionId);
         this.cooldown = COOLDOWN_MIN + Math.random() * (COOLDOWN_MAX - COOLDOWN_MIN);
       }
     }
@@ -74,15 +85,20 @@ export class BossSpawner {
     );
   }
 
-  private spawnBoss(playerX: number): void {
+  private spawnBoss(playerX: number, sectionId: string): void {
     // First boss is always a chopper (already established in v2).
-    // After that, weighted pick. Chopper stays most common; tank and drones rarer.
+    // After that, section-weighted pick: [chopper, drones, tank].
     let kind: BossKind = 'chopper';
     if (this.bossesSpawned > 0) {
-      const r = Math.random();
-      if (r < 0.45) kind = 'chopper';
-      else if (r < 0.75) kind = 'drones';
-      else kind = 'tank';
+      const weights = BOSS_WEIGHTS_BY_SECTION[sectionId] ?? DEFAULT_BOSS_WEIGHTS;
+      const total = weights[0] + weights[1] + weights[2];
+      let r = Math.random() * total;
+      r -= weights[0];
+      if (r <= 0) kind = 'chopper';
+      else {
+        r -= weights[1];
+        kind = r <= 0 ? 'drones' : 'tank';
+      }
     }
     this.bossesSpawned += 1;
 

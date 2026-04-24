@@ -3,7 +3,7 @@ import { GameManifest } from '@/lib/types';
 import { PlayerCar } from './entities/PlayerCar';
 import { RoadRenderer } from './systems/RoadRenderer';
 import { WeaponSystem } from './systems/WeaponSystem';
-import { EnemySpawner } from './systems/EnemySpawner';
+import { EnemySpawner, SpawnerOptions } from './systems/EnemySpawner';
 import { SecondaryWeaponSystem } from './systems/SecondaryWeaponSystem';
 import { ParticleSystem } from './systems/Particles';
 import { CameraShake } from './systems/CameraShake';
@@ -145,6 +145,10 @@ export class SpeedRacerGame extends BaseGame {
   private sectionIndex = 0;
   private sectionProgress = 0; // pixel-units accumulated within the active section
   private sectionsCleared = 0;
+  // How many times the section list has wrapped back to section 0. Loop 1
+  // (first time through) is 0; each subsequent loop adds 1. Drives lap-scaled
+  // spawner difficulty — see applyLapScaling().
+  private wraparounds = 0;
   private currentSection: SectionDef = SECTIONS[0];
   private bannerTimer = 0; // counts up; <= 0 means no banner showing
   private bannerSection: SectionDef | null = null;
@@ -181,6 +185,7 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionIndex = 0;
     this.sectionProgress = 0;
     this.sectionsCleared = 0;
+    this.wraparounds = 0;
     this.currentSection = getSection(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
     this.applyTerrainHandling();
@@ -295,7 +300,14 @@ export class SpeedRacerGame extends BaseGame {
       this.player.y,
       this.player.vx,
     );
-    this.boss.update(dt, this.sectionsCleared, this.player.x, this.player.y, this.player.speed);
+    this.boss.update(
+      dt,
+      this.sectionsCleared,
+      this.player.x,
+      this.player.y,
+      this.player.speed,
+      this.currentSection.id,
+    );
     this.terrainHazards.update(dt, this.player.speed);
     this.weather.update(dt);
 
@@ -385,11 +397,13 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionClearBonusLast = bonus;
     this.sectionClearFlash = SECTION_CLEAR_FLASH_DURATION;
 
-    this.sectionIndex = (this.sectionIndex + 1) % SECTIONS.length;
+    const nextIndex = (this.sectionIndex + 1) % SECTIONS.length;
+    if (nextIndex === 0) this.wraparounds += 1;
+    this.sectionIndex = nextIndex;
     this.sectionProgress = 0;
     this.currentSection = getSection(this.sectionIndex);
     this.visitedSections.add(this.sectionIndex);
-    this.spawner.configure(this.currentSection.spawnerConfig);
+    this.spawner.configure(this.applyLapScaling(this.currentSection.spawnerConfig));
     this.applyTerrainHandling();
     this.armBanner(this.currentSection);
     // Guarantee a weapon van early in the next section so the reward loop
@@ -398,6 +412,22 @@ export class SpeedRacerGame extends BaseGame {
     // Subtle visual punctuation for the transition
     this.shake.add(0.18);
     this.services?.audio?.playSound?.('powerUp', { volume: 0.35 });
+  }
+
+  // Lap scaling — each full loop through the section list tightens spawns
+  // and bumps burst/formation chances. Clamps prevent runaway on loop 5+.
+  private applyLapScaling(base: Partial<SpawnerOptions>): Partial<SpawnerOptions> {
+    if (this.wraparounds === 0) return base;
+    const w = this.wraparounds;
+    const scaled: Partial<SpawnerOptions> = { ...base };
+    if (base.spawnInterval !== undefined) {
+      scaled.spawnInterval = Math.max(0.6, base.spawnInterval * Math.pow(0.9, w));
+    }
+    const burstBase = base.shooterBurstChance ?? 0;
+    scaled.shooterBurstChance = Math.min(0.6, burstBase + 0.08 * w);
+    const formationBase = base.formationChance ?? 0;
+    scaled.formationChance = Math.min(0.35, formationBase + 0.05 * w);
+    return scaled;
   }
 
   private applyTerrainHandling(): void {
@@ -1417,10 +1447,15 @@ export class SpeedRacerGame extends BaseGame {
     ctx.fillStyle = section.palette.bannerColor;
     ctx.fillRect(cx - underlineW / 2, cy + 10, underlineW, 2);
 
-    // Subtitle
+    // Subtitle — append LOOP N on repeat playthroughs so the player can read
+    // the difficulty jump. First loop prints the section's base subtitle only.
     ctx.fillStyle = '#FFFFFFAA';
     ctx.font = '13px Arial';
-    ctx.fillText(section.subtitle, cx, cy + 32);
+    const subtitle =
+      this.wraparounds > 0
+        ? `${section.subtitle} · LOOP ${this.wraparounds + 1}`
+        : section.subtitle;
+    ctx.fillText(subtitle, cx, cy + 32);
 
     ctx.restore();
   }
@@ -1469,6 +1504,7 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionIndex = 0;
     this.sectionProgress = 0;
     this.sectionsCleared = 0;
+    this.wraparounds = 0;
     this.currentSection = getSection(0);
     this.visitedSections.add(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
