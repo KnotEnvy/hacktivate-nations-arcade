@@ -140,6 +140,207 @@ export interface EffectConfig {
   distortion: number;  // 0.0 - 1.0
 }
 
+// ============= SB32-STYLE PROCEDURAL PATCHES =============
+
+export type PatchName =
+  | 'fm_bass'
+  | 'slap_bass'
+  | 'square_lead'
+  | 'saw_lead'
+  | 'synth_brass'
+  | 'warm_pad'
+  | 'choir_pad'
+  | 'bell'
+  | 'marimba'
+  | 'string_ensemble';
+
+export interface PatchLayer {
+  waveform: OscillatorType;
+  gain: number;
+  octaveOffset?: number;
+  detuneCents?: number;
+  attack: number;
+  decay: number;
+  sustain: number;
+  release: number;
+  filter?: {
+    type: BiquadFilterType;
+    frequency: number;
+    q: number;
+  };
+}
+
+export interface InstrumentPatch {
+  name: PatchName;
+  label: string;
+  layers: PatchLayer[];
+  pan?: number;
+  vibrato?: {
+    rate: number;
+    depthCents: number;
+  };
+  brightness: number;
+  chorusSend: number;
+}
+
+export const SB32_PATCHES: Record<PatchName, InstrumentPatch> = {
+  fm_bass: {
+    name: 'fm_bass',
+    label: 'FM Bass',
+    pan: -0.08,
+    brightness: 0.35,
+    chorusSend: 0.12,
+    layers: [
+      { waveform: 'sine', gain: 0.9, octaveOffset: -1, attack: 0.005, decay: 0.08, sustain: 0.55, release: 0.08 },
+      { waveform: 'square', gain: 0.28, octaveOffset: 0, detuneCents: -7, attack: 0.003, decay: 0.05, sustain: 0.35, release: 0.06, filter: { type: 'lowpass', frequency: 750, q: 2 } },
+    ],
+  },
+  slap_bass: {
+    name: 'slap_bass',
+    label: 'Slap Bass',
+    pan: -0.1,
+    brightness: 0.55,
+    chorusSend: 0.08,
+    layers: [
+      { waveform: 'sawtooth', gain: 0.7, octaveOffset: -1, attack: 0.002, decay: 0.06, sustain: 0.35, release: 0.07, filter: { type: 'lowpass', frequency: 1050, q: 3 } },
+      { waveform: 'triangle', gain: 0.25, octaveOffset: 0, attack: 0.001, decay: 0.025, sustain: 0.1, release: 0.04, filter: { type: 'highpass', frequency: 900, q: 1 } },
+    ],
+  },
+  square_lead: {
+    name: 'square_lead',
+    label: 'Square Lead',
+    pan: 0.12,
+    brightness: 0.78,
+    chorusSend: 0.2,
+    vibrato: { rate: 5.5, depthCents: 9 },
+    layers: [
+      { waveform: 'square', gain: 0.75, attack: 0.01, decay: 0.08, sustain: 0.7, release: 0.12, filter: { type: 'lowpass', frequency: 4200, q: 1.2 } },
+      { waveform: 'triangle', gain: 0.18, octaveOffset: 1, detuneCents: 4, attack: 0.012, decay: 0.1, sustain: 0.45, release: 0.1 },
+    ],
+  },
+  saw_lead: {
+    name: 'saw_lead',
+    label: 'Saw Lead',
+    pan: 0.16,
+    brightness: 0.85,
+    chorusSend: 0.25,
+    vibrato: { rate: 5.2, depthCents: 6 },
+    layers: [
+      { waveform: 'sawtooth', gain: 0.62, detuneCents: -6, attack: 0.008, decay: 0.06, sustain: 0.72, release: 0.1, filter: { type: 'lowpass', frequency: 5200, q: 1.5 } },
+      { waveform: 'sawtooth', gain: 0.5, detuneCents: 7, attack: 0.008, decay: 0.06, sustain: 0.72, release: 0.1, filter: { type: 'lowpass', frequency: 4800, q: 1.5 } },
+    ],
+  },
+  synth_brass: {
+    name: 'synth_brass',
+    label: 'Synth Brass',
+    pan: 0.05,
+    brightness: 0.72,
+    chorusSend: 0.32,
+    layers: [
+      { waveform: 'sawtooth', gain: 0.55, detuneCents: -8, attack: 0.04, decay: 0.18, sustain: 0.68, release: 0.18, filter: { type: 'lowpass', frequency: 3400, q: 2.4 } },
+      { waveform: 'square', gain: 0.22, detuneCents: 9, attack: 0.035, decay: 0.16, sustain: 0.55, release: 0.16, filter: { type: 'lowpass', frequency: 2600, q: 2 } },
+    ],
+  },
+  warm_pad: {
+    name: 'warm_pad',
+    label: 'Warm Pad',
+    pan: -0.18,
+    brightness: 0.42,
+    chorusSend: 0.55,
+    layers: [
+      { waveform: 'triangle', gain: 0.38, detuneCents: -9, attack: 0.18, decay: 0.35, sustain: 0.78, release: 0.5, filter: { type: 'lowpass', frequency: 2200, q: 0.8 } },
+      { waveform: 'sine', gain: 0.32, detuneCents: 8, attack: 0.22, decay: 0.4, sustain: 0.72, release: 0.55 },
+      { waveform: 'sawtooth', gain: 0.12, octaveOffset: 1, attack: 0.2, decay: 0.3, sustain: 0.45, release: 0.45, filter: { type: 'lowpass', frequency: 1600, q: 0.6 } },
+    ],
+  },
+  choir_pad: {
+    name: 'choir_pad',
+    label: 'Choir Pad',
+    pan: 0.2,
+    brightness: 0.38,
+    chorusSend: 0.62,
+    vibrato: { rate: 4.1, depthCents: 4 },
+    layers: [
+      { waveform: 'sine', gain: 0.42, attack: 0.25, decay: 0.35, sustain: 0.82, release: 0.65, filter: { type: 'bandpass', frequency: 950, q: 0.9 } },
+      { waveform: 'triangle', gain: 0.3, octaveOffset: 1, detuneCents: 5, attack: 0.28, decay: 0.4, sustain: 0.62, release: 0.65, filter: { type: 'bandpass', frequency: 1700, q: 0.9 } },
+    ],
+  },
+  bell: {
+    name: 'bell',
+    label: 'Bell',
+    pan: 0.24,
+    brightness: 0.95,
+    chorusSend: 0.28,
+    layers: [
+      { waveform: 'sine', gain: 0.62, attack: 0.003, decay: 0.45, sustain: 0.18, release: 0.45 },
+      { waveform: 'triangle', gain: 0.28, octaveOffset: 1, detuneCents: 14, attack: 0.003, decay: 0.32, sustain: 0.08, release: 0.35 },
+      { waveform: 'sine', gain: 0.14, octaveOffset: 2, detuneCents: -21, attack: 0.002, decay: 0.2, sustain: 0.04, release: 0.24 },
+    ],
+  },
+  marimba: {
+    name: 'marimba',
+    label: 'Marimba',
+    pan: -0.22,
+    brightness: 0.7,
+    chorusSend: 0.1,
+    layers: [
+      { waveform: 'triangle', gain: 0.72, attack: 0.003, decay: 0.16, sustain: 0.12, release: 0.08, filter: { type: 'lowpass', frequency: 3000, q: 1.1 } },
+      { waveform: 'sine', gain: 0.26, octaveOffset: 1, attack: 0.002, decay: 0.08, sustain: 0.04, release: 0.05 },
+    ],
+  },
+  string_ensemble: {
+    name: 'string_ensemble',
+    label: 'String Ensemble',
+    pan: -0.05,
+    brightness: 0.5,
+    chorusSend: 0.48,
+    vibrato: { rate: 4.6, depthCents: 5 },
+    layers: [
+      { waveform: 'sawtooth', gain: 0.34, detuneCents: -10, attack: 0.08, decay: 0.2, sustain: 0.74, release: 0.35, filter: { type: 'lowpass', frequency: 2600, q: 1 } },
+      { waveform: 'triangle', gain: 0.28, detuneCents: 11, attack: 0.1, decay: 0.24, sustain: 0.7, release: 0.4, filter: { type: 'lowpass', frequency: 2100, q: 0.8 } },
+    ],
+  },
+};
+
+export function getPatchForInstrument(
+  instrument: InstrumentConfig,
+  track: TrackDefinition,
+): InstrumentPatch {
+  if (instrument.type === 'bass') {
+    return SB32_PATCHES[track.mood === 'playful' ? 'slap_bass' : 'fm_bass'];
+  }
+
+  if (instrument.type === 'pad') {
+    if (track.mood === 'epic') return SB32_PATCHES.string_ensemble;
+    if (track.mood === 'mysterious') return SB32_PATCHES.choir_pad;
+    return SB32_PATCHES.warm_pad;
+  }
+
+  if (instrument.type === 'arp') {
+    return SB32_PATCHES[track.mood === 'playful' || track.mood === 'focus' ? 'marimba' : 'bell'];
+  }
+
+  if (instrument.type === 'lead') {
+    if (track.mood === 'epic' || track.mood === 'energetic') return SB32_PATCHES.synth_brass;
+    return SB32_PATCHES[instrument.waveform === 'square' ? 'square_lead' : 'saw_lead'];
+  }
+
+  return SB32_PATCHES.bell;
+}
+
+export interface PatchMixProfile {
+  channelGain: number;
+  chorusSend: number;
+}
+
+export function getPatchMixProfile(patch: InstrumentPatch): PatchMixProfile {
+  const channelGain = Math.max(0.2, Math.min(1, 0.92 - patch.brightness * 0.18));
+  return {
+    channelGain,
+    chorusSend: Math.max(0, Math.min(0.75, patch.chorusSend)),
+  };
+}
+
 // ============= PREDEFINED TRACKS =============
 
 export const TRACK_DEFINITIONS: Record<string, TrackDefinition> = {
@@ -589,6 +790,117 @@ export interface MelodyNote {
   octaveShift: number;
 }
 
+export interface MusicEvent {
+  id: string;
+  instrumentType: InstrumentConfig['type'];
+  bar: number;
+  beat: number;
+  phrase: number;
+  scheduledTime: number;
+  duration: number;
+  velocity: number;
+  frequency?: number;
+}
+
+const BEATS_PER_BAR = 4;
+
+export function buildMusicEventGrid(
+  track: TrackDefinition,
+  seed: number,
+  bars: number = 4,
+): MusicEvent[] {
+  const melody = new MelodyGenerator(seed, track.scale, track.rootNote);
+  const beatDuration = 60 / track.bpm;
+  const events: MusicEvent[] = [];
+
+  for (let bar = 0; bar < bars; bar++) {
+    for (let beat = 0; beat < BEATS_PER_BAR; beat++) {
+      const scheduledTime = (bar * BEATS_PER_BAR + beat) * beatDuration;
+
+      track.instruments.forEach((instrument, instrumentIndex) => {
+        const baseEvent = {
+          id: `${bar}:${beat}:${instrumentIndex}:${instrument.type}`,
+          instrumentType: instrument.type,
+          bar,
+          beat,
+          phrase: Math.floor(bar / 4),
+          scheduledTime,
+          duration: beatDuration,
+          velocity: instrument.volume,
+        };
+
+        switch (instrument.type) {
+          case 'bass': {
+            const shouldPlay = track.mood === 'intense' || track.mood === 'energetic' || beat === 0 || beat === 2;
+            if (!shouldPlay) return;
+
+            const rootDegrees = [0, 3, 4, 5];
+            events.push({
+              ...baseEvent,
+              duration: track.mood === 'intense' ? 0.2 : 0.4,
+              frequency: melody.getFrequencyForDegree(rootDegrees[bar % rootDegrees.length], instrument.octave - 3),
+            });
+            break;
+          }
+
+          case 'lead': {
+            const degree = (bar * 2 + beat) % SCALES[track.scale].length;
+            events.push({
+              ...baseEvent,
+              duration: beatDuration * (track.mood === 'chill' || track.mood === 'mysterious' ? 2 : 1),
+              velocity: instrument.volume * (0.6 + ((seed + bar + beat) % 3) * 0.1),
+              frequency: melody.getFrequencyForDegree(degree, instrument.octave - 4),
+            });
+            break;
+          }
+
+          case 'pad': {
+            if (beat !== 0) return;
+
+            events.push({
+              ...baseEvent,
+              duration: beatDuration * BEATS_PER_BAR,
+              velocity: instrument.volume * 0.7,
+              frequency: melody.getFrequencyForDegree([0, 3, 4, 5][bar % 4], instrument.octave - 4),
+            });
+            break;
+          }
+
+          case 'arp': {
+            const patterns = [0, 2, 4, 2];
+            events.push({
+              ...baseEvent,
+              duration: 0.15,
+              frequency: melody.getFrequencyForDegree([0, 3, 4, 5][bar % 4] + patterns[beat], instrument.octave - 4),
+            });
+            break;
+          }
+
+          case 'drums':
+            events.push({
+              ...baseEvent,
+              duration: 0.2,
+              frequency: beat === 0 || beat === 2 ? 60 : 200,
+            });
+            break;
+
+          case 'fx':
+            if (beat !== 0) return;
+
+            events.push({
+              ...baseEvent,
+              duration: 0.6,
+              frequency: melody.getFrequencyForDegree((seed + bar) % SCALES[track.scale].length, instrument.octave - 4),
+            });
+            break;
+        }
+      });
+    }
+  }
+
+  return events;
+}
+
 export class MelodyGenerator {
   private rng: SeededRandom;
   private scale: number[];
@@ -753,15 +1065,102 @@ export class MelodyGenerator {
   }
 }
 
+// ============= DETERMINISTIC MUSIC SCHEDULER =============
+
+export interface ScheduledMusicEvent {
+  type: 'beat';
+  beatNumber: number;
+  beatIndex: number;
+  barIndex: number;
+  phraseIndex: number;
+  scheduledTime: number;
+}
+
+export interface MusicEventSchedulerOptions {
+  bpm: number;
+  startTime: number;
+  scheduleAheadSeconds?: number;
+}
+
+export class MusicEventScheduler {
+  private beatDurationSeconds: number;
+  private nextBeatNumber: number = 0;
+  private nextEventTime: number;
+  private readonly scheduleAheadSeconds: number;
+
+  constructor(options: MusicEventSchedulerOptions) {
+    this.scheduleAheadSeconds = options.scheduleAheadSeconds ?? 0.5;
+    this.beatDurationSeconds = MusicEventScheduler.bpmToBeatDuration(options.bpm);
+    this.nextEventTime = options.startTime;
+  }
+
+  reset(startTime: number, bpm: number, nextBeatNumber: number = 0): void {
+    this.beatDurationSeconds = MusicEventScheduler.bpmToBeatDuration(bpm);
+    this.nextBeatNumber = nextBeatNumber;
+    this.nextEventTime = startTime;
+  }
+
+  setBpm(bpm: number): void {
+    this.beatDurationSeconds = MusicEventScheduler.bpmToBeatDuration(bpm);
+  }
+
+  poll(currentTime: number): ScheduledMusicEvent[] {
+    const events: ScheduledMusicEvent[] = [];
+    const horizon = currentTime + this.scheduleAheadSeconds;
+
+    while (this.nextEventTime < horizon) {
+      events.push(this.createBeatEvent(this.nextBeatNumber, this.nextEventTime));
+      this.nextBeatNumber++;
+      this.nextEventTime += this.beatDurationSeconds;
+    }
+
+    return events;
+  }
+
+  getNextBeatNumber(): number {
+    return this.nextBeatNumber;
+  }
+
+  getNextEventTime(): number {
+    return this.nextEventTime;
+  }
+
+  getBeatDurationSeconds(): number {
+    return this.beatDurationSeconds;
+  }
+
+  private createBeatEvent(beatNumber: number, scheduledTime: number): ScheduledMusicEvent {
+    return {
+      type: 'beat',
+      beatNumber,
+      beatIndex: beatNumber % 4,
+      barIndex: Math.floor(beatNumber / 4) % 4,
+      phraseIndex: Math.floor(beatNumber / 16),
+      scheduledTime,
+    };
+  }
+
+  private static bpmToBeatDuration(bpm: number): number {
+    const safeBpm = Number.isFinite(bpm) && bpm > 0 ? bpm : 120;
+    return 60 / safeBpm;
+  }
+}
+
 // ============= PROCEDURAL MUSIC ENGINE =============
 
 export class ProceduralMusicEngine {
   private context: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private musicGainNode: GainNode | null = null;
+  private dryMixNode: GainNode | null = null;
+  private chorusDelayNode: DelayNode | null = null;
+  private chorusFeedbackNode: GainNode | null = null;
+  private chorusWetNode: GainNode | null = null;
+  private masterDynamicsNode: DynamicsCompressorNode | null = null;
   private currentTrack: string | null = null;
   private isPlaying: boolean = false;
   private intervalId: number | null = null;
+  private scheduler: MusicEventScheduler | null = null;
   private activeNodes: AudioNode[] = [];
   private seed: number = Date.now();
   private beatIndex: number = 0;
@@ -802,6 +1201,8 @@ export class ProceduralMusicEngine {
   // Volume control (0-1)
   private volume: number = 1.0;
   private baseGainLevel: number = 0.5; // Base gain level for music
+  private readonly schedulerTickMs: number = 25;
+  private readonly scheduleAheadSeconds: number = 0.5;
 
   constructor(context: AudioContext, masterGain: GainNode) {
     this.context = context;
@@ -985,28 +1386,15 @@ export class ProceduralMusicEngine {
       this.context.currentTime + fadeSeconds
     );
 
-    // Connect through analyser for visualization, then to master
-    if (this.analyserNode) {
-      this.musicGainNode.connect(this.analyserNode);
-      this.analyserNode.connect(this.masterGain);
-    } else {
-      this.musicGainNode.connect(this.masterGain);
-    }
-
-    // Setup effects
+    this.setupMixBus(track);
     this.setupEffects(track.effects);
 
-    // Calculate beat duration from BPM
-    const beatDuration = 60000 / track.bpm;
-
-    // Start music loop
-    this.intervalId = window.setInterval(() => {
-      if (!this.isPlaying || !this.context) return;
-      this.playBeat(track);
-    }, beatDuration);
-
-    // Play first beat immediately
-    this.playBeat(track);
+    this.scheduler = new MusicEventScheduler({
+      bpm: this.getEffectiveBpm(),
+      startTime: this.context.currentTime,
+      scheduleAheadSeconds: this.scheduleAheadSeconds,
+    });
+    this.startScheduler(track);
   }
 
   // Stop playing
@@ -1017,6 +1405,7 @@ export class ProceduralMusicEngine {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    this.scheduler = null;
 
     // Fade out
     if (this.musicGainNode && fadeSeconds > 0) {
@@ -1080,12 +1469,14 @@ export class ProceduralMusicEngine {
       );
     }
 
-    // Restart the beat loop
-    const beatDuration = 60000 / track.bpm;
-    this.intervalId = window.setInterval(() => {
-      if (!this.isPlaying || !this.context || this.isPaused) return;
-      this.playBeat(track);
-    }, beatDuration);
+    const nextBeatNumber = this.scheduler?.getNextBeatNumber() ?? this.getCurrentBeatNumber();
+    this.scheduler = new MusicEventScheduler({
+      bpm: this.getEffectiveBpm(),
+      startTime: this.context.currentTime,
+      scheduleAheadSeconds: this.scheduleAheadSeconds,
+    });
+    this.scheduler.reset(this.context.currentTime, this.getEffectiveBpm(), nextBeatNumber);
+    this.startScheduler(track);
   }
 
   // Check if paused
@@ -1103,24 +1494,15 @@ export class ProceduralMusicEngine {
   setBpmOverride(bpm: number | null): void {
     this.currentBpmOverride = bpm;
 
-    // If we're currently playing, restart the interval with new BPM
+    if (this.scheduler) {
+      this.scheduler.setBpm(this.getEffectiveBpm());
+    }
+
+    // If we're currently playing, make sure the scheduler is running
     if (this.isPlaying && !this.isPaused && this.currentTrack) {
       const track = TRACK_DEFINITIONS[this.currentTrack];
-      if (track) {
-        // Clear existing interval
-        if (this.intervalId !== null) {
-          clearInterval(this.intervalId);
-        }
-
-        // Calculate new beat duration
-        const effectiveBpm = bpm || track.bpm;
-        const beatDuration = 60000 / effectiveBpm;
-
-        // Restart with new tempo
-        this.intervalId = window.setInterval(() => {
-          if (!this.isPlaying || !this.context || this.isPaused) return;
-          this.playBeat(track);
-        }, beatDuration);
+      if (track && this.intervalId === null) {
+        this.startScheduler(track);
       }
     }
   }
@@ -1151,6 +1533,65 @@ export class ProceduralMusicEngine {
    */
   resetBpm(): void {
     this.setBpmOverride(null);
+  }
+
+  private setupMixBus(track: TrackDefinition): void {
+    if (!this.context || !this.musicGainNode || !this.masterGain) return;
+
+    this.dryMixNode = this.context.createGain();
+    this.dryMixNode.gain.value = 0.88;
+    this.dryMixNode.connect(this.musicGainNode);
+
+    this.setupChorusBus(track);
+    this.connectMusicBusToMaster();
+
+    this.activeNodes.push(this.dryMixNode);
+  }
+
+  private setupChorusBus(track: TrackDefinition): void {
+    if (!this.context || !this.musicGainNode) return;
+    if (typeof this.context.createDelay !== 'function') return;
+
+    this.chorusDelayNode = this.context.createDelay(0.08);
+    this.chorusDelayNode.delayTime.value = track.mood === 'chill' || track.mood === 'mysterious' ? 0.028 : 0.018;
+
+    this.chorusFeedbackNode = this.context.createGain();
+    this.chorusFeedbackNode.gain.value = 0.12;
+
+    this.chorusWetNode = this.context.createGain();
+    this.chorusWetNode.gain.value = track.mood === 'chill' || track.mood === 'mysterious' ? 0.28 : 0.18;
+
+    this.chorusDelayNode.connect(this.chorusFeedbackNode);
+    this.chorusFeedbackNode.connect(this.chorusDelayNode);
+    this.chorusDelayNode.connect(this.chorusWetNode);
+    this.chorusWetNode.connect(this.musicGainNode);
+
+    this.activeNodes.push(this.chorusDelayNode, this.chorusFeedbackNode, this.chorusWetNode);
+  }
+
+  private connectMusicBusToMaster(): void {
+    if (!this.context || !this.musicGainNode || !this.masterGain) return;
+
+    let outputNode: AudioNode = this.musicGainNode;
+
+    if (typeof this.context.createDynamicsCompressor === 'function') {
+      this.masterDynamicsNode = this.context.createDynamicsCompressor();
+      this.masterDynamicsNode.threshold.value = -16;
+      this.masterDynamicsNode.knee.value = 18;
+      this.masterDynamicsNode.ratio.value = 4;
+      this.masterDynamicsNode.attack.value = 0.006;
+      this.masterDynamicsNode.release.value = 0.18;
+      outputNode.connect(this.masterDynamicsNode);
+      outputNode = this.masterDynamicsNode;
+      this.activeNodes.push(this.masterDynamicsNode);
+    }
+
+    if (this.analyserNode) {
+      outputNode.connect(this.analyserNode);
+      this.analyserNode.connect(this.masterGain);
+    } else {
+      outputNode.connect(this.masterGain);
+    }
   }
 
   // Setup audio effects
@@ -1230,6 +1671,11 @@ export class ProceduralMusicEngine {
     this.reverbGain = null;
     this.delayNode = null;
     this.delayFeedback = null;
+    this.dryMixNode = null;
+    this.chorusDelayNode = null;
+    this.chorusFeedbackNode = null;
+    this.chorusWetNode = null;
+    this.masterDynamicsNode = null;
   }
 
   // Generate new phrase for variation
@@ -1243,11 +1689,51 @@ export class ProceduralMusicEngine {
     this.phraseNoteIndex = 0;
   }
 
-  // Play a single beat
-  private playBeat(track: TrackDefinition): void {
-    if (!this.context || !this.musicGainNode) return;
+  private startScheduler(track: TrackDefinition): void {
+    if (!this.context || !this.scheduler) return;
 
-    const now = this.context.currentTime;
+    if (this.intervalId !== null) {
+      clearInterval(this.intervalId);
+    }
+
+    this.processScheduledEvents(track);
+    this.intervalId = window.setInterval(() => {
+      this.processScheduledEvents(track);
+    }, this.schedulerTickMs);
+  }
+
+  private processScheduledEvents(track: TrackDefinition): void {
+    if (!this.isPlaying || !this.context || this.isPaused || !this.scheduler) return;
+
+    const events = this.scheduler.poll(this.context.currentTime);
+    events.forEach(event => {
+      this.playScheduledBeat(track, event);
+    });
+  }
+
+  private getCurrentBeatNumber(): number {
+    return this.phraseIndex * 16 + this.barIndex * 4 + this.beatIndex;
+  }
+
+  // Play a single deterministic scheduler event
+  private playScheduledBeat(track: TrackDefinition, event: ScheduledMusicEvent): void {
+    if (event.beatNumber > 0 && event.beatIndex === 0 && event.barIndex === 0) {
+      this.generateNewPhrase(track);
+
+      if (event.phraseIndex % 4 === 3) {
+        this.playRiser(track, event.scheduledTime);
+      }
+    }
+
+    this.beatIndex = event.beatIndex;
+    this.barIndex = event.barIndex;
+    this.phraseIndex = event.phraseIndex;
+    this.playBeat(track, event.scheduledTime);
+  }
+
+  // Play a single beat
+  private playBeat(track: TrackDefinition, now: number): void {
+    if (!this.context || !this.musicGainNode) return;
 
     // Play each instrument (respecting layer states)
     track.instruments.forEach(instrument => {
@@ -1284,26 +1770,123 @@ export class ProceduralMusicEngine {
           break;
       }
     });
+  }
 
-    // Update beat counters
-    this.beatIndex++;
-    if (this.beatIndex >= 4) {
-      this.beatIndex = 0;
-      this.barIndex++;
+  private playPatchNote(
+    patch: InstrumentPatch,
+    frequency: number,
+    now: number,
+    duration: number,
+    volume: number,
+    config: InstrumentConfig,
+    detuneOffsetCents: number = 0,
+  ): void {
+    if (!this.context || !this.musicGainNode) return;
 
-      if (this.barIndex >= 4) {
-        this.barIndex = 0;
-        this.phraseIndex++;
+    const safeDuration = Math.max(0.03, duration);
+    const safeVolume = Math.max(0, Math.min(1, volume));
 
-        // Generate new phrase every 4 bars for variation
-        this.generateNewPhrase(track);
+    patch.layers.forEach((layer) => {
+      const osc = this.context!.createOscillator();
+      const gain = this.context!.createGain();
+      const layerFrequency = frequency * Math.pow(2, layer.octaveOffset ?? 0);
+      const layerGain = safeVolume * layer.gain;
 
-        // Play riser before phrase 4
-        if (this.phraseIndex % 4 === 3) {
-          this.playRiser(track, now);
-        }
+      osc.type = layer.waveform;
+      osc.frequency.setValueAtTime(layerFrequency, now);
+      osc.detune.setValueAtTime((layer.detuneCents ?? 0) + detuneOffsetCents, now);
+
+      let outputNode: AudioNode = osc;
+      const filterConfig = config.filter ?? layer.filter;
+      if (filterConfig) {
+        const filter = this.context!.createBiquadFilter();
+        filter.type = filterConfig.type;
+        filter.frequency.setValueAtTime(filterConfig.frequency, now);
+        filter.Q.value = 'q' in filterConfig ? filterConfig.q : filterConfig.Q;
+        osc.connect(filter);
+        outputNode = filter;
       }
+
+      const attackEnd = now + Math.max(0.001, layer.attack);
+      const decayEnd = attackEnd + Math.max(0.001, layer.decay);
+      const releaseStart = now + Math.max(0.01, safeDuration - layer.release);
+      const releaseEnd = now + safeDuration;
+      const sustainGain = Math.max(0.0001, layerGain * layer.sustain);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(Math.max(layerGain, 0.0001), attackEnd);
+      gain.gain.linearRampToValueAtTime(sustainGain, Math.min(decayEnd, releaseStart));
+      gain.gain.setValueAtTime(sustainGain, releaseStart);
+      gain.gain.exponentialRampToValueAtTime(0.0001, releaseEnd);
+
+      outputNode.connect(gain);
+      const routedNodes = this.connectPatchOutput(gain, patch);
+
+      this.applyPatchVibrato(osc, patch, now, safeDuration);
+
+      osc.start(now);
+      osc.stop(releaseEnd + 0.05);
+
+      setTimeout(() => {
+        [gain, ...routedNodes].forEach(node => {
+          try {
+            node.disconnect();
+          } catch { /* ignore disconnected note routing */ }
+        });
+      }, Math.max(0, (releaseEnd - this.context!.currentTime) * 1000 + 100));
+    });
+  }
+
+  private connectPatchOutput(source: AudioNode, patch: InstrumentPatch): AudioNode[] {
+    if (!this.context || !this.musicGainNode) return [];
+
+    const mixProfile = getPatchMixProfile(patch);
+    const channelGain = this.context.createGain();
+    channelGain.gain.value = mixProfile.channelGain;
+    const routedNodes: AudioNode[] = [channelGain];
+
+    let routedSource: AudioNode = source;
+    if (typeof this.context.createStereoPanner === 'function' && patch.pan !== undefined) {
+      const panner = this.context.createStereoPanner();
+      panner.pan.value = Math.max(-1, Math.min(1, patch.pan));
+      source.connect(panner);
+      routedSource = panner;
+      routedNodes.push(panner);
     }
+
+    routedSource.connect(channelGain);
+    channelGain.connect(this.dryMixNode ?? this.musicGainNode);
+
+    if (this.chorusDelayNode && mixProfile.chorusSend > 0) {
+      const chorusSend = this.context.createGain();
+      chorusSend.gain.value = mixProfile.chorusSend;
+      channelGain.connect(chorusSend);
+      chorusSend.connect(this.chorusDelayNode);
+      routedNodes.push(chorusSend);
+    }
+
+    return routedNodes;
+  }
+
+  private applyPatchVibrato(
+    osc: OscillatorNode,
+    patch: InstrumentPatch,
+    now: number,
+    duration: number,
+  ): void {
+    if (!this.context || !patch.vibrato) return;
+
+    const lfo = this.context.createOscillator();
+    const lfoGain = this.context.createGain();
+
+    lfo.type = 'sine';
+    lfo.frequency.setValueAtTime(patch.vibrato.rate, now);
+    lfoGain.gain.setValueAtTime(patch.vibrato.depthCents, now);
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.detune);
+    lfo.start(now);
+    lfo.stop(now + duration + 0.05);
   }
 
   // Play bass instrument
@@ -1317,38 +1900,13 @@ export class ProceduralMusicEngine {
 
     if (!playOnBeat) return;
 
-    const ctx = this.context;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = config.waveform;
-
     // Get bass note from scale
     const rootDegrees = [0, 3, 4, 5];
     const degree = rootDegrees[this.barIndex % rootDegrees.length];
-    osc.frequency.value = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 3);
-
-    // Optional filter
-    let outputNode: AudioNode = osc;
-    if (config.filter) {
-      const filter = ctx.createBiquadFilter();
-      filter.type = config.filter.type;
-      filter.frequency.value = config.filter.frequency;
-      filter.Q.value = config.filter.Q;
-      osc.connect(filter);
-      outputNode = filter;
-    }
-
-    // Envelope
     const duration = track.mood === 'intense' ? 0.2 : 0.4;
-    gain.gain.setValueAtTime(config.volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    const frequency = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 3);
 
-    outputNode.connect(gain);
-    gain.connect(this.musicGainNode);
-
-    osc.start(now);
-    osc.stop(now + duration + 0.1);
+    this.playPatchNote(getPatchForInstrument(config, track), frequency, now, duration, config.volume, config);
   }
 
   // Play lead melody
@@ -1363,37 +1921,17 @@ export class ProceduralMusicEngine {
     const note = this.currentPhrase[this.phraseNoteIndex];
     if (!note) return;
 
-    const ctx = this.context;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    const duration = note.duration * (60 / this.getEffectiveBpm());
+    const frequency = note.frequency * Math.pow(2, config.octave - 4);
 
-    osc.type = config.waveform;
-    osc.frequency.value = note.frequency * Math.pow(2, config.octave - 4);
-
-    // Optional filter
-    let outputNode: AudioNode = osc;
-    if (config.filter) {
-      const filter = ctx.createBiquadFilter();
-      filter.type = config.filter.type;
-      filter.frequency.setValueAtTime(config.filter.frequency, now);
-      filter.frequency.exponentialRampToValueAtTime(config.filter.frequency * 0.5, now + 0.2);
-      filter.Q.value = config.filter.Q;
-      osc.connect(filter);
-      outputNode = filter;
-    }
-
-    // Envelope with velocity
-    const duration = note.duration * (60 / track.bpm);
-    gain.gain.setValueAtTime(0, now);
-    gain.gain.linearRampToValueAtTime(config.volume * note.velocity, now + 0.02);
-    gain.gain.setValueAtTime(config.volume * note.velocity * 0.8, now + duration * 0.7);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-    outputNode.connect(gain);
-    gain.connect(this.musicGainNode);
-
-    osc.start(now);
-    osc.stop(now + duration + 0.1);
+    this.playPatchNote(
+      getPatchForInstrument(config, track),
+      frequency,
+      now,
+      duration,
+      config.volume * note.velocity,
+      config,
+    );
 
     this.phraseNoteIndex++;
   }
@@ -1405,32 +1943,23 @@ export class ProceduralMusicEngine {
     // Only play on beat 1
     if (this.beatIndex !== 0) return;
 
-    const ctx = this.context;
-
     // Simple triad
     const chordDegrees = [0, 2, 4];
     const barRoot = [0, 3, 4, 5][this.barIndex % 4];
 
     chordDegrees.forEach((degree, i) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      const duration = (60 / this.getEffectiveBpm()) * 4; // Full bar
+      const frequency = this.melodyGenerator!.getFrequencyForDegree(barRoot + degree, config.octave - 4);
 
-      osc.type = config.waveform;
-      osc.frequency.value = this.melodyGenerator!.getFrequencyForDegree(barRoot + degree, config.octave - 4);
-      osc.detune.value = (i - 1) * 5; // Slight detune for warmth
-
-      // Long sustain
-      const duration = (60 / track.bpm) * 4; // Full bar
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(config.volume * 0.7, now + 0.1);
-      gain.gain.setValueAtTime(config.volume * 0.6, now + duration * 0.8);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-      osc.connect(gain);
-      gain.connect(this.musicGainNode!);
-
-      osc.start(now);
-      osc.stop(now + duration + 0.1);
+      this.playPatchNote(
+        getPatchForInstrument(config, track),
+        frequency,
+        now,
+        duration,
+        config.volume * 0.7,
+        config,
+        (i - 1) * 5,
+      );
     });
   }
 
@@ -1438,40 +1967,15 @@ export class ProceduralMusicEngine {
   private playArp(track: TrackDefinition, config: InstrumentConfig, now: number): void {
     if (!this.context || !this.musicGainNode || !this.melodyGenerator) return;
 
-    const ctx = this.context;
-
     // Arpeggio pattern based on beat
     const patterns = [0, 2, 4, 2]; // Up-down pattern
     const barRoot = [0, 3, 4, 5][this.barIndex % 4];
     const degree = barRoot + patterns[this.beatIndex];
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.type = config.waveform;
-    osc.frequency.value = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 4);
-
-    // Optional filter
-    let outputNode: AudioNode = osc;
-    if (config.filter) {
-      const filter = ctx.createBiquadFilter();
-      filter.type = config.filter.type;
-      filter.frequency.value = config.filter.frequency;
-      filter.Q.value = config.filter.Q;
-      osc.connect(filter);
-      outputNode = filter;
-    }
-
-    // Short staccato
     const duration = 0.15;
-    gain.gain.setValueAtTime(config.volume, now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    const frequency = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 4);
 
-    outputNode.connect(gain);
-    gain.connect(this.musicGainNode);
-
-    osc.start(now);
-    osc.stop(now + duration + 0.05);
+    this.playPatchNote(getPatchForInstrument(config, track), frequency, now, duration, config.volume, config);
   }
 
   // Play drums
@@ -1667,7 +2171,7 @@ export class ProceduralMusicEngine {
     if (!this.context || !this.musicGainNode) return;
 
     const ctx = this.context;
-    const duration = (60 / track.bpm) * 4 * 4; // 4 bars
+    const duration = (60 / this.getEffectiveBpm()) * 4 * 4; // 4 bars
 
     // Noise riser
     const bufferSize = ctx.sampleRate * duration;
