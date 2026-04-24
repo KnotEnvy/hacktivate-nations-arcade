@@ -110,6 +110,92 @@ export const CHORD_PROGRESSIONS = {
 
 export type ChordProgressionName = keyof typeof CHORD_PROGRESSIONS;
 
+type ChordQuality = keyof typeof CHORD_TYPES;
+
+export interface ResolvedChord {
+  symbol: string;
+  tonalMode: 'major' | 'minor';
+  degree: number;
+  rootSemitone: number;
+  quality: ChordQuality;
+  intervals: number[];
+  tones: number[];
+}
+
+const MAJOR_DEGREE_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+const MINOR_DEGREE_SEMITONES = [0, 2, 3, 5, 7, 8, 10];
+
+const ROMAN_DEGREES: Record<string, number> = {
+  i: 0,
+  ii: 1,
+  iii: 2,
+  iv: 3,
+  v: 4,
+  vi: 5,
+  vii: 6,
+};
+
+export function resolveChordSymbol(
+  symbol: string,
+  tonalMode: 'major' | 'minor' = 'major',
+): ResolvedChord {
+  const trimmed = symbol.trim();
+  const normalized = trimmed.replace('Â°', '°');
+  const accidentalMatch = normalized.match(/^[b#]+/);
+  const accidentalToken = accidentalMatch?.[0] ?? '';
+  const accidental = [...accidentalToken].reduce((sum, char) => sum + (char === 'b' ? -1 : 1), 0);
+  const withoutAccidental = normalized.slice(accidentalToken.length);
+  const romanMatch = withoutAccidental.match(/^[ivIV]+/);
+  const roman = romanMatch?.[0] ?? 'I';
+  const suffix = withoutAccidental.slice(roman.length);
+  const degree = ROMAN_DEGREES[roman.toLowerCase()] ?? 0;
+  const baseScale = tonalMode === 'minor' ? MINOR_DEGREE_SEMITONES : MAJOR_DEGREE_SEMITONES;
+  const rootSemitone = baseScale[degree] + accidental;
+  const quality = getChordQuality(roman, suffix);
+  const intervals = CHORD_TYPES[quality];
+
+  return {
+    symbol,
+    tonalMode,
+    degree,
+    rootSemitone,
+    quality,
+    intervals,
+    tones: intervals.map(interval => rootSemitone + interval),
+  };
+}
+
+export function resolveTrackChord(track: TrackDefinition, barIndex: number): ResolvedChord {
+  const progression = CHORD_PROGRESSIONS[track.progression] ?? CHORD_PROGRESSIONS.retro1;
+  const symbol = progression[((barIndex % progression.length) + progression.length) % progression.length];
+  return resolveChordSymbol(symbol, getProgressionTonalMode(progression));
+}
+
+function getProgressionTonalMode(progression: string[]): 'major' | 'minor' {
+  const firstRoman = progression[0]?.replace(/^[b#]+/, '').match(/^[ivIV]+/)?.[0] ?? 'I';
+  return firstRoman[0] === firstRoman[0].toLowerCase() ? 'minor' : 'major';
+}
+
+function getChordQuality(roman: string, suffix: string): ChordQuality {
+  const normalizedSuffix = suffix.replace('Â°', '°').toLowerCase();
+
+  if (normalizedSuffix.includes('°') || normalizedSuffix.includes('dim')) {
+    return 'diminished';
+  }
+
+  if (normalizedSuffix.includes('maj7')) {
+    return 'major7';
+  }
+
+  const isUppercaseRoman = roman === roman.toUpperCase();
+
+  if (normalizedSuffix.includes('7')) {
+    return isUppercaseRoman ? 'dom7' : 'minor7';
+  }
+
+  return isUppercaseRoman ? 'major' : 'minor';
+}
+
 // ============= TRACK DEFINITIONS =============
 
 export interface TrackDefinition {
@@ -814,6 +900,8 @@ export function buildMusicEventGrid(
   const events: MusicEvent[] = [];
 
   for (let bar = 0; bar < bars; bar++) {
+    const chord = resolveTrackChord(track, bar);
+
     for (let beat = 0; beat < BEATS_PER_BAR; beat++) {
       const scheduledTime = (bar * BEATS_PER_BAR + beat) * beatDuration;
 
@@ -834,11 +922,10 @@ export function buildMusicEventGrid(
             const shouldPlay = track.mood === 'intense' || track.mood === 'energetic' || beat === 0 || beat === 2;
             if (!shouldPlay) return;
 
-            const rootDegrees = [0, 3, 4, 5];
             events.push({
               ...baseEvent,
               duration: track.mood === 'intense' ? 0.2 : 0.4,
-              frequency: melody.getFrequencyForDegree(rootDegrees[bar % rootDegrees.length], instrument.octave - 3),
+              frequency: melody.getFrequencyForSemitoneOffset(chord.rootSemitone, instrument.octave - 3),
             });
             break;
           }
@@ -861,17 +948,17 @@ export function buildMusicEventGrid(
               ...baseEvent,
               duration: beatDuration * BEATS_PER_BAR,
               velocity: instrument.volume * 0.7,
-              frequency: melody.getFrequencyForDegree([0, 3, 4, 5][bar % 4], instrument.octave - 4),
+              frequency: melody.getFrequencyForSemitoneOffset(chord.tones[0], instrument.octave - 4),
             });
             break;
           }
 
           case 'arp': {
-            const patterns = [0, 2, 4, 2];
+            const tone = chord.tones[[0, 1, 2, 1][beat] % chord.tones.length];
             events.push({
               ...baseEvent,
               duration: 0.15,
-              frequency: melody.getFrequencyForDegree([0, 3, 4, 5][bar % 4] + patterns[beat], instrument.octave - 4),
+              frequency: melody.getFrequencyForSemitoneOffset(tone, instrument.octave - 4),
             });
             break;
           }
@@ -918,6 +1005,10 @@ export class MelodyGenerator {
     const octave = Math.floor(degree / this.scale.length);
     const semitone = this.scale[normalizedDegree];
     return this.rootFreq * Math.pow(2, (semitone + (octave + octaveShift) * 12) / 12);
+  }
+
+  getFrequencyForSemitoneOffset(semitoneOffset: number, octaveShift: number = 0): number {
+    return this.rootFreq * Math.pow(2, (semitoneOffset + octaveShift * 12) / 12);
   }
 
   // Generate melody pattern for a phrase
@@ -1900,11 +1991,9 @@ export class ProceduralMusicEngine {
 
     if (!playOnBeat) return;
 
-    // Get bass note from scale
-    const rootDegrees = [0, 3, 4, 5];
-    const degree = rootDegrees[this.barIndex % rootDegrees.length];
+    const chord = resolveTrackChord(track, this.barIndex);
     const duration = track.mood === 'intense' ? 0.2 : 0.4;
-    const frequency = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 3);
+    const frequency = this.melodyGenerator.getFrequencyForSemitoneOffset(chord.rootSemitone, config.octave - 3);
 
     this.playPatchNote(getPatchForInstrument(config, track), frequency, now, duration, config.volume, config);
   }
@@ -1943,13 +2032,11 @@ export class ProceduralMusicEngine {
     // Only play on beat 1
     if (this.beatIndex !== 0) return;
 
-    // Simple triad
-    const chordDegrees = [0, 2, 4];
-    const barRoot = [0, 3, 4, 5][this.barIndex % 4];
+    const chord = resolveTrackChord(track, this.barIndex);
 
-    chordDegrees.forEach((degree, i) => {
+    chord.tones.forEach((tone, i) => {
       const duration = (60 / this.getEffectiveBpm()) * 4; // Full bar
-      const frequency = this.melodyGenerator!.getFrequencyForDegree(barRoot + degree, config.octave - 4);
+      const frequency = this.melodyGenerator!.getFrequencyForSemitoneOffset(tone, config.octave - 4);
 
       this.playPatchNote(
         getPatchForInstrument(config, track),
@@ -1967,13 +2054,12 @@ export class ProceduralMusicEngine {
   private playArp(track: TrackDefinition, config: InstrumentConfig, now: number): void {
     if (!this.context || !this.musicGainNode || !this.melodyGenerator) return;
 
-    // Arpeggio pattern based on beat
-    const patterns = [0, 2, 4, 2]; // Up-down pattern
-    const barRoot = [0, 3, 4, 5][this.barIndex % 4];
-    const degree = barRoot + patterns[this.beatIndex];
+    const chord = resolveTrackChord(track, this.barIndex);
+    const pattern = [0, 1, 2, 1];
+    const tone = chord.tones[pattern[this.beatIndex] % chord.tones.length];
 
     const duration = 0.15;
-    const frequency = this.melodyGenerator.getFrequencyForDegree(degree, config.octave - 4);
+    const frequency = this.melodyGenerator.getFrequencyForSemitoneOffset(tone, config.octave - 4);
 
     this.playPatchNote(getPatchForInstrument(config, track), frequency, now, duration, config.volume, config);
   }
