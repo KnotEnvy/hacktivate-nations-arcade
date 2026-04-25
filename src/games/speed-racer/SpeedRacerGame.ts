@@ -255,6 +255,19 @@ export class SpeedRacerGame extends BaseGame {
     this.player.update(dt, playerInput);
     // Cosmetic damage tier tracks hp. MAX_HP=3 → tier 0/1/2 map to pristine/scorched/critical.
     this.player.setDamageLevel(Math.max(0, Math.min(2, MAX_HP - this.hp)) as 0 | 1 | 2);
+    // Snapshot secondary weapon state for the trunk-mounted attachment.
+    const secActive = this.secondary.active;
+    if (secActive) {
+      const secCfg = SECONDARY_CONFIGS[secActive];
+      this.player.setSecondary({
+        type: secActive,
+        ammo: this.secondary.ammo,
+        maxAmmo: secCfg.ammo,
+        cooldownPct: secCfg.cooldown > 0 ? this.secondary.cooldown / secCfg.cooldown : 0,
+      });
+    } else {
+      this.player.setSecondary({ type: null, ammo: 0, maxAmmo: 0, cooldownPct: 0 });
+    }
     this.road.update(this.player.speed, dt);
 
     const firing = input.isKeyPressed('Space') || tc.fireHeld();
@@ -267,6 +280,7 @@ export class SpeedRacerGame extends BaseGame {
         this.particles.burstMuzzle(this.player.x - 10, this.player.y - this.player.height / 2 - 4);
         this.particles.burstMuzzle(this.player.x + 10, this.player.y - this.player.height / 2 - 4);
         this.services?.audio?.playSound?.('shoot', { volume: 0.25 });
+        this.player.pulseGunRecoil();
         this.muzzleTimer = 0.08;
       }
     } else {
