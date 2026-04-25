@@ -45,6 +45,20 @@ describe('SB32 procedural patch library', () => {
     expect(getPatchForInstrument(pad, track).name).toBe('choir_pad');
   });
 
+  test('defines a distinctive SB32 intro track with layered procedural roles', () => {
+    const track = TRACK_DEFINITIONS.hub_sb32_intro;
+    const bass = track.instruments.find(instrument => instrument.type === 'bass')!;
+    const pad = track.instruments.find(instrument => instrument.type === 'pad')!;
+    const lead = track.instruments.find(instrument => instrument.type === 'lead')!;
+
+    expect(track.name).toBe('SB32 Power-On');
+    expect(track.mood).toBe('epic');
+    expect(track.effects.reverb).toBeGreaterThan(0.2);
+    expect(getPatchForInstrument(bass, track).name).toBe('fm_bass');
+    expect(getPatchForInstrument(pad, track).name).toBe('string_ensemble');
+    expect(getPatchForInstrument(lead, track).name).toBe('synth_brass');
+  });
+
   test('derives safe channel gain and chorus send values for every patch', () => {
     Object.values(SB32_PATCHES).forEach((patch) => {
       const profile = getPatchMixProfile(patch);

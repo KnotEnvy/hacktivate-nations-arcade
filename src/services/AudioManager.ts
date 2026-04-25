@@ -62,6 +62,7 @@ export type LegacyMusicName = 'hub_music' | 'game_music';
 export type ExtendedMusicName =
   | LegacyMusicName
   // Hub variations
+  | 'hub_sb32_intro'
   | 'hub_welcome'
   | 'hub_ambient'
   | 'hub_energetic'
@@ -175,7 +176,7 @@ export class AudioManager {
   private autoRotationIntervalId: number | null = null;
   private autoRotationIntervalMs: number = 4 * 60 * 1000; // 4 minutes default
   private hubTrackIndex: number = 0;
-  private hubTracks: MusicName[] = ['hub_welcome', 'hub_ambient', 'hub_energetic'];
+  private hubTracks: MusicName[] = ['hub_sb32_intro', 'hub_welcome', 'hub_ambient', 'hub_energetic'];
   private lastPlayedHubTrack: string | null = null;
 
   async init(): Promise<void> {
@@ -1420,9 +1421,18 @@ export class AudioManager {
     this.currentGameId = null;
   }
 
+  private resolveMusicPlaybackName(name: MusicName): MusicName {
+    if (name === 'hub_music') return 'hub_sb32_intro';
+    if (name === 'game_music') return 'action_chase';
+    return name;
+  }
+
   playMusic(name: MusicName, fadeSeconds = 0): void {
     if (!this.context || !this.masterGain) return;
     if (this.muted) return;
+
+    const playbackName = this.resolveMusicPlaybackName(name);
+    const shouldUseProceduralEngine = this.useProceduralEngine || name === 'hub_music' || name === 'game_music';
 
     // Stop any currently playing music
     this.stopMusic(0.1);
@@ -1430,10 +1440,10 @@ export class AudioManager {
     // Wait a bit for cleanup then start new music
     setTimeout(() => {
       // Check if this is a procedural track name
-      if (this.useProceduralEngine && this.proceduralEngine && TRACK_DEFINITIONS[name]) {
+      if (shouldUseProceduralEngine && this.proceduralEngine && TRACK_DEFINITIONS[playbackName]) {
         // Use new procedural engine for extended tracks
-        this.proceduralEngine.startTrack(name, fadeSeconds);
-        this.currentMusicName = name;
+        this.proceduralEngine.startTrack(playbackName, fadeSeconds);
+        this.currentMusicName = playbackName;
         this.musicPlaying = true;
       } else if (name === 'hub_music') {
         // Legacy hub music
@@ -1544,10 +1554,11 @@ export class AudioManager {
       track => track !== this.lastPlayedHubTrack
     );
 
-    // Pick a random track from available ones
-    const nextTrack = availableTracks.length > 0
-      ? availableTracks[Math.floor(Math.random() * availableTracks.length)]
-      : this.hubTracks[0]; // Fallback if only one track
+    const nextTrack = !this.lastPlayedHubTrack
+      ? this.hubTracks[0]
+      : availableTracks.length > 0
+        ? availableTracks[Math.floor(Math.random() * availableTracks.length)]
+        : this.hubTracks[0]; // Fallback if only one track
 
     this.lastPlayedHubTrack = nextTrack;
     this.playMusic(nextTrack, fadeSeconds);
@@ -1652,7 +1663,7 @@ export class AudioManager {
    */
   getTracksByCategory(): Record<string, string[]> {
     return {
-      'Hub/Menu': ['hub_welcome', 'hub_ambient', 'hub_energetic'],
+      'Hub/Menu': ['hub_sb32_intro', 'hub_welcome', 'hub_ambient', 'hub_energetic'],
       'Action': ['action_intense', 'action_chase'],
       'Puzzle': ['puzzle_focus', 'puzzle_discovery'],
       'Arcade': ['arcade_retro', 'arcade_bounce'],
@@ -1661,7 +1672,6 @@ export class AudioManager {
       'Sports': ['sports_competitive', 'sports_victory'],
       'Rhythm': ['rhythm_beat', 'rhythm_groove'],
       'Space': ['space_exploration', 'space_battle'],
-      'Legacy': ['hub_music', 'game_music'],
     };
   }
 
@@ -1670,8 +1680,8 @@ export class AudioManager {
    */
   playTrackByName(trackName: string, fadeSeconds = 0.5): void {
     if (trackName === 'hub_music' || trackName === 'game_music') {
-      // Legacy tracks
-      this.setUseProceduralEngine(false);
+      // Compatibility aliases now resolve to procedural SB32 tracks.
+      this.setUseProceduralEngine(true);
       this.playMusic(trackName as MusicName, fadeSeconds);
     } else if (TRACK_DEFINITIONS[trackName]) {
       // Procedural tracks

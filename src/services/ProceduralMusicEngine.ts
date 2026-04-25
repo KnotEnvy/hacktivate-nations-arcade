@@ -439,7 +439,26 @@ export function getPatchMixProfile(patch: InstrumentPatch): PatchMixProfile {
 // ============= PREDEFINED TRACKS =============
 
 export const TRACK_DEFINITIONS: Record<string, TrackDefinition> = {
-  // ========== HUB/MENU TRACKS (3 variations) ==========
+  // ========== HUB/MENU TRACKS ==========
+
+  hub_sb32_intro: {
+    name: 'SB32 Power-On',
+    bpm: 118,
+    scale: 'mixolydian',
+    rootNote: 'D3',
+    progression: 'retro3',
+    mood: 'epic',
+    intensity: 0.82,
+    instruments: [
+      { type: 'bass', waveform: 'square', octave: 2, volume: 0.32, filter: { type: 'lowpass', frequency: 620, Q: 4 } },
+      { type: 'pad', waveform: 'sawtooth', octave: 4, volume: 0.18, filter: { type: 'lowpass', frequency: 2200, Q: 1 } },
+      { type: 'lead', waveform: 'sawtooth', octave: 5, volume: 0.18, filter: { type: 'lowpass', frequency: 4800, Q: 3 } },
+      { type: 'arp', waveform: 'triangle', octave: 6, volume: 0.13 },
+      { type: 'drums', waveform: 'sine', octave: 2, volume: 0.62 },
+      { type: 'fx', waveform: 'sine', octave: 6, volume: 0.08 },
+    ],
+    effects: { reverb: 0.24, delay: 0.18, filterSweep: true, distortion: 0.08 },
+  },
 
   hub_welcome: {
     name: 'Arcade Welcome',
