@@ -266,59 +266,19 @@ export class EnemyCar {
     const lockFlash = isRamLocking && Math.sin(this.ramLockTimer * 40) > 0;
     ctx.save();
 
-    // Shadow
+    // Shadow (shared — a soft blob under the chassis)
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     this.roundRect(ctx, x + 4, y + 5, w, h, 6);
     ctx.fill();
 
-    // Body — flash bright yellow during ram lock telegraph
-    ctx.fillStyle = lockFlash ? '#FFEA00' : c.color;
-    this.roundRect(ctx, x, y, w, h, 6);
-    ctx.fill();
-
-    // Cockpit
-    ctx.fillStyle = '#0a0a14';
-    this.roundRect(ctx, x + 6, y + 14, w - 12, h - 32, 3);
-    ctx.fill();
-
-    // Headlights (front = top, since they drive same direction as us)
-    ctx.fillStyle = '#FFFF99';
-    ctx.fillRect(x + 4, y + 2, 6, 4);
-    ctx.fillRect(x + w - 10, y + 2, 6, 4);
-
-    // Tail lights (back = bottom)
-    ctx.fillStyle = '#FF3030';
-    ctx.fillRect(x + 6, y + h - 4, 6, 2);
-    ctx.fillRect(x + w - 12, y + h - 4, 6, 2);
-
-    // Type-specific accents
-    if (c.type === 'ram') {
-      // Side spikes
-      ctx.fillStyle = c.accentColor;
-      ctx.beginPath();
-      ctx.moveTo(x, y + h / 2 - 8);
-      ctx.lineTo(x - 7, y + h / 2);
-      ctx.lineTo(x, y + h / 2 + 8);
+    if (c.type === 'ram') this.drawRamCar(ctx, x, y, w, h, lockFlash);
+    else if (c.type === 'shooter') this.drawShooterCar(ctx, x, y, w, h);
+    else if (c.type === 'armored') this.drawArmoredCar(ctx, x, y, w, h);
+    else {
+      // Patrol falls back to the old rounded-rect — only spawns on water anyway
+      ctx.fillStyle = c.color;
+      this.roundRect(ctx, x, y, w, h, 6);
       ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(x + w, y + h / 2 - 8);
-      ctx.lineTo(x + w + 7, y + h / 2);
-      ctx.lineTo(x + w, y + h / 2 + 8);
-      ctx.fill();
-    } else if (c.type === 'armored') {
-      // Chrome trim along sides
-      ctx.fillStyle = c.accentColor;
-      ctx.fillRect(x + 2, y + 6, 3, h - 12);
-      ctx.fillRect(x + w - 5, y + 6, 3, h - 12);
-      // HP/armor pips
-      ctx.fillStyle = '#444';
-      ctx.fillRect(x + w / 2 - 10, y + 4, 20, 4);
-    } else if (c.type === 'shooter') {
-      // Roof-mounted gun
-      ctx.fillStyle = '#1a1a2e';
-      ctx.fillRect(x + w / 2 - 3, y + h - 14, 6, 14);
-      ctx.fillStyle = '#444';
-      ctx.fillRect(x + w / 2 - 2, y + h, 4, 8);
     }
 
     // Ram lock telegraph — dashed tracer from ram's back bumper toward the
@@ -337,16 +297,304 @@ export class EnemyCar {
     ctx.restore();
   }
 
+  // --- Muscle-car ram. Wedge hood, hood scoop, protruding bull bar, side spikes,
+  // exposed exhausts, angry slanted headlights. Body flashes yellow during lock.
+  private drawRamCar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    lockFlash: boolean,
+  ): void {
+    const c = this.config;
+    const bodyColor = lockFlash ? '#FFEA00' : c.color;
+    const cx = x + w / 2;
+
+    // Bull bar — thin horizontal bar protruding above the bow with two vertical grips.
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x + 4, y - 5, w - 8, 4);
+    ctx.fillRect(x + 10, y - 10, 3, 8);
+    ctx.fillRect(x + w - 13, y - 10, 3, 8);
+
+    // Side spikes — aggressive forward-angled triangles
+    ctx.fillStyle = c.accentColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y + h * 0.35);
+    ctx.lineTo(x - 8, y + h * 0.5);
+    ctx.lineTo(x, y + h * 0.65);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + w, y + h * 0.35);
+    ctx.lineTo(x + w + 8, y + h * 0.5);
+    ctx.lineTo(x + w, y + h * 0.65);
+    ctx.closePath();
+    ctx.fill();
+
+    // Body — wedge silhouette: narrower at the bow, wider from cabin back.
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 2);            // bow-left shoulder
+    ctx.lineTo(x + w - 6, y + 2);        // bow-right shoulder
+    ctx.lineTo(x + w - 2, y + 18);       // right fender kick
+    ctx.lineTo(x + w, y + 22);
+    ctx.lineTo(x + w, y + h - 4);
+    ctx.arcTo(x + w, y + h, x + w - 4, y + h, 4);
+    ctx.lineTo(x + 4, y + h);
+    ctx.arcTo(x, y + h, x, y + h - 4, 4);
+    ctx.lineTo(x, y + 22);
+    ctx.lineTo(x + 2, y + 18);           // left fender kick
+    ctx.closePath();
+    ctx.fill();
+
+    // Hood scoop — raised rectangle with a dark intake slot
+    ctx.fillStyle = '#3a0808';
+    ctx.fillRect(cx - 7, y + 6, 14, 10);
+    ctx.fillStyle = '#0a0000';
+    ctx.fillRect(cx - 5, y + 9, 10, 4);
+
+    // Black racing stripes down the hood
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 9, y + 2, 2, h - 18);
+    ctx.fillRect(cx + 7, y + 2, 2, h - 18);
+
+    // Angular slanted headlights — two narrow trapezoids
+    ctx.fillStyle = lockFlash ? '#FFFFFF' : '#FFE060';
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 2);
+    ctx.lineTo(x + 12, y + 2);
+    ctx.lineTo(x + 11, y + 8);
+    ctx.lineTo(x + 5, y + 7);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x + w - 12, y + 2);
+    ctx.lineTo(x + w - 4, y + 2);
+    ctx.lineTo(x + w - 5, y + 7);
+    ctx.lineTo(x + w - 11, y + 8);
+    ctx.closePath();
+    ctx.fill();
+
+    // Cockpit (short, aggressive rake)
+    ctx.fillStyle = '#0a0a14';
+    this.roundRect(ctx, x + 6, y + 22, w - 12, h - 42, 3);
+    ctx.fill();
+    // Windshield highlight
+    ctx.fillStyle = 'rgba(255,100,100,0.22)';
+    ctx.fillRect(x + 9, y + 24, w - 18, 4);
+
+    // Exposed twin exhausts at the stern flanks
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(x + 4, y + h - 3, 6, 5);
+    ctx.fillRect(x + w - 10, y + h - 3, 6, 5);
+    ctx.fillStyle = '#1a0a0a';
+    ctx.fillRect(x + 5, y + h - 2, 4, 3);
+    ctx.fillRect(x + w - 9, y + h - 2, 4, 3);
+
+    // Tail lights above the bumper
+    ctx.fillStyle = '#FF3030';
+    ctx.fillRect(x + 10, y + h - 8, 8, 3);
+    ctx.fillRect(x + w - 18, y + h - 8, 8, 3);
+  }
+
+  // --- Sniper shooter. Boxy utility body, roof turret + radar, armored grille,
+  // hazard stripes on the fenders.
+  private drawShooterCar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Body — flat-fronted SUV silhouette
+    ctx.fillStyle = c.color;
+    this.roundRect(ctx, x, y, w, h, 4);
+    ctx.fill();
+
+    // Front armored grille — black horizontal bars
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(x + 4, y, w - 8, 10);
+    ctx.fillStyle = '#FB8C00';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(x + 6, y + 2 + i * 3, w - 12, 1);
+    }
+
+    // Hazard stripes — black diagonals along lower flanks
+    ctx.fillStyle = '#1a1a1a';
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x + 2, y + h - 12, w - 4, 8);
+    ctx.clip();
+    for (let i = -2; i < w / 4 + 1; i++) {
+      const bx = x + i * 8;
+      ctx.beginPath();
+      ctx.moveTo(bx, y + h - 4);
+      ctx.lineTo(bx + 4, y + h - 12);
+      ctx.lineTo(bx + 8, y + h - 12);
+      ctx.lineTo(bx + 4, y + h - 4);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Headlights — small rectangular LEDs
+    ctx.fillStyle = '#FFFFAA';
+    ctx.fillRect(x + 4, y + 1, 5, 3);
+    ctx.fillRect(x + w - 9, y + 1, 5, 3);
+
+    // Narrow cockpit window — smaller relative to body
+    ctx.fillStyle = '#0a0a14';
+    this.roundRect(ctx, x + 8, y + 18, w - 16, 18, 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,200,120,0.22)';
+    ctx.fillRect(x + 10, y + 20, w - 20, 4);
+
+    // Roof turret base — cylinder viewed from above (ellipse)
+    ctx.fillStyle = '#2a2a2a';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.65, 10, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Turret ring highlight
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.65, 10, 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    // Barrel protrudes forward
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 2, y + h * 0.65 - 14, 4, 14);
+    ctx.fillStyle = '#444';
+    ctx.fillRect(cx - 1.5, y + h * 0.65 - 16, 3, 3);
+
+    // Side radar antenna — triangle on the right flank
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.moveTo(x + w - 3, y + h * 0.35);
+    ctx.lineTo(x + w + 4, y + h * 0.4);
+    ctx.lineTo(x + w - 3, y + h * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + w - 3, y + h * 0.4);
+    ctx.lineTo(x + w + 4, y + h * 0.4);
+    ctx.stroke();
+
+    // Tail lights
+    ctx.fillStyle = '#FF3030';
+    ctx.fillRect(x + 4, y + h - 3, 6, 2);
+    ctx.fillRect(x + w - 10, y + h - 3, 6, 2);
+  }
+
+  // --- SWAT / armored truck. Boxy vertical sides, brush guard at bow, roof
+  // strobe bar, rivets, small windshield. Visual weight matches bulletproof HP.
+  private drawArmoredCar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Brush guard — 3 horizontal bars protruding past the bow
+    ctx.fillStyle = '#888';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(x + 6, y - 6 + i * 2, w - 12, 1.5);
+    }
+    // Guard verticals
+    ctx.fillStyle = '#aaa';
+    ctx.fillRect(x + 8, y - 8, 2, 10);
+    ctx.fillRect(cx - 1, y - 8, 2, 10);
+    ctx.fillRect(x + w - 10, y - 8, 2, 10);
+
+    // Body — boxy, flat sides
+    ctx.fillStyle = c.color;
+    this.roundRect(ctx, x, y, w, h, 3);
+    ctx.fill();
+
+    // Armor panel seam up the center
+    ctx.strokeStyle = '#0a0a0a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 8);
+    ctx.lineTo(cx, y + h - 8);
+    ctx.stroke();
+
+    // Rivet studs — two columns down each side
+    ctx.fillStyle = '#999';
+    for (let i = 0; i < 5; i++) {
+      const ry = y + 14 + i * ((h - 28) / 4);
+      ctx.beginPath();
+      ctx.arc(x + 6, ry, 1.5, 0, Math.PI * 2);
+      ctx.arc(x + w - 6, ry, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Hood — angled armor plates (two trapezoids)
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 2);
+    ctx.lineTo(cx - 1, y + 2);
+    ctx.lineTo(cx - 1, y + 14);
+    ctx.lineTo(x + 8, y + 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 1, y + 2);
+    ctx.lineTo(x + w - 4, y + 2);
+    ctx.lineTo(x + w - 8, y + 14);
+    ctx.lineTo(cx + 1, y + 14);
+    ctx.closePath();
+    ctx.fill();
+
+    // Tiny armored windshield — shallow slit
+    ctx.fillStyle = '#050510';
+    ctx.fillRect(x + 10, y + h * 0.4, w - 20, 10);
+    ctx.fillStyle = 'rgba(100,180,255,0.25)';
+    ctx.fillRect(x + 12, y + h * 0.4 + 1, w - 24, 3);
+
+    // Roof strobe bar — red + blue segmented
+    const barY = y + h * 0.68;
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 14, barY, 28, 6);
+    ctx.fillStyle = '#FF1030';
+    ctx.fillRect(cx - 13, barY + 1, 12, 4);
+    ctx.fillStyle = '#1060FF';
+    ctx.fillRect(cx + 1, barY + 1, 12, 4);
+
+    // Rear cargo doors — horizontal seam
+    ctx.strokeStyle = '#0a0a0a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + h - 14);
+    ctx.lineTo(x + w - 6, y + h - 14);
+    ctx.stroke();
+
+    // Tail lights
+    ctx.fillStyle = '#FF3030';
+    ctx.fillRect(x + 6, y + h - 4, 8, 2);
+    ctx.fillRect(x + w - 14, y + h - 4, 8, 2);
+  }
+
   private renderJetboat(ctx: CanvasRenderingContext2D): void {
     const c = this.config;
     const w = c.width;
     const h = c.height;
     const x = this.x - w / 2;
     const y = this.y - h / 2;
+    const isRamLocking = c.type === 'ram' && this.ramState === 'lock';
+    const lockFlash = isRamLocking && Math.sin(this.ramLockTimer * 40) > 0;
 
     ctx.save();
 
-    // Trailing wake — short foam burst behind the stern
+    // Trailing wake (shared — foam burst from stern)
     ctx.fillStyle = '#FFFFFFCC';
     for (let i = 0; i < 3; i++) {
       const t = (this.wakeT + i * 0.25) % 1;
@@ -363,58 +611,266 @@ export class EnemyCar {
     this.jetboatHullPath(ctx, x + 3, y + 5, w, h);
     ctx.fill();
 
-    // Hull body
+    if (c.type === 'ram') this.drawRamBoat(ctx, x, y, w, h, lockFlash);
+    else if (c.type === 'shooter') this.drawShooterBoat(ctx, x, y, w, h);
+    else if (c.type === 'armored') this.drawArmoredBoat(ctx, x, y, w, h);
+    else if (c.type === 'patrol') this.drawPatrolBoat(ctx, x, y, w, h);
+
+    // Ram lock tracer — mirror the car version so water-section rams telegraph too
+    if (isRamLocking) {
+      ctx.strokeStyle = lockFlash ? '#FFEA00' : 'rgba(255,80,80,0.75)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.beginPath();
+      ctx.moveTo(this.x, y + h);
+      ctx.lineTo(this.ramTargetX, y + h + 150);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    ctx.restore();
+  }
+
+  // --- Ram jet-ski. Narrow aggressive PWC with bow prongs, visible handlebars,
+  // red hull. Flashes yellow during lock phase like the road ram.
+  private drawRamBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    lockFlash: boolean,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Bow prongs — splayed wider than car version, more menacing
+    ctx.fillStyle = c.accentColor;
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, y + 4);
+    ctx.lineTo(x - 6, y + 26);
+    ctx.lineTo(x + 8, y + 22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, y + 4);
+    ctx.lineTo(x + w + 6, y + 26);
+    ctx.lineTo(x + w - 8, y + 22);
+    ctx.closePath();
+    ctx.fill();
+
+    // Hull — pointed PWC shape
+    ctx.fillStyle = lockFlash ? '#FFEA00' : c.color;
+    this.jetboatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Dark stripe down the centerline
+    ctx.fillStyle = '#3a0808';
+    ctx.fillRect(cx - 2, y + 18, 4, h - 28);
+
+    // Handlebars — two short black grips ahead of the seat
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 12, y + h * 0.42, 8, 3);
+    ctx.fillRect(cx + 4, y + h * 0.42, 8, 3);
+
+    // Seat — elongated oval for the rider position
+    ctx.fillStyle = '#0a0a14';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.58, w * 0.22, h * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Red chrome accent on the seat
+    ctx.fillStyle = 'rgba(255,50,50,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.55, w * 0.18, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Jet nozzle at the stern — chrome ring
+    ctx.fillStyle = '#888';
+    ctx.beginPath();
+    ctx.arc(cx, y + h - 4, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#0a0a14';
+    ctx.beginPath();
+    ctx.arc(cx, y + h - 4, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- Shooter patrol boat. Longer superstructure, radar mast, stern gun on
+  // a swivel, orange hull with a black stripe.
+  private drawShooterBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Hull
     ctx.fillStyle = c.color;
     this.jetboatHullPath(ctx, x, y, w, h);
     ctx.fill();
 
-    // Cockpit (smaller and inset, like a speedboat windshield)
-    ctx.fillStyle = '#0a0a14';
+    // Hazard stripe (black) wrapping the bow
+    ctx.fillStyle = '#1a1a1a';
     ctx.beginPath();
-    ctx.ellipse(this.x, y + h * 0.5, w * 0.32, h * 0.18, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(0,255,255,0.30)';
-    ctx.beginPath();
-    ctx.ellipse(this.x, y + h * 0.45, w * 0.26, 3, 0, 0, Math.PI * 2);
+    ctx.moveTo(cx, y + 4);
+    ctx.lineTo(x + w - 4, y + 16);
+    ctx.lineTo(x + w - 4, y + 22);
+    ctx.lineTo(cx, y + 10);
+    ctx.lineTo(x + 4, y + 22);
+    ctx.lineTo(x + 4, y + 16);
+    ctx.closePath();
     ctx.fill();
 
-    // Type-specific accents (echo car versions so silhouette telegraphs threat)
-    if (c.type === 'ram') {
-      // Bow-mounted ram prongs
-      ctx.fillStyle = c.accentColor;
-      ctx.beginPath();
-      ctx.moveTo(x + 4, y + 12);
-      ctx.lineTo(x - 4, y + 24);
-      ctx.lineTo(x + 8, y + 24);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(x + w - 4, y + 12);
-      ctx.lineTo(x + w + 4, y + 24);
-      ctx.lineTo(x + w - 8, y + 24);
-      ctx.fill();
-    } else if (c.type === 'armored') {
-      // Heavier armored hull plating along sides
-      ctx.fillStyle = c.accentColor;
-      ctx.fillRect(x + 2, y + 18, 3, h - 28);
-      ctx.fillRect(x + w - 5, y + 18, 3, h - 28);
-      // Turret mound
-      ctx.fillStyle = '#444';
-      ctx.beginPath();
-      ctx.arc(this.x, y + h * 0.62, 6, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (c.type === 'shooter') {
-      // Stern-mounted gun
-      ctx.fillStyle = '#1a1a2e';
-      ctx.fillRect(this.x - 3, y + h - 16, 6, 14);
-      ctx.fillStyle = '#444';
-      ctx.fillRect(this.x - 2, y + h, 4, 8);
-    }
+    // Pilothouse — squared cabin in the middle of the hull
+    ctx.fillStyle = '#1a1a2e';
+    this.roundRect(ctx, x + 8, y + h * 0.36, w - 16, h * 0.3, 2);
+    ctx.fill();
+    // Pilothouse window band
+    ctx.fillStyle = 'rgba(255,200,120,0.35)';
+    ctx.fillRect(x + 10, y + h * 0.4, w - 20, 4);
+
+    // Radar mast — thin vertical pole with a crossbar up top
+    ctx.fillStyle = '#888';
+    ctx.fillRect(cx - 0.5, y + h * 0.2, 1, 18);
+    ctx.fillRect(cx - 6, y + h * 0.22, 12, 1.5);
+    // Radar dish at the top
+    ctx.beginPath();
+    ctx.arc(cx, y + h * 0.2, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#444';
+    ctx.beginPath();
+    ctx.arc(cx, y + h * 0.2, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Stern-mounted machine gun on a swivel post
+    ctx.fillStyle = '#2a2a2a';
+    ctx.beginPath();
+    ctx.arc(cx, y + h * 0.82, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 1.5, y + h * 0.82 - 10, 3, 10);
+    // Barrel tip
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(cx - 1, y + h * 0.82 - 12, 2, 3);
 
     // Stern outboard motor
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(x + 6, y + h - 5, w - 12, 5);
+  }
 
-    ctx.restore();
+  // --- Armored gunship boat. Beefy hull, armored superstructure, foredeck
+  // turret dome, chunky cleats, dark palette with chrome studs.
+  private drawArmoredBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Hull
+    ctx.fillStyle = c.color;
+    this.jetboatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Armored side plating running full length
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 2, y + 16, 3, h - 24);
+    ctx.fillRect(x + w - 5, y + 16, 3, h - 24);
+
+    // Chrome rivet studs along the plating
+    ctx.fillStyle = '#bbb';
+    for (let i = 0; i < 4; i++) {
+      const ry = y + 22 + i * ((h - 36) / 3);
+      ctx.beginPath();
+      ctx.arc(x + 3.5, ry, 1.2, 0, Math.PI * 2);
+      ctx.arc(x + w - 3.5, ry, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Foredeck turret dome — big hemispherical cap at the bow
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.3, 10, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Barrel pointing forward
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 2, y + h * 0.3 - 14, 4, 14);
+    // Cap on the barrel
+    ctx.fillStyle = '#555';
+    ctx.fillRect(cx - 2.5, y + h * 0.3 - 16, 5, 3);
+
+    // Superstructure — blocky cabin aft of the turret
+    ctx.fillStyle = '#0a0a14';
+    this.roundRect(ctx, x + 8, y + h * 0.5, w - 16, h * 0.24, 2);
+    ctx.fill();
+    // Cabin viewport — narrow slit
+    ctx.fillStyle = 'rgba(120,180,255,0.28)';
+    ctx.fillRect(x + 10, y + h * 0.54, w - 20, 3);
+
+    // Cleat bollards at the stern
+    ctx.fillStyle = '#bbb';
+    ctx.fillRect(x + 8, y + h - 12, 4, 6);
+    ctx.fillRect(x + w - 12, y + h - 12, 4, 6);
+
+    // Stern plate
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(x + 6, y + h - 5, w - 12, 5);
+  }
+
+  // --- Patrol hydrofoil. Sleek, minimalist, twin-hulled look. The sine-weave
+  // AI personality — fast and aquatic.
+  private drawPatrolBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Twin hulls — two narrow elongated ellipses flanking a center gap
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.ellipse(cx - w * 0.18, y + h * 0.5, w * 0.16, h * 0.44, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx + w * 0.18, y + h * 0.5, w * 0.16, h * 0.44, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Foil connecting strut — narrow bar linking the hulls near the bow
+    ctx.fillStyle = '#0a3a48';
+    ctx.fillRect(x + 4, y + h * 0.25, w - 8, 3);
+
+    // Cockpit pod — oval in the center gap
+    ctx.fillStyle = '#0a0a14';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.52, w * 0.15, h * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(100,220,255,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.46, w * 0.12, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Accent trim on each hull
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(cx - w * 0.25, y + h * 0.35, 2, h * 0.3);
+    ctx.fillRect(cx + w * 0.23, y + h * 0.35, 2, h * 0.3);
+
+    // Twin jet plumes — small foam puffs between the hulls (extra wake)
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i = 0; i < 2; i++) {
+      const t = (this.wakeT * 1.2 + i * 0.4) % 1;
+      const py = y + h + t * 20;
+      ctx.globalAlpha = 0.5 * (1 - t);
+      ctx.fillRect(cx - 4, py, 2, 2);
+      ctx.fillRect(cx + 2, py, 2, 2);
+    }
+    ctx.globalAlpha = 1;
   }
 
   private jetboatHullPath(

@@ -253,6 +253,8 @@ export class SpeedRacerGame extends BaseGame {
       isDownPressed: () => input.isDownPressed() || tc.downHeld(),
     };
     this.player.update(dt, playerInput);
+    // Cosmetic damage tier tracks hp. MAX_HP=3 → tier 0/1/2 map to pristine/scorched/critical.
+    this.player.setDamageLevel(Math.max(0, Math.min(2, MAX_HP - this.hp)) as 0 | 1 | 2);
     this.road.update(this.player.speed, dt);
 
     const firing = input.isKeyPressed('Space') || tc.fireHeld();

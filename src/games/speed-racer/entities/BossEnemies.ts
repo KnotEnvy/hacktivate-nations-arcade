@@ -35,6 +35,8 @@ const DRONE_HOVER_SPEED = 160;
 const DRONE_SWOOP_SPEED = 520;
 const DRONE_RETREAT_SPEED = 260;
 
+const TANK_RECOIL_DURATION = 0.2; // seconds — hull kick + muzzle puff decay
+
 export class Tank {
   x: number;
   y: number;
@@ -44,6 +46,8 @@ export class Tank {
   vy = 0;
   private fireTimer = 1.8;
   private trackT = 0;
+  // Counts down after each shell fires. Drives hull lurch + muzzle puff.
+  private recoilT = 0;
 
   constructor(x: number, y: number) {
     this.x = x;
@@ -59,6 +63,7 @@ export class Tank {
   ): void {
     if (!this.alive) return;
     this.trackT += dt;
+    if (this.recoilT > 0) this.recoilT = Math.max(0, this.recoilT - dt);
 
     // Match-speed approach (same feel as EnemyCar)
     const distAhead = playerY - this.y;
@@ -93,6 +98,7 @@ export class Tank {
       this.fireTimer -= dt;
       if (this.fireTimer <= 0) {
         onFireShell(this.x, this.y + TANK_HEIGHT / 2);
+        this.recoilT = TANK_RECOIL_DURATION;
         this.fireTimer =
           TANK_FIRE_INTERVAL_MIN + Math.random() * (TANK_FIRE_INTERVAL_MAX - TANK_FIRE_INTERVAL_MIN);
       }
@@ -132,14 +138,18 @@ export class Tank {
     const h = TANK_HEIGHT;
     const x = this.x - w / 2;
     const y = this.y - h / 2;
+    // Hydraulic recoil: hull lurches back (up the screen, since tank fires
+    // downward), then settles. Treads stay planted — only the chassis kicks.
+    const recoilNorm = this.recoilT / TANK_RECOIL_DURATION;
+    const recoilKick = recoilNorm > 0 ? -3 * Math.sin(recoilNorm * Math.PI) : 0;
 
     ctx.save();
 
-    // Shadow
+    // Shadow (grounded — unaffected by recoil)
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(x + 5, y + 7, w, h);
 
-    // Treads (left/right)
+    // Treads (grounded — unaffected by recoil)
     ctx.fillStyle = '#1a1a22';
     ctx.fillRect(x, y, 12, h);
     ctx.fillRect(x + w - 12, y, 12, h);
@@ -152,39 +162,66 @@ export class Tank {
       ctx.fillRect(x + w - 10, ty, 8, 6);
     }
 
+    // Hull + turret + barrel all shift with recoilKick
+    const hy = y + recoilKick;
+    const ty = this.y + recoilKick;
+
     // Hull
     ctx.fillStyle = '#4a4a58';
-    ctx.fillRect(x + 12, y + 10, w - 24, h - 20);
+    ctx.fillRect(x + 12, hy + 10, w - 24, h - 20);
     // Hull plating highlight
     ctx.fillStyle = '#5a5a68';
-    ctx.fillRect(x + 14, y + 12, w - 28, 6);
+    ctx.fillRect(x + 14, hy + 12, w - 28, 6);
 
     // Turret base
     ctx.fillStyle = '#2a2a32';
     ctx.beginPath();
-    ctx.arc(this.x, this.y + 6, 22, 0, Math.PI * 2);
+    ctx.arc(this.x, ty + 6, 22, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#6a6a78';
     ctx.beginPath();
-    ctx.arc(this.x, this.y + 6, 18, 0, Math.PI * 2);
+    ctx.arc(this.x, ty + 6, 18, 0, Math.PI * 2);
     ctx.fill();
 
     // Cannon barrel (points down toward player)
     ctx.fillStyle = '#1a1a22';
-    ctx.fillRect(this.x - 5, this.y + 6, 10, 36);
+    ctx.fillRect(this.x - 5, ty + 6, 10, 36);
     ctx.fillStyle = '#3a3a48';
-    ctx.fillRect(this.x - 7, this.y + 40, 14, 6);
+    ctx.fillRect(this.x - 7, ty + 40, 14, 6);
 
-    // Warning chevrons
-    ctx.fillStyle = '#FFD700';
-    for (let i = 0; i < 3; i++) {
-      ctx.fillRect(x + 20 + i * 12, y + h - 18, 8, 3);
+    // Muzzle puff — blooms at the barrel tip, fades with recoilT. Drawn last
+    // so it layers on top of the barrel cap.
+    if (this.recoilT > 0) {
+      const muzzleY = ty + 46;
+      const puffR = 6 + (1 - recoilNorm) * 10; // grows as it fades
+      // Bright core
+      ctx.globalAlpha = recoilNorm;
+      ctx.fillStyle = '#FFE080';
+      ctx.beginPath();
+      ctx.arc(this.x, muzzleY, puffR * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // Outer smoke ring
+      ctx.globalAlpha = recoilNorm * 0.6;
+      ctx.fillStyle = '#BBB2A0';
+      ctx.beginPath();
+      ctx.arc(this.x - puffR * 0.2, muzzleY + puffR * 0.2, puffR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(this.x + puffR * 0.3, muzzleY - puffR * 0.1, puffR * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
     }
 
-    // HP pips (small indicator above turret)
+    // Warning chevrons (on hull, follow recoil)
+    ctx.fillStyle = '#FFD700';
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(x + 20 + i * 12, hy + h - 18, 8, 3);
+    }
+
+    // HP pips (small indicator above turret, follow recoil)
     for (let i = 0; i < TANK_HP; i++) {
       ctx.fillStyle = i < this.hp ? '#FF6347' : '#332228';
-      ctx.fillRect(this.x - 10 + i * 8, y + 4, 5, 3);
+      ctx.fillRect(this.x - 10 + i * 8, hy + 4, 5, 3);
     }
 
     ctx.restore();
@@ -239,6 +276,9 @@ export class Drone {
   y: number;
   alive = true;
   hp = 1;
+  // One drone per swarm is flagged as the leader — larger crest antenna,
+  // gold accents. Purely cosmetic; gameplay is identical.
+  readonly leader: boolean;
   private hoverY: number;
   private hoverX: number;
   private state: DroneState = 'enter';
@@ -247,9 +287,10 @@ export class Drone {
   private swoopTargetY = 0;
   private pulse = 0;
 
-  constructor(x: number, hoverY?: number) {
+  constructor(x: number, hoverY?: number, leader = false) {
     this.x = x;
     this.y = -40;
+    this.leader = leader;
     this.hoverY = hoverY ?? DRONE_HOVER_Y_MIN + Math.random() * (DRONE_HOVER_Y_MAX - DRONE_HOVER_Y_MIN);
     this.hoverX = x;
     // Staggered pre-hover delay so swarm drones don't all swoop at once
@@ -335,7 +376,7 @@ export class Drone {
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    const r = DRONE_SIZE / 2;
+    const r = (this.leader ? DRONE_SIZE * 1.15 : DRONE_SIZE) / 2;
     ctx.save();
 
     // Swoop telegraph — red ring under target when about to attack
@@ -349,12 +390,13 @@ export class Drone {
       ctx.globalAlpha = 1;
     }
 
-    // Rotor blades — spinning x shape
-    ctx.strokeStyle = 'rgba(200,200,255,0.4)';
-    ctx.lineWidth = 1.5;
+    // Rotor blades — spinning x shape. Leader gets a brighter blur + 6 blades.
+    ctx.strokeStyle = this.leader ? 'rgba(255,220,120,0.55)' : 'rgba(200,200,255,0.4)';
+    ctx.lineWidth = this.leader ? 1.8 : 1.5;
     const bladeAngle = this.pulse * 4;
-    for (let i = 0; i < 4; i++) {
-      const a = bladeAngle + (i * Math.PI) / 2;
+    const bladeCount = this.leader ? 6 : 4;
+    for (let i = 0; i < bladeCount; i++) {
+      const a = bladeAngle + (i * Math.PI) / (bladeCount / 2);
       ctx.beginPath();
       ctx.moveTo(this.x, this.y);
       ctx.lineTo(this.x + Math.cos(a) * r, this.y + Math.sin(a) * r);
@@ -362,19 +404,49 @@ export class Drone {
     }
 
     // Body
-    ctx.shadowColor = this.state === 'swoop' ? '#FF0044' : '#00FFFF';
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = '#2a1a3a';
+    ctx.shadowColor = this.state === 'swoop' ? '#FF0044' : this.leader ? '#FFD700' : '#00FFFF';
+    ctx.shadowBlur = this.leader ? 12 : 8;
+    ctx.fillStyle = this.leader ? '#3a2a1a' : '#2a1a3a';
     ctx.beginPath();
     ctx.arc(this.x, this.y, r * 0.55, 0, Math.PI * 2);
     ctx.fill();
 
     // Eye / sensor
     ctx.shadowBlur = 0;
-    ctx.fillStyle = this.state === 'swoop' ? '#FF3366' : '#88E5FF';
+    const swooping = this.state === 'swoop';
+    ctx.fillStyle = swooping ? '#FF3366' : this.leader ? '#FFD700' : '#88E5FF';
     ctx.beginPath();
     ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
     ctx.fill();
+
+    // Leader crest — three gold spike antennas around the top hemisphere
+    if (this.leader) {
+      ctx.fillStyle = swooping ? '#FFAA44' : '#FFD700';
+      const crestAngles = [-Math.PI / 2, -Math.PI / 2 - 0.7, -Math.PI / 2 + 0.7];
+      for (const a of crestAngles) {
+        const baseX = this.x + Math.cos(a) * (r * 0.55);
+        const baseY = this.y + Math.sin(a) * (r * 0.55);
+        const tipX = this.x + Math.cos(a) * (r + 3);
+        const tipY = this.y + Math.sin(a) * (r + 3);
+        const perp = a + Math.PI / 2;
+        const baseL = baseX + Math.cos(perp) * 1.2;
+        const baseLY = baseY + Math.sin(perp) * 1.2;
+        const baseR = baseX - Math.cos(perp) * 1.2;
+        const baseRY = baseY - Math.sin(perp) * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(baseL, baseLY);
+        ctx.lineTo(tipX, tipY);
+        ctx.lineTo(baseR, baseRY);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // Faint gold ring around the body
+      ctx.strokeStyle = 'rgba(255,215,0,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r * 0.75, 0, Math.PI * 2);
+      ctx.stroke();
+    }
 
     ctx.restore();
   }
@@ -386,10 +458,13 @@ export function spawnDroneSwarm(): Drone[] {
   const count = 4;
   const drones: Drone[] = [];
   const laneWidth = ROAD.WIDTH / count;
+  // Randomize which swarm member is the leader so the formation reads
+  // differently each spawn; purely cosmetic.
+  const leaderIdx = Math.floor(Math.random() * count);
   for (let i = 0; i < count; i++) {
     const x = ROAD.X_MIN + laneWidth * (i + 0.5);
     const hoverY = DRONE_HOVER_Y_MIN + (i % 2) * 40;
-    drones.push(new Drone(x, hoverY));
+    drones.push(new Drone(x, hoverY, i === leaderIdx));
   }
   return drones;
 }
