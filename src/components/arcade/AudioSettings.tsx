@@ -612,8 +612,10 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
         mood: favorite.mood,
         bpm: favorite.bpm,
         intensity: favorite.intensity,
+        scale: favorite.scale,
+        rootNote: favorite.rootNote,
       });
-      setCurrentTrack(`custom_${favorite.mood}`);
+      setCurrentTrack('lab_custom');
       setIsPaused(false);
     }, 100);
   };
@@ -795,8 +797,10 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
         mood: MOOD_KEYS[parsed.moodIndex],
         bpm: parsed.bpm,
         intensity: parsed.intensity / 100,
+        scale: SCALE_KEYS[parsed.scaleIndex],
+        rootNote: NOTE_KEYS[parsed.noteIndex],
       });
-      setCurrentTrack(`custom_${MOOD_KEYS[parsed.moodIndex]}`);
+      setCurrentTrack('lab_custom');
       setIsPaused(false);
     }, 100);
   };
@@ -823,6 +827,8 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
       mood: selectedMood,
       bpm: customBpm,
       intensity: customIntensity,
+      scale: selectedScale,
+      rootNote: selectedRootNote,
     });
 
     // Save to history
@@ -838,7 +844,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
 
     setIsGenerating(false);
     setIsPaused(false);
-    setCurrentTrack(`custom_${selectedMood}`);
+    setCurrentTrack('lab_custom');
   };
 
   // Get track info

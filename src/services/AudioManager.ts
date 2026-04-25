@@ -2,8 +2,12 @@ import {
   ProceduralMusicEngine,
   TRACK_DEFINITIONS,
   GAME_TRACK_MAPPING,
+  CustomTrackParams,
+  TrackDefinition,
+  MusicStingerType,
   getTracksForGame,
   getAllTrackNames,
+  buildCustomTrackDefinition,
 } from './ProceduralMusicEngine';
 
 export type SoundName =
@@ -84,7 +88,8 @@ export type ExtendedMusicName =
   | 'rhythm_groove'
   // Space tracks
   | 'space_exploration'
-  | 'space_battle';
+  | 'space_battle'
+  | 'lab_custom';
 
 export type MusicName = LegacyMusicName | ExtendedMusicName;
 
@@ -157,6 +162,7 @@ export class AudioManager {
   // New procedural music engine
   private proceduralEngine: ProceduralMusicEngine | null = null;
   private useProceduralEngine: boolean = true; // Toggle for new vs legacy system
+  private labCustomTrack: TrackDefinition | null = null;
   private currentGameId: string | null = null;
   private currentTrackVariant: 'primary' | 'secondary' = 'primary';
 
@@ -1628,7 +1634,9 @@ export class AudioManager {
     scale: string;
     intensity: number;
   } | null {
-    const track = TRACK_DEFINITIONS[trackName];
+    const track = trackName === 'lab_custom'
+      ? this.labCustomTrack
+      : TRACK_DEFINITIONS[trackName];
     if (!track) return null;
     return {
       name: track.name,
@@ -1675,98 +1683,21 @@ export class AudioManager {
   /**
    * Generate and play a custom track with given parameters
    */
-  playCustomTrack(params: {
-    seed: number;
-    bpm?: number;
-    mood?: string;
-    intensity?: number;
-  }): void {
-    // Set the seed for reproducible generation
+  playCustomTrack(params: CustomTrackParams): void {
     this.setMusicSeed(params.seed);
+    this.setUseProceduralEngine(true);
 
-    // Get target BPM and intensity
-    const targetBpm = params.bpm || 120;
-    const targetIntensity = params.intensity || 0.6;
+    if (!this.context || !this.masterGain || !this.proceduralEngine || this.muted) return;
 
-    // Track options by mood with their characteristics
-    const moodTrackOptions: Record<string, { tracks: string[]; bpmRange: [number, number]; intensityRange: [number, number] }> = {
-      'energetic': {
-        tracks: ['hub_energetic', 'sports_competitive', 'rhythm_beat'],
-        bpmRange: [115, 145],
-        intensityRange: [0.65, 0.85],
-      },
-      'chill': {
-        tracks: ['hub_ambient', 'casual_chill', 'space_exploration'],
-        bpmRange: [75, 100],
-        intensityRange: [0.3, 0.5],
-      },
-      'intense': {
-        tracks: ['action_intense', 'action_chase', 'space_battle'],
-        bpmRange: [140, 165],
-        intensityRange: [0.85, 0.95],
-      },
-      'focus': {
-        tracks: ['puzzle_focus', 'puzzle_discovery', 'casual_chill'],
-        bpmRange: [70, 95],
-        intensityRange: [0.35, 0.5],
-      },
-      'retro': {
-        tracks: ['arcade_retro', 'arcade_bounce', 'rhythm_groove'],
-        bpmRange: [115, 135],
-        intensityRange: [0.6, 0.75],
-      },
-      'mysterious': {
-        tracks: ['epic_tension', 'space_exploration', 'hub_ambient'],
-        bpmRange: [85, 105],
-        intensityRange: [0.5, 0.7],
-      },
-      'epic': {
-        tracks: ['epic_heroic', 'sports_victory', 'sports_competitive'],
-        bpmRange: [115, 140],
-        intensityRange: [0.7, 0.85],
-      },
-      'playful': {
-        tracks: ['casual_playful', 'puzzle_discovery', 'arcade_bounce'],
-        bpmRange: [95, 125],
-        intensityRange: [0.45, 0.65],
-      },
-    };
+    this.stopMusic(0.1);
 
-    // Get options for mood or default to energetic
-    const options = moodTrackOptions[params.mood || 'energetic'] || moodTrackOptions['energetic'];
-
-    // Select track based on BPM and intensity preferences
-    // Use seeded random to pick from available tracks for that mood
-    const trackIndex = Math.abs(params.seed) % options.tracks.length;
-    let baseTrack = options.tracks[trackIndex];
-
-    // If target BPM is very different from mood's typical range, adjust selection
-    if (targetBpm < options.bpmRange[0] - 20) {
-      // User wants slower, try to find a chiller option
-      const slowOptions = moodTrackOptions['chill'] || moodTrackOptions['focus'];
-      baseTrack = slowOptions.tracks[trackIndex % slowOptions.tracks.length];
-    } else if (targetBpm > options.bpmRange[1] + 20) {
-      // User wants faster, try to find an intense option
-      const fastOptions = moodTrackOptions['intense'] || moodTrackOptions['energetic'];
-      baseTrack = fastOptions.tracks[trackIndex % fastOptions.tracks.length];
-    }
-
-    // Adjust based on intensity preference
-    if (targetIntensity > 0.8 && params.mood !== 'intense') {
-      // User wants high intensity, consider action tracks
-      const intenseOptions = moodTrackOptions['intense'];
-      if (Math.random() > 0.5) {
-        baseTrack = intenseOptions.tracks[trackIndex % intenseOptions.tracks.length];
-      }
-    } else if (targetIntensity < 0.4 && params.mood !== 'chill') {
-      // User wants low intensity, consider ambient tracks
-      const chillOptions = moodTrackOptions['chill'];
-      if (Math.random() > 0.5) {
-        baseTrack = chillOptions.tracks[trackIndex % chillOptions.tracks.length];
-      }
-    }
-
-    this.playTrackByName(baseTrack, 0.3);
+    window.setTimeout(() => {
+      const customTrack = buildCustomTrackDefinition(params);
+      this.labCustomTrack = customTrack;
+      this.proceduralEngine?.startCustomTrack('lab_custom', customTrack, 0.3);
+      this.currentMusicName = 'lab_custom';
+      this.musicPlaying = true;
+    }, 150);
   }
 
   /**
@@ -1815,6 +1746,20 @@ export class AudioManager {
     if (this.proceduralEngine) {
       this.proceduralEngine.resetBpm();
     }
+  }
+
+  // ============= ADAPTIVE MUSIC API =============
+
+  setMusicIntensity(intensity: number): void {
+    this.proceduralEngine?.setMusicIntensity(intensity);
+  }
+
+  getMusicIntensity(): number {
+    return this.proceduralEngine?.getMusicIntensity() ?? 1;
+  }
+
+  triggerMusicStinger(type: MusicStingerType): void {
+    this.proceduralEngine?.triggerStinger(type);
   }
 
   // ============= AUDIO VISUALIZATION API =============

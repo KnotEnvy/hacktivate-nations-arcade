@@ -210,6 +210,15 @@ export interface TrackDefinition {
   effects: EffectConfig;
 }
 
+export interface CustomTrackParams {
+  seed: number;
+  bpm?: number;
+  mood?: TrackDefinition['mood'] | string;
+  intensity?: number;
+  scale?: ScaleName | string;
+  rootNote?: string;
+}
+
 export interface InstrumentConfig {
   type: 'bass' | 'lead' | 'pad' | 'arp' | 'drums' | 'fx';
   waveform: OscillatorType;
@@ -789,6 +798,140 @@ export const TRACK_DEFINITIONS: Record<string, TrackDefinition> = {
   },
 };
 
+export function buildCustomTrackDefinition(params: CustomTrackParams): TrackDefinition {
+  const mood = normalizeMood(params.mood);
+  const scale = normalizeScale(params.scale, mood);
+  const rootNote = normalizeRootNote(params.rootNote);
+  const bpm = clampNumber(params.bpm ?? getDefaultBpmForMood(mood), 60, 200);
+  const intensity = clampNumber(params.intensity ?? getDefaultIntensityForMood(mood), 0.1, 1);
+  const template = TRACK_DEFINITIONS[getTemplateTrackForMood(mood)];
+
+  return {
+    ...template,
+    name: `Lab ${mood.charAt(0).toUpperCase()}${mood.slice(1)} ${params.seed}`,
+    bpm,
+    scale,
+    rootNote,
+    mood,
+    intensity,
+    progression: getProgressionForMood(mood, scale),
+    instruments: template.instruments.map(instrument => ({ ...instrument })),
+    effects: {
+      ...template.effects,
+      reverb: mood === 'chill' || mood === 'mysterious'
+        ? Math.max(template.effects.reverb, 0.3)
+        : template.effects.reverb,
+      delay: mood === 'focus' || mood === 'chill'
+        ? Math.max(template.effects.delay, 0.12)
+        : template.effects.delay,
+    },
+  };
+}
+
+function normalizeMood(mood: CustomTrackParams['mood']): TrackDefinition['mood'] {
+  const allowed: TrackDefinition['mood'][] = ['energetic', 'chill', 'intense', 'focus', 'retro', 'mysterious', 'epic', 'playful'];
+  return allowed.includes(mood as TrackDefinition['mood']) ? mood as TrackDefinition['mood'] : 'energetic';
+}
+
+function normalizeScale(scale: CustomTrackParams['scale'], mood: TrackDefinition['mood']): ScaleName {
+  if (scale && scale in SCALES) {
+    return scale as ScaleName;
+  }
+
+  const fallbackByMood: Record<TrackDefinition['mood'], ScaleName> = {
+    energetic: 'minor',
+    chill: 'lydian',
+    intense: 'minorPentatonic',
+    focus: 'dorian',
+    retro: 'minorPentatonic',
+    mysterious: 'phrygian',
+    epic: 'minor',
+    playful: 'majorPentatonic',
+  };
+
+  return fallbackByMood[mood];
+}
+
+function normalizeRootNote(rootNote: string | undefined): string {
+  const normalized = `${rootNote || 'A'}3`;
+  if (normalized in NOTE_FREQUENCIES) return normalized;
+
+  const withOctave = rootNote && /\d$/.test(rootNote) ? rootNote : `${rootNote || 'A'}3`;
+  return withOctave in NOTE_FREQUENCIES ? withOctave : 'A3';
+}
+
+function getTemplateTrackForMood(mood: TrackDefinition['mood']): string {
+  const templates: Record<TrackDefinition['mood'], string> = {
+    energetic: 'hub_energetic',
+    chill: 'hub_ambient',
+    intense: 'action_intense',
+    focus: 'puzzle_focus',
+    retro: 'arcade_retro',
+    mysterious: 'epic_tension',
+    epic: 'epic_heroic',
+    playful: 'casual_playful',
+  };
+
+  return templates[mood];
+}
+
+function getProgressionForMood(
+  mood: TrackDefinition['mood'],
+  scale: ScaleName,
+): ChordProgressionName {
+  if (scale === 'major' || scale === 'majorPentatonic' || scale === 'lydian' || scale === 'mixolydian') {
+    return mood === 'focus' ? 'focus2' : mood === 'retro' ? 'retro3' : 'chill1';
+  }
+
+  const progressions: Record<TrackDefinition['mood'], ChordProgressionName> = {
+    energetic: 'epic1',
+    chill: 'chill3',
+    intense: 'action1',
+    focus: 'focus1',
+    retro: 'retro2',
+    mysterious: 'mystery1',
+    epic: 'epic2',
+    playful: 'chill1',
+  };
+
+  return progressions[mood];
+}
+
+function getDefaultBpmForMood(mood: TrackDefinition['mood']): number {
+  const bpmByMood: Record<TrackDefinition['mood'], number> = {
+    energetic: 128,
+    chill: 85,
+    intense: 150,
+    focus: 80,
+    retro: 130,
+    mysterious: 95,
+    epic: 120,
+    playful: 105,
+  };
+
+  return bpmByMood[mood];
+}
+
+function getDefaultIntensityForMood(mood: TrackDefinition['mood']): number {
+  const intensityByMood: Record<TrackDefinition['mood'], number> = {
+    energetic: 0.75,
+    chill: 0.35,
+    intense: 0.9,
+    focus: 0.45,
+    retro: 0.7,
+    mysterious: 0.65,
+    epic: 0.8,
+    playful: 0.55,
+  };
+
+  return intensityByMood[mood];
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(max, value));
+}
+
 // ============= GAME TO TRACK MAPPING =============
 
 export const GAME_TRACK_MAPPING: Record<string, { primary: string; secondary: string }> = {
@@ -890,6 +1033,96 @@ export interface MusicEvent {
 
 const BEATS_PER_BAR = 4;
 
+export type MusicLayerName = 'bass' | 'drums' | 'melody' | 'chords' | 'arpeggio' | 'ambience';
+
+export type MusicStingerType = 'success' | 'danger' | 'transition';
+
+export function getActiveMusicLayersForIntensity(intensity: number): Record<MusicLayerName, boolean> {
+  const safeIntensity = clampNumber(intensity, 0, 1);
+
+  return {
+    bass: safeIntensity >= 0.05,
+    drums: safeIntensity >= 0.15,
+    chords: safeIntensity >= 0.25,
+    arpeggio: safeIntensity >= 0.45,
+    melody: safeIntensity >= 0.6,
+    ambience: safeIntensity >= 0.75,
+  };
+}
+
+export type PhraseSection = 'intro' | 'a' | 'b' | 'fill' | 'cadence';
+
+export interface PhrasePlanNote extends MelodyNote {
+  section: PhraseSection;
+  bar: number;
+  beat: number;
+  motifIndex: number;
+  chordSymbol: string;
+}
+
+export interface PhrasePlan {
+  seed: number;
+  phraseIndex: number;
+  sections: PhraseSection[];
+  notes: PhrasePlanNote[];
+}
+
+export function buildPhrasePlan(
+  track: TrackDefinition,
+  seed: number,
+  phraseIndex: number = 0,
+): PhrasePlan {
+  const rng = new SeededRandom(seed + phraseIndex * 7919);
+  const melody = new MelodyGenerator(seed + phraseIndex * 104729, track.scale, track.rootNote);
+  const isHighEnergy = track.mood === 'intense' || track.mood === 'energetic';
+  const isAmbient = track.mood === 'chill' || track.mood === 'mysterious';
+  const sections: PhraseSection[] = phraseIndex === 0
+    ? ['intro', 'a', 'b', 'cadence']
+    : ['a', phraseIndex % 2 === 0 ? 'a' : 'b', 'fill', 'cadence'];
+  const baseMotif = [0, 2, 4, 2].map(degree => degree + rng.nextInt(-1, 1));
+  const notes: PhrasePlanNote[] = [];
+
+  sections.forEach((section, bar) => {
+    const chord = resolveTrackChord(track, bar);
+    const beats = section === 'cadence' && !isAmbient ? [0, 1, 2, 3] : [0, 1, 2, 3];
+
+    beats.forEach((beat) => {
+      const shouldRest = !isHighEnergy && section !== 'cadence' && beat === 1 && rng.next() > 0.45;
+      if (shouldRest) return;
+
+      const motifIndex = beat % baseMotif.length;
+      const sectionLift = section === 'b' ? 1 : section === 'fill' ? rng.pick([-2, 2, 3]) : 0;
+      const cadenceTone = beat >= 2 ? chord.tones[0] : chord.tones[Math.min(beat, chord.tones.length - 1)];
+      const frequency = section === 'cadence'
+        ? melody.getFrequencyForSemitoneOffset(cadenceTone, 0)
+        : melody.getFrequencyForDegree(baseMotif[motifIndex] + sectionLift, section === 'fill' ? 1 : 0);
+
+      notes.push({
+        frequency,
+        duration: section === 'cadence'
+          ? (beat >= 2 ? 2 : 1)
+          : isAmbient ? rng.pick([1, 2]) : rng.pick([0.5, 1, 1]),
+        velocity: section === 'cadence'
+          ? 0.65
+          : Math.min(0.95, 0.45 + track.intensity * 0.35 + rng.next() * 0.15),
+        octaveShift: section === 'fill' ? 1 : 0,
+        section,
+        bar,
+        beat,
+        motifIndex,
+        chordSymbol: chord.symbol,
+      });
+    });
+  });
+
+  return {
+    seed,
+    phraseIndex,
+    sections,
+    notes,
+  };
+}
+
 export function buildMusicEventGrid(
   track: TrackDefinition,
   seed: number,
@@ -898,6 +1131,7 @@ export function buildMusicEventGrid(
   const melody = new MelodyGenerator(seed, track.scale, track.rootNote);
   const beatDuration = 60 / track.bpm;
   const events: MusicEvent[] = [];
+  const phrasePlan = buildPhrasePlan(track, seed, 0);
 
   for (let bar = 0; bar < bars; bar++) {
     const chord = resolveTrackChord(track, bar);
@@ -931,12 +1165,14 @@ export function buildMusicEventGrid(
           }
 
           case 'lead': {
-            const degree = (bar * 2 + beat) % SCALES[track.scale].length;
+            const phraseNote = phrasePlan.notes.find(note => note.bar === bar && note.beat === beat);
+            if (!phraseNote) return;
+
             events.push({
               ...baseEvent,
-              duration: beatDuration * (track.mood === 'chill' || track.mood === 'mysterious' ? 2 : 1),
-              velocity: instrument.volume * (0.6 + ((seed + bar + beat) % 3) * 0.1),
-              frequency: melody.getFrequencyForDegree(degree, instrument.octave - 4),
+              duration: phraseNote.duration * beatDuration,
+              velocity: instrument.volume * phraseNote.velocity,
+              frequency: phraseNote.frequency * Math.pow(2, instrument.octave - 4),
             });
             break;
           }
@@ -1249,6 +1485,7 @@ export class ProceduralMusicEngine {
   private chorusWetNode: GainNode | null = null;
   private masterDynamicsNode: DynamicsCompressorNode | null = null;
   private currentTrack: string | null = null;
+  private currentTrackDefinition: TrackDefinition | null = null;
   private isPlaying: boolean = false;
   private intervalId: number | null = null;
   private scheduler: MusicEventScheduler | null = null;
@@ -1260,6 +1497,7 @@ export class ProceduralMusicEngine {
   private melodyGenerator: MelodyGenerator | null = null;
   private currentPhrase: MelodyNote[] = [];
   private phraseNoteIndex: number = 0;
+  private musicIntensity: number = 1;
 
   // Reverb and effects
   private reverbNode: ConvolverNode | null = null;
@@ -1404,6 +1642,49 @@ export class ProceduralMusicEngine {
     this.layerStates[layer] = true;
   }
 
+  setMusicIntensity(intensity: number): void {
+    this.musicIntensity = clampNumber(intensity, 0, 1);
+  }
+
+  getMusicIntensity(): number {
+    return this.musicIntensity;
+  }
+
+  triggerStinger(type: MusicStingerType): void {
+    if (!this.context || !this.musicGainNode || !this.melodyGenerator) return;
+
+    const track = this.currentTrackDefinition;
+    if (!track) return;
+
+    const now = this.context.currentTime;
+    const chord = resolveTrackChord(track, this.barIndex);
+    const patch = type === 'danger'
+      ? SB32_PATCHES.saw_lead
+      : type === 'success'
+        ? SB32_PATCHES.bell
+        : SB32_PATCHES.synth_brass;
+    const tone = type === 'danger'
+      ? chord.rootSemitone + 1
+      : type === 'success'
+        ? chord.tones[chord.tones.length - 1] + 12
+        : chord.tones[0] + 12;
+    const duration = type === 'transition' ? 0.45 : 0.28;
+
+    this.playPatchNote(
+      patch,
+      this.melodyGenerator.getFrequencyForSemitoneOffset(tone, 0),
+      now,
+      duration,
+      type === 'danger' ? 0.28 : 0.22,
+      {
+        type: 'lead',
+        waveform: patch.layers[0].waveform,
+        octave: 4,
+        volume: 0.3,
+      },
+    );
+  }
+
   // Initialize with new seed
   setSeed(seed: number): void {
     this.seed = seed;
@@ -1442,6 +1723,20 @@ export class ProceduralMusicEngine {
 
   // Start playing a track
   startTrack(trackName: string, fadeSeconds: number = 0.5): void {
+    const track = TRACK_DEFINITIONS[trackName];
+    if (!track) {
+      console.warn(`Track "${trackName}" not found`);
+      return;
+    }
+
+    this.startTrackDefinition(trackName, track, fadeSeconds);
+  }
+
+  startCustomTrack(trackName: string, track: TrackDefinition, fadeSeconds: number = 0.5): void {
+    this.startTrackDefinition(trackName, track, fadeSeconds);
+  }
+
+  private startTrackDefinition(trackName: string, track: TrackDefinition, fadeSeconds: number): void {
     if (!this.context || !this.masterGain) return;
 
     // Stop current if playing
@@ -1449,14 +1744,9 @@ export class ProceduralMusicEngine {
       this.stopTrack(0.1);
     }
 
-    const track = TRACK_DEFINITIONS[trackName];
-    if (!track) {
-      console.warn(`Track "${trackName}" not found`);
-      return;
-    }
-
     // Reset state
     this.currentTrack = trackName;
+    this.currentTrackDefinition = track;
     this.isPlaying = true;
     this.beatIndex = 0;
     this.barIndex = 0;
@@ -1498,26 +1788,37 @@ export class ProceduralMusicEngine {
     }
     this.scheduler = null;
 
+    const nodesToCleanup = [...this.activeNodes];
+    const musicGainNodeToCleanup = this.musicGainNode;
+
     // Fade out
-    if (this.musicGainNode && fadeSeconds > 0) {
+    if (musicGainNodeToCleanup && fadeSeconds > 0) {
       const now = this.context.currentTime;
-      this.musicGainNode.gain.setValueAtTime(this.musicGainNode.gain.value, now);
-      this.musicGainNode.gain.exponentialRampToValueAtTime(0.0001, now + fadeSeconds);
+      musicGainNodeToCleanup.gain.setValueAtTime(musicGainNodeToCleanup.gain.value, now);
+      musicGainNodeToCleanup.gain.exponentialRampToValueAtTime(0.0001, now + fadeSeconds);
     }
+
+    this.activeNodes = [];
+    this.musicGainNode = null;
+    this.resetRoutingNodeRefs();
 
     // Cleanup after fade
     setTimeout(() => {
-      this.cleanupNodes();
+      this.disconnectNodes([...nodesToCleanup, musicGainNodeToCleanup]);
     }, fadeSeconds * 1000 + 100);
 
     this.isPlaying = false;
     this.currentTrack = null;
+    this.currentTrackDefinition = null;
     this.isPaused = false;
+    this.pausedTrack = null;
+    this.pausedTrackDefinition = null;
   }
 
   // Pause state
   private isPaused: boolean = false;
   private pausedTrack: string | null = null;
+  private pausedTrackDefinition: TrackDefinition | null = null;
 
   // Pause playing
   pause(): void {
@@ -1525,6 +1826,7 @@ export class ProceduralMusicEngine {
 
     this.isPaused = true;
     this.pausedTrack = this.currentTrack;
+    this.pausedTrackDefinition = this.currentTrackDefinition;
 
     // Stop the interval but keep state
     if (this.intervalId !== null) {
@@ -1544,7 +1846,7 @@ export class ProceduralMusicEngine {
   resume(): void {
     if (!this.isPaused || !this.pausedTrack) return;
 
-    const track = TRACK_DEFINITIONS[this.pausedTrack];
+    const track = this.pausedTrackDefinition ?? TRACK_DEFINITIONS[this.pausedTrack];
     if (!track || !this.context) return;
 
     this.isPaused = false;
@@ -1591,7 +1893,7 @@ export class ProceduralMusicEngine {
 
     // If we're currently playing, make sure the scheduler is running
     if (this.isPlaying && !this.isPaused && this.currentTrack) {
-      const track = TRACK_DEFINITIONS[this.currentTrack];
+      const track = this.currentTrackDefinition ?? TRACK_DEFINITIONS[this.currentTrack];
       if (track && this.intervalId === null) {
         this.startScheduler(track);
       }
@@ -1606,7 +1908,7 @@ export class ProceduralMusicEngine {
       return this.currentBpmOverride;
     }
     if (this.currentTrack) {
-      const track = TRACK_DEFINITIONS[this.currentTrack];
+      const track = this.currentTrackDefinition ?? TRACK_DEFINITIONS[this.currentTrack];
       return track?.bpm || 120;
     }
     return 120;
@@ -1752,11 +2054,22 @@ export class ProceduralMusicEngine {
 
   // Cleanup all active nodes
   private cleanupNodes(): void {
-    this.activeNodes.forEach(node => {
+    this.disconnectNodes([...this.activeNodes, this.musicGainNode]);
+    this.activeNodes = [];
+    this.musicGainNode = null;
+    this.resetRoutingNodeRefs();
+  }
+
+  private disconnectNodes(nodes: Array<AudioNode | null>): void {
+    nodes.forEach(node => {
+      if (!node) return;
       try {
         node.disconnect();
       } catch { /* ignore */ }
     });
+  }
+
+  private resetRoutingNodeRefs(): void {
     this.activeNodes = [];
     this.reverbNode = null;
     this.reverbGain = null;
@@ -1771,12 +2084,7 @@ export class ProceduralMusicEngine {
 
   // Generate new phrase for variation
   private generateNewPhrase(track: TrackDefinition): void {
-    if (!this.melodyGenerator) return;
-
-    const style = track.mood === 'intense' || track.mood === 'energetic' ? 'rhythmic' :
-                  track.mood === 'chill' || track.mood === 'mysterious' ? 'ambient' : 'melodic';
-
-    this.currentPhrase = this.melodyGenerator.generatePhrase(4, 4, style);
+    this.currentPhrase = buildPhrasePlan(track, this.seed, this.phraseIndex).notes;
     this.phraseNoteIndex = 0;
   }
 
@@ -1808,6 +2116,10 @@ export class ProceduralMusicEngine {
 
   // Play a single deterministic scheduler event
   private playScheduledBeat(track: TrackDefinition, event: ScheduledMusicEvent): void {
+    this.beatIndex = event.beatIndex;
+    this.barIndex = event.barIndex;
+    this.phraseIndex = event.phraseIndex;
+
     if (event.beatNumber > 0 && event.beatIndex === 0 && event.barIndex === 0) {
       this.generateNewPhrase(track);
 
@@ -1816,9 +2128,6 @@ export class ProceduralMusicEngine {
       }
     }
 
-    this.beatIndex = event.beatIndex;
-    this.barIndex = event.barIndex;
-    this.phraseIndex = event.phraseIndex;
     this.playBeat(track, event.scheduledTime);
   }
 
@@ -1826,36 +2135,38 @@ export class ProceduralMusicEngine {
   private playBeat(track: TrackDefinition, now: number): void {
     if (!this.context || !this.musicGainNode) return;
 
+    const intensityLayers = getActiveMusicLayersForIntensity(this.musicIntensity);
+
     // Play each instrument (respecting layer states)
     track.instruments.forEach(instrument => {
       switch (instrument.type) {
         case 'bass':
-          if (this.layerStates.bass) {
+          if (this.layerStates.bass && intensityLayers.bass) {
             this.playBass(track, instrument, now);
           }
           break;
         case 'lead':
-          if (this.layerStates.melody) {
+          if (this.layerStates.melody && intensityLayers.melody) {
             this.playLead(track, instrument, now);
           }
           break;
         case 'pad':
-          if (this.layerStates.chords) {
+          if (this.layerStates.chords && intensityLayers.chords) {
             this.playPad(track, instrument, now);
           }
           break;
         case 'arp':
-          if (this.layerStates.arpeggio) {
+          if (this.layerStates.arpeggio && intensityLayers.arpeggio) {
             this.playArp(track, instrument, now);
           }
           break;
         case 'drums':
-          if (this.layerStates.drums) {
+          if (this.layerStates.drums && intensityLayers.drums) {
             this.playDrums(track, instrument, now);
           }
           break;
         case 'fx':
-          if (this.layerStates.ambience) {
+          if (this.layerStates.ambience && intensityLayers.ambience) {
             this.playFx(track, instrument, now);
           }
           break;
