@@ -4,12 +4,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useCanvas } from '@/hooks/useCanvas';
 import { useGameModule } from '@/hooks/useGameModule';
-import { GameModule, GameScore } from '@/lib/types';
+import type { GameModule, GameScore } from '@/lib/types';
 import { GAME_CONFIG } from '@/lib/constants';
-import { CurrencyService } from '@/services/CurrencyService';
-import { AudioManager } from '@/services/AudioManager';
-import { AchievementService } from '@/services/AchievementService';
-import { getGameTheme, GameTheme } from '@/lib/gameThemes';
+import type { CurrencyService } from '@/services/CurrencyService';
+import type { AudioManager } from '@/services/AudioManager';
+import type { AchievementService } from '@/services/AchievementService';
+import { getGameTheme } from '@/lib/gameThemes';
+import type { GameTheme } from '@/lib/gameThemes';
 
 const EMPTY_SCORE: GameScore = {
   score: 0,
@@ -73,53 +74,40 @@ export function ThemedGameCanvas({
     }
   }, [isRunning, gameState]);
 
-  // Check for game over
   useEffect(() => {
     if (!game || !isInitialized) return;
 
-    const checkGameOver = () => {
-      setCurrentScore(game.getScore?.() || EMPTY_SCORE);
+    const syncGameState = () => {
+      const nextScore = game.getScore?.() || EMPTY_SCORE;
+      setCurrentScore(previous => {
+        if (
+          previous.score === nextScore.score &&
+          previous.coinsEarned === nextScore.coinsEarned
+        ) {
+          return previous;
+        }
+        return nextScore;
+      });
+
       const isGameOver = game.isGameOver?.();
       if (isGameOver) {
         if (hasHandledGameOverRef.current) return;
         hasHandledGameOverRef.current = true;
         setGameState('ended');
         stopGame();
-        onGameEnd?.(game.getScore?.());
+        onGameEnd?.(nextScore);
         return;
       }
+
       if (hasHandledGameOverRef.current) {
         hasHandledGameOverRef.current = false;
       }
     };
 
-    const interval = setInterval(checkGameOver, 100);
+    syncGameState();
+    const interval = window.setInterval(syncGameState, 80);
     return () => clearInterval(interval);
   }, [game, isInitialized, stopGame, onGameEnd]);
-
-  useEffect(() => {
-    if (!game || !isInitialized) {
-      setCurrentScore(EMPTY_SCORE);
-      return;
-    }
-
-    const syncScore = () => {
-      setCurrentScore(previous => {
-        const next = game.getScore?.() || EMPTY_SCORE;
-        if (
-          previous.score === next.score &&
-          previous.coinsEarned === next.coinsEarned
-        ) {
-          return previous;
-        }
-        return next;
-      });
-    };
-
-    syncScore();
-    const interval = window.setInterval(syncScore, 100);
-    return () => window.clearInterval(interval);
-  }, [game, isInitialized]);
 
   const handleStart = () => {
     if (gameState === 'ended') {

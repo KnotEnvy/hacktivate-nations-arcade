@@ -75,6 +75,7 @@ export function GameCarousel({
           src={game.thumbnail}
           alt={game.title}
           fill
+          sizes="(max-width: 768px) 75vw, 288px"
           className={`object-cover transition-all duration-300 ${unlocked ? 'opacity-100' : 'opacity-60 grayscale blur-[1px]'
             }`}
           onError={() => handleImageError(game.id)}

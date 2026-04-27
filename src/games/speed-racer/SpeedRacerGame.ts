@@ -55,6 +55,7 @@ const LIFE_BONUS_SCORES: readonly number[] = [2500, 10000, 25000, 50000, 100000]
 const RESPAWN_INVULN_DURATION = 2.0; // seconds of post-respawn invulnerability
 const LIFE_LOST_FLASH_DURATION = 1.2; // seconds the "LIFE LOST" overlay holds
 const LIFE_BONUS_FLASH_DURATION = 1.6; // seconds the "EXTRA LIFE" overlay holds
+const MOTION_LINE_OFFSETS = [0.12, 0.68, 0.31, 0.84, 0.45, 0.94] as const;
 
 // Chassis HP — each life can soak MAX_HP lethal hits before dying. Gives the
 // player a tactile "damage meter" rather than one-shot kills.
@@ -1155,10 +1156,11 @@ export class SpeedRacerGame extends BaseGame {
     for (let i = 0; i < lineCount; i++) {
       const yOff = ((i / lineCount) * h + ((t * 220) % h)) % h;
       const len = 30 + intensity * 60;
+      const wobble = MOTION_LINE_OFFSETS[i % MOTION_LINE_OFFSETS.length] * 30;
       // Left side
-      ctx.fillRect(20 + Math.random() * 30, yOff, 2, len);
+      ctx.fillRect(20 + wobble, yOff, 2, len);
       // Right side
-      ctx.fillRect(w - 22 - Math.random() * 30, (yOff + 80) % h, 2, len);
+      ctx.fillRect(w - 22 - wobble, (yOff + 80) % h, 2, len);
     }
     ctx.restore();
   }

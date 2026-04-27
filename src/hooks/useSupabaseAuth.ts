@@ -3,11 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Database } from '@/lib/supabase.types';
-import { getSupabaseBrowserClient } from '@/lib/supabase';
-import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
+import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 
 type ProfileRow = Database['public']['Tables']['profiles']['Row'];
 type EmailSentMode = 'magic' | 'signup' | null;
+type SupabaseModule = typeof import('@/lib/supabase');
+type BrowserClient = ReturnType<SupabaseModule['getSupabaseBrowserClient']>;
+type AuthRuntime = {
+  supabase: BrowserClient;
+  service: SupabaseArcadeService;
+};
 
 interface UseSupabaseAuthState {
   session: Session | null;
@@ -34,9 +39,39 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   const [emailSentMode, setEmailSentMode] = useState<EmailSentMode>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [authDisabled, setAuthDisabled] = useState(false);
-  const supabaseRef = useRef<ReturnType<typeof getSupabaseBrowserClient> | null>(null);
+  const supabaseRef = useRef<BrowserClient | null>(null);
   const arcadeServiceRef = useRef<SupabaseArcadeService | null>(null);
+  const authRuntimePromiseRef = useRef<Promise<AuthRuntime> | null>(null);
   const activeUserIdRef = useRef<string | null>(null);
+
+  const ensureAuthRuntime = useCallback(async (): Promise<AuthRuntime> => {
+    if (supabaseRef.current && arcadeServiceRef.current) {
+      return {
+        supabase: supabaseRef.current,
+        service: arcadeServiceRef.current,
+      };
+    }
+
+    if (!authRuntimePromiseRef.current) {
+      authRuntimePromiseRef.current = Promise.all([
+        import('@/lib/supabase'),
+        import('@/services/SupabaseArcadeService'),
+      ])
+        .then(([supabaseModule, serviceModule]) => {
+          const supabase = supabaseModule.getSupabaseBrowserClient();
+          const service = new serviceModule.SupabaseArcadeService(supabase);
+          supabaseRef.current = supabase;
+          arcadeServiceRef.current = service;
+          return { supabase, service };
+        })
+        .catch(error => {
+          authRuntimePromiseRef.current = null;
+          throw error;
+        });
+    }
+
+    return authRuntimePromiseRef.current;
+  }, []);
 
   const loadProfile = useCallback(
     async (userId: string, fallbackName?: string, accessToken?: string) => {
@@ -87,10 +122,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
     const initClient = async () => {
       if (typeof window === 'undefined') return;
       try {
-        const supabase = getSupabaseBrowserClient();
-        supabaseRef.current = supabase;
-        const service = new SupabaseArcadeService(supabase);
-        arcadeServiceRef.current = service;
+        const { supabase } = await ensureAuthRuntime();
         setAuthDisabled(false);
 
         const syncProfile = (nextSession: Session) => {
@@ -145,11 +177,20 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         subscription = null;
       }
     };
-  }, [loadProfile]);
+  }, [ensureAuthRuntime, loadProfile]);
 
   const signInWithEmail = useCallback(
     async (email: string) => {
-      if (!supabaseRef.current) {
+      let supabase = supabaseRef.current;
+      if (!supabase) {
+        try {
+          supabase = (await ensureAuthRuntime()).supabase;
+        } catch {
+          setError('Supabase not configured');
+          return;
+        }
+      }
+      if (!supabase) {
         setError('Supabase not configured');
         return;
       }
@@ -157,7 +198,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setError(null);
       setEmailSentMode(null);
       setPendingEmail(email);
-      const { error: signInError } = await supabaseRef.current.auth.signInWithOtp({
+      const { error: signInError } = await supabase.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo:
@@ -174,12 +215,21 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setEmailSentMode('magic');
       setLoading(false);
     },
-    []
+    [ensureAuthRuntime]
   );
 
   const signInWithPassword = useCallback(
     async (email: string, password: string) => {
-      if (!supabaseRef.current) {
+      let supabase = supabaseRef.current;
+      if (!supabase) {
+        try {
+          supabase = (await ensureAuthRuntime()).supabase;
+        } catch {
+          setError('Supabase not configured');
+          return;
+        }
+      }
+      if (!supabase) {
         setError('Supabase not configured');
         return;
       }
@@ -187,7 +237,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setPendingEmail(email);
       setLoading(true);
       setError(null);
-      const { data, error: signInError } = await supabaseRef.current.auth.signInWithPassword({
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
@@ -205,12 +255,21 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       }
       setLoading(false);
     },
-    [loadProfile]
+    [ensureAuthRuntime, loadProfile]
   );
 
   const signUpWithPassword = useCallback(
     async (email: string, password: string, username?: string) => {
-      if (!supabaseRef.current) {
+      let supabase = supabaseRef.current;
+      if (!supabase) {
+        try {
+          supabase = (await ensureAuthRuntime()).supabase;
+        } catch {
+          setError('Supabase not configured');
+          return;
+        }
+      }
+      if (!supabase) {
         setError('Supabase not configured');
         return;
       }
@@ -218,7 +277,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       setPendingEmail(email);
       setLoading(true);
       setError(null);
-      const { data, error: signUpError } = await supabaseRef.current.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -247,12 +306,21 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       }
       setLoading(false);
     },
-    [loadProfile]
+    [ensureAuthRuntime, loadProfile]
   );
 
   const resendEmail = useCallback(
     async (mode: Exclude<EmailSentMode, null>) => {
-      if (!supabaseRef.current) {
+      let supabase = supabaseRef.current;
+      if (!supabase) {
+        try {
+          supabase = (await ensureAuthRuntime()).supabase;
+        } catch {
+          setError('Supabase not configured');
+          return;
+        }
+      }
+      if (!supabase) {
         setError('Supabase not configured');
         return;
       }
@@ -266,7 +334,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : undefined;
       try {
         if (mode === 'magic') {
-          const { error: signInError } = await supabaseRef.current.auth.signInWithOtp({
+          const { error: signInError } = await supabase.auth.signInWithOtp({
             email: pendingEmail,
             options: {
               emailRedirectTo: redirectTo,
@@ -278,7 +346,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
             return;
           }
         } else {
-          const { error: resendError } = await supabaseRef.current.auth.resend({
+          const { error: resendError } = await supabase.auth.resend({
             type: 'signup',
             email: pendingEmail,
             options: redirectTo ? { emailRedirectTo: redirectTo } : undefined,
@@ -294,7 +362,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
         setLoading(false);
       }
     },
-    [pendingEmail]
+    [ensureAuthRuntime, pendingEmail]
   );
 
   const clearAuthMessages = useCallback(() => {
@@ -304,15 +372,22 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (!supabaseRef.current) return;
+    let supabase = supabaseRef.current;
+    if (!supabase) {
+      try {
+        supabase = (await ensureAuthRuntime()).supabase;
+      } catch {
+        return;
+      }
+    }
     setError(null);
-    await supabaseRef.current.auth.signOut();
+    await supabase.auth.signOut();
     activeUserIdRef.current = null;
     setSession(null);
     setProfile(null);
     setEmailSentMode(null);
     setPendingEmail(null);
-  }, []);
+  }, [ensureAuthRuntime]);
 
   const refreshProfile = useCallback(async () => {
     if (session?.user) {

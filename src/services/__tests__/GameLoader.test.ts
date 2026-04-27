@@ -35,5 +35,24 @@ describe('GameLoader', () => {
     const game = await loader.loadGame('missing');
     expect(game).toBeNull();
   });
-});
 
+  test('preloads a game once and still creates fresh instances when loaded', async () => {
+    const loader = new GameLoader();
+    const factory = jest
+      .fn<Promise<GameModule>, []>()
+      .mockImplementation(async () => makeStubGame('dummy'));
+
+    loader.registerGame('dummy', factory);
+
+    await Promise.all([
+      loader.preloadGame('dummy'),
+      loader.preloadGame('dummy'),
+    ]);
+
+    expect(factory).toHaveBeenCalledTimes(1);
+
+    const game = await loader.loadGame('dummy');
+    expect(game?.manifest.id).toBe('dummy');
+    expect(factory).toHaveBeenCalledTimes(2);
+  });
+});

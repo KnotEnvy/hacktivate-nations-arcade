@@ -4,10 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { Json } from '@/lib/supabase.types';
-import { getSupabaseBrowserClient } from '@/lib/supabase';
 import { getChallengeTemplate } from '@/lib/challenges';
 import { DEFAULT_UNLOCKED_GAME_IDS } from '@/lib/unlocks';
-import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
+import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import {
   SupabaseSyncOutbox,
   type SyncOutboxDiagnostics,
@@ -356,9 +355,13 @@ export function useArcadeSupabaseSync({
 
     const init = async () => {
       try {
-        const client = getSupabaseBrowserClient();
+        const [supabaseModule, serviceModule] = await Promise.all([
+          import('@/lib/supabase'),
+          import('@/services/SupabaseArcadeService'),
+        ]);
+        const client = supabaseModule.getSupabaseBrowserClient();
         if (!mounted) return;
-        setSupabaseService(new SupabaseArcadeService(client));
+        setSupabaseService(new serviceModule.SupabaseArcadeService(client));
       } catch (error) {
         console.warn('Supabase unavailable; staying offline:', error);
         setSupabaseService(null);

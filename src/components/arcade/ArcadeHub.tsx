@@ -3,13 +3,13 @@
 
 import dynamic from 'next/dynamic';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { GameModule } from '@/lib/types';
+import type { GameModule } from '@/lib/types';
 import { gameLoader } from '@/games/registry';
 import { CurrencyService } from '@/services/CurrencyService';
 import { ChallengeService, Challenge } from '@/services/ChallengeService';
 import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
-import { AudioManager } from '@/services/AudioManager';
+import type { AudioManager, SoundName } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
@@ -171,7 +171,9 @@ export function ArcadeHub() {
   const [challengeService] = useState(new ChallengeService());
   const [achievementService] = useState(new AchievementService());
   const [userService] = useState(new UserService());
-  const [audioManager] = useState(new AudioManager());
+  const [audioManager, setAudioManager] = useState<AudioManager | null>(null);
+  const audioManagerRef = useRef<AudioManager | null>(null);
+  const audioLoadPromiseRef = useRef<Promise<AudioManager> | null>(null);
   const schedulePlayerSyncRef = useRef<
     (overrides?: { unlockedTiers?: number[]; unlockedGames?: string[] }) => void
   >(() => {});
@@ -197,6 +199,30 @@ export function ArcadeHub() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const audioInitPromiseRef = useRef<Promise<void> | null>(null);
   const audioInitializedRef = useRef(false);
+  const getAudioManager = useCallback(async () => {
+    if (audioManagerRef.current) {
+      return audioManagerRef.current;
+    }
+
+    if (!audioLoadPromiseRef.current) {
+      audioLoadPromiseRef.current = import('@/services/AudioManager')
+        .then(module => {
+          const manager = new module.AudioManager();
+          audioManagerRef.current = manager;
+          setAudioManager(manager);
+          return manager;
+        })
+        .catch(error => {
+          audioLoadPromiseRef.current = null;
+          throw error;
+        });
+    }
+
+    return audioLoadPromiseRef.current;
+  }, []);
+  const playUiSound = useCallback((sound: SoundName) => {
+    audioManagerRef.current?.playSound(sound);
+  }, []);
   const addNotification = useCallback((type: 'achievement' | 'challenge' | 'levelup', title: string, message: string) => {
     const notification = {
       id: `${Date.now()}-${Math.random()}`,
@@ -241,24 +267,33 @@ export function ArcadeHub() {
       setCurrentGame(null);
       setSelectedGameId(null);
       setActiveTab('games');
-      audioManager.stopHubMusicRotation();
-      audioManager.stopMusic(0.2);
+      audioManagerRef.current?.stopHubMusicRotation();
+      audioManagerRef.current?.stopMusic(0.2);
     }
-  }, [audioManager, session, showHub]);
+  }, [session, showHub]);
 
   const ensureAudioInitialized = useCallback(async () => {
+    const manager = await getAudioManager();
+
     if (audioInitializedRef.current) {
-      return;
+      return manager;
     }
 
     if (!audioInitPromiseRef.current) {
-      audioInitPromiseRef.current = audioManager.init().then(() => {
-        audioInitializedRef.current = true;
-      });
+      audioInitPromiseRef.current = manager
+        .init()
+        .then(() => {
+          audioInitializedRef.current = true;
+        })
+        .catch(error => {
+          audioInitPromiseRef.current = null;
+          throw error;
+        });
     }
 
     await audioInitPromiseRef.current;
-  }, [audioManager]);
+    return manager;
+  }, [getAudioManager]);
 
   const {
     unlockedTiers,
@@ -323,7 +358,7 @@ export function ArcadeHub() {
           return;
         }
 
-        audioManager.playSound('success');
+        playUiSound('success');
         addNotification(
           'achievement',
           achievement.title,
@@ -331,7 +366,7 @@ export function ArcadeHub() {
         );
       });
     },
-    [achievementService, addNotification, audioManager, userService]
+    [achievementService, addNotification, playUiSound, userService]
   );
 
   const resetLocalState = useCallback(() => {
@@ -381,6 +416,32 @@ export function ArcadeHub() {
   runWhileHydratingRef.current = runWhileHydrating;
 
   useEffect(() => {
+    if (!session || isAccountHydrating || !showHub) {
+      return;
+    }
+
+    const warmGameIds = Array.from(
+      new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...unlockedGames])
+    ).filter(isGameImplemented);
+
+    if (warmGameIds.length === 0) {
+      return;
+    }
+
+    const warmGames = () => {
+      void gameLoader.preloadGames(warmGameIds);
+    };
+
+    if ('requestIdleCallback' in window) {
+      const idleId = window.requestIdleCallback(warmGames, { timeout: 2500 });
+      return () => window.cancelIdleCallback(idleId);
+    }
+
+    const timeoutId = setTimeout(warmGames, 1200);
+    return () => clearTimeout(timeoutId);
+  }, [isAccountHydrating, session, showHub, unlockedGames]);
+
+  useEffect(() => {
     currencyService.init();
     challengeService.init();
     achievementService.init();
@@ -415,7 +476,7 @@ export function ArcadeHub() {
       }
 
       newAchievements.forEach(achievement => {
-        audioManager.playSound('success');
+        playUiSound('success');
         addNotification('achievement', achievement.title, `+${achievement.reward} coins!`);
       });
 
@@ -450,11 +511,11 @@ export function ArcadeHub() {
     return unsubscribe;
   }, [
     achievementService,
-    audioManager,
     challengeService,
     currencyService,
     addNotification,
     applyLocalAchievementRewards,
+    playUiSound,
     isHydratingRef,
     reconcileTrustedBalance,
     queueSyncOperation,
@@ -472,7 +533,7 @@ export function ArcadeHub() {
     const unlockAudio = () => {
       void ensureAudioInitialized().then(() => {
         if (active && showHub && !currentGame) {
-          audioManager.startHubMusicRotation(4);
+          audioManagerRef.current?.startHubMusicRotation(4);
         }
       });
     };
@@ -485,7 +546,7 @@ export function ArcadeHub() {
       window.removeEventListener('pointerdown', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);
     };
-  }, [audioManager, currentGame, ensureAudioInitialized, showHub]);
+  }, [currentGame, ensureAudioInitialized, showHub]);
 
   useEffect(() => {
     const applyPerkModifiers = () => {
@@ -526,16 +587,16 @@ export function ArcadeHub() {
       return true;
     }
 
-    audioManager.playSound('click');
+    playUiSound('click');
     setShowAuthModal(true);
     return false;
-  }, [audioManager, session]);
+  }, [playUiSound, session]);
 
   const handleGameSelect = async (gameId: string) => {
     try {
       if (!requireSignedIn()) return;
-      await ensureAudioInitialized();
-      audioManager.playSound('click');
+      const manager = await ensureAudioInitialized();
+      manager.playSound('click');
       if (!isGameImplemented(gameId)) return;
       if (!isGameUnlocked(gameId, unlockedTiers, unlockedGames)) return;
       const game = await gameLoader.loadGame(gameId);
@@ -545,8 +606,8 @@ export function ArcadeHub() {
         setShowHub(false);
 
         // Stop hub rotation and transition to game-specific music
-        audioManager.stopHubMusicRotation();
-        audioManager.playGameMusic(gameId, 'primary', 2.0);
+        manager.stopHubMusicRotation();
+        manager.playGameMusic(gameId, 'primary', 2.0);
         
         // Track game start
         const gamesPlayed = userService.getStats().gamesPlayed + 1;
@@ -566,7 +627,7 @@ export function ArcadeHub() {
     const applyLocalUnlock = () => {
       if (currencyService.spendCoins(cost, `unlock_tier_${tier}`)) {
         if (!unlockedTiers.includes(tier)) {
-          audioManager.playSound('unlock');
+          playUiSound('unlock');
           const newTiers = [...unlockedTiers, tier].sort((a, b) => a - b);
           saveUnlockState(newTiers, unlockedGames);
           addNotification('achievement', 'Tier Unlocked!', `Tier ${tier} is now open`);
@@ -579,7 +640,7 @@ export function ArcadeHub() {
         const result = await supabaseService.unlockTierTrusted(tier, {
           accessToken: session.access_token,
         });
-        audioManager.playSound('unlock');
+        playUiSound('unlock');
         reconcileTrustedBalance(result.balance);
         saveUnlockState(result.unlockedTiers, result.unlockedGames);
         addNotification('achievement', 'Tier Unlocked!', `Tier ${tier} is now open`);
@@ -611,7 +672,7 @@ export function ArcadeHub() {
 
     const applyLocalUnlock = () => {
       if (currencyService.spendCoins(cost, `unlock_${gameId}`)) {
-        audioManager.playSound('unlock');
+        playUiSound('unlock');
         const newGames = [...unlockedGames, gameId];
         saveUnlockState(unlockedTiers, newGames);
 
@@ -630,7 +691,7 @@ export function ArcadeHub() {
         const result = await supabaseService.unlockGameTrusted(gameId, {
           accessToken: session.access_token,
         });
-        audioManager.playSound('unlock');
+        playUiSound('unlock');
         reconcileTrustedBalance(result.balance);
         saveUnlockState(result.unlockedTiers, result.unlockedGames);
 
@@ -662,7 +723,7 @@ export function ArcadeHub() {
   };
 
   const handleBackToHub = () => {
-    audioManager.playSound('click');
+    playUiSound('click');
     setShowHub(true);
     setCurrentGame(null);
     setSelectedGameId(null);
@@ -670,7 +731,7 @@ export function ArcadeHub() {
 
     // Return to hub music with auto-rotation
     if (audioInitializedRef.current) {
-      audioManager.startHubMusicRotation(4);
+      audioManagerRef.current?.startHubMusicRotation(4);
     }
   };
 
@@ -686,7 +747,7 @@ export function ArcadeHub() {
           return;
         }
 
-        audioManager.playSound('powerup');
+        playUiSound('powerup');
         currencyService.setBonusMultiplier(ECONOMY.DAILY_CHALLENGE_MULTIPLIER);
         addNotification(
           'challenge',
@@ -701,7 +762,7 @@ export function ArcadeHub() {
             accessToken: session.access_token,
           })
           .then(result => {
-            audioManager.playSound('success');
+            playUiSound('success');
             addNotification(
               'challenge',
               'Challenge Complete!',
@@ -728,7 +789,7 @@ export function ArcadeHub() {
             const reward = Math.floor(
               challenge.reward * modifiers.challengeRewardMultiplier
             );
-            audioManager.playSound('success');
+            playUiSound('success');
             addNotification(
               'challenge',
               'Challenge Complete!',
@@ -753,7 +814,7 @@ export function ArcadeHub() {
       const reward = Math.floor(
         challenge.reward * modifiers.challengeRewardMultiplier
       );
-      audioManager.playSound('success');
+      playUiSound('success');
       addNotification(
         'challenge',
         'Challenge Complete!',
@@ -765,9 +826,9 @@ export function ArcadeHub() {
     },
     [
       addNotification,
-      audioManager,
       challengeService,
       currencyService,
+      playUiSound,
       queueSyncOperation,
       reconcileTrustedBalance,
       session,
@@ -804,7 +865,7 @@ export function ArcadeHub() {
     const levelResult = userService.addExperience(experienceGained);
     
     if (levelResult.leveledUp) {
-      audioManager.playSound('powerup');
+      playUiSound('powerup');
       addNotification('levelup', 'Level Up!', `You reached level ${levelResult.newLevel}!`);
 
       const unlockedPerks = UserService.getNewPerks(previousLevel, levelResult.newLevel);
@@ -940,7 +1001,7 @@ export function ArcadeHub() {
 
     const trustedAchievementIds: string[] = [];
     newlyUnlocked.forEach((achievement) => {
-      audioManager.playSound('success');
+      playUiSound('success');
       addNotification(
         'achievement',
         achievement.title,
@@ -1090,8 +1151,10 @@ export function ArcadeHub() {
           </button>
           <button
             onClick={() => {
-              audioManager.playSound('click');
-              setShowAudioSettings(true);
+              void ensureAudioInitialized().then(manager => {
+                manager.playSound('click');
+                setShowAudioSettings(true);
+              });
             }}
             className="ml-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
           >
@@ -1319,7 +1382,7 @@ export function ArcadeHub() {
                     data-testid={`arcade-tab-${tab.id}`}
                     onClick={() => {
                       if (activeTab !== tab.id) {
-                        audioManager.playSound('click');
+                        playUiSound('click');
                         setActiveTab(tab.id);
                       }
                     }}
@@ -1356,7 +1419,7 @@ export function ArcadeHub() {
                         </div>
                         <button
                           onClick={() => {
-                            audioManager.playSound('click');
+                            playUiSound('click');
                             setActiveTab('challenges');
                           }}
                           className="mt-3 w-full rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold py-2 transition-colors"
@@ -1484,7 +1547,7 @@ export function ArcadeHub() {
               </div>
             )}
           </div>
-        ) : (
+        ) : audioManager ? (
           <div className="flex justify-center">
             <ThemedGameCanvas 
               game={currentGame} 
@@ -1495,33 +1558,37 @@ export function ArcadeHub() {
               onGameEnd={handleGameEnd}
             />
           </div>
+        ) : (
+          <div className="flex justify-center text-white">Loading audio engine...</div>
         )}
       </main>
       {showOnboarding && (
         <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
       )}
-      {showAudioSettings && (
+      {showAudioSettings && audioManager && (
         <AudioSettings
           audioManager={audioManager}
           isOpen={showAudioSettings}
           onClose={() => setShowAudioSettings(false)}
         />
       )}
-      <AuthModal
-        open={showAuthModal}
-        onClose={() => setShowAuthModal(false)}
-        onMagicLink={handleEmailSignIn}
-        onPasswordSignIn={(email, password) => signInWithPassword(email, password)}
-        onPasswordSignUp={(email, password, username) =>
-          signUpWithPassword(email, password, username)
-        }
-        onResendEmail={resendEmail}
-        onClearMessages={clearAuthMessages}
-        loading={authLoading}
-        error={authError}
-        emailSentMode={emailSentMode}
-        pendingEmail={pendingEmail}
-      />
+      {showAuthModal && (
+        <AuthModal
+          open={showAuthModal}
+          onClose={() => setShowAuthModal(false)}
+          onMagicLink={handleEmailSignIn}
+          onPasswordSignIn={(email, password) => signInWithPassword(email, password)}
+          onPasswordSignUp={(email, password, username) =>
+            signUpWithPassword(email, password, username)
+          }
+          onResendEmail={resendEmail}
+          onClearMessages={clearAuthMessages}
+          loading={authLoading}
+          error={authError}
+          emailSentMode={emailSentMode}
+          pendingEmail={pendingEmail}
+        />
+      )}
     </div>
   );
 }

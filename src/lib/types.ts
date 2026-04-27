@@ -1,9 +1,9 @@
 // ===== src/lib/types.ts =====
-import { InputManager } from '@/services/InputManager';
-import { AudioManager } from '@/services/AudioManager';
-import { Analytics } from '@/services/Analytics';
-import { CurrencyService } from '@/services/CurrencyService';
-import { AchievementService } from '@/services/AchievementService';
+import type { InputManager } from '@/services/InputManager';
+import type { AudioManager } from '@/services/AudioManager';
+import type { Analytics } from '@/services/Analytics';
+import type { CurrencyService } from '@/services/CurrencyService';
+import type { AchievementService } from '@/services/AchievementService';
 
 export type InputType = 'keyboard' | 'touch' | 'gamepad';
 

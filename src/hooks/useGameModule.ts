@@ -1,11 +1,11 @@
 // ===== src/hooks/useGameModule.ts =====
 import { useEffect, useRef, useState } from 'react';
-import { GameModule, Services } from '@/lib/types';
+import type { GameModule, Services } from '@/lib/types';
 import { useInput } from '@/hooks/useInput';
-import { AudioManager } from '@/services/AudioManager';
+import type { AudioManager } from '@/services/AudioManager';
 import { Analytics } from '@/services/Analytics';
-import { CurrencyService } from '@/services/CurrencyService';
-import { AchievementService } from '@/services/AchievementService';
+import type { CurrencyService } from '@/services/CurrencyService';
+import type { AchievementService } from '@/services/AchievementService';
 
 export function useGameModule(
   canvas: HTMLCanvasElement | null,
@@ -51,17 +51,14 @@ export function useGameModule(
     if (!isInitialized || !game) return;
 
     const gameLoop = (currentTime: number) => {
-      const deltaTime = (currentTime - lastTimeRef.current) / 1000;
+      const deltaTime = Math.min((currentTime - lastTimeRef.current) / 1000, 0.05);
       lastTimeRef.current = currentTime;
 
-      if (deltaTime < 0.1) {
-        // Cap delta time to prevent large jumps
-        game.update(deltaTime);
+      game.update(deltaTime);
 
-        const ctx = canvas?.getContext('2d');
-        if (ctx) {
-          game.render(ctx);
-        }
+      const ctx = canvas?.getContext('2d');
+      if (ctx) {
+        game.render(ctx);
       }
 
       if (isRunning) {

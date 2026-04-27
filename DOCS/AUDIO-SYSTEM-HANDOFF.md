@@ -2,6 +2,49 @@
 
 ## Session Date: January 8, 2026
 
+## Current Status Update: April 25, 2026
+
+The audio system has been upgraded beyond the January handoff. Treat this section as the current source of truth before reading the historical details below.
+
+### What changed in the SB32/procedural pass
+
+- `src/services/ProceduralMusicEngine.ts` now has a Sound Blaster 32-style patch layer system: layered oscillator patches, patch-specific ADSR envelopes, detune, filters, panning, vibrato, chorus send, a dry mix bus, optional dynamics compression, reverb/delay sends, chord-aware bass/pad/arp writing, phrase planning, adaptive layer intensity, and stingers.
+- `src/services/AudioManager.ts` now routes Music Lab custom generation through `buildCustomTrackDefinition(...)` and `startCustomTrack(...)`, so generated tracks are real procedural tracks rather than UI-only parameter changes.
+- `src/components/arcade/AudioSettings.tsx` now passes seed, mood, BPM, intensity, scale, and root note into custom track generation. Current generated playback reports as `lab_custom`.
+- A playback bug was fixed: delayed cleanup from a stopped procedural track used to disconnect the next active music bus during quick hub/lab transitions. `stopTrack(...)` now captures the old graph and only disconnects the old nodes after fade-out.
+- A new procedural intro track exists: `hub_sb32_intro` / "SB32 Power-On". It is designed to sound clearly different from the older synth loops: square/FM-style bass, string ensemble pad, synth brass lead, arp, drums, FX, reverb, delay, and mild distortion.
+- Hub auto-rotation now starts deterministically with `hub_sb32_intro`, then continues rotating through the other hub tracks.
+- `hub_music` and `game_music` still exist as compatibility names, but they now resolve to procedural SB32 tracks. Do not re-enable the old legacy generator for public launch unless there is a deliberate rollback reason.
+- The track browser no longer exposes a `Legacy` category. Hub/Menu now starts with `hub_sb32_intro`.
+
+### Current verification
+
+Last verified April 25, 2026:
+
+- `npm.cmd test -- ProceduralMusicEngine.patches.test.ts --runInBand`
+- `npm.cmd test -- AudioManager.test.ts --runInBand`
+- `npm.cmd run type-check`
+- `npm.cmd run lint`
+- `npm.cmd run build`
+
+Before public deploy, rerun the full launch gate after Speed Racer lands:
+
+- `npm.cmd run type-check`
+- `npm.cmd run lint`
+- `npm.cmd test -- --runInBand`
+- `npm.cmd run build`
+- `npm.cmd run e2e`
+
+### Browser smoke checklist for the next team
+
+- On first user interaction in the hub, confirm the intro music is `SB32 Power-On`.
+- In Audio Studio -> Tracks -> Hub/Menu, confirm `SB32 Power-On` appears first and plays.
+- In the hidden Music Laboratory, generate a track and confirm audible `lab_custom` playback.
+- Rapidly switch between preset tracks and generated tracks; music should continue after SFX plays.
+- Toggle mute, music volume, and SFX volume independently.
+- Enable the visualizer while music plays; analyser data should move.
+- If touching Speed Racer music, prefer `playGameMusic(gameId, variant, fadeSeconds)` or procedural track names. Do not call private legacy beat helpers.
+
 ---
 
 ## Quick Start for New Sessions
@@ -19,7 +62,9 @@ When starting a new session about the audio system, read these key files in orde
 
 The Hacktivate Nations Arcade features a **fully procedural audio system** that generates unique background music using Web Audio API. The system produces 40+ minutes of non-repeating content with seed-based reproducibility.
 
-### Architecture
+### Historical Architecture Snapshot
+
+This older block is retained for context. For current launch behavior, use the April 25 status section above: hub/game compatibility names now resolve to procedural SB32 tracks, and hub launch starts with `hub_sb32_intro`.
 
 ```
 AudioManager (Main Controller)
@@ -41,8 +86,8 @@ AudioManager (Main Controller)
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `src/services/ProceduralMusicEngine.ts` | Core procedural music generation | ~1500 |
-| `src/services/AudioManager.ts` | Main audio API, SFX, rotation | ~2550 |
+| `src/services/ProceduralMusicEngine.ts` | Core SB32/procedural music generation | ~2600 |
+| `src/services/AudioManager.ts` | Main audio API, SFX, rotation, music aliases | ~3000 |
 | `src/components/arcade/AudioSettings.tsx` | Audio UI + hidden Music Lab | ~2100 |
 | `src/data/Achievements.ts` | Achievement definitions incl. Music Lab | ~300 |
 | `src/data/Games.ts` | Game manifest (25 games across 5 tiers) | ~250 |
@@ -95,11 +140,11 @@ SCALES = {
 - **Retro**: `retro1`, `retro2`, `retro3` - Classic arcade
 - **Mystery**: `mystery1`, `mystery2`, `mystery3` - Dark, atmospheric
 
-### Track Definitions (20 procedural + 2 legacy)
+### Track Definitions (21 procedural + compatibility aliases)
 
 | Category | Tracks | BPM Range | Typical Use |
 |----------|--------|-----------|-------------|
-| Hub/Menu | `hub_welcome`, `hub_ambient`, `hub_energetic` | 85-128 | Main menu, lobby |
+| Hub/Menu | `hub_sb32_intro`, `hub_welcome`, `hub_ambient`, `hub_energetic` | 85-128 | Main menu, lobby, launch intro |
 | Action | `action_intense`, `action_chase` | 145-160 | Runner, shooters |
 | Puzzle | `puzzle_focus`, `puzzle_discovery` | 75-90 | Minesweeper, puzzles |
 | Arcade | `arcade_retro`, `arcade_bounce` | 125-130 | Snake, breakout |
@@ -108,7 +153,7 @@ SCALES = {
 | Sports | `sports_competitive`, `sports_victory` | 125-138 | Racing, sports |
 | Rhythm | `rhythm_beat`, `rhythm_groove` | 115-128 | Rhythm games |
 | Space | `space_exploration`, `space_battle` | 90-150 | Space shooter |
-| Legacy | `hub_music`, `game_music` | 110-140 | Original tracks |
+| Compatibility aliases | `hub_music`, `game_music` | n/a | Resolve to procedural SB32 tracks |
 
 ### Game-to-Track Mapping
 
