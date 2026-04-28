@@ -40,7 +40,7 @@ This is the live execution checklist for the final public-deployment pass. It re
 - [x] Focused audio verification passed on April 25: `AudioManager.test.ts`, `ProceduralMusicEngine.patches.test.ts`, `npm.cmd run type-check`, `npm.cmd run lint`, and `npm.cmd run build`
 - [x] Speed Racer implementation is complete and registered as a playable game
 - [x] Startup/runtime responsiveness pass completed: unlocked game chunks warm during idle time after account hydration, the shared game loop now clamps long frames without skipping render, canvas score/end-state polling is consolidated, and Speed Racer motion-line rendering no longer allocates random positions every frame
-- [x] Initial route load optimized: Supabase auth/sync clients and the procedural audio engine now load dynamically after hydration or first use instead of shipping in the `/` first-load bundle; production build now reports `/` at 135 kB first-load JS
+- [x] Initial route load optimized: `/` now renders through a lightweight arcade boot shell, while the full hub, Supabase auth/sync clients, and procedural audio engine load dynamically after hydration or first use; production build now reports `/` at 103 kB first-load JS
 - [x] Focused loader warmup coverage added in `GameLoader.test.ts`
 
 ## Current Priority

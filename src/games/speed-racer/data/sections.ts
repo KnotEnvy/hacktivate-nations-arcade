@@ -141,8 +141,8 @@ const NEON_CITY: SectionDef = {
     // to 1.7s so the curve ramps smoothly from §1 → §7 instead of jumping
     // hard out of the tutorial.
     spawnInterval: 1.7,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [5, 2, 0],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored'],
+    enemyTypeWeights: [5, 2, 0, 0],
     civilianChance: 0.55,
     civilianSpawnInterval: 2.6,
     vanIntervalMin: 14,
@@ -177,13 +177,12 @@ const STEEL_SPAN: SectionDef = {
     bannerGlow: '#FF4DC2',
   },
   spawnerConfig: {
-    // Armored debut. Was [4,3,5] in v4 (armored-heavy "bring missiles"
-    // gauntlet) which spiked difficulty here and let later sections feel
-    // softer by contrast. v5 dials it back to a gentler introduction so
-    // peak intensity lands in section 7 instead.
+    // Enforcer debut. Old "armored gauntlet" feel updated for v5: enforcer
+    // sedans are the main armored threat here (bumpable with momentum, or
+    // missile-able). SWAT trucks stay deferred to §5 to keep the ramp smooth.
     spawnInterval: 1.45,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [5, 2, 2],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored'],
+    enemyTypeWeights: [5, 2, 2, 0],
     civilianChance: 0.5,
     civilianSpawnInterval: 2.5,
     vanIntervalMin: 14,
@@ -222,10 +221,11 @@ const ALPINE_PASS: SectionDef = {
   spawnerConfig: {
     // Mountain dodge stretch. Still ram-leaning with thicker civilian
     // traffic so the section retains its "weave through the pack" identity,
-    // but spawn rate and ranged share both step up vs §3.
+    // but spawn rate and ranged share both step up vs §3. Enforcers thicken
+    // a touch; SWAT still held back for the next section.
     spawnInterval: 1.3,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [6, 3, 1],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored'],
+    enemyTypeWeights: [5, 3, 2, 0],
     civilianChance: 0.75,
     civilianSpawnInterval: 2.0,
     vanIntervalMin: 16,
@@ -263,11 +263,12 @@ const SUNSET_COAST: SectionDef = {
   },
   spawnerConfig: {
     // No longer the finale (v4 had this as the last "no mercy" stretch).
-    // Now the late-mid step: balanced three-type mix with a clear bump in
-    // burst/formation pressure, leading into the water + ice peaks.
+    // Now the late-mid step: balanced four-type mix with a clear bump in
+    // burst/formation pressure. SWAT debuts here, sparingly — the unbumpable
+    // missile-only threat appears once enforcers are well-established.
     spawnInterval: 1.15,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [5, 4, 3],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored'],
+    enemyTypeWeights: [4, 4, 3, 1],
     civilianChance: 0.6,
     civilianSpawnInterval: 2.0,
     vanIntervalMin: 16,
@@ -308,10 +309,11 @@ const HARBOR_RUN: SectionDef = {
     // Penultimate stretch. Patrol identity preserved (still patrol-heavy
     // weight). Spawn cadence used to be 1.5s in v4 — slower than §5's 1.05
     // — which broke the curve. Now tightened to 1.05 with stronger burst
-    // + formation rolls so water genuinely raises the bar.
+    // + formation rolls so water genuinely raises the bar. Enforcer cruisers
+    // take most of the "armored slot"; SWAT gunship stays rare.
     spawnInterval: 1.05,
-    enemyTypes: ['ram', 'shooter', 'armored', 'patrol'],
-    enemyTypeWeights: [4, 3, 2, 5],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored', 'patrol'],
+    enemyTypeWeights: [4, 3, 2, 1, 5],
     civilianChance: 0.55,
     civilianSpawnInterval: 2.1,
     vanIntervalMin: 16,
@@ -352,12 +354,13 @@ const FROST_PASS: SectionDef = {
   },
   spawnerConfig: {
     // True finale of the loop. Fastest spawns, highest burst + formation
-    // rolls, mixed three-type weighting. Loop scaling stacks on top: by
+    // rolls, mixed four-type weighting. Loop scaling stacks on top: by
     // loop 3+ the burst/formation clamps engage and the spawn floor (0.6s)
-    // is approached around loop 5–6, which is intentional.
+    // is approached around loop 5–6, which is intentional. SWAT stays rare
+    // even at peak — enforcers carry most of the armored pressure.
     spawnInterval: 0.95,
-    enemyTypes: ['ram', 'shooter', 'armored'],
-    enemyTypeWeights: [5, 4, 3],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored'],
+    enemyTypeWeights: [4, 4, 3, 1],
     civilianChance: 0.65,
     civilianSpawnInterval: 1.9,
     vanIntervalMin: 16,

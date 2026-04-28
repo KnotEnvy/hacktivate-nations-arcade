@@ -19,7 +19,7 @@ import {
   DRONE_COIN_REWARD,
 } from './entities/BossEnemies';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
-import { PLAYER } from './data/constants';
+import { PLAYER, ROAD } from './data/constants';
 import { SECTIONS, getSection, TERRAIN_HANDLING, type SectionDef } from './data/sections';
 
 interface AABB {
@@ -62,6 +62,16 @@ const MOTION_LINE_OFFSETS = [0.12, 0.68, 0.31, 0.84, 0.45, 0.94] as const;
 const MAX_HP = 3;
 const HIT_INVULN_DURATION = 1.1; // seconds of post-hit invulnerability (shorter than full respawn)
 const HIT_FLASH_DURATION = 0.5; // damage meter red-flash length after a hit
+
+// Bump mechanic — Spy-Hunter knockoff loop. Side-swipes don't damage either
+// party and don't directly destroy enemies; instead they inject lateral
+// impulse into the enemy's bumpVx. The enemy dies once it slides past the
+// road edge. Force scales linearly from brake → boost; per-vehicle
+// bumpResistance (set in ENEMY_CONFIGS) divides the impulse on the receiving
+// side so soft cars skid easily and SWAT trucks barely budge.
+const BUMP_FORCE_MIN = 80;          // px/sec impulse at PLAYER.BRAKE_SPEED
+const BUMP_FORCE_MAX = 520;         // px/sec impulse at PLAYER.BOOST_SPEED
+const BUMP_OFF_ROAD_MARGIN = 30;    // px past road edge before the enemy is credited as a kill
 
 // Section-clear reward (§5.4)
 const SECTION_CLEAR_BONUS_BASE = 500;
@@ -317,6 +327,28 @@ export class SpeedRacerGame extends BaseGame {
       this.player.y,
       this.player.vx,
     );
+
+    // Off-road bump kills — credit any enemy whose slide has carried it past
+    // either road edge. Done immediately after spawner.update (before its
+    // alive-filter on the next frame) so the kill is attributed to the player
+    // rather than just disappearing as scenery.
+    for (const enemy of this.spawner.getEnemies()) {
+      if (!enemy.alive) continue;
+      const halfW = enemy.config.width / 2;
+      const offLeft = enemy.x + halfW < ROAD.X_MIN - BUMP_OFF_ROAD_MARGIN;
+      const offRight = enemy.x - halfW > ROAD.X_MAX + BUMP_OFF_ROAD_MARGIN;
+      if (offLeft || offRight) {
+        enemy.alive = false;
+        this.enemiesDestroyed += 1;
+        this.score += enemy.config.scoreValue * this.combo;
+        this.pickups += enemy.config.coinDrop;
+        this.bumpCombo();
+        this.particles.burstExplosion(enemy.x, enemy.y, 1.0);
+        this.shake.add(0.32);
+        this.services?.audio?.playSound?.('explosion', { volume: 0.5 });
+      }
+    }
+
     this.boss.update(
       dt,
       this.sectionsCleared,
@@ -835,9 +867,13 @@ export class SpeedRacerGame extends BaseGame {
       }
     }
 
-    // Player vs enemy collision — Spy-Hunter style.
-    // Side-swipes against non-armored enemies push them off the road (ram kill).
-    // Head-on / rear-end hits, or any contact with armored, are still lethal.
+    // Player vs enemy collision — Spy-Hunter knockoff loop.
+    //   side-swipe (penX < penY): inject bump impulse, no immediate damage or
+    //                              kill on either side. Enemy dies later if
+    //                              its slide carries it off the road (handled
+    //                              after spawner.update).
+    //   head-on / rear-end:        chassis hit — chips player HP, removes the
+    //                              enemy so it can't re-hit through i-frames.
     if (playerVulnerable) {
       for (const enemy of this.spawner.getEnemies()) {
         if (!enemy.alive) continue;
@@ -850,30 +886,39 @@ export class SpeedRacerGame extends BaseGame {
         const penY = (this.player.height + enemy.config.height) / 2 - Math.abs(dy);
         const isSideSwipe = penX < penY;
 
-        if (isSideSwipe && !enemy.config.bulletproof) {
-          // Ram kill: enemy gets shoved off the road. Worth less than gun kills
-          // but keeps combo alive and gives a satisfying bump.
-          enemy.alive = false;
-          this.enemiesDestroyed += 1;
-          const reward = Math.floor(enemy.config.scoreValue * 0.5) * this.combo;
-          this.score += reward;
-          this.pickups += enemy.config.coinDrop;
-          this.bumpCombo();
-          this.particles.burstExplosion(enemy.x, enemy.y, 0.9);
-          this.shake.add(0.28);
-          this.services?.audio?.playSound?.('collision', { volume: 0.45 });
-          // Nudge player laterally away from the impact for tactile feedback
-          this.player.vx += Math.sign(dx) * 80;
+        if (isSideSwipe) {
+          // Force scales linearly with player speed — coasting at brake barely
+          // nudges anyone, full boost shoves rams clean off the road in one hit.
+          const speedRatio = Math.max(
+            0,
+            Math.min(
+              1,
+              (this.player.speed - PLAYER.BRAKE_SPEED) /
+                (PLAYER.BOOST_SPEED - PLAYER.BRAKE_SPEED),
+            ),
+          );
+          const force = BUMP_FORCE_MIN + (BUMP_FORCE_MAX - BUMP_FORCE_MIN) * speedRatio;
+          // Push enemy AWAY from player; recoil player AWAY from enemy. Heavier
+          // vehicles shove the player back harder (bumpResistance amplifies recoil).
+          enemy.applyBump(-Math.sign(dx) * force);
+          this.player.vx += Math.sign(dx) * (50 + enemy.config.bumpResistance * 30);
+          this.particles.burstExplosion(
+            (this.player.x + enemy.x) / 2,
+            (this.player.y + enemy.y) / 2,
+            0.4 + Math.min(0.8, enemy.config.bumpResistance * 0.1),
+          );
+          this.shake.add(0.12 + Math.min(0.2, enemy.config.bumpResistance * 0.04));
+          this.services?.audio?.playSound?.('collision', {
+            volume: 0.32 + Math.min(0.3, enemy.config.bumpResistance * 0.04),
+          });
           continue;
         }
 
-        // Chassis hit: either armored (unmovable) or a head-on/rear-end
-        // collision. Chips HP; if HP drops to 0, the run actually ends.
+        // Chassis hit — head-on or rear-end. Chips HP and removes the enemy
+        // so we're not instantly re-hit after i-frames end.
         this.particles.burstExplosion(this.player.x, this.player.y, 1.4);
         this.services?.audio?.playSound?.('collision', { volume: 0.6 });
         if (this.takeDamage('enemy_ram')) return;
-        // Non-lethal hit: remove the enemy that smacked us so we're not
-        // instantly re-hit after invulnerability ends.
         enemy.alive = false;
         return;
       }

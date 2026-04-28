@@ -1,6 +1,6 @@
 import { ROAD } from '../data/constants';
 
-export type EnemyType = 'ram' | 'shooter' | 'armored' | 'patrol';
+export type EnemyType = 'ram' | 'shooter' | 'enforcer' | 'armored' | 'patrol';
 export type EnemyVisual = 'car' | 'jetboat';
 
 export interface EnemyConfig {
@@ -15,6 +15,14 @@ export interface EnemyConfig {
   scoreValue: number;
   coinDrop: number;
   bulletproof: boolean;
+  // How hard this vehicle is to shove laterally. Higher = more resistant to
+  // bumps. Side-swipe impulse is divided by this number, so a SWAT truck at
+  // 6.0 moves a fraction as much as a soft ram at 1.0 from the same hit.
+  // The bump-off-the-road kill loop relies on these scaling cleanly:
+  //   ram/shooter/patrol  ~1.0  (1-2 bumps off-road)
+  //   enforcer            ~2.5  (commit needed — 3-5 bumps with throttle)
+  //   armored (SWAT)      ~6.0  (effectively missile-only — many bumps)
+  bumpResistance: number;
   color: string;
   accentColor: string;
   // Shooter-only: projectile speed in px/sec. Omitted for non-firing types.
@@ -32,6 +40,7 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     scoreValue: 100,
     coinDrop: 1,
     bulletproof: false,
+    bumpResistance: 1.0,
     color: '#E53935',
     accentColor: '#1a1a2e',
   },
@@ -45,22 +54,42 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     scoreValue: 250,
     coinDrop: 2,
     bulletproof: false,
+    bumpResistance: 1.0,
     color: '#FB8C00',
     accentColor: '#1a1a2e',
     bulletSpeed: 520,
   },
+  // Mercedes-style armored sedan — Spy-Hunter "Enforcer." Smaller and faster
+  // than the SWAT truck, bulletproof to small arms. Bumpable but takes real
+  // commitment (resistance 2.5 ≈ 3-5 throttled bumps off the road).
+  enforcer: {
+    type: 'enforcer',
+    forwardSpeed: 250,
+    matchSpeedDelta: 50,
+    width: 46,
+    height: 80,
+    hp: Infinity,
+    scoreValue: 350,
+    coinDrop: 3,
+    bulletproof: true,
+    bumpResistance: 2.5,
+    color: '#1a1a1a',     // gloss black sedan
+    accentColor: '#c0c0c0', // chrome trim
+  },
+  // SWAT truck — heavy near-immovable blocker. Resistance 6.0 means even
+  // sustained boost-bumping barely budges it; missiles remain the practical
+  // answer. Slowed in v5 so it sits further back than the enforcer.
   armored: {
     type: 'armored',
-    forwardSpeed: 220,
-    // Tighter delta than v3 (was 90) so armored hovers closer to the player
-    // and enforces its blocking role. Tank still matches tighter at 70.
-    matchSpeedDelta: 60,
+    forwardSpeed: 180,
+    matchSpeedDelta: 80,
     width: 58,
     height: 100,
     hp: Infinity,
     scoreValue: 500,
     coinDrop: 4,
     bulletproof: true,
+    bumpResistance: 6.0,
     color: '#2a2a2a',
     accentColor: '#888888',
   },
@@ -76,6 +105,7 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     scoreValue: 180,
     coinDrop: 2,
     bulletproof: false,
+    bumpResistance: 1.0,
     color: '#00B0C8',
     accentColor: '#FFFFFF',
   },
@@ -88,6 +118,14 @@ const FORWARD_SPEED_ACCEL = 280; // px/sec^2 — how fast enemy changes its forw
 const RAM_LOCK_TRIGGER = 300; // distY at which a cruising ram enters lock phase
 const RAM_LOCK_DURATION = 0.4; // seconds of telegraph before charge commits
 const RAM_CHARGE_LATERAL = 320; // px/sec lateral once committed — faster than the old linear tracker
+
+// Bump physics — Spy-Hunter knockoff loop. bumpVx is a transient lateral
+// velocity injected by side-swipes that decays via friction. While it's
+// non-trivial, AI lateral motion suspends and the road clamp releases so
+// the enemy can actually slide off the road.
+const BUMP_FRICTION = 240;        // px/sec^2 lateral deceleration
+const BUMP_AI_SUPPRESS = 30;      // |bumpVx| threshold above which AI lateral suspends
+const BUMP_COOLDOWN = 0.12;       // s between successive bumps to the same enemy
 
 type RamState = 'cruise' | 'lock' | 'charge';
 
@@ -116,6 +154,9 @@ export class EnemyCar {
   ramState: RamState = 'cruise';
   ramLockTimer = 0;
   ramTargetX = 0;
+  // Bump physics — see BUMP_FRICTION / BUMP_COOLDOWN above
+  bumpVx = 0;
+  private bumpCooldown = 0;
 
   constructor(type: EnemyType, x: number, y: number, visual: EnemyVisual = 'car') {
     this.config = ENEMY_CONFIGS[type];
@@ -155,18 +196,51 @@ export class EnemyCar {
 
     if (this.y > 720) this.alive = false;
 
-    if (this.config.type === 'ram') {
-      this.updateRamAI(dt, playerX, playerY);
-    } else if (this.config.type === 'armored') {
-      this.updateArmoredAI(dt, playerX, playerY);
-    } else if (this.config.type === 'patrol') {
-      this.updatePatrolAI(dt, playerX);
+    // AI lateral motion — suspended while a fresh bump is sliding the enemy.
+    // (Otherwise armored types would fight back against every shove via their
+    // lane-lock and the bump-off-road loop becomes impossibly slow.)
+    if (Math.abs(this.bumpVx) < BUMP_AI_SUPPRESS) {
+      if (this.config.type === 'ram') {
+        this.updateRamAI(dt, playerX, playerY);
+      } else if (this.config.type === 'armored' || this.config.type === 'enforcer') {
+        // Both share the lane-blocker behavior — enforcer is just smaller/faster cruise.
+        this.updateArmoredAI(dt, playerX, playerY);
+      } else if (this.config.type === 'patrol') {
+        this.updatePatrolAI(dt, playerX);
+      }
+      // Shooter AI handled by EnemySpawner (needs projectile spawning)
     }
-    // Shooter AI handled by EnemySpawner (needs projectile spawning)
 
+    // Apply bump impulse and decay it linearly toward zero
+    this.x += this.bumpVx * dt;
+    if (this.bumpVx > 0) {
+      this.bumpVx = Math.max(0, this.bumpVx - BUMP_FRICTION * dt);
+    } else if (this.bumpVx < 0) {
+      this.bumpVx = Math.min(0, this.bumpVx + BUMP_FRICTION * dt);
+    }
+    if (this.bumpCooldown > 0) {
+      this.bumpCooldown = Math.max(0, this.bumpCooldown - dt);
+    }
+
+    // Road clamp — only when the enemy isn't actively being shoved. Releasing
+    // the clamp during a bump is what lets a hard side-swipe carry the enemy
+    // fully off the road instead of wedging them at the edge. The off-road
+    // kill check itself happens up in SpeedRacerGame after spawner.update.
     const halfW = this.config.width / 2;
-    if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
-    else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+    if (Math.abs(this.bumpVx) < BUMP_AI_SUPPRESS) {
+      if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
+      else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+    }
+  }
+
+  // Side-swipe impulse from SpeedRacerGame. Applied force is divided by the
+  // type's bumpResistance, so a soft ram skids a lot from the same hit that
+  // barely nudges a SWAT truck. Cooldown prevents stacking from successive
+  // overlap frames before the slide separates the bodies.
+  applyBump(forceVx: number): void {
+    if (this.bumpCooldown > 0) return;
+    this.bumpVx += forceVx / this.config.bumpResistance;
+    this.bumpCooldown = BUMP_COOLDOWN;
   }
 
   private updateRamAI(dt: number, playerX: number, playerY: number): void {
@@ -273,6 +347,7 @@ export class EnemyCar {
 
     if (c.type === 'ram') this.drawRamCar(ctx, x, y, w, h, lockFlash);
     else if (c.type === 'shooter') this.drawShooterCar(ctx, x, y, w, h);
+    else if (c.type === 'enforcer') this.drawEnforcerCar(ctx, x, y, w, h);
     else if (c.type === 'armored') this.drawArmoredCar(ctx, x, y, w, h);
     else {
       // Patrol falls back to the old rounded-rect — only spawns on water anyway
@@ -583,6 +658,114 @@ export class EnemyCar {
     ctx.fillRect(x + w - 14, y + h - 4, 8, 2);
   }
 
+  // --- Enforcer sedan. Sleek black armored Mercedes-style coupe: long hood,
+  // raked windshield, chrome trim, tinted glass, low stance. Bulletproof but
+  // bumpable with momentum (handled in SpeedRacerGame collision).
+  private drawEnforcerCar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Body — sedan silhouette, slight bow taper, rounded corners
+    ctx.fillStyle = c.color;
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + 4);
+    ctx.lineTo(x + w - 4, y + 4);
+    ctx.arcTo(x + w, y + 4, x + w, y + 12, 4);
+    ctx.lineTo(x + w, y + h - 4);
+    ctx.arcTo(x + w, y + h, x + w - 4, y + h, 4);
+    ctx.lineTo(x + 4, y + h);
+    ctx.arcTo(x, y + h, x, y + h - 4, 4);
+    ctx.lineTo(x, y + 12);
+    ctx.arcTo(x, y + 4, x + 4, y + 4, 4);
+    ctx.closePath();
+    ctx.fill();
+
+    // Long hood — slightly raised charcoal panel up front
+    ctx.fillStyle = '#0a0a0a';
+    this.roundRect(ctx, x + 6, y + 4, w - 12, h * 0.32, 3);
+    ctx.fill();
+    // Hood centerline crease
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 6);
+    ctx.lineTo(cx, y + h * 0.34);
+    ctx.stroke();
+
+    // Chrome grille — narrow horizontal slat at the bow
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 10, y + 7, w - 20, 2);
+    // Chrome emblem dot in the center of the grille
+    ctx.beginPath();
+    ctx.arc(cx, y + 12, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Headlights — narrow rectangular slits (LED-style)
+    ctx.fillStyle = '#FFE066';
+    ctx.fillRect(x + 5, y + 5, 8, 2);
+    ctx.fillRect(x + w - 13, y + 5, 8, 2);
+
+    // Raked windshield — dark tinted glass with cyan reflection band
+    ctx.fillStyle = '#050510';
+    ctx.beginPath();
+    ctx.moveTo(x + 8, y + h * 0.36);
+    ctx.lineTo(x + w - 8, y + h * 0.36);
+    ctx.lineTo(x + w - 10, y + h * 0.5);
+    ctx.lineTo(x + 10, y + h * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(120,200,255,0.22)';
+    ctx.fillRect(x + 10, y + h * 0.38, w - 20, 3);
+
+    // Roof — slightly inset darker panel
+    ctx.fillStyle = '#0d0d0d';
+    this.roundRect(ctx, x + 8, y + h * 0.5, w - 16, h * 0.18, 3);
+    ctx.fill();
+
+    // Rear window — mirror the windshield, smaller
+    ctx.fillStyle = '#050510';
+    ctx.beginPath();
+    ctx.moveTo(x + 10, y + h * 0.68);
+    ctx.lineTo(x + w - 10, y + h * 0.68);
+    ctx.lineTo(x + w - 8, y + h * 0.78);
+    ctx.lineTo(x + 8, y + h * 0.78);
+    ctx.closePath();
+    ctx.fill();
+
+    // Chrome side trim — thin strips along each flank
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 1, y + h * 0.5, 2, h * 0.28);
+    ctx.fillRect(x + w - 3, y + h * 0.5, 2, h * 0.28);
+
+    // Door seam — vertical line at mid-body
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x + 4, y + h * 0.55);
+    ctx.lineTo(x + 4, y + h * 0.78);
+    ctx.moveTo(x + w - 4, y + h * 0.55);
+    ctx.lineTo(x + w - 4, y + h * 0.78);
+    ctx.stroke();
+
+    // Trunk — short panel at the rear with a subtle seam
+    ctx.strokeStyle = '#3a3a3a';
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + h - 14);
+    ctx.lineTo(x + w - 6, y + h - 14);
+    ctx.stroke();
+
+    // Tail lights — sleek red strips
+    ctx.fillStyle = '#FF1530';
+    ctx.fillRect(x + 4, y + h - 5, w * 0.35, 2);
+    ctx.fillRect(x + w - 4 - w * 0.35, y + h - 5, w * 0.35, 2);
+  }
+
   private renderJetboat(ctx: CanvasRenderingContext2D): void {
     const c = this.config;
     const w = c.width;
@@ -613,6 +796,7 @@ export class EnemyCar {
 
     if (c.type === 'ram') this.drawRamBoat(ctx, x, y, w, h, lockFlash);
     else if (c.type === 'shooter') this.drawShooterBoat(ctx, x, y, w, h);
+    else if (c.type === 'enforcer') this.drawEnforcerBoat(ctx, x, y, w, h);
     else if (c.type === 'armored') this.drawArmoredBoat(ctx, x, y, w, h);
     else if (c.type === 'patrol') this.drawPatrolBoat(ctx, x, y, w, h);
 
@@ -821,6 +1005,66 @@ export class EnemyCar {
     // Stern plate
     ctx.fillStyle = '#1a1a2e';
     ctx.fillRect(x + 6, y + h - 5, w - 12, 5);
+  }
+
+  // --- Enforcer-class patrol cruiser. Sleek black armored boat with chrome
+  // trim mirroring the road sedan. Bulletproof but bumpable with momentum.
+  private drawEnforcerBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Hull — black, pointed bow
+    ctx.fillStyle = c.color;
+    this.jetboatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Chrome rub-rail running the length of each gunwale
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 1, y + 18, 2, h - 26);
+    ctx.fillRect(x + w - 3, y + 18, 2, h - 26);
+
+    // Foredeck — slightly lighter charcoal panel
+    ctx.fillStyle = '#0a0a0a';
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 4);
+    ctx.lineTo(x + w - 6, y + h * 0.28);
+    ctx.lineTo(x + 6, y + h * 0.28);
+    ctx.closePath();
+    ctx.fill();
+
+    // Chrome bow accent
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(cx - 1, y + 6, 2, 8);
+
+    // Pilothouse — low-profile dark cabin with raked tinted windshield
+    ctx.fillStyle = '#050510';
+    this.roundRect(ctx, x + 8, y + h * 0.36, w - 16, h * 0.32, 3);
+    ctx.fill();
+    // Cyan reflection band on the windshield
+    ctx.fillStyle = 'rgba(120,200,255,0.3)';
+    ctx.fillRect(x + 10, y + h * 0.4, w - 20, 3);
+    // Chrome window frame
+    ctx.strokeStyle = c.accentColor;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x + 8, y + h * 0.36, w - 16, h * 0.32);
+
+    // Aft deck — thin chrome rail
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 10, y + h * 0.74, w - 20, 1.5);
+
+    // Stern light strip — red
+    ctx.fillStyle = '#FF1530';
+    ctx.fillRect(x + 8, y + h - 4, w - 16, 1.5);
+
+    // Stern plate
+    ctx.fillStyle = '#1a1a2e';
+    ctx.fillRect(x + 6, y + h - 3, w - 12, 3);
   }
 
   // --- Patrol hydrofoil. Sleek, minimalist, twin-hulled look. The sine-weave

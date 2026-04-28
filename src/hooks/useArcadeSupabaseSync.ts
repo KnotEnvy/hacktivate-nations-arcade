@@ -348,6 +348,7 @@ export function useArcadeSupabaseSync({
     let mounted = true;
     if (!session) {
       setSupabaseService(null);
+      setIsAccountHydrating(false);
       return () => {
         mounted = false;
       };
@@ -365,6 +366,9 @@ export function useArcadeSupabaseSync({
       } catch (error) {
         console.warn('Supabase unavailable; staying offline:', error);
         setSupabaseService(null);
+        if (mounted) {
+          setIsAccountHydrating(false);
+        }
       }
     };
 
