@@ -1,4 +1,4 @@
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from '../systems/RoadProfile';
 
 // Two-tone palettes give civilians readable personality without the enemy-car
 // palette. Body + trim + driver silhouette color; trim reads as roof/skirt.
@@ -28,10 +28,12 @@ export class Civilian {
   readonly palette: CivilianPalette;
   readonly roofRack: boolean;
   readonly signalPhase: number; // randomized so not every civ blinks in sync
+  private roadProfile: RoadProfile;
 
-  constructor(x: number, y: number) {
+  constructor(x: number, y: number, roadProfile: RoadProfile) {
     this.x = x;
     this.y = y;
+    this.roadProfile = roadProfile;
     this.palette = CIVILIAN_PALETTES[Math.floor(Math.random() * CIVILIAN_PALETTES.length)];
     this.roofRack = Math.random() < 0.25;
     this.signalPhase = Math.random() * Math.PI * 2;
@@ -44,8 +46,9 @@ export class Civilian {
     if (this.y > 720) this.alive = false;
 
     const halfW = this.width / 2;
-    if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
-    else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+    const shape = this.roadProfile.shapeAtScreen(this.y);
+    if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+    else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
   }
 
   getBounds(): { x: number; y: number; w: number; h: number } {

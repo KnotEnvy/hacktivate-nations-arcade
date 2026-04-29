@@ -1,4 +1,4 @@
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from '../systems/RoadProfile';
 
 export type EnemyType = 'ram' | 'shooter' | 'enforcer' | 'armored' | 'patrol';
 export type EnemyVisual = 'car' | 'jetboat';
@@ -157,8 +157,15 @@ export class EnemyCar {
   // Bump physics — see BUMP_FRICTION / BUMP_COOLDOWN above
   bumpVx = 0;
   private bumpCooldown = 0;
+  private roadProfile: RoadProfile;
 
-  constructor(type: EnemyType, x: number, y: number, visual: EnemyVisual = 'car') {
+  constructor(
+    type: EnemyType,
+    x: number,
+    y: number,
+    roadProfile: RoadProfile,
+    visual: EnemyVisual = 'car',
+  ) {
     this.config = ENEMY_CONFIGS[type];
     this.x = x;
     this.y = y;
@@ -166,6 +173,7 @@ export class EnemyCar {
     this.visual = visual;
     this.forwardSpeed = this.config.forwardSpeed;
     this.weaveCenterX = x;
+    this.roadProfile = roadProfile;
   }
 
   update(dt: number, playerSpeed: number, playerX: number, playerY: number): void {
@@ -228,8 +236,9 @@ export class EnemyCar {
     // kill check itself happens up in SpeedRacerGame after spawner.update.
     const halfW = this.config.width / 2;
     if (Math.abs(this.bumpVx) < BUMP_AI_SUPPRESS) {
-      if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
-      else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+      const shape = this.roadProfile.shapeAtScreen(this.y);
+      if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+      else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
     }
   }
 
@@ -274,10 +283,15 @@ export class EnemyCar {
     const distY = playerY - this.y;
     if (distY > 420) return;
 
-    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
-    const playerLane = Math.floor((playerX - ROAD.X_MIN) / laneWidth);
-    const lane = Math.max(0, Math.min(ROAD.LANE_COUNT - 1, playerLane));
-    const targetX = ROAD.X_MIN + laneWidth * (lane + 0.5);
+    // Lane geometry is queried at the player's row so the blocker matches the
+    // road the player is currently driving on (relevant once dynamic-width
+    // sections land — the player's lane count may differ from the enemy's).
+    const playerShape = this.roadProfile.shapeAtPlayer();
+    const laneCount = this.roadProfile.laneCountAtScreen(playerY);
+    const laneWidth = (playerShape.xMax - playerShape.xMin) / laneCount;
+    const playerLane = Math.floor((playerX - playerShape.xMin) / laneWidth);
+    const lane = Math.max(0, Math.min(laneCount - 1, playerLane));
+    const targetX = this.roadProfile.laneCenterAtScreen(playerY, lane);
 
     const dx = targetX - this.x;
     if (Math.abs(dx) < 4) return; // deadband — avoid jitter when parked in lane
@@ -291,9 +305,13 @@ export class EnemyCar {
     const centerDrift = (playerX - this.weaveCenterX) * 0.9 * dt;
     this.weaveCenterX += centerDrift;
     const halfW = this.config.width / 2;
-    if (this.weaveCenterX - halfW < ROAD.X_MIN + 40) this.weaveCenterX = ROAD.X_MIN + 40 + halfW;
-    else if (this.weaveCenterX + halfW > ROAD.X_MAX - 40) {
-      this.weaveCenterX = ROAD.X_MAX - 40 - halfW;
+    const shape = this.roadProfile.shapeAtScreen(this.y);
+    // Inset 40px from each edge so the weave doesn't slap the player against the wall.
+    const innerMin = shape.xMin + 40;
+    const innerMax = shape.xMax - 40;
+    if (this.weaveCenterX - halfW < innerMin) this.weaveCenterX = innerMin + halfW;
+    else if (this.weaveCenterX + halfW > innerMax) {
+      this.weaveCenterX = innerMax - halfW;
     }
     this.x = this.weaveCenterX + Math.sin(this.weaveT) * 70;
   }

@@ -4,6 +4,8 @@
 // after the last one, progression loops back to the first.
 
 import type { SpawnerOptions } from '../systems/EnemySpawner';
+import type { RoadGeometry } from '../systems/RoadProfile';
+import { WidthChangeGeometry } from '../systems/RoadGeometries';
 
 export type SceneryStyle = 'trees' | 'buildings' | 'bridge' | 'mountain' | 'coast' | 'water' | 'ice';
 
@@ -65,6 +67,9 @@ export interface SectionDef {
   spawnerConfig: Partial<SpawnerOptions>;
   terrain?: Terrain; // affects player handling. Defaults to 'road'.
   weather?: WeatherEffect; // atmospheric overlay. Defaults to 'none'.
+  // v6 — optional dynamic road geometry. Omitted = straight rectangle (v5
+  // behavior). Per-section width-change / fork / bridge profiles plug in here.
+  roadGeometry?: RoadGeometry;
 }
 
 // === Section 1 — gentle intro. No armored, sparse traffic. ===
@@ -193,6 +198,12 @@ const STEEL_SPAN: SectionDef = {
 };
 
 // === Section 4 — alpine pass, dodge focus, civilian-heavy. ===
+// v6 — first dynamic-width section. Two narrow chokepoints (4 lanes -> 3 lanes)
+// give the mountain pass the natural "the road squeezes through a canyon"
+// feel. Tapers are 200 worldY units on each side; the narrow stretches sit
+// at full road width 360 (vs the 480 baseline). Lane count snaps from 4 to 3
+// at the narrow keyframes and back at the wide keyframes — see
+// WidthChangeGeometry for the snapping rule.
 const ALPINE_PASS: SectionDef = {
   id: 'alpine-pass',
   name: 'ALPINE PASS',
@@ -233,6 +244,18 @@ const ALPINE_PASS: SectionDef = {
     shooterBurstChance: 0.20,
     formationChance: 0.13,
   },
+  roadGeometry: new WidthChangeGeometry([
+    { worldY:    0, xMin: 160, xMax: 640, laneCount: 4 }, // wide entry
+    { worldY: 2200, xMin: 160, xMax: 640, laneCount: 4 }, // first taper begins
+    { worldY: 2400, xMin: 220, xMax: 580, laneCount: 3 }, // first narrow stretch
+    { worldY: 3000, xMin: 220, xMax: 580, laneCount: 3 }, // first taper-out begins
+    { worldY: 3200, xMin: 160, xMax: 640, laneCount: 4 }, // back to full width
+    { worldY: 5500, xMin: 160, xMax: 640, laneCount: 4 }, // second taper begins
+    { worldY: 5700, xMin: 220, xMax: 580, laneCount: 3 }, // second narrow stretch
+    { worldY: 6300, xMin: 220, xMax: 580, laneCount: 3 }, // second taper-out begins
+    { worldY: 6500, xMin: 160, xMax: 640, laneCount: 4 }, // back to full width
+    { worldY: 8000, xMin: 160, xMax: 640, laneCount: 4 }, // section end
+  ]),
 };
 
 // === Section 5 — sunset coast, balanced mid-late mix. ===

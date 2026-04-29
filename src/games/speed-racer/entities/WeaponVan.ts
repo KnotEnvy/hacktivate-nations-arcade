@@ -1,4 +1,4 @@
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from '../systems/RoadProfile';
 import { SecondaryWeaponType } from '../data/secondaryWeapons';
 
 export class WeaponVan {
@@ -12,11 +12,13 @@ export class WeaponVan {
   readonly forwardSpeed = 320; // World-frame, near player base speed
   readonly payload: SecondaryWeaponType;
   private pulseT = 0; // drives roof warning beacon rotation
+  private roadProfile: RoadProfile;
 
-  constructor(x: number, y: number, payload: SecondaryWeaponType) {
+  constructor(x: number, y: number, payload: SecondaryWeaponType, roadProfile: RoadProfile) {
     this.x = x;
     this.y = y;
     this.payload = payload;
+    this.roadProfile = roadProfile;
   }
 
   update(dt: number, playerSpeed: number): void {
@@ -26,8 +28,9 @@ export class WeaponVan {
     if (this.y > 720) this.alive = false;
 
     const halfW = this.width / 2;
-    if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
-    else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+    const shape = this.roadProfile.shapeAtScreen(this.y);
+    if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+    else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
   }
 
   // The dock zone is the rear (bottom) of the van — slightly inset

@@ -5,6 +5,7 @@
 
 import { BombChopper, Bomb, type ChopperDirection } from '../entities/BombChopper';
 import { Tank, TankShell, Drone, spawnDroneSwarm, spawnTank } from '../entities/BossEnemies';
+import type { RoadProfile } from './RoadProfile';
 
 const FIRST_BOSS_DELAY = 14;          // seconds after sectionsCleared >= 1
 const COOLDOWN_MIN = 38;
@@ -30,6 +31,11 @@ export class BossSpawner {
   private drones: Drone[] = [];
   private cooldown = FIRST_BOSS_DELAY;
   private bossesSpawned = 0;
+  private roadProfile: RoadProfile;
+
+  constructor(roadProfile: RoadProfile) {
+    this.roadProfile = roadProfile;
+  }
 
   reset(): void {
     this.choppers.length = 0;
@@ -106,9 +112,9 @@ export class BossSpawner {
       const direction: ChopperDirection = playerX > 200 ? 'left-to-right' : 'right-to-left';
       this.choppers.push(new BombChopper(direction));
     } else if (kind === 'tank') {
-      this.tanks.push(spawnTank());
+      this.tanks.push(spawnTank(this.roadProfile));
     } else {
-      this.drones.push(...spawnDroneSwarm());
+      this.drones.push(...spawnDroneSwarm(this.roadProfile));
     }
   }
 

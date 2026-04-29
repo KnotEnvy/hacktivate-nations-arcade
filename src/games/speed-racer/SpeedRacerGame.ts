@@ -2,6 +2,7 @@ import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { PlayerCar } from './entities/PlayerCar';
 import { RoadRenderer } from './systems/RoadRenderer';
+import { RoadProfile, StraightRoadGeometry } from './systems/RoadProfile';
 import { WeaponSystem } from './systems/WeaponSystem';
 import { EnemySpawner, SpawnerOptions } from './systems/EnemySpawner';
 import { SecondaryWeaponSystem } from './systems/SecondaryWeaponSystem';
@@ -19,7 +20,7 @@ import {
   DRONE_COIN_REWARD,
 } from './entities/BossEnemies';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
-import { PLAYER, ROAD } from './data/constants';
+import { PLAYER } from './data/constants';
 import { SECTIONS, getSection, TERRAIN_HANDLING, type SectionDef } from './data/sections';
 
 interface AABB {
@@ -115,6 +116,11 @@ export class SpeedRacerGame extends BaseGame {
 
   private player!: PlayerCar;
   private road!: RoadRenderer;
+  private roadProfile!: RoadProfile;
+  // worldScroll snapshot at the start of the current section. RoadProfile uses
+  // it to convert absolute scroll into section-relative worldY so per-section
+  // geometry profiles can be defined in section-local units.
+  private sectionStartScroll = 0;
   private weapon!: WeaponSystem;
   private spawner!: EnemySpawner;
   private secondary!: SecondaryWeaponSystem;
@@ -181,15 +187,17 @@ export class SpeedRacerGame extends BaseGame {
   private sectionClearBonusLast = 0; // most recent bonus amount (for overlay text)
 
   protected onInit(): void {
-    this.player = new PlayerCar();
+    this.roadProfile = new RoadProfile();
+    this.sectionStartScroll = 0;
+    this.player = new PlayerCar(this.roadProfile);
     this.road = new RoadRenderer();
     this.weapon = new WeaponSystem();
-    this.spawner = new EnemySpawner();
+    this.spawner = new EnemySpawner(this.roadProfile);
     this.secondary = new SecondaryWeaponSystem();
     this.particles = new ParticleSystem();
     this.shake = new CameraShake();
-    this.boss = new BossSpawner();
-    this.terrainHazards = new TerrainHazardSystem();
+    this.boss = new BossSpawner(this.roadProfile);
+    this.terrainHazards = new TerrainHazardSystem(this.roadProfile);
     this.weather = new WeatherSystem();
     this.touch = new TouchControls();
     this.muzzleTimer = 0;
@@ -200,6 +208,7 @@ export class SpeedRacerGame extends BaseGame {
     this.currentSection = getSection(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
     this.applyTerrainHandling();
+    this.applyRoadProfile();
     this.armBanner(this.currentSection);
     this.distance = 0;
     this.maxSpeed = 0;
@@ -280,6 +289,7 @@ export class SpeedRacerGame extends BaseGame {
       this.player.setSecondary({ type: null, ammo: 0, maxAmmo: 0, cooldownPct: 0 });
     }
     this.road.update(this.player.speed, dt);
+    this.roadProfile.setScroll(this.road.getScroll());
 
     const firing = input.isKeyPressed('Space') || tc.fireHeld();
     const bulletsBefore = this.weapon.getProjectiles().filter((b) => b.alive).length;
@@ -331,12 +341,14 @@ export class SpeedRacerGame extends BaseGame {
     // Off-road bump kills — credit any enemy whose slide has carried it past
     // either road edge. Done immediately after spawner.update (before its
     // alive-filter on the next frame) so the kill is attributed to the player
-    // rather than just disappearing as scenery.
+    // rather than just disappearing as scenery. Profile is queried per enemy
+    // so dynamic-width sections measure "off the road" against the local edge.
     for (const enemy of this.spawner.getEnemies()) {
       if (!enemy.alive) continue;
       const halfW = enemy.config.width / 2;
-      const offLeft = enemy.x + halfW < ROAD.X_MIN - BUMP_OFF_ROAD_MARGIN;
-      const offRight = enemy.x - halfW > ROAD.X_MAX + BUMP_OFF_ROAD_MARGIN;
+      const shape = this.roadProfile.shapeAtScreen(enemy.y);
+      const offLeft = enemy.x + halfW < shape.xMin - BUMP_OFF_ROAD_MARGIN;
+      const offRight = enemy.x - halfW > shape.xMax + BUMP_OFF_ROAD_MARGIN;
       if (offLeft || offRight) {
         enemy.alive = false;
         this.enemiesDestroyed += 1;
@@ -454,6 +466,7 @@ export class SpeedRacerGame extends BaseGame {
     this.visitedSections.add(this.sectionIndex);
     this.spawner.configure(this.applyLapScaling(this.currentSection.spawnerConfig));
     this.applyTerrainHandling();
+    this.applyRoadProfile();
     this.armBanner(this.currentSection);
     // Guarantee a weapon van early in the next section so the reward loop
     // always pays out something tangible.
@@ -486,6 +499,16 @@ export class SpeedRacerGame extends BaseGame {
     this.player.setVisual(terrain === 'water' ? 'boat' : 'car');
     this.terrainHazards.setTerrain(terrain);
     this.weather.setWeather(this.currentSection.weather ?? 'none');
+  }
+
+  // Snapshot the scroll value at section start and install the section's road
+  // geometry on the live profile. Until per-section geometries are introduced
+  // in Step 2, every section reuses StraightRoadGeometry — behavior identical
+  // to v5, but every consumer now goes through the profile pipeline.
+  private applyRoadProfile(): void {
+    this.sectionStartScroll = this.road.getScroll();
+    const geometry = this.currentSection.roadGeometry ?? new StraightRoadGeometry();
+    this.roadProfile.setGeometry(geometry, this.sectionStartScroll);
   }
 
   private armBanner(section: SectionDef): void {
@@ -1015,7 +1038,7 @@ export class SpeedRacerGame extends BaseGame {
     const h = this.canvas.height;
     ctx.save();
     this.shake.apply(ctx);
-    this.road.render(ctx, w, h, this.currentSection.palette);
+    this.road.render(ctx, w, h, this.currentSection.palette, this.roadProfile);
     this.renderMotionLines(ctx, w, h);
     this.terrainHazards.render(ctx);
     this.secondary.render(ctx);
@@ -1531,6 +1554,8 @@ export class SpeedRacerGame extends BaseGame {
   }
 
   protected onRestart(): void {
+    this.roadProfile.reset();
+    this.sectionStartScroll = 0;
     this.player.reset();
     this.road.reset();
     this.weapon.reset();
@@ -1572,6 +1597,7 @@ export class SpeedRacerGame extends BaseGame {
     this.visitedSections.add(this.sectionIndex);
     this.spawner.configure(this.currentSection.spawnerConfig);
     this.applyTerrainHandling();
+    this.applyRoadProfile();
     this.armBanner(this.currentSection);
     this.lives = STARTING_LIVES;
     this.nextLifeBonusIndex = 0;

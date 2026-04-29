@@ -1,4 +1,5 @@
-import { PLAYER, ROAD } from '../data/constants';
+import { PLAYER } from '../data/constants';
+import type { RoadProfile } from '../systems/RoadProfile';
 import type { SecondaryWeaponType } from '../data/secondaryWeapons';
 
 export interface DirectionalInput {
@@ -43,14 +44,16 @@ export class PlayerCar {
 
   readonly width = PLAYER.WIDTH;
   readonly height = PLAYER.HEIGHT;
+  private roadProfile: RoadProfile;
 
-  constructor() {
-    this.x = ROAD.CENTER;
+  constructor(roadProfile: RoadProfile) {
+    this.roadProfile = roadProfile;
+    this.x = this.spawnX();
     this.y = PLAYER.Y;
   }
 
   reset(): void {
-    this.x = ROAD.CENTER;
+    this.x = this.spawnX();
     this.vx = 0;
     this.speed = PLAYER.BASE_SPEED;
     this.steerMul = 1;
@@ -89,6 +92,12 @@ export class PlayerCar {
     this.secondary = hint;
   }
 
+  // Center of the road at the player's row, used for spawn / reset.
+  private spawnX(): number {
+    const shape = this.roadProfile.shapeAtPlayer();
+    return (shape.xMin + shape.xMax) / 2;
+  }
+
   getBounds(): { x: number; y: number; w: number; h: number } {
     return {
       x: this.x - this.width / 2,
@@ -120,11 +129,12 @@ export class PlayerCar {
     this.x += this.vx * dt;
 
     const halfW = this.width / 2;
-    if (this.x - halfW < ROAD.X_MIN) {
-      this.x = ROAD.X_MIN + halfW;
+    const shape = this.roadProfile.shapeAtPlayer();
+    if (this.x - halfW < shape.xMin) {
+      this.x = shape.xMin + halfW;
       this.vx = 0;
-    } else if (this.x + halfW > ROAD.X_MAX) {
-      this.x = ROAD.X_MAX - halfW;
+    } else if (this.x + halfW > shape.xMax) {
+      this.x = shape.xMax - halfW;
       this.vx = 0;
     }
 

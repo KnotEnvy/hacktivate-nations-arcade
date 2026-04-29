@@ -7,7 +7,7 @@
 // Both types scroll with world-frame like ground hazards. Spawned by the
 // system based on the active terrain.
 
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from './RoadProfile';
 import type { Terrain } from '../data/sections';
 
 export type TerrainHazardType = 'ice_patch' | 'wake';
@@ -128,6 +128,11 @@ export class TerrainHazardSystem {
   private hazards: TerrainHazard[] = [];
   private spawnTimer = 3;
   private terrain: Terrain = 'road';
+  private roadProfile: RoadProfile;
+
+  constructor(roadProfile: RoadProfile) {
+    this.roadProfile = roadProfile;
+  }
 
   reset(): void {
     this.hazards = [];
@@ -156,9 +161,15 @@ export class TerrainHazardSystem {
   }
 
   private trySpawn(): void {
-    const x = ROAD.X_MIN + 30 + Math.random() * (ROAD.WIDTH - 60);
+    // Spawn slightly inset from each road edge so the hazard reads as
+    // "on the road" rather than peeking off the shoulder.
+    const HAZARD_SPAWN_SCREEN_Y = -60;
+    const shape = this.roadProfile.shapeAtScreen(HAZARD_SPAWN_SCREEN_Y);
+    const inset = 30;
+    const span = Math.max(0, shape.xMax - shape.xMin - inset * 2);
+    const x = shape.xMin + inset + Math.random() * span;
     const type: TerrainHazardType = this.terrain === 'ice' ? 'ice_patch' : 'wake';
-    this.hazards.push(new TerrainHazard(type, x, -60));
+    this.hazards.push(new TerrainHazard(type, x, HAZARD_SPAWN_SCREEN_Y));
   }
 
   getHazards(): TerrainHazard[] {

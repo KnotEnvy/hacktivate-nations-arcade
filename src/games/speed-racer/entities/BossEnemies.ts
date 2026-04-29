@@ -6,7 +6,7 @@
 // All share lightweight "alive / update / render / getBounds / takeHit" shapes
 // so SpeedRacerGame can resolve collisions uniformly.
 
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from '../systems/RoadProfile';
 
 export const TANK_SCORE_REWARD = 2500;
 export const TANK_COIN_REWARD = 55;
@@ -48,10 +48,12 @@ export class Tank {
   private trackT = 0;
   // Counts down after each shell fires. Drives hull lurch + muzzle puff.
   private recoilT = 0;
+  private roadProfile: RoadProfile;
 
-  constructor(x: number, y: number) {
+  constructor(x: number, y: number, roadProfile: RoadProfile) {
     this.x = x;
     this.y = y;
+    this.roadProfile = roadProfile;
   }
 
   update(
@@ -90,8 +92,9 @@ export class Tank {
     this.x += Math.max(-maxLat, Math.min(maxLat, dx));
 
     const halfW = TANK_WIDTH / 2;
-    if (this.x - halfW < ROAD.X_MIN) this.x = ROAD.X_MIN + halfW;
-    else if (this.x + halfW > ROAD.X_MAX) this.x = ROAD.X_MAX - halfW;
+    const shape = this.roadProfile.shapeAtScreen(this.y);
+    if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+    else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
 
     // Fire shells when on-screen
     if (this.y > 40) {
@@ -454,24 +457,36 @@ export class Drone {
 
 // Spawn helpers — used by BossSpawner
 
-export function spawnDroneSwarm(): Drone[] {
+// Drones spawn at the top of the screen, so we query the road shape near the
+// horizon. With dynamic-width sections, the swarm spreads across whatever the
+// road looks like at that row — narrower roads naturally pack tighter.
+const DRONE_SPAWN_SCREEN_Y = 0;
+// Tanks spawn above the visible road; use the same horizon query for a
+// consistent spread.
+const TANK_SPAWN_SCREEN_Y = -TANK_HEIGHT / 2;
+
+export function spawnDroneSwarm(roadProfile: RoadProfile): Drone[] {
   const count = 4;
   const drones: Drone[] = [];
-  const laneWidth = ROAD.WIDTH / count;
+  const shape = roadProfile.shapeAtScreen(DRONE_SPAWN_SCREEN_Y);
+  const width = shape.xMax - shape.xMin;
+  const laneWidth = width / count;
   // Randomize which swarm member is the leader so the formation reads
   // differently each spawn; purely cosmetic.
   const leaderIdx = Math.floor(Math.random() * count);
   for (let i = 0; i < count; i++) {
-    const x = ROAD.X_MIN + laneWidth * (i + 0.5);
+    const x = shape.xMin + laneWidth * (i + 0.5);
     const hoverY = DRONE_HOVER_Y_MIN + (i % 2) * 40;
     drones.push(new Drone(x, hoverY, i === leaderIdx));
   }
   return drones;
 }
 
-export function spawnTank(): Tank {
+export function spawnTank(roadProfile: RoadProfile): Tank {
   // Spawn above the road, slightly offset from center so it drifts in
-  const startX = ROAD.X_MIN + ROAD.WIDTH * (0.3 + Math.random() * 0.4);
-  return new Tank(startX, -TANK_HEIGHT / 2);
+  const shape = roadProfile.shapeAtScreen(TANK_SPAWN_SCREEN_Y);
+  const width = shape.xMax - shape.xMin;
+  const startX = shape.xMin + width * (0.3 + Math.random() * 0.4);
+  return new Tank(startX, TANK_SPAWN_SCREEN_Y, roadProfile);
 }
 

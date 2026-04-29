@@ -3,7 +3,7 @@ import { Civilian } from '../entities/Civilian';
 import { Projectile } from '../entities/Projectile';
 import { WeaponVan } from '../entities/WeaponVan';
 import { pickRandomSecondary } from '../data/secondaryWeapons';
-import { ROAD } from '../data/constants';
+import type { RoadProfile } from './RoadProfile';
 
 const SPAWN_Y = -80;
 
@@ -39,6 +39,11 @@ export class EnemySpawner {
   private spawnTimer = 0.8;
   private civTimer = 1.4;
   private vanTimer = 18;
+  private roadProfile: RoadProfile;
+
+  constructor(roadProfile: RoadProfile) {
+    this.roadProfile = roadProfile;
+  }
   private opts: SpawnerOptions = {
     spawnInterval: 1.6,
     enemyTypes: ['ram'],
@@ -185,14 +190,21 @@ export class EnemySpawner {
     });
   }
 
+  private spawnLaneWidth(): number {
+    const shape = this.roadProfile.shapeAtScreen(SPAWN_Y);
+    const laneCount = this.roadProfile.laneCountAtScreen(SPAWN_Y);
+    return (shape.xMax - shape.xMin) / laneCount;
+  }
+
   private trySpawnEnemy(): void {
-    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
+    const laneCount = this.roadProfile.laneCountAtScreen(SPAWN_Y);
+    const laneWidth = this.spawnLaneWidth();
     for (let attempt = 0; attempt < 4; attempt++) {
-      const lane = Math.floor(Math.random() * ROAD.LANE_COUNT);
-      const x = ROAD.X_MIN + laneWidth * (lane + 0.5);
+      const lane = Math.floor(Math.random() * laneCount);
+      const x = this.roadProfile.laneCenterAtScreen(SPAWN_Y, lane);
       if (!this.isLaneBlocked(x, laneWidth)) {
         const type = this.pickType();
-        const enemy = new EnemyCar(type, x, SPAWN_Y, this.opts.enemyVisual);
+        const enemy = new EnemyCar(type, x, SPAWN_Y, this.roadProfile, this.opts.enemyVisual);
         if (type === 'shooter' && Math.random() < this.opts.shooterBurstChance) {
           enemy.burstCount = 3;
         }
@@ -212,8 +224,12 @@ export class EnemySpawner {
     };
     if (!hasType('ram')) return false;
 
-    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
-    const laneX = (lane: number): number => ROAD.X_MIN + laneWidth * (lane + 0.5);
+    const laneCount = this.roadProfile.laneCountAtScreen(SPAWN_Y);
+    // Formations are authored for a 4-lane road; skip on narrower stretches
+    // rather than picking lane indices out of bounds.
+    if (laneCount < 4) return false;
+    const laneWidth = this.spawnLaneWidth();
+    const laneX = (lane: number): number => this.roadProfile.laneCenterAtScreen(SPAWN_Y, lane);
 
     type Slot = { x: number; y: number; type: EnemyType };
     let slots: Slot[];
@@ -243,29 +259,36 @@ export class EnemySpawner {
       if (this.isLaneBlocked(s.x, laneWidth)) return false;
     }
     for (const s of slots) {
-      this.enemies.push(new EnemyCar(s.type, s.x, s.y, this.opts.enemyVisual));
+      this.enemies.push(new EnemyCar(s.type, s.x, s.y, this.roadProfile, this.opts.enemyVisual));
     }
     return true;
   }
 
   private trySpawnCivilian(): void {
-    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
+    const laneCount = this.roadProfile.laneCountAtScreen(SPAWN_Y);
+    const laneWidth = this.spawnLaneWidth();
     for (let attempt = 0; attempt < 4; attempt++) {
-      const lane = Math.floor(Math.random() * ROAD.LANE_COUNT);
-      const x = ROAD.X_MIN + laneWidth * (lane + 0.5);
+      const lane = Math.floor(Math.random() * laneCount);
+      const x = this.roadProfile.laneCenterAtScreen(SPAWN_Y, lane);
       if (!this.isLaneBlocked(x, laneWidth)) {
-        this.civilians.push(new Civilian(x, SPAWN_Y));
+        this.civilians.push(new Civilian(x, SPAWN_Y, this.roadProfile));
         return;
       }
     }
   }
 
   private trySpawnVan(): void {
-    // Vans spawn in middle two lanes for easier docking
-    const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
-    const lane = 1 + Math.floor(Math.random() * (ROAD.LANE_COUNT - 2));
-    const x = ROAD.X_MIN + laneWidth * (lane + 0.5);
-    this.vans.push(new WeaponVan(x, SPAWN_Y - 60, pickRandomSecondary()));
+    // Vans spawn in middle two lanes for easier docking. On narrower roads
+    // (laneCount < 3) fall back to the single center lane.
+    const laneCount = this.roadProfile.laneCountAtScreen(SPAWN_Y);
+    let lane: number;
+    if (laneCount >= 3) {
+      lane = 1 + Math.floor(Math.random() * (laneCount - 2));
+    } else {
+      lane = Math.floor(laneCount / 2);
+    }
+    const x = this.roadProfile.laneCenterAtScreen(SPAWN_Y, lane);
+    this.vans.push(new WeaponVan(x, SPAWN_Y - 60, pickRandomSecondary(), this.roadProfile));
   }
 
   private pickType(): EnemyType {

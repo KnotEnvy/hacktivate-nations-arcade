@@ -1,5 +1,6 @@
-import { ROAD, SCENERY } from '../data/constants';
+import { SCENERY } from '../data/constants';
 import type { SectionPalette } from '../data/sections';
+import type { RoadProfile, RoadShape } from './RoadProfile';
 
 const BUILDING_BLOCK_HEIGHT = 200; // vertical spacing between building rows
 
@@ -18,14 +19,20 @@ export class RoadRenderer {
     return this.worldScroll;
   }
 
-  render(ctx: CanvasRenderingContext2D, w: number, h: number, palette: SectionPalette): void {
+  render(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    palette: SectionPalette,
+    profile: RoadProfile,
+  ): void {
     this.renderBackground(ctx, w, h, palette);
     this.renderHorizonGlow(ctx, w, h, palette);
     this.renderScenery(ctx, w, h, palette);
-    this.renderRoadBody(ctx, w, h, palette);
-    this.renderRoadEdges(ctx, h, palette);
-    this.renderLaneMarkings(ctx, h, palette);
-    this.renderRoadsidePosts(ctx, h, palette);
+    this.renderRoadBody(ctx, w, h, palette, profile);
+    this.renderRoadEdges(ctx, h, palette, profile);
+    this.renderLaneMarkings(ctx, h, palette, profile);
+    this.renderRoadsidePosts(ctx, h, palette, profile);
   }
 
   // -- Layers ------------------------------------------------------------
@@ -63,21 +70,63 @@ export class RoadRenderer {
     _w: number,
     h: number,
     palette: SectionPalette,
+    profile: RoadProfile,
   ): void {
-    // Subtle horizontal gradient for depth — darker near edges, lighter in the middle
-    const grad = ctx.createLinearGradient(ROAD.X_MIN, 0, ROAD.X_MAX, 0);
-    grad.addColorStop(0, palette.roadShadeColor);
-    grad.addColorStop(0.15, palette.roadColor);
-    grad.addColorStop(0.85, palette.roadColor);
-    grad.addColorStop(1, palette.roadShadeColor);
-    ctx.fillStyle = grad;
-    ctx.fillRect(ROAD.X_MIN, 0, ROAD.WIDTH, h);
+    // Fast path: uniform geometry collapses to a single fillRect — pixel
+    // identical to v5. The slow path walks per-row strips so dynamic-width
+    // sections can shape the road body to the live profile.
+    if (profile.isUniform()) {
+      const shape = profile.shapeAtPlayer();
+      const grad = ctx.createLinearGradient(shape.xMin, 0, shape.xMax, 0);
+      grad.addColorStop(0, palette.roadShadeColor);
+      grad.addColorStop(0.15, palette.roadColor);
+      grad.addColorStop(0.85, palette.roadColor);
+      grad.addColorStop(1, palette.roadShadeColor);
+      ctx.fillStyle = grad;
+      ctx.fillRect(shape.xMin, 0, shape.xMax - shape.xMin, h);
+      return;
+    }
+    this.renderRoadBodyStripped(ctx, h, palette, profile);
+  }
+
+  // Slow path. Walks screen rows, queries the profile per row, and accumulates
+  // contiguous runs of identical shape into a single fillRect per run so the
+  // straight-rectangle case still collapses to one draw. A dynamic-width
+  // section will produce as many runs as it has unique row shapes.
+  private renderRoadBodyStripped(
+    ctx: CanvasRenderingContext2D,
+    h: number,
+    palette: SectionPalette,
+    profile: RoadProfile,
+  ): void {
+    let runStart = 0;
+    let runShape: RoadShape | null = null;
+    const flush = (endY: number): void => {
+      if (!runShape) return;
+      const grad = ctx.createLinearGradient(runShape.xMin, 0, runShape.xMax, 0);
+      grad.addColorStop(0, palette.roadShadeColor);
+      grad.addColorStop(0.15, palette.roadColor);
+      grad.addColorStop(0.85, palette.roadColor);
+      grad.addColorStop(1, palette.roadShadeColor);
+      ctx.fillStyle = grad;
+      ctx.fillRect(runShape.xMin, runStart, runShape.xMax - runShape.xMin, endY - runStart);
+    };
+    for (let y = 0; y < h; y++) {
+      const shape = profile.shapeAtScreen(y);
+      if (!runShape || shape.xMin !== runShape.xMin || shape.xMax !== runShape.xMax) {
+        flush(y);
+        runStart = y;
+        runShape = shape;
+      }
+    }
+    flush(h);
   }
 
   private renderRoadEdges(
     ctx: CanvasRenderingContext2D,
     h: number,
     palette: SectionPalette,
+    profile: RoadProfile,
   ): void {
     ctx.save();
     ctx.strokeStyle = palette.edgeColor;
@@ -85,10 +134,35 @@ export class RoadRenderer {
     ctx.shadowColor = palette.edgeGlowColor;
     ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.moveTo(ROAD.X_MIN, 0);
-    ctx.lineTo(ROAD.X_MIN, h);
-    ctx.moveTo(ROAD.X_MAX, 0);
-    ctx.lineTo(ROAD.X_MAX, h);
+    if (profile.isUniform()) {
+      const shape = profile.shapeAtPlayer();
+      ctx.moveTo(shape.xMin, 0);
+      ctx.lineTo(shape.xMin, h);
+      ctx.moveTo(shape.xMax, 0);
+      ctx.lineTo(shape.xMax, h);
+    } else {
+      // Per-row trace — the stroke follows whatever the profile draws.
+      let started = false;
+      for (let y = 0; y <= h; y++) {
+        const shape = profile.shapeAtScreen(y);
+        if (!started) {
+          ctx.moveTo(shape.xMin, y);
+          started = true;
+        } else {
+          ctx.lineTo(shape.xMin, y);
+        }
+      }
+      let startedRight = false;
+      for (let y = 0; y <= h; y++) {
+        const shape = profile.shapeAtScreen(y);
+        if (!startedRight) {
+          ctx.moveTo(shape.xMax, y);
+          startedRight = true;
+        } else {
+          ctx.lineTo(shape.xMax, y);
+        }
+      }
+    }
     ctx.stroke();
     ctx.restore();
   }
@@ -97,15 +171,73 @@ export class RoadRenderer {
     ctx: CanvasRenderingContext2D,
     h: number,
     palette: SectionPalette,
+    profile: RoadProfile,
   ): void {
-    const laneStep = ROAD.WIDTH / ROAD.LANE_COUNT;
-    for (let i = 1; i < ROAD.LANE_COUNT; i++) {
-      const x = ROAD.X_MIN + laneStep * i;
-      const isCenter = i === ROAD.LANE_COUNT / 2;
-      if (isCenter) {
-        this.drawDashedLine(ctx, x, h, 30, 22, palette.centerLineColor, 3);
-      } else {
-        this.drawDashedLine(ctx, x, h, 24, 28, palette.laneLineColor, 2);
+    if (profile.isUniform()) {
+      const shape = profile.shapeAtPlayer();
+      const laneCount = profile.laneCountAtScreen(0);
+      const width = shape.xMax - shape.xMin;
+      const laneStep = width / laneCount;
+      for (let i = 1; i < laneCount; i++) {
+        const x = shape.xMin + laneStep * i;
+        const isCenter = i === laneCount / 2;
+        if (isCenter) {
+          this.drawDashedLine(ctx, x, h, 30, 22, palette.centerLineColor, 3);
+        } else {
+          this.drawDashedLine(ctx, x, h, 24, 28, palette.laneLineColor, 2);
+        }
+      }
+      return;
+    }
+    // Slow path defers to Step 2; for dynamic width the per-row lane trace
+    // walks each lane index and threads the dashed pattern along its center.
+    this.drawLaneMarkingsStripped(ctx, h, palette, profile);
+  }
+
+  // Per-row rasterization. Each screen row queries its own laneCount and
+  // shape; lane lines naturally appear/disappear when the geometry changes
+  // lane count across a taper. Two dash cycles are tracked because center
+  // lines use a longer dash than standard lane lines.
+  private drawLaneMarkingsStripped(
+    ctx: CanvasRenderingContext2D,
+    h: number,
+    palette: SectionPalette,
+    profile: RoadProfile,
+  ): void {
+    const standardDash = 24;
+    const standardCycle = standardDash + 28;
+    const centerDash = 30;
+    const centerCycle = centerDash + 22;
+    const standardOffset =
+      ((this.worldScroll % standardCycle) + standardCycle) % standardCycle;
+    const centerOffset =
+      ((this.worldScroll % centerCycle) + centerCycle) % centerCycle;
+
+    for (let y = 0; y < h; y++) {
+      const standardPhase =
+        ((y - standardOffset) % standardCycle + standardCycle) % standardCycle;
+      const centerPhase =
+        ((y - centerOffset) % centerCycle + centerCycle) % centerCycle;
+      const inStandardDash = standardPhase < standardDash;
+      const inCenterDash = centerPhase < centerDash;
+      if (!inStandardDash && !inCenterDash) continue;
+
+      const laneCount = profile.laneCountAtScreen(y);
+      if (laneCount < 2) continue;
+
+      const shape = profile.shapeAtScreen(y);
+      const laneStep = (shape.xMax - shape.xMin) / laneCount;
+
+      for (let i = 1; i < laneCount; i++) {
+        // Center marker only exists when there's an even number of lanes; odd
+        // counts (e.g. 3 lanes) have no true center, just two equal dividers.
+        const isCenter = laneCount % 2 === 0 && i === laneCount / 2;
+        if (isCenter && !inCenterDash) continue;
+        if (!isCenter && !inStandardDash) continue;
+        const x = shape.xMin + laneStep * i;
+        const w = isCenter ? 3 : 2;
+        ctx.fillStyle = isCenter ? palette.centerLineColor : palette.laneLineColor;
+        ctx.fillRect(Math.round(x - w / 2), y, w, 1);
       }
     }
   }
@@ -140,18 +272,20 @@ export class RoadRenderer {
     ctx: CanvasRenderingContext2D,
     h: number,
     palette: SectionPalette,
+    profile: RoadProfile,
   ): void {
     const offset =
       ((this.worldScroll % SCENERY.POST_SPACING) + SCENERY.POST_SPACING) %
       SCENERY.POST_SPACING;
     let y = offset - SCENERY.POST_SPACING;
     while (y < h) {
+      const shape = profile.shapeAtScreen(y);
       if (palette.sceneryStyle === 'buildings') {
-        this.drawStreetLamp(ctx, ROAD.X_MIN - 14, y, palette);
-        this.drawStreetLamp(ctx, ROAD.X_MAX + 6, y, palette);
+        this.drawStreetLamp(ctx, shape.xMin - 14, y, palette);
+        this.drawStreetLamp(ctx, shape.xMax + 6, y, palette);
       } else {
-        this.drawHighwayPost(ctx, ROAD.X_MIN - 12, y, palette);
-        this.drawHighwayPost(ctx, ROAD.X_MAX + 8, y, palette);
+        this.drawHighwayPost(ctx, shape.xMin - 12, y, palette);
+        this.drawHighwayPost(ctx, shape.xMax + 8, y, palette);
       }
       y += SCENERY.POST_SPACING;
     }
