@@ -15,14 +15,33 @@
 
 import { PLAYER, ROAD } from '../data/constants';
 
+// One drivable strip within a forked road. Each segment owns its lane count
+// so the spawner / armored AI / renderer can reason about the side they're on
+// independently (e.g., a 2-lane left side and a 2-lane right side after a
+// 4-lane road splits in half).
+export interface RoadSegment {
+  xMin: number;
+  xMax: number;
+  laneCount: number;
+}
+
 export interface RoadShape {
   // Outer drivable bounds. For forks (Step 3) these are the outer hull;
-  // simple consumers (missile despawn, off-road kill) can use these directly.
+  // simple consumers (missile despawn, off-road kill outer-edge check,
+  // roadside posts) can use these directly.
   xMin: number;
   xMax: number;
   // Optional: when present, the road is split into multiple drivable strips
-  // (forks). xMin/xMax above remain the outer hull bounds.
-  segments?: ReadonlyArray<{ xMin: number; xMax: number }>;
+  // (forks). xMin/xMax above remain the outer hull bounds. Fork-aware
+  // consumers (player segment clamp, spawner, divider visual) walk this
+  // array; fork-unaware consumers fall back to outer xMin/xMax.
+  segments?: ReadonlyArray<RoadSegment>;
+  // Optional: drivable shoulders just outside the main pavement. xMin/xMax
+  // remain the pavement bounds; shoulder.xMin <= xMin and shoulder.xMax >=
+  // xMax. Players can drive on shoulders with a handling penalty; enemies
+  // stay clamped to pavement (bumping them past pavement still credits
+  // off-road kill — shoulders are a player-tactical zone only).
+  shoulder?: { xMin: number; xMax: number };
 }
 
 // Pure geometry function — section-relative worldY in, road shape out.

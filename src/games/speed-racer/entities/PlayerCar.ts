@@ -1,6 +1,22 @@
 import { PLAYER } from '../data/constants';
-import type { RoadProfile } from '../systems/RoadProfile';
+import type { RoadProfile, RoadSegment } from '../systems/RoadProfile';
 import type { SecondaryWeaponType } from '../data/secondaryWeapons';
+
+// Nearest segment to x, by distance to the segment's center. Used at fork
+// entry to commit the player to a side without a barrier-collision penalty.
+function nearestSegmentIdx(segments: ReadonlyArray<RoadSegment>, x: number): number {
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < segments.length; i++) {
+    const center = (segments[i].xMin + segments[i].xMax) / 2;
+    const dist = Math.abs(x - center);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
 
 export interface DirectionalInput {
   isLeftPressed(): boolean;
@@ -23,12 +39,19 @@ export class PlayerCar {
   y: number;
   vx = 0;
   speed: number = PLAYER.BASE_SPEED;
-  // Handling multipliers — sections with water/ice terrain reduce traction.
+  // Section-baseline handling multipliers — set once per section by
+  // applyTerrainHandling (water/ice reduce traction). Per-frame modifiers
+  // (slip, shoulder) layer on top via slipping / onShoulder flags.
   private steerMul = 1;
   private decelMul = 1;
   // Transient slip override (ice patches). Multiplies decelMul toward zero so
   // steering damping nearly vanishes. Reset to false each frame by the game.
   private slipping = false;
+  // Step 5 — true while the player's body sits on a drivable shoulder
+  // (outside pavement xMin/xMax but inside shoulder bounds). Game ticks this
+  // each frame; player applies a multiplicative handling penalty on top of
+  // the section's baseline.
+  private onShoulder = false;
   private visual: PlayerVisual = 'car';
   private wakeT = 0; // accumulator for boat wake animation
   // Cosmetic damage tier — 0 pristine, 1 scorched, 2 critical. Driven by
@@ -45,6 +68,13 @@ export class PlayerCar {
   readonly width = PLAYER.WIDTH;
   readonly height = PLAYER.HEIGHT;
   private roadProfile: RoadProfile;
+  // Fork bookkeeping. -1 outside any fork; otherwise the index of the segment
+  // the player is currently committed to. Auto-assigned on the first frame a
+  // fork's segments appear; cleared the first frame they go away. SpeedRacerGame
+  // reads pendingDividerHit after player.update each frame and routes it
+  // through takeDamage so the damage funnel stays the single source of truth.
+  private currentSegmentIdx = -1;
+  pendingDividerHit = false;
 
   constructor(roadProfile: RoadProfile) {
     this.roadProfile = roadProfile;
@@ -59,12 +89,15 @@ export class PlayerCar {
     this.steerMul = 1;
     this.decelMul = 1;
     this.slipping = false;
+    this.onShoulder = false;
     this.visual = 'car';
     this.wakeT = 0;
     this.damageLevel = 0;
     this.damageT = 0;
     this.gunRecoilT = 0;
     this.secondary = { type: null, ammo: 0, maxAmmo: 0, cooldownPct: 0 };
+    this.currentSegmentIdx = -1;
+    this.pendingDividerHit = false;
   }
 
   setHandling(steerMul: number, decelMul: number): void {
@@ -74,6 +107,14 @@ export class PlayerCar {
 
   setSlipping(slipping: boolean): void {
     this.slipping = slipping;
+  }
+
+  setOnShoulder(onShoulder: boolean): void {
+    this.onShoulder = onShoulder;
+  }
+
+  isOnShoulder(): boolean {
+    return this.onShoulder;
   }
 
   setVisual(visual: PlayerVisual): void {
@@ -111,14 +152,22 @@ export class PlayerCar {
     const left = input.isLeftPressed();
     const right = input.isRightPressed();
 
-    const steer = PLAYER.STEER_ACCEL * this.steerMul * dt;
+    // Shoulder mode chips both axes: harder to start a turn (steer accel)
+    // and longer to settle (decel). Multiplied on top of the section's
+    // baseline so a shoulder on an icy section still feels icier than the
+    // pavement on the same section.
+    const shoulderSteerMul = this.onShoulder ? 0.65 : 1;
+    const shoulderDecelMul = this.onShoulder ? 0.55 : 1;
+
+    const steer = PLAYER.STEER_ACCEL * this.steerMul * shoulderSteerMul * dt;
     if (left && !right) {
       this.vx -= steer;
     } else if (right && !left) {
       this.vx += steer;
     } else {
       const slipFactor = this.slipping ? 0.08 : 1;
-      const decel = PLAYER.STEER_DECEL * this.decelMul * slipFactor * dt;
+      const decel =
+        PLAYER.STEER_DECEL * this.decelMul * shoulderDecelMul * slipFactor * dt;
       if (this.vx > 0) this.vx = Math.max(0, this.vx - decel);
       else if (this.vx < 0) this.vx = Math.min(0, this.vx + decel);
     }
@@ -130,12 +179,39 @@ export class PlayerCar {
 
     const halfW = this.width / 2;
     const shape = this.roadProfile.shapeAtPlayer();
-    if (this.x - halfW < shape.xMin) {
-      this.x = shape.xMin + halfW;
-      this.vx = 0;
-    } else if (this.x + halfW > shape.xMax) {
-      this.x = shape.xMax - halfW;
-      this.vx = 0;
+    const segments = shape.segments;
+    if (!segments || segments.length <= 1) {
+      // No fork — clamp to shoulder bounds if present, else pavement bounds.
+      this.currentSegmentIdx = -1;
+      this.pendingDividerHit = false;
+      const clampMin = shape.shoulder ? shape.shoulder.xMin : shape.xMin;
+      const clampMax = shape.shoulder ? shape.shoulder.xMax : shape.xMax;
+      if (this.x - halfW < clampMin) {
+        this.x = clampMin + halfW;
+        this.vx = 0;
+      } else if (this.x + halfW > clampMax) {
+        this.x = clampMax - halfW;
+        this.vx = 0;
+      }
+    } else {
+      // Inside a fork. First frame: auto-assign nearest segment with no
+      // damage penalty so entry feels forgiving. Subsequent frames: clamp to
+      // that segment and chip HP if the player tried to cross the divider.
+      if (this.currentSegmentIdx < 0 || this.currentSegmentIdx >= segments.length) {
+        this.currentSegmentIdx = nearestSegmentIdx(segments, this.x);
+      }
+      const seg = segments[this.currentSegmentIdx];
+      if (this.x - halfW < seg.xMin) {
+        this.x = seg.xMin + halfW;
+        this.vx = 0;
+        // Inner edge (divider on the left) → barrier hit.
+        if (this.currentSegmentIdx > 0) this.pendingDividerHit = true;
+      } else if (this.x + halfW > seg.xMax) {
+        this.x = seg.xMax - halfW;
+        this.vx = 0;
+        // Inner edge (divider on the right) → barrier hit.
+        if (this.currentSegmentIdx < segments.length - 1) this.pendingDividerHit = true;
+      }
     }
 
     let targetSpeed: number = PLAYER.BASE_SPEED;

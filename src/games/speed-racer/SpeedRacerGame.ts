@@ -87,7 +87,8 @@ type DeathCause =
   | 'self_end'
   | 'chopper_bomb'
   | 'tank_shell'
-  | 'drone_swoop';
+  | 'drone_swoop'
+  | 'barrier_collision';
 
 interface RecapStats {
   cause: DeathCause;
@@ -273,6 +274,22 @@ export class SpeedRacerGame extends BaseGame {
       isDownPressed: () => input.isDownPressed() || tc.downHeld(),
     };
     this.player.update(dt, playerInput);
+    // Route divider crashes through the damage funnel — the player.update
+    // detects the contact (segment-aware clamp), takeDamage handles HP/recap.
+    if (this.player.pendingDividerHit) {
+      this.player.pendingDividerHit = false;
+      this.takeDamage('barrier_collision');
+    }
+    // Shoulder mode — refreshed each frame from current geometry. Player
+    // applies a multiplicative handling penalty when on a drivable shoulder
+    // (outside pavement bounds but inside shoulder bounds).
+    {
+      const shape = this.roadProfile.shapeAtPlayer();
+      const onShoulder =
+        !!shape.shoulder &&
+        (this.player.x < shape.xMin || this.player.x > shape.xMax);
+      this.player.setOnShoulder(onShoulder);
+    }
     // Cosmetic damage tier tracks hp. MAX_HP=3 → tier 0/1/2 map to pristine/scorched/critical.
     this.player.setDamageLevel(Math.max(0, Math.min(2, MAX_HP - this.hp)) as 0 | 1 | 2);
     // Snapshot secondary weapon state for the trunk-mounted attachment.
@@ -339,17 +356,37 @@ export class SpeedRacerGame extends BaseGame {
     );
 
     // Off-road bump kills — credit any enemy whose slide has carried it past
-    // either road edge. Done immediately after spawner.update (before its
-    // alive-filter on the next frame) so the kill is attributed to the player
-    // rather than just disappearing as scenery. Profile is queried per enemy
-    // so dynamic-width sections measure "off the road" against the local edge.
+    // either road edge OR into a divider gap (in fork sections). Done
+    // immediately after spawner.update (before its alive-filter on the next
+    // frame) so the kill is attributed to the player rather than just
+    // disappearing as scenery. Profile is queried per enemy so dynamic-width
+    // and fork sections measure "off the road" against the local geometry.
     for (const enemy of this.spawner.getEnemies()) {
       if (!enemy.alive) continue;
       const halfW = enemy.config.width / 2;
       const shape = this.roadProfile.shapeAtScreen(enemy.y);
       const offLeft = enemy.x + halfW < shape.xMin - BUMP_OFF_ROAD_MARGIN;
       const offRight = enemy.x - halfW > shape.xMax + BUMP_OFF_ROAD_MARGIN;
-      if (offLeft || offRight) {
+      let offRoad = offLeft || offRight;
+      if (!offRoad && shape.segments) {
+        // Divider-wall check: any enemy whose body OVERLAPS a real divider
+        // gap is considered to have crashed into the barrier. Even partial
+        // overlap counts — a 100px-wide armored straddling an 80px divider
+        // has touched the wall and earns the kill credit. Only "real" gaps
+        // (wider than a small threshold) count, so fork-start touching
+        // segments don't trigger spurious kills.
+        const DIVIDER_REAL_THRESHOLD = 6;
+        for (let i = 0; i < shape.segments.length - 1; i++) {
+          const leftEdge = shape.segments[i].xMax;
+          const rightEdge = shape.segments[i + 1].xMin;
+          if (rightEdge - leftEdge <= DIVIDER_REAL_THRESHOLD) continue;
+          if (enemy.x + halfW > leftEdge && enemy.x - halfW < rightEdge) {
+            offRoad = true;
+            break;
+          }
+        }
+      }
+      if (offRoad) {
         enemy.alive = false;
         this.enemiesDestroyed += 1;
         this.score += enemy.config.scoreValue * this.combo;
@@ -1051,6 +1088,16 @@ export class SpeedRacerGame extends BaseGame {
     }
     this.weapon.render(ctx);
     this.particles.render(ctx);
+    // Tunnel overlay sits above gameplay so the darkness covers traffic too —
+    // you genuinely can't see clearly inside the tunnel. Light bands strobe
+    // overhead at fixed worldY intervals.
+    this.road.renderTunnelOverlay(
+      ctx,
+      this.canvas.width,
+      this.canvas.height,
+      this.roadProfile,
+      this.currentSection.tunnelZones,
+    );
     this.weather.render(ctx);
     ctx.restore();
 
@@ -1107,6 +1154,7 @@ export class SpeedRacerGame extends BaseGame {
       chopper_bomb: 'BOMBED FROM ABOVE',
       tank_shell: 'SHELLED BY TANK',
       drone_swoop: 'DRONE KAMIKAZE',
+      barrier_collision: 'CRASHED INTO DIVIDER',
     };
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FF0080';
@@ -1185,6 +1233,8 @@ export class SpeedRacerGame extends BaseGame {
         return 'Missile the tank fast — its shells will wear you down otherwise.';
       case 'drone_swoop':
         return 'Drones telegraph with a red ring before they swoop — move then.';
+      case 'barrier_collision':
+        return 'Pick a side at the fork — once the divider opens, you commit to that lane.';
       case 'self_end':
         // Fall through to generic advice below.
         break;

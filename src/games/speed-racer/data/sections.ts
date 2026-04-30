@@ -5,7 +5,11 @@
 
 import type { SpawnerOptions } from '../systems/EnemySpawner';
 import type { RoadGeometry } from '../systems/RoadProfile';
-import { WidthChangeGeometry } from '../systems/RoadGeometries';
+import {
+  ForkGeometry,
+  ShoulderedRoadGeometry,
+  WidthChangeGeometry,
+} from '../systems/RoadGeometries';
 
 export type SceneryStyle = 'trees' | 'buildings' | 'bridge' | 'mountain' | 'coast' | 'water' | 'ice';
 
@@ -58,6 +62,13 @@ export interface SectionPalette {
 
 export type WeatherEffect = 'none' | 'snow';
 
+export interface TunnelZone {
+  // Section-relative worldY range where the tunnel overlay applies. The first
+  // ~80 worldY at each end fade in/out so the entry/exit reads as gradual.
+  startWorldY: number;
+  endWorldY: number;
+}
+
 export interface SectionDef {
   id: string;
   name: string; // banner headline
@@ -70,6 +81,11 @@ export interface SectionDef {
   // v6 — optional dynamic road geometry. Omitted = straight rectangle (v5
   // behavior). Per-section width-change / fork / bridge profiles plug in here.
   roadGeometry?: RoadGeometry;
+  // v6 Step 4 — pure visual tunnel overlay zones. Geometry doesn't change;
+  // the renderer applies a darkness overlay (with periodic light bands)
+  // covering the entire visible area while the player's worldY sits inside
+  // a zone. Multiple zones per section supported.
+  tunnelZones?: ReadonlyArray<TunnelZone>;
 }
 
 // === Section 1 — gentle intro. No armored, sparse traffic. ===
@@ -112,6 +128,11 @@ const NEON_HIGHWAY: SectionDef = {
     vanIntervalMin: 12,
     vanIntervalMax: 18,
   },
+  // v6 Step 5 — drivable paved shoulders (60px on each side). Tutorial
+  // section gets a tactical "you can dodge into the shoulder if cornered"
+  // option early, with the trade-off that shoulder handling is sluggish.
+  // Pavement: [160, 640], shoulder envelope: [100, 700].
+  roadGeometry: new ShoulderedRoadGeometry(160, 640, 4, 60),
 };
 
 // === Section 2 — urban shooters, no armored yet. ===
@@ -153,6 +174,12 @@ const NEON_CITY: SectionDef = {
     vanIntervalMin: 14,
     vanIntervalMax: 20,
   },
+  // v6 Step 4 — downtown overpass tunnel. Player drives under a building
+  // mid-section. Darkness fades in, periodic ceiling lights strobe overhead,
+  // visibility drops so the section's snipers feel more dangerous in the dark.
+  tunnelZones: [
+    { startWorldY: 3000, endWorldY: 5000 },
+  ],
 };
 
 // === Section 3 — armored introduction + first burst/formation tells. ===
@@ -259,6 +286,12 @@ const ALPINE_PASS: SectionDef = {
 };
 
 // === Section 5 — sunset coast, balanced mid-late mix. ===
+// v6 — first FORK section. The road splits in half mid-section (the coastal
+// road parts around an island), forcing the player to commit to a side. Each
+// segment is 200px wide with 2 lanes. Touching keyframes at the entry/exit
+// (divider width 0) keep the transition smooth — the divider then opens up to
+// 80px wide for the sustained fork stretch. Hitting the divider chips HP
+// (barrier_collision damage cause).
 const SUNSET_COAST: SectionDef = {
   id: 'sunset-coast',
   name: 'SUNSET COAST',
@@ -299,6 +332,40 @@ const SUNSET_COAST: SectionDef = {
     shooterBurstChance: 0.28,
     formationChance: 0.18,
   },
+  roadGeometry: new ForkGeometry([
+    // Pre-fork: single road, two segments touching at the center so geometry
+    // reads as one piece. (ForkGeometry requires a constant segment count
+    // across keyframes — we pretend the divider is always there with width 0
+    // outside the fork.)
+    { worldY:    0, segments: [
+      { xMin: 160, xMax: 400, laneCount: 2 },
+      { xMin: 400, xMax: 640, laneCount: 2 },
+    ]},
+    { worldY: 3000, segments: [
+      { xMin: 160, xMax: 400, laneCount: 2 },
+      { xMin: 400, xMax: 640, laneCount: 2 },
+    ]},
+    // Fork opens: divider grows from 0 to 80 over 200 worldY units.
+    { worldY: 3200, segments: [
+      { xMin: 160, xMax: 360, laneCount: 2 },
+      { xMin: 440, xMax: 640, laneCount: 2 },
+    ]},
+    // Sustain: 2-lane sides, 80px divider.
+    { worldY: 5000, segments: [
+      { xMin: 160, xMax: 360, laneCount: 2 },
+      { xMin: 440, xMax: 640, laneCount: 2 },
+    ]},
+    // Merge: divider shrinks back to 0.
+    { worldY: 5200, segments: [
+      { xMin: 160, xMax: 400, laneCount: 2 },
+      { xMin: 400, xMax: 640, laneCount: 2 },
+    ]},
+    // Post-fork: single road again (touching segments).
+    { worldY: 8000, segments: [
+      { xMin: 160, xMax: 400, laneCount: 2 },
+      { xMin: 400, xMax: 640, laneCount: 2 },
+    ]},
+  ]),
 };
 
 // === Section 6 — harbor run on water. Lighter steering, jet-boat enemies. ===

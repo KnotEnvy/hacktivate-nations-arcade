@@ -1,4 +1,15 @@
-import type { RoadProfile } from '../systems/RoadProfile';
+import type { RoadProfile, RoadSegment } from '../systems/RoadProfile';
+
+// Find the segment that contains x, or null if x is in the divider gap.
+function segmentContaining(
+  segments: ReadonlyArray<RoadSegment>,
+  x: number,
+): RoadSegment | null {
+  for (const seg of segments) {
+    if (x >= seg.xMin && x <= seg.xMax) return seg;
+  }
+  return null;
+}
 
 export type EnemyType = 'ram' | 'shooter' | 'enforcer' | 'armored' | 'patrol';
 export type EnemyVisual = 'car' | 'jetboat';
@@ -237,8 +248,21 @@ export class EnemyCar {
     const halfW = this.config.width / 2;
     if (Math.abs(this.bumpVx) < BUMP_AI_SUPPRESS) {
       const shape = this.roadProfile.shapeAtScreen(this.y);
-      if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
-      else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
+      const seg = shape.segments
+        ? segmentContaining(shape.segments, this.x)
+        : null;
+      if (seg) {
+        // Clamped to the segment that owns this enemy. Bump-displaced enemies
+        // outside any segment fall through (no clamp) and the off-road scan
+        // in SpeedRacerGame credits the kill once they cross the divider.
+        if (this.x - halfW < seg.xMin) this.x = seg.xMin + halfW;
+        else if (this.x + halfW > seg.xMax) this.x = seg.xMax - halfW;
+      } else if (!shape.segments) {
+        // No fork — outer-hull clamp.
+        if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+        else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
+      }
+      // else: enemy is in a divider gap — leave for off-road scan.
     }
   }
 
@@ -257,6 +281,9 @@ export class EnemyCar {
     switch (this.ramState) {
       case 'cruise':
         if (distY > 0 && distY < RAM_LOCK_TRIGGER) {
+          // In a fork, never lock onto a player on the opposite segment —
+          // the ram would charge straight into the divider wall and crash.
+          if (!this.playerSameSegment(playerX)) break;
           this.ramState = 'lock';
           this.ramLockTimer = RAM_LOCK_DURATION;
           this.ramTargetX = playerX;
@@ -283,20 +310,74 @@ export class EnemyCar {
     const distY = playerY - this.y;
     if (distY > 420) return;
 
-    // Lane geometry is queried at the player's row so the blocker matches the
-    // road the player is currently driving on (relevant once dynamic-width
-    // sections land — the player's lane count may differ from the enemy's).
     const playerShape = this.roadProfile.shapeAtPlayer();
-    const laneCount = this.roadProfile.laneCountAtScreen(playerY);
-    const laneWidth = (playerShape.xMax - playerShape.xMin) / laneCount;
-    const playerLane = Math.floor((playerX - playerShape.xMin) / laneWidth);
-    const lane = Math.max(0, Math.min(laneCount - 1, playerLane));
-    const targetX = this.roadProfile.laneCenterAtScreen(playerY, lane);
+    const enemyShape = this.roadProfile.shapeAtScreen(this.y);
+
+    // In fork sections, only target the player when we're on the same side —
+    // an armored on the left segment can't physically block a player on the
+    // right segment, and chasing them would just send it into the divider.
+    let targetX: number;
+    if (playerShape.segments && enemyShape.segments) {
+      const playerSeg = segmentContaining(playerShape.segments, playerX);
+      const enemySeg = segmentContaining(enemyShape.segments, this.x);
+      if (!playerSeg || !enemySeg || playerSeg !== this.matchingSegment(enemyShape.segments, playerSeg)) {
+        return; // separated by the divider — hold lane
+      }
+      const laneWidth = (enemySeg.xMax - enemySeg.xMin) / enemySeg.laneCount;
+      const localLane = Math.max(
+        0,
+        Math.min(
+          enemySeg.laneCount - 1,
+          Math.floor((playerX - enemySeg.xMin) / laneWidth),
+        ),
+      );
+      targetX = enemySeg.xMin + laneWidth * (localLane + 0.5);
+    } else {
+      // Single-road geometry — original lane-targeting on player's row.
+      const laneCount = this.roadProfile.laneCountAtScreen(playerY);
+      const laneWidth = (playerShape.xMax - playerShape.xMin) / laneCount;
+      const playerLane = Math.max(
+        0,
+        Math.min(
+          laneCount - 1,
+          Math.floor((playerX - playerShape.xMin) / laneWidth),
+        ),
+      );
+      targetX = this.roadProfile.laneCenterAtScreen(playerY, playerLane);
+    }
 
     const dx = targetX - this.x;
     if (Math.abs(dx) < 4) return; // deadband — avoid jitter when parked in lane
     const maxLateral = 110 * dt;
     this.x += Math.max(-maxLateral, Math.min(maxLateral, dx));
+  }
+
+  // Find the segment in `enemySegments` whose index matches the player's
+  // segment. Used to compare "same side of the divider" across two shape
+  // queries (player row vs. enemy row) — segments at different worldYs are
+  // separate object instances, so identity matching is by ordinal index.
+  private matchingSegment(
+    enemySegments: ReadonlyArray<RoadSegment>,
+    playerSeg: RoadSegment,
+  ): RoadSegment | null {
+    const playerShape = this.roadProfile.shapeAtPlayer();
+    if (!playerShape.segments) return null;
+    const idx = playerShape.segments.indexOf(playerSeg);
+    return idx >= 0 && idx < enemySegments.length ? enemySegments[idx] : null;
+  }
+
+  // True when this enemy and the player share a segment (or there's no fork).
+  // Used by AIs that target the player's X position — anything that would
+  // cause the enemy to drive across the divider should bail out.
+  private playerSameSegment(playerX: number): boolean {
+    const playerShape = this.roadProfile.shapeAtPlayer();
+    const enemyShape = this.roadProfile.shapeAtScreen(this.y);
+    if (!playerShape.segments || !enemyShape.segments) return true;
+    const playerSeg = segmentContaining(playerShape.segments, playerX);
+    const enemySeg = segmentContaining(enemyShape.segments, this.x);
+    if (!playerSeg || !enemySeg) return false;
+    return playerShape.segments.indexOf(playerSeg) ===
+      enemyShape.segments.indexOf(enemySeg);
   }
 
   private updatePatrolAI(dt: number, playerX: number): void {

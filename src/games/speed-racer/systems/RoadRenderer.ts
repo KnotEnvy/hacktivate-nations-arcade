@@ -1,6 +1,6 @@
 import { SCENERY } from '../data/constants';
-import type { SectionPalette } from '../data/sections';
-import type { RoadProfile, RoadShape } from './RoadProfile';
+import type { SectionPalette, TunnelZone } from '../data/sections';
+import type { RoadProfile } from './RoadProfile';
 
 const BUILDING_BLOCK_HEIGHT = 200; // vertical spacing between building rows
 
@@ -30,9 +30,91 @@ export class RoadRenderer {
     this.renderHorizonGlow(ctx, w, h, palette);
     this.renderScenery(ctx, w, h, palette);
     this.renderRoadBody(ctx, w, h, palette, profile);
+    // Divider draws between body and edges so the inner edge strokes
+    // overlap onto the divider concrete cleanly.
+    if (!profile.isUniform()) this.renderDivider(ctx, h, profile);
     this.renderRoadEdges(ctx, h, palette, profile);
     this.renderLaneMarkings(ctx, h, palette, profile);
     this.renderRoadsidePosts(ctx, h, palette, profile);
+  }
+
+  // Top-layer tunnel overlay. Called by SpeedRacerGame AFTER entities + the
+  // particle layer so the darkness covers everything inside the tunnel
+  // (you can't see traffic clearly in the dark either). Per-row darkness
+  // ramps in/out across each zone's edges so the entry/exit reads as
+  // gradual rather than a hard cut.
+  renderTunnelOverlay(
+    ctx: CanvasRenderingContext2D,
+    w: number,
+    h: number,
+    profile: RoadProfile,
+    zones: ReadonlyArray<TunnelZone> | undefined,
+  ): void {
+    if (!zones || zones.length === 0) return;
+    const FADE_LENGTH = 100;
+    const MAX_DARKNESS = 0.85;
+
+    // Run-accumulate identical-darkness rows so the sustained interior
+    // collapses to one fillRect.
+    type Run = { startY: number; alpha: number };
+    let run: Run | null = null;
+
+    const flush = (endY: number): void => {
+      if (!run || run.alpha <= 0) {
+        run = null;
+        return;
+      }
+      ctx.fillStyle = `rgba(8, 6, 24, ${run.alpha.toFixed(3)})`;
+      ctx.fillRect(0, run.startY, w, endY - run.startY);
+      run = null;
+    };
+
+    for (let y = 0; y < h; y++) {
+      const worldY = profile.worldYAtScreen(y);
+      let darkness = 0;
+      for (const z of zones) {
+        if (worldY < z.startWorldY || worldY > z.endWorldY) continue;
+        const distFromEdge = Math.min(worldY - z.startWorldY, z.endWorldY - worldY);
+        const zoneDarkness = Math.min(1, distFromEdge / FADE_LENGTH);
+        if (zoneDarkness > darkness) darkness = zoneDarkness;
+      }
+      const alpha = darkness * MAX_DARKNESS;
+      if (!run || Math.abs(run.alpha - alpha) > 0.005) {
+        flush(y);
+        if (alpha > 0) run = { startY: y, alpha };
+      }
+    }
+    flush(h);
+
+    // Tunnel light strips — bright bands at fixed worldY intervals inside
+    // each zone. Each light only renders if its worldY is currently visible
+    // on screen and is past the entry fade so it doesn't bloom outside the
+    // tunnel mouth.
+    const LIGHT_SPACING = 220;
+    const LIGHT_HALF_HEIGHT = 4;
+    for (const z of zones) {
+      const firstLight = Math.ceil((z.startWorldY + FADE_LENGTH) / LIGHT_SPACING) * LIGHT_SPACING;
+      for (let lightY = firstLight; lightY <= z.endWorldY - FADE_LENGTH; lightY += LIGHT_SPACING) {
+        // Convert worldY to screen Y: screenY = PLAYER.Y - (worldY - playerWorldY)
+        // Use profile to back out the right screen Y.
+        const screenY = this.tunnelLightScreenY(lightY, profile);
+        if (screenY < -LIGHT_HALF_HEIGHT || screenY > h + LIGHT_HALF_HEIGHT) continue;
+        // Bright band — slight gradient for depth
+        const grad = ctx.createLinearGradient(0, screenY - LIGHT_HALF_HEIGHT, 0, screenY + LIGHT_HALF_HEIGHT);
+        grad.addColorStop(0, 'rgba(255,250,180,0)');
+        grad.addColorStop(0.5, 'rgba(255,250,180,0.7)');
+        grad.addColorStop(1, 'rgba(255,250,180,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, screenY - LIGHT_HALF_HEIGHT, w, LIGHT_HALF_HEIGHT * 2);
+      }
+    }
+  }
+
+  // Invert the profile's worldYAtScreen(s) = worldYAtScreen(0) - s formula:
+  // screenY = worldYAtScreen(0) - worldY. Lets us place a feature at a
+  // specific section-relative worldY without depending on PLAYER.Y directly.
+  private tunnelLightScreenY(worldY: number, profile: RoadProfile): number {
+    return profile.worldYAtScreen(0) - worldY;
   }
 
   // -- Layers ------------------------------------------------------------
@@ -77,6 +159,25 @@ export class RoadRenderer {
     // sections can shape the road body to the live profile.
     if (profile.isUniform()) {
       const shape = profile.shapeAtPlayer();
+      // Shoulders draw first, beneath/beside the pavement, in a darker
+      // asphalt-like tone with rumble-strip dashes. Pavement gradient
+      // overlays them at the pavement edges so the boundary reads sharp.
+      if (shape.shoulder) {
+        this.fillShoulder(
+          ctx,
+          shape.shoulder.xMin,
+          shape.xMin,
+          h,
+          palette,
+        );
+        this.fillShoulder(
+          ctx,
+          shape.xMax,
+          shape.shoulder.xMax,
+          h,
+          palette,
+        );
+      }
       const grad = ctx.createLinearGradient(shape.xMin, 0, shape.xMax, 0);
       grad.addColorStop(0, palette.roadShadeColor);
       grad.addColorStop(0.15, palette.roadColor);
@@ -89,37 +190,103 @@ export class RoadRenderer {
     this.renderRoadBodyStripped(ctx, h, palette, profile);
   }
 
+  // Shoulder fill — darker than pavement, with periodic rumble-strip dashes
+  // along the inner edge so it reads as "drivable but rough." Dashes scroll
+  // with worldScroll so the surface looks alive at speed.
+  private fillShoulder(
+    ctx: CanvasRenderingContext2D,
+    xMin: number,
+    xMax: number,
+    h: number,
+    palette: SectionPalette,
+  ): void {
+    if (xMax <= xMin) return;
+    // Base fill — a darker shade than the road body
+    ctx.fillStyle = palette.roadShadeColor;
+    ctx.fillRect(xMin, 0, xMax - xMin, h);
+    // Rumble-strip dashes along the inner edge (the side that touches the
+    // pavement). Left shoulder's inner edge is xMax; right shoulder's inner
+    // edge is xMin. We detect by comparing widths to canvas geometry —
+    // simpler to just always draw dashes at both edges (the outer edge gets
+    // a faint dash too, which reads fine).
+    const dashLen = 10;
+    const gapLen = 10;
+    const cycle = dashLen + gapLen;
+    const offset = ((this.worldScroll % cycle) + cycle) % cycle;
+    ctx.fillStyle = palette.edgeColor;
+    for (let y = offset - cycle; y < h; y += cycle) {
+      // Inner-edge rumble strip (2px wide, just inside the shoulder edge)
+      const innerX = xMax - 4;
+      const outerX = xMin + 2;
+      ctx.fillRect(innerX, Math.max(0, y), 2, Math.min(dashLen, h - y));
+      ctx.fillRect(outerX, Math.max(0, y), 2, Math.min(dashLen, h - y));
+    }
+  }
+
   // Slow path. Walks screen rows, queries the profile per row, and accumulates
-  // contiguous runs of identical shape into a single fillRect per run so the
-  // straight-rectangle case still collapses to one draw. A dynamic-width
-  // section will produce as many runs as it has unique row shapes.
+  // contiguous runs of identical shape PER SEGMENT INDEX into single fills.
+  // Stable stretches (wide / narrow / fork-sustain) collapse to one or two
+  // fills; tapers and fork open/close cost one fill per affected row.
   private renderRoadBodyStripped(
     ctx: CanvasRenderingContext2D,
     h: number,
     palette: SectionPalette,
     profile: RoadProfile,
   ): void {
-    let runStart = 0;
-    let runShape: RoadShape | null = null;
-    const flush = (endY: number): void => {
-      if (!runShape) return;
-      const grad = ctx.createLinearGradient(runShape.xMin, 0, runShape.xMax, 0);
-      grad.addColorStop(0, palette.roadShadeColor);
-      grad.addColorStop(0.15, palette.roadColor);
-      grad.addColorStop(0.85, palette.roadColor);
-      grad.addColorStop(1, palette.roadShadeColor);
-      ctx.fillStyle = grad;
-      ctx.fillRect(runShape.xMin, runStart, runShape.xMax - runShape.xMin, endY - runStart);
+    type Run = { startY: number; xMin: number; xMax: number };
+    const runs: Array<Run | null> = [];
+
+    const flush = (idx: number, endY: number): void => {
+      const run = runs[idx];
+      if (!run) return;
+      this.fillRoadStripBlock(ctx, run.xMin, run.xMax, run.startY, endY - run.startY, palette);
+      runs[idx] = null;
     };
+
     for (let y = 0; y < h; y++) {
       const shape = profile.shapeAtScreen(y);
-      if (!runShape || shape.xMin !== runShape.xMin || shape.xMax !== runShape.xMax) {
-        flush(y);
-        runStart = y;
-        runShape = shape;
+      const segments = shape.segments ?? null;
+      const count = segments ? segments.length : 1;
+
+      // Flush any runs whose segment index no longer exists (e.g., a fork
+      // closing: 2 segments → 1).
+      for (let i = count; i < runs.length; i++) {
+        flush(i, y);
+      }
+
+      for (let i = 0; i < count; i++) {
+        const seg = segments ? segments[i] : null;
+        const xMin = seg ? seg.xMin : shape.xMin;
+        const xMax = seg ? seg.xMax : shape.xMax;
+        const run = runs[i];
+        if (!run || run.xMin !== xMin || run.xMax !== xMax) {
+          flush(i, y);
+          runs[i] = { startY: y, xMin, xMax };
+        }
       }
     }
-    flush(h);
+
+    for (let i = 0; i < runs.length; i++) {
+      flush(i, h);
+    }
+  }
+
+  private fillRoadStripBlock(
+    ctx: CanvasRenderingContext2D,
+    xMin: number,
+    xMax: number,
+    y: number,
+    height: number,
+    palette: SectionPalette,
+  ): void {
+    if (xMax <= xMin || height <= 0) return;
+    const grad = ctx.createLinearGradient(xMin, 0, xMax, 0);
+    grad.addColorStop(0, palette.roadShadeColor);
+    grad.addColorStop(0.15, palette.roadColor);
+    grad.addColorStop(0.85, palette.roadColor);
+    grad.addColorStop(1, palette.roadShadeColor);
+    ctx.fillStyle = grad;
+    ctx.fillRect(xMin, y, xMax - xMin, height);
   }
 
   private renderRoadEdges(
@@ -141,30 +308,181 @@ export class RoadRenderer {
       ctx.moveTo(shape.xMax, 0);
       ctx.lineTo(shape.xMax, h);
     } else {
-      // Per-row trace — the stroke follows whatever the profile draws.
-      let started = false;
+      // Outer hull edges (left of leftmost, right of rightmost) trace the
+      // road's outline and are continuous through the whole screen.
+      let leftStarted = false;
+      let rightStarted = false;
       for (let y = 0; y <= h; y++) {
         const shape = profile.shapeAtScreen(y);
-        if (!started) {
+        if (!leftStarted) {
           ctx.moveTo(shape.xMin, y);
-          started = true;
+          leftStarted = true;
         } else {
           ctx.lineTo(shape.xMin, y);
         }
-      }
-      let startedRight = false;
-      for (let y = 0; y <= h; y++) {
-        const shape = profile.shapeAtScreen(y);
-        if (!startedRight) {
+        if (!rightStarted) {
           ctx.moveTo(shape.xMax, y);
-          startedRight = true;
+          rightStarted = true;
         } else {
           ctx.lineTo(shape.xMax, y);
+        }
+      }
+
+      // Inner divider edges — only drawn on rows where two segments have a
+      // real gap between them. Path breaks when the gap closes (fork start /
+      // end touching keyframes), so each open-divider stretch is its own
+      // continuous stroke.
+      let dividerLeftActive = false;
+      let dividerRightActive = false;
+      for (let y = 0; y <= h; y++) {
+        const shape = profile.shapeAtScreen(y);
+        const segments = shape.segments;
+        let hasDivider = false;
+        let dividerLeftX = 0;
+        let dividerRightX = 0;
+        if (segments && segments.length >= 2) {
+          // Step 3 supports a single divider between two segments. Generalize
+          // to multiple dividers if Step 4+ adds 3-way splits.
+          dividerLeftX = segments[0].xMax;
+          dividerRightX = segments[1].xMin;
+          hasDivider = dividerRightX - dividerLeftX > 0;
+        }
+        if (hasDivider) {
+          if (!dividerLeftActive) {
+            ctx.moveTo(dividerLeftX, y);
+            dividerLeftActive = true;
+          } else {
+            ctx.lineTo(dividerLeftX, y);
+          }
+          if (!dividerRightActive) {
+            ctx.moveTo(dividerRightX, y);
+            dividerRightActive = true;
+          } else {
+            ctx.lineTo(dividerRightX, y);
+          }
+        } else {
+          dividerLeftActive = false;
+          dividerRightActive = false;
         }
       }
     }
     ctx.stroke();
     ctx.restore();
+  }
+
+  // Render the central divider as a Jersey-barrier-style wall: bright concrete
+  // base with strong dark outlines on each side and bold yellow/black hazard
+  // chevrons that scroll with the road. Drawn between the road body and the
+  // edge strokes so the inner edges overlap onto the wall cleanly. The visual
+  // intent is "this is a SOLID OBJECT that will kill you," not a painted line.
+  private renderDivider(
+    ctx: CanvasRenderingContext2D,
+    h: number,
+    profile: RoadProfile,
+  ): void {
+    type Run = { startY: number; leftX: number; rightX: number };
+    let run: Run | null = null;
+
+    const flush = (endY: number): void => {
+      if (!run) return;
+      const { startY, leftX, rightX } = run;
+      const w = rightX - leftX;
+      const height = endY - startY;
+      if (w > 2 && height > 0) {
+        // Bright concrete base — high contrast against any road palette.
+        ctx.fillStyle = '#c8c8c8';
+        ctx.fillRect(leftX, startY, w, height);
+        // Top-left highlight strip suggesting the wall's lit edge.
+        ctx.fillStyle = '#e8e8e8';
+        ctx.fillRect(leftX + 1, startY, 2, height);
+        // Strong dark outlines on both sides — reads as a raised barrier.
+        ctx.fillStyle = '#0a0a0a';
+        ctx.fillRect(leftX, startY, 2, height);
+        ctx.fillRect(rightX - 2, startY, 2, height);
+      }
+      run = null;
+    };
+
+    for (let y = 0; y < h; y++) {
+      const shape = profile.shapeAtScreen(y);
+      const segments = shape.segments;
+      let hasDivider = false;
+      let leftX = 0;
+      let rightX = 0;
+      if (segments && segments.length >= 2) {
+        leftX = segments[0].xMax;
+        rightX = segments[1].xMin;
+        hasDivider = rightX - leftX > 2;
+      }
+      if (hasDivider) {
+        if (!run || run.leftX !== leftX || run.rightX !== rightX) {
+          flush(y);
+          run = { startY: y, leftX, rightX };
+        }
+      } else if (run) {
+        flush(y);
+      }
+    }
+    flush(h);
+
+    // Bold yellow/black hazard bands. Each band is BAND_HEIGHT pixels tall and
+    // they alternate yellow/black, scrolling with the road (slightly faster
+    // than worldScroll so they read as wall motion). Drawn on top of the
+    // concrete base, inset 4px from each side so the dark outlines stay
+    // visible. Run-accumulated so each band collapses to one fillRect.
+    const BAND_HEIGHT = 18;
+    const BAND_CYCLE = BAND_HEIGHT * 2;
+    const bandOffset =
+      ((this.worldScroll * 1.4) % BAND_CYCLE + BAND_CYCLE) % BAND_CYCLE;
+
+    type BandRun = {
+      startY: number;
+      leftX: number;
+      rightX: number;
+      yellow: boolean;
+    };
+    let bandRun: BandRun | null = null;
+
+    const flushBand = (endY: number): void => {
+      if (!bandRun) return;
+      const { startY, leftX, rightX, yellow } = bandRun;
+      const inset = 4;
+      const x = leftX + inset;
+      const w = rightX - leftX - inset * 2;
+      const height = endY - startY;
+      if (w > 0 && height > 0) {
+        ctx.fillStyle = yellow ? '#FFD700' : '#0a0a0a';
+        ctx.fillRect(x, startY, w, height);
+      }
+      bandRun = null;
+    };
+
+    for (let y = 0; y < h; y++) {
+      const shape = profile.shapeAtScreen(y);
+      const segments = shape.segments;
+      if (!segments || segments.length < 2) {
+        if (bandRun) flushBand(y);
+        continue;
+      }
+      const leftX = segments[0].xMax;
+      const rightX = segments[1].xMin;
+      if (rightX - leftX <= 8) {
+        if (bandRun) flushBand(y);
+        continue;
+      }
+      const phase = ((y - bandOffset) % BAND_CYCLE + BAND_CYCLE) % BAND_CYCLE;
+      const yellow = phase < BAND_HEIGHT;
+      if (
+        !bandRun ||
+        bandRun.yellow !== yellow ||
+        bandRun.leftX !== leftX ||
+        bandRun.rightX !== rightX
+      ) {
+        flushBand(y);
+        bandRun = { startY: y, leftX, rightX, yellow };
+      }
+    }
+    flushBand(h);
   }
 
   private renderLaneMarkings(
@@ -194,10 +512,10 @@ export class RoadRenderer {
     this.drawLaneMarkingsStripped(ctx, h, palette, profile);
   }
 
-  // Per-row rasterization. Each screen row queries its own laneCount and
-  // shape; lane lines naturally appear/disappear when the geometry changes
-  // lane count across a taper. Two dash cycles are tracked because center
-  // lines use a longer dash than standard lane lines.
+  // Per-row rasterization. Each screen row queries its own segments and lane
+  // counts; lane lines naturally appear/disappear when geometry changes lane
+  // count across a taper or when a fork splits the road. Two dash cycles are
+  // tracked because center lines use a longer dash than standard lane lines.
   private drawLaneMarkingsStripped(
     ctx: CanvasRenderingContext2D,
     h: number,
@@ -222,23 +540,59 @@ export class RoadRenderer {
       const inCenterDash = centerPhase < centerDash;
       if (!inStandardDash && !inCenterDash) continue;
 
-      const laneCount = profile.laneCountAtScreen(y);
-      if (laneCount < 2) continue;
-
       const shape = profile.shapeAtScreen(y);
-      const laneStep = (shape.xMax - shape.xMin) / laneCount;
-
-      for (let i = 1; i < laneCount; i++) {
-        // Center marker only exists when there's an even number of lanes; odd
-        // counts (e.g. 3 lanes) have no true center, just two equal dividers.
-        const isCenter = laneCount % 2 === 0 && i === laneCount / 2;
-        if (isCenter && !inCenterDash) continue;
-        if (!isCenter && !inStandardDash) continue;
-        const x = shape.xMin + laneStep * i;
-        const w = isCenter ? 3 : 2;
-        ctx.fillStyle = isCenter ? palette.centerLineColor : palette.laneLineColor;
-        ctx.fillRect(Math.round(x - w / 2), y, w, 1);
+      const segments = shape.segments;
+      if (segments) {
+        for (const seg of segments) {
+          this.drawLaneRowForSegment(
+            ctx,
+            seg.xMin,
+            seg.xMax,
+            seg.laneCount,
+            y,
+            inStandardDash,
+            inCenterDash,
+            palette,
+          );
+        }
+      } else {
+        const laneCount = profile.laneCountAtScreen(y);
+        this.drawLaneRowForSegment(
+          ctx,
+          shape.xMin,
+          shape.xMax,
+          laneCount,
+          y,
+          inStandardDash,
+          inCenterDash,
+          palette,
+        );
       }
+    }
+  }
+
+  private drawLaneRowForSegment(
+    ctx: CanvasRenderingContext2D,
+    xMin: number,
+    xMax: number,
+    laneCount: number,
+    y: number,
+    inStandardDash: boolean,
+    inCenterDash: boolean,
+    palette: SectionPalette,
+  ): void {
+    if (laneCount < 2) return;
+    const laneStep = (xMax - xMin) / laneCount;
+    for (let i = 1; i < laneCount; i++) {
+      // Center marker only exists when there's an even number of lanes; odd
+      // counts (e.g. 3 lanes) have no true center, just two equal dividers.
+      const isCenter = laneCount % 2 === 0 && i === laneCount / 2;
+      if (isCenter && !inCenterDash) continue;
+      if (!isCenter && !inStandardDash) continue;
+      const x = xMin + laneStep * i;
+      const w = isCenter ? 3 : 2;
+      ctx.fillStyle = isCenter ? palette.centerLineColor : palette.laneLineColor;
+      ctx.fillRect(Math.round(x - w / 2), y, w, 1);
     }
   }
 
