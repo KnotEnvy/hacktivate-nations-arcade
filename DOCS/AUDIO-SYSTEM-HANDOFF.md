@@ -27,13 +27,14 @@ Last verified April 25, 2026:
 - `npm.cmd run lint`
 - `npm.cmd run build`
 
-Before public deploy, rerun the full launch gate after Speed Racer lands:
+Before public deploy, rerun the current automated launch gate:
 
 - `npm.cmd run type-check`
 - `npm.cmd run lint`
 - `npm.cmd test -- --runInBand`
 - `npm.cmd run build`
-- `npm.cmd run e2e`
+
+Playwright specs should be refreshed for the signed-in-only product flow before treating `npm.cmd run e2e` as a blocking deploy gate.
 
 ### Browser smoke checklist for the next team
 

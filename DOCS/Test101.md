@@ -1,5 +1,7 @@
 # Test 101 - HacktivateNations Arcade Testing Suite
 
+> Current launch note, April 30, 2026: this document is historical and still describes earlier guest-flow Playwright coverage. The active automated deploy gate is `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, and `npm.cmd run build`. Refresh the Playwright specs for the signed-in-only product flow before treating `npm run e2e` as blocking again.
+
 ## ðŸŽ¯ Current Testing Status
 
 ### **Coverage Summary (unit)**

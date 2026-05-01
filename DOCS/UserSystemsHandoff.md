@@ -1,6 +1,6 @@
 # User Systems Handoff (Auth + Profiles + Persistence)
 
-Last updated: April 16, 2026
+Last updated: April 30, 2026
 
 This is the current orientation doc for the Hacktivate Arcade user systems. It is meant to get a new contributor to the real auth/persistence flow without re-reading the entire codebase.
 
@@ -72,6 +72,7 @@ Defined in `supabase/001_init.sql`:
 
 - Runtime services still own in-memory profile, wallet, achievements, challenges, and analytics behavior during play
 - `useArcadeSupabaseSync` hydrates profile, `player_state`, wallet, achievements, and challenges when a session exists
+- Supabase auth/sync runtime code loads dynamically after hydration/session use so the first route can paint the lightweight boot shell quickly
 - If rows are missing, the hook seeds clean default rows for that account
 - First-time accounts no longer inherit guest/local stats during hydration
 - Unlock persistence lives in `src/hooks/useArcadeUnlockState.ts`
@@ -98,12 +99,13 @@ Ownership behavior:
 
 ## Sync Strategy (`useArcadeSupabaseSync`)
 
-- Service bootstrap: create the browser `SupabaseArcadeService` only when a valid session exists
+- Service bootstrap: dynamically import the browser Supabase client and create `SupabaseArcadeService` only when a valid session exists
 - Hydration:
   - fetch `profile`, `player_state`, `wallet`, `achievements`, and `challenge_assignments`
   - if `profiles`, `player_state`, or `wallets` rows are missing, create clean defaults for the account
   - if challenges are missing, regenerate the local challenge set and upsert it
   - use `isHydratingRef` / `hasHydratedRef` to avoid looped writes
+  - if the deferred Supabase runtime cannot initialize, release account hydration so the hub does not stay stuck on the loading state
 - Debounced sync for profile + `player_state` happens through `schedulePlayerSync`
 - Unlock tier/game state comes from `useArcadeUnlockState`, which owns normalization and migration
 - Challenge progress sync goes through the trusted API route and template-backed validation instead of direct browser writes

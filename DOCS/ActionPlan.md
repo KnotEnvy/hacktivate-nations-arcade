@@ -1,6 +1,6 @@
 # HacktivateNations Arcade - Action Plan
 
-Last updated: April 26, 2026
+Last updated: April 30, 2026
 
 This is the live execution checklist for the final public-deployment pass. It reflects the current repo state after production hardening, the completed Speed Racer workstream, the procedural music/SB32 pass, and the startup/runtime hardening pass.
 
@@ -9,7 +9,7 @@ This is the live execution checklist for the final public-deployment pass. It re
 - [x] `npm run lint` passes
 - [x] `npm run type-check` passes
 - [x] `npm test -- --runInBand` passes
-- [x] `npm run e2e` passes
+- [x] `npm run e2e` passed against the earlier guest-era smoke specs
 - [x] `npm run build` passes
 - [x] Case-sensitive import and Windows-only TypeScript blockers were fixed
 - [x] Unregistered catalog games are now non-purchasable and non-launchable
@@ -47,12 +47,13 @@ This is the live execution checklist for the final public-deployment pass. It re
 
 ### Release Validation
 
-- [ ] Run the local verification gates again after the final game lands: `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, `npm.cmd run build`, `npm.cmd run e2e`
+- [x] Publish the matching Vercel preview/production deployment runbook
+- [ ] Run the local deploy gate before promotion: `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, `npm.cmd run build`
+- [ ] Refresh Playwright specs for the signed-in-only product flow before treating `npm.cmd run e2e` as a blocking launch gate
 - [ ] Smoke test signed-in flows with real accounts: auth, play session, wallet, leaderboard, achievements, challenges, analytics, sign-out/sign-in reset
 - [ ] Simulate dropped-network replay and verify queued sync retry still drains cleanly
 - [ ] Smoke test audio in the browser: initial hub unlock should play `SB32 Power-On`; Audio Studio Hub/Menu selection should play procedural tracks; Music Lab generation should play `lab_custom`; mute/music volume should affect music while SFX remains governed by SFX volume
 - [ ] Decide whether placeholder leaderboard rows remain acceptable in production
-- [ ] Publish the matching Vercel preview/production deployment runbook
 - [ ] Add error tracking and deploy-time monitoring if still required for launch
 
 ### Ongoing Hardening

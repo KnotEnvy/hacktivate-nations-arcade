@@ -1,7 +1,7 @@
 # HacktivateNations Arcade Relearn Handoff
 
 Snapshot date: April 13, 2026  
-Refreshed through: April 16, 2026
+Refreshed through: April 30, 2026
 
 ## Purpose
 
@@ -19,7 +19,7 @@ The production-hardening pass also closed the biggest platform risks:
 - the main product flow is now sign-in-only instead of relying on guest profiles
 - analytics storage is scoped to the active account instead of a shared guest bucket
 
-The main remaining delivery before public launch is straightforward: add the final game, validate the shared systems against it, and finish release operations.
+The final game is now implemented. The main remaining delivery before public launch is straightforward: validate signed-in shared systems on a Vercel preview, finish release operations, and promote production only after the deploy gate passes.
 
 ## Status Update
 
@@ -57,6 +57,15 @@ Verified on April 16, 2026 after the production-model cleanup pass:
 - analytics storage now uses `hacktivate-analytics:<ownerId>` and no longer reads the legacy shared guest bucket
 - `npm run lint`, `npm run type-check`, `npm test -- --runInBand`, and `npm run build` are green
 
+Verified on April 30, 2026 after the Speed Racer and startup-performance pass:
+
+- Speed Racer is complete and registered
+- `src/games/registry.ts` registers 17 playable games
+- `/` renders through a lightweight boot shell and production build reports 103 kB first-load JS
+- Supabase auth/sync clients and procedural audio load dynamically after hydration/session/audio use
+- `npm.cmd run lint`, `npm.cmd run type-check`, `npm.cmd test -- --runInBand`, and `npm.cmd run build` are green
+- Playwright specs need a signed-in-flow refresh before being used as a blocking launch gate
+
 ## Current Reality
 
 ### Stack
@@ -81,14 +90,14 @@ Verified on April 16, 2026 after the production-model cleanup pass:
 ### Game Catalog State
 
 - `src/data/Games.ts` currently lists 27 catalog entries across 5 tiers
-- `src/games/registry.ts` currently registers 16 playable games
+- `src/games/registry.ts` currently registers 17 playable games
 - unregistered entries stay visible as roadmap/coming-soon content but cannot be purchased or launched
 
 Practical meaning:
 
 - the arcade is already a multi-game platform, not a prototype
 - the shared systems have already been exercised across many games
-- the next team should treat the final game as platform integration work, not greenfield infrastructure
+- the final game is complete; the next team should treat remaining work as deployment validation and production operations, not greenfield infrastructure
 
 ## Architecture Map
 
@@ -158,15 +167,15 @@ Older planning docs still contain historical value, but many describe a pre-hard
 
 ## Remaining Release Risks
 
-### 1. Final Game Integration Still Needs To Happen
+### 1. Signed-In Release Validation Still Needs A Final Pass
 
-- the catalog already contains several coming-soon entries
-- the next team needs to either implement one of those ids or introduce a new final id cleanly
-- the final game must be wired through the existing end-of-game payload so wallet, achievements, challenges, leaderboards, and analytics stay correct
+- Speed Racer is complete and wired into the registry/catalog
+- the next team should validate Speed Racer and shared systems with real signed-in accounts
+- verify wallet, achievements, challenges, leaderboards, queued sync, analytics ownership, and sign-out/sign-in reset
 
 ### 2. Release Operations Still Need A Final Pass
 
-- Vercel preview/production deployment steps should be documented as clearly as the Supabase runbook
+- Vercel preview/production deployment steps now live in `DOCS/VERCEL-PRODUCTION-RUNBOOK.md`
 - monitoring/error tracking is still a policy choice, not a completed launch system
 - placeholder leaderboard rows may still need a product decision before public release
 
@@ -183,25 +192,22 @@ Older planning docs still contain historical value, but many describe a pre-hard
 
 ## Recommended Final Stretch Plan
 
-### Phase 1: Add The Final Game
+### Phase 1: Final Game
 
-1. Implement the game under `src/games/<id>`
-2. Register it in `src/games/registry.ts`
-3. Align `src/data/Games.ts` and thumbnail assets
-4. Verify the game end payload drives shared progression correctly
+Complete. Speed Racer is implemented, registered, catalog-aligned, and included in the startup/runtime optimization pass.
 
 ### Phase 2: Validate Signed-In Shared Systems
 
-1. Run `npm run type-check`
-2. Run `npm run lint`
-3. Run `npm test -- --runInBand`
-4. Run `npm run build`
-5. Run `npm run e2e`
-6. Smoke test signed-in auth, wallet, leaderboard, achievements, challenges, analytics, and queued sync retry
+1. Run `npm.cmd run type-check`
+2. Run `npm.cmd run lint`
+3. Run `npm.cmd test -- --runInBand`
+4. Run `npm.cmd run build`
+5. Smoke test signed-in auth, wallet, leaderboard, achievements, challenges, analytics, and queued sync retry
+6. Refresh Playwright specs for the signed-in-only product flow before making `npm.cmd run e2e` blocking again
 
 ### Phase 3: Release Ops
 
-1. Publish or refresh the Vercel deployment runbook
+1. Use `DOCS/VERCEL-PRODUCTION-RUNBOOK.md` for preview and production promotion
 2. Confirm the live Supabase schema still matches `supabase/001_init.sql`
 3. Regenerate `src/lib/supabase.types.ts` if SQL changed
 4. Decide on monitoring and placeholder leaderboard behavior
@@ -210,11 +216,11 @@ Older planning docs still contain historical value, but many describe a pre-hard
 
 If the team only does a small number of things next, prioritize these:
 
-1. Add the final game to the registry/catalog cleanly
-2. Validate the signed-in progression path against that game
-3. Publish the deployment/runbook steps for release
+1. Validate the signed-in progression path against Speed Racer and the shared systems
+2. Run the deploy gate and Vercel preview checklist
+3. Decide placeholder leaderboard and monitoring behavior for release
 4. Keep Supabase SQL, route args, and generated types aligned
-5. Leave deeper refactors alone unless the final game proves a real blocker
+5. Leave deeper refactors alone unless launch validation proves a real blocker
 
 ## Final Assessment
 
@@ -222,7 +228,6 @@ This is a production-hardening project near the end, not an early-stage rebuild.
 
 The next team should be able to finish this by staying disciplined:
 
-- integrate the final game cleanly
-- trust the existing hardened progression path
+- validate Speed Racer and shared systems through the existing hardened progression path
 - avoid reopening guest-mode assumptions
 - keep the live Supabase schema and app contract aligned
