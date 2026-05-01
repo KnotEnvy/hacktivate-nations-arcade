@@ -1,6 +1,16 @@
 import { AchievementService } from '@/services/AchievementService';
 
 describe('AchievementService', () => {
+  let consoleLog: jest.SpyInstance;
+
+  beforeEach(() => {
+    consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    consoleLog.mockRestore();
+  });
+
   test('unlocks achievements when requirement is met', () => {
     const svc = new AchievementService();
     svc.init();
@@ -9,6 +19,9 @@ describe('AchievementService', () => {
     expect(unlocked.length).toBeGreaterThan(0);
     expect(unlocked.some(a => a.id === 'first_jump')).toBe(true);
     expect(svc.getUnlockedAchievements().some(a => a.id === 'first_jump')).toBe(true);
+    expect(consoleLog).toHaveBeenCalledWith(
+      expect.stringContaining('Achievement unlocked')
+    );
   });
 
   test('respects gameId filtering (only unlocks when matching game)', () => {
@@ -22,6 +35,8 @@ describe('AchievementService', () => {
     // Correct gameId unlocks
     const some = svc.checkAchievement('unique_themes', 3, 'puzzle');
     expect(some.some(a => a.gameId === 'puzzle')).toBe(true);
+    expect(consoleLog).toHaveBeenCalledWith(
+      expect.stringContaining('Achievement unlocked')
+    );
   });
 });
-

@@ -7,6 +7,14 @@ import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
 
 jest.mock('@/lib/supabase', () => ({
   getSupabaseBrowserClient: jest.fn(),
+  createSupabaseAccessTokenClient: jest.fn(() => ({
+    from: jest.fn(() => ({
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      gte: jest.fn().mockResolvedValue({ data: [], error: null }),
+      single: jest.fn().mockResolvedValue({ data: null, error: { code: 'PGRST116' } }),
+    })),
+  })),
 }));
 
 const mockedGetSupabaseBrowserClient = jest.mocked(getSupabaseBrowserClient);

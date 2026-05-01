@@ -31,9 +31,16 @@ describe('GameLoader', () => {
   });
 
   test('returns null for unknown game id', async () => {
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
     const loader = new GameLoader();
     const game = await loader.loadGame('missing');
+
     expect(game).toBeNull();
+    expect(consoleError).toHaveBeenCalledWith('Game missing not found in registry');
+
+    consoleError.mockRestore();
   });
 
   test('preloads a game once and still creates fresh instances when loaded', async () => {
