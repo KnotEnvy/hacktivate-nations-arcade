@@ -13,8 +13,7 @@ import type { AudioManager, SoundName } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
 import { GameCarousel } from './GameCarousel';
 import { CurrencyDisplay } from './CurrencyDisplay';
-import { UserProfile } from './UserProfiles';
-import { WelcomeBanner } from '@/components/auth/WelcomeBanner';
+import { CompactPlayerBadge, UserProfile } from './UserProfiles';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { useArcadeUnlockState } from '@/hooks/useArcadeUnlockState';
 import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
@@ -1116,36 +1115,35 @@ export function ArcadeHub() {
 
   return (
     <div
-      className="min-h-screen relative overflow-x-hidden bg-gradient-to-br from-gray-950 via-purple-950 to-gray-950 px-4 py-6"
+      className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(135deg,#050816_0%,#10172a_44%,#24073f_100%)] px-4 py-5 text-white"
       data-testid="arcade-root"
     >
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute -top-40 left-1/2 h-[520px] w-[900px] -translate-x-1/2 rounded-full bg-purple-600/15 blur-3xl" />
-        <div className="absolute -top-24 left-8 h-72 w-72 rounded-full bg-cyan-500/10 blur-3xl" />
-        <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-fuchsia-500/10 blur-3xl" />
+      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 opacity-45">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:44px_44px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(34,211,238,0.08)_48%,transparent_100%)]" />
       </div>
       {/* Header */}
-      <header className="sticky top-4 z-40 flex justify-between items-center mb-8 max-w-7xl mx-auto border border-white/10 bg-gradient-to-r from-purple-900/60 to-indigo-900/40 backdrop-blur-xl rounded-2xl px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
-        <div className="flex items-center gap-4">
+      <header className="sticky top-3 z-40 mx-auto mb-6 flex max-w-7xl flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-3 shadow-[0_18px_45px_rgba(0,0,0,0.38)] backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-col leading-tight">
-            <h1 className="text-2xl font-bold text-white font-arcade">
+            <h1 className="font-arcade text-xl font-bold text-white md:text-2xl">
               Hacktivate Nations Arcade
             </h1>
-            <div className="text-xs text-purple-200/80">
+            <div className="text-xs text-cyan-100/70">
               Earn coins • Unlock tiers • Chase highscores
             </div>
           </div>
           {!showHub && (
             <button
               onClick={handleBackToHub}
-              className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
+              className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
             >
               {'\u2190 Back to Hub'}
             </button>
           )}
           <button
             onClick={() => setShowOnboarding(true)}
-            className="ml-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
+            className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
           >
             Help
           </button>
@@ -1156,7 +1154,7 @@ export function ArcadeHub() {
                 setShowAudioSettings(true);
               });
             }}
-            className="ml-1 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white text-sm font-semibold border border-white/10 transition-colors"
+            className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
           >
             Audio
           </button>
@@ -1187,24 +1185,24 @@ export function ArcadeHub() {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           {!authDisabled ? (
-            <div className="text-right">
-              <div className="text-sm text-white font-semibold">
+            <div className="text-left sm:text-right">
+              <div className="text-sm font-semibold text-white">
                 {session ? `Signed in as ${welcomeName}` : 'Sign in required'}
               </div>
               <div className="flex justify-end gap-2">
                 {session ? (
                   <button
                     onClick={() => signOut()}
-                    className="text-xs text-purple-200 underline hover:text-white"
+                    className="text-xs text-cyan-100 underline hover:text-white"
                   >
                     Sign out
                   </button>
                 ) : (
                   <button
                     onClick={() => setShowAuthModal(true)}
-                    className="text-xs text-purple-200 underline hover:text-white"
+                    className="text-xs text-cyan-100 underline hover:text-white"
                   >
                     Open sign in
                   </button>
@@ -1250,7 +1248,19 @@ export function ArcadeHub() {
               Supabase not configured; authentication is required.
             </div>
           )}
-          {session && <CurrencyDisplay currencyService={currencyService} />}
+          {session && (
+            <>
+              <CompactPlayerBadge
+                userService={userService}
+                onOpenProfile={() => {
+                  playUiSound('click');
+                  setShowHub(true);
+                  setActiveTab('profile');
+                }}
+              />
+              <CurrencyDisplay currencyService={currencyService} />
+            </>
+          )}
         </div>
       </header>
 
@@ -1342,11 +1352,18 @@ export function ArcadeHub() {
                 </div>
               </div>
               <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <WelcomeBanner
-                  name={welcomeName}
-                  authenticated={false}
-                  onSignIn={() => setShowAuthModal(true)}
-                />
+                <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-5">
+                  <div className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">
+                    Sign In Required
+                  </div>
+                  <h3 className="mt-3 text-2xl font-black leading-tight text-white">
+                    Use an approved account to continue
+                  </h3>
+                  <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                    This arcade now requires sign in. Use your assigned account to access
+                    progress, leaderboards, and sync.
+                  </p>
+                </div>
                 <button
                   onClick={() => setShowAuthModal(true)}
                   className="mt-5 w-full rounded-xl bg-white text-gray-950 py-3 font-semibold hover:bg-gray-100 transition-colors"
@@ -1367,15 +1384,9 @@ export function ArcadeHub() {
           </div>
         ) : showHub ? (
           <div className="space-y-6">
-            <WelcomeBanner
-              name={welcomeName}
-              authenticated={!!session}
-              onSignIn={() => !authDisabled && setShowAuthModal(true)}
-              onSignOut={() => void signOut()}
-            />
             {/* Tab Navigation */}
-            <div className="flex justify-center">
-              <div className="inline-flex gap-1 bg-gray-900/50 border border-white/10 backdrop-blur p-1 rounded-full shadow-sm">
+            <div className="flex justify-center lg:justify-start">
+              <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/60 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur">
                 {tabButtons.map(tab => (
                   <button
                     key={tab.id}
@@ -1386,10 +1397,10 @@ export function ArcadeHub() {
                         setActiveTab(tab.id);
                       }
                     }}
-                    className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
+                    className={`min-h-11 shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
                       activeTab === tab.id
-                        ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white shadow'
-                        : 'text-gray-300 hover:text-white hover:bg-white/10'
+                        ? 'bg-gradient-to-r from-cyan-300 via-purple-400 to-amber-200 text-slate-950 shadow'
+                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
                     }`}
                   >
                     {tab.icon} {tab.label}
@@ -1399,153 +1410,103 @@ export function ArcadeHub() {
             </div>
 
             {/* Tab Content */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div>
               {activeTab === 'games' && (
-                <>
-                  <div className="lg:col-span-2 space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
-                        <div className="text-xs uppercase tracking-wider text-gray-300">
-                          Daily Challenges
-                        </div>
-                        <div className="mt-2 flex items-baseline gap-2">
-                          <div className="text-2xl font-bold text-white">
-                            {dailyCompleted}/{daily.length}
-                          </div>
-                          <div className="text-sm text-gray-300">complete</div>
-                        </div>
-                        <div className="mt-2 text-xs text-gray-400">
-                          Finish all dailies for a 1.5× coin boost.
-                        </div>
-                        <button
-                          onClick={() => {
-                            playUiSound('click');
-                            setActiveTab('challenges');
-                          }}
-                          className="mt-3 w-full rounded-lg bg-white/10 hover:bg-white/15 border border-white/10 text-white text-sm font-semibold py-2 transition-colors"
-                        >
-                          View Challenges
-                        </button>
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
+                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
+                        Daily Challenges
                       </div>
-
-                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
-                        <div className="text-xs uppercase tracking-wider text-gray-300">
-                          Unlock Progress
+                      <div className="mt-2 flex items-baseline gap-2">
+                        <div className="text-3xl font-black text-white">
+                          {dailyCompleted}/{daily.length}
                         </div>
-                        <div className="mt-2 text-2xl font-bold text-white">
-                          {unlockedGameCount}/{PLAYABLE_GAME_CATALOG.length}
-                        </div>
-                        <div className="mt-1 text-sm text-gray-300">released games unlocked</div>
-                        <div className="mt-2 text-xs text-gray-400">
-                          Tiers open: {unlockedReleasedTierCount}/{releasedTiers.length}
-                        </div>
-                        <div className="mt-3 w-full rounded-lg bg-white/10 border border-white/10 text-white/90 text-sm font-semibold py-2 text-center">
-                          {nextUnlockMessage}
-                        </div>
+                        <div className="text-sm text-slate-300">complete</div>
                       </div>
+                      <button
+                        onClick={() => {
+                          playUiSound('click');
+                          setActiveTab('challenges');
+                        }}
+                        className="mt-4 min-h-11 w-full rounded-xl border border-white/10 bg-white/10 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+                      >
+                        View Challenges
+                      </button>
+                    </div>
 
-                      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
-                        <div className="text-xs uppercase tracking-wider text-gray-300">
-                          Pro Tip
-                        </div>
-                        <div className="mt-2 text-sm text-gray-200 leading-relaxed">
-                          Bounce between games to stack coins faster, then come back and
-                          unlock the next tier.
-                        </div>
-                        <div className="mt-3 flex items-center justify-between rounded-lg bg-black/30 border border-white/10 px-3 py-2">
-                          <div className="text-xs text-gray-300">Balance</div>
-                          <div className="text-sm font-bold text-yellow-300">
-                            {currentCoins} coins
-                          </div>
-                        </div>
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
+                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
+                        Unlock Progress
+                      </div>
+                      <div className="mt-2 text-3xl font-black text-white">
+                        {unlockedGameCount}/{PLAYABLE_GAME_CATALOG.length}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-300">released games unlocked</div>
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold text-white/90">
+                        {nextUnlockMessage}
                       </div>
                     </div>
-                    <GameCarousel
-                      games={AVAILABLE_GAMES}
-                      unlockedTiers={unlockedTiers}
-                      unlockedGames={unlockedGames}
-                      currentCoins={currentCoins}
-                      onGameSelect={handleGameSelect}
-                      onTierUnlock={handleTierUnlock}
-                      onGameUnlock={handleGameUnlock}
-                    />
+
+                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
+                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
+                        Balance
+                      </div>
+                      <div className="mt-2 text-3xl font-black text-amber-200">
+                        {currentCoins}
+                      </div>
+                      <div className="mt-1 text-sm text-slate-300">coins available</div>
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold text-white/90">
+                        Tiers open: {unlockedReleasedTierCount}/{releasedTiers.length}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <UserProfile userService={userService} />
-                  </div>
-                </>
+                  <GameCarousel
+                    games={AVAILABLE_GAMES}
+                    unlockedTiers={unlockedTiers}
+                    unlockedGames={unlockedGames}
+                    currentCoins={currentCoins}
+                    onGameSelect={handleGameSelect}
+                    onTierUnlock={handleTierUnlock}
+                    onGameUnlock={handleGameUnlock}
+                  />
+                </div>
               )}
 
               {activeTab === 'leaderboards' && (
-                <>
-                  <div className="lg:col-span-2 space-y-4">
-                    <LeaderboardsTab
-                      supabaseService={supabaseService}
-                      signedIn={!!session}
-                      authDisabled={authDisabled}
-                      games={PLAYABLE_GAME_CATALOG}
-                      unlockedTiers={unlockedTiers}
-                      unlockedGames={unlockedGames}
-                      onPlayGame={(gameId) => void handleGameSelect(gameId)}
-                      onRequestSignIn={() => setShowAuthModal(true)}
-                    />
-                  </div>
-                  <div>
-                    <UserProfile userService={userService} />
-                  </div>
-                </>
+                <div className="space-y-4">
+                  <LeaderboardsTab
+                    supabaseService={supabaseService}
+                    signedIn={!!session}
+                    authDisabled={authDisabled}
+                    games={PLAYABLE_GAME_CATALOG}
+                    unlockedTiers={unlockedTiers}
+                    unlockedGames={unlockedGames}
+                    onPlayGame={(gameId) => void handleGameSelect(gameId)}
+                    onRequestSignIn={() => setShowAuthModal(true)}
+                  />
+                </div>
               )}
 
               {activeTab === 'challenges' && (
-                <>
-                  <div className="lg:col-span-2">
-                    <DailyChallenges challengeService={challengeService} />
-                  </div>
-                  <div>
-                    <UserProfile userService={userService} />
-                  </div>
-                </>
+                <DailyChallenges challengeService={challengeService} />
               )}
 
               {activeTab === 'achievements' && (
-                <>
-                  <div className="lg:col-span-2">
-                    <AchievementPanel achievementService={achievementService} />
-                  </div>
-                  <div>
-                    <UserProfile userService={userService} />
-                  </div>
-                </>
+                <AchievementPanel achievementService={achievementService} />
               )}
 
               {activeTab === 'profile' && (
-                <>
-                  <div className="lg:col-span-2">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <DailyChallenges
-                        challengeService={challengeService}
-                      />
-                      <AchievementPanel achievementService={achievementService} />
-                      <AnalyticsOverview analyticsOwnerId={session?.user.id} />
-                    </div>
+                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.6fr)]">
+                  <UserProfile userService={userService} />
+                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    <DailyChallenges challengeService={challengeService} />
+                    <AchievementPanel achievementService={achievementService} />
+                    <AnalyticsOverview analyticsOwnerId={session?.user.id} />
                   </div>
-                  <div>
-                    <UserProfile userService={userService} />
-                  </div>
-                </>
+                </div>
               )}
             </div>
-
-            {/* Welcome message for games tab */}
-            {activeTab === 'games' && (
-              <div className="mt-8 rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-6 text-center text-gray-200">
-                <h3 className="text-xl font-bold text-white">Welcome to the Arcade</h3>
-                <p className="max-w-2xl mx-auto mt-2 text-sm text-gray-300">
-                  Play to earn coins, unlock tiers, and then unlock games within each tier.
-                  Complete daily challenges for bonuses, and chase leaderboard spots.
-                </p>
-              </div>
-            )}
           </div>
         ) : audioManager ? (
           <div className="flex justify-center">
