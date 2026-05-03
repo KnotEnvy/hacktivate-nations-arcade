@@ -21,7 +21,7 @@ import {
 } from './entities/BossEnemies';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
 import { PLAYER } from './data/constants';
-import { SECTIONS, getSection, TERRAIN_HANDLING, type SectionDef } from './data/sections';
+import { SECTIONS, getSection, TERRAIN_HANDLING, resolvePalette, type SectionDef } from './data/sections';
 
 interface AABB {
   x: number;
@@ -88,7 +88,8 @@ type DeathCause =
   | 'chopper_bomb'
   | 'tank_shell'
   | 'drone_swoop'
-  | 'barrier_collision';
+  | 'barrier_collision'
+  | 'depth_charge';
 
 interface RecapStats {
   cause: DeathCause;
@@ -403,6 +404,7 @@ export class SpeedRacerGame extends BaseGame {
       this.sectionsCleared,
       this.player.x,
       this.player.y,
+      this.player.vx,
       this.player.speed,
       this.currentSection.id,
     );
@@ -896,6 +898,23 @@ export class SpeedRacerGame extends BaseGame {
       }
     }
 
+    // v7 — Depth-charge explosions vs player. Mirrors bomb collision: single
+    // damage check on the frame the charge detonates (justExploded), radial
+    // distance vs the charge center.
+    if (playerVulnerable) {
+      for (const dc of this.spawner.getDepthCharges()) {
+        if (!dc.justExploded) continue;
+        const c = dc.getExplosionCenter();
+        const dx = this.player.x - c.x;
+        const dy = this.player.y - c.y;
+        if (dx * dx + dy * dy <= c.r * c.r) {
+          this.particles.burstExplosion(this.player.x, this.player.y, 1.6);
+          this.services?.audio?.playSound?.('explosion', { volume: 0.6 });
+          if (this.takeDamage('depth_charge')) return;
+        }
+      }
+    }
+
     // Hazards (oil/smoke) vs enemies
     for (const hz of this.secondary.getHazards()) {
       if (!hz.alive) continue;
@@ -1075,7 +1094,11 @@ export class SpeedRacerGame extends BaseGame {
     const h = this.canvas.height;
     ctx.save();
     this.shake.apply(ctx);
-    this.road.render(ctx, w, h, this.currentSection.palette, this.roadProfile);
+    // v7 — apply paletteOverride zones (e.g., bridge concrete crossfade) by
+    // resolving the effective palette from the player's section-relative
+    // worldY. Sections without overrides return the base palette unchanged.
+    const effectivePalette = resolvePalette(this.currentSection, this.roadProfile.playerWorldY());
+    this.road.render(ctx, w, h, effectivePalette, this.roadProfile);
     this.renderMotionLines(ctx, w, h);
     this.terrainHazards.render(ctx);
     this.secondary.render(ctx);
@@ -1155,6 +1178,7 @@ export class SpeedRacerGame extends BaseGame {
       tank_shell: 'SHELLED BY TANK',
       drone_swoop: 'DRONE KAMIKAZE',
       barrier_collision: 'CRASHED INTO DIVIDER',
+      depth_charge: 'CAUGHT IN DEPTH CHARGE',
     };
     ctx.textAlign = 'center';
     ctx.fillStyle = '#FF0080';
@@ -1235,6 +1259,8 @@ export class SpeedRacerGame extends BaseGame {
         return 'Drones telegraph with a red ring before they swoop — move then.';
       case 'barrier_collision':
         return 'Pick a side at the fork — once the divider opens, you commit to that lane.';
+      case 'depth_charge':
+        return 'Depth charges blink before they blow — change lanes the moment you see one drop.';
       case 'self_end':
         // Fall through to generic advice below.
         break;

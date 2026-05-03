@@ -2,6 +2,7 @@ import { EnemyCar, EnemyType, EnemyVisual } from '../entities/EnemyCar';
 import { Civilian } from '../entities/Civilian';
 import { Projectile } from '../entities/Projectile';
 import { WeaponVan } from '../entities/WeaponVan';
+import { DepthCharge } from '../entities/DepthCharge';
 import { pickRandomSecondary } from '../data/secondaryWeapons';
 import type { RoadProfile } from './RoadProfile';
 
@@ -35,6 +36,7 @@ export class EnemySpawner {
   private enemies: EnemyCar[] = [];
   private civilians: Civilian[] = [];
   private projectiles: Projectile[] = [];
+  private depthCharges: DepthCharge[] = [];
   private vans: WeaponVan[] = [];
   private spawnTimer = 0.8;
   private civTimer = 1.4;
@@ -61,6 +63,7 @@ export class EnemySpawner {
     this.enemies = [];
     this.civilians = [];
     this.projectiles = [];
+    this.depthCharges = [];
     this.vans = [];
     this.spawnTimer = 0.8;
     this.civTimer = 1.4;
@@ -125,8 +128,15 @@ export class EnemySpawner {
 
     for (const e of this.enemies) {
       e.update(dt, playerSpeed, playerX, playerY);
-      if (e.config.type === 'shooter' && e.alive) {
-        this.updateShooter(e, dt, playerX, playerY, playerVx);
+      if (e.alive) {
+        // Anything with a bulletSpeed config fires through the shooter
+        // pipeline — the strafer reuses this for its bursts while its
+        // patrol-style weave drives lateral motion.
+        if (e.config.bulletSpeed != null) {
+          this.updateShooter(e, dt, playerX, playerY, playerVx);
+        } else if (e.config.type === 'dropper') {
+          this.updateDropper(e, dt, playerY);
+        }
       }
     }
     this.enemies = this.enemies.filter((e) => e.alive);
@@ -136,6 +146,26 @@ export class EnemySpawner {
 
     for (const p of this.projectiles) p.update(dt);
     this.projectiles = this.projectiles.filter((p) => p.alive);
+
+    for (const dc of this.depthCharges) dc.update(dt, playerSpeed);
+    this.depthCharges = this.depthCharges.filter((dc) => dc.alive);
+  }
+
+  // v7 — Dropper releases a depth charge into the player's path. Only fires
+  // while sitting in a "sweet spot" ahead of the player so the fuse delay
+  // gives the player time to dodge — too far ahead and the charge would
+  // detonate before the player reaches it; too close (or behind) and the
+  // player can't possibly avoid it. Reuses fireCooldown as drop cadence.
+  private updateDropper(e: EnemyCar, dt: number, playerY: number): void {
+    e.fireCooldown -= dt;
+    if (e.fireCooldown > 0) return;
+
+    const distY = playerY - e.y;
+    if (distY < 220 || distY > 480) return;
+
+    const spawnY = e.y + e.config.height / 2 + 6;
+    this.depthCharges.push(new DepthCharge(e.x, spawnY));
+    e.fireCooldown = 1.6 + Math.random() * 0.9;
   }
 
   private updateShooter(
@@ -329,6 +359,9 @@ export class EnemySpawner {
     for (const c of this.civilians) c.render(ctx);
     for (const e of this.enemies) e.render(ctx);
     for (const p of this.projectiles) p.render(ctx);
+    // Depth charges render last so the warning ring + detonation flash
+    // are visible above any boats sitting on top of them.
+    for (const dc of this.depthCharges) dc.render(ctx);
   }
 
   getEnemies(): EnemyCar[] {
@@ -345,5 +378,9 @@ export class EnemySpawner {
 
   getVans(): WeaponVan[] {
     return this.vans;
+  }
+
+  getDepthCharges(): DepthCharge[] {
+    return this.depthCharges;
   }
 }

@@ -34,6 +34,12 @@ const DRONE_HOVER_Y_MAX = 170;
 const DRONE_HOVER_SPEED = 160;
 const DRONE_SWOOP_SPEED = 520;
 const DRONE_RETREAT_SPEED = 260;
+// Lateral lead cap on swoop targeting. Player STEER_MAX_SPEED is 380 and a
+// typical swoop traverses ~0.6–0.8s, so an unclamped lead can exceed half the
+// road width — feels unfair. 120px lets the drone meaningfully track a
+// committed sideways dodge while still letting a mid-swoop reversal escape
+// (target is locked at swoop start, not re-aimed).
+const DRONE_MAX_LEAD = 120;
 
 const TANK_RECOIL_DURATION = 0.2; // seconds — hull kick + muzzle puff decay
 
@@ -300,7 +306,7 @@ export class Drone {
     this.stateTimer = 0.6 + Math.random() * 1.8;
   }
 
-  update(dt: number, playerX: number, playerY: number): void {
+  update(dt: number, playerX: number, playerY: number, playerVx: number): void {
     if (!this.alive) return;
     this.pulse += dt * 6;
 
@@ -321,8 +327,16 @@ export class Drone {
       this.x += Math.sign(dx) * Math.min(Math.abs(dx), DRONE_HOVER_SPEED * 0.6 * dt);
       this.stateTimer -= dt;
       if (this.stateTimer <= 0) {
-        // Lock swoop target at player's current position
-        this.swoopTargetX = playerX;
+        // Lead the player's lateral velocity. The swoop traverses dy at
+        // DRONE_SWOOP_SPEED, so predict where the player will be when the
+        // drone arrives. Player Y is essentially fixed (sits at PLAYER.Y);
+        // only X needs leading. Lead clamped to DRONE_MAX_LEAD so a player
+        // at full sideways speed can still dodge by reversing direction.
+        const dyToPlayer = Math.max(0, playerY - this.y);
+        const timeToReach = dyToPlayer / DRONE_SWOOP_SPEED;
+        const rawLead = playerVx * timeToReach;
+        const lead = Math.max(-DRONE_MAX_LEAD, Math.min(DRONE_MAX_LEAD, rawLead));
+        this.swoopTargetX = playerX + lead;
         this.swoopTargetY = playerY;
         this.state = 'swoop';
       }

@@ -11,7 +11,7 @@ function segmentContaining(
   return null;
 }
 
-export type EnemyType = 'ram' | 'shooter' | 'enforcer' | 'armored' | 'patrol';
+export type EnemyType = 'ram' | 'shooter' | 'enforcer' | 'armored' | 'patrol' | 'dropper' | 'strafer';
 export type EnemyVisual = 'car' | 'jetboat';
 
 export interface EnemyConfig {
@@ -120,6 +120,44 @@ export const ENEMY_CONFIGS: Record<EnemyType, EnemyConfig> = {
     color: '#00B0C8',
     accentColor: '#FFFFFF',
   },
+  // v7 — Depth-charge dropper. Cruises ahead of the player and releases
+  // delayed-fuse depth charges into the player's path. Slow lateral drift
+  // toward the player keeps the threat live without being undodgeable.
+  // Drop spawning lives in EnemySpawner.updateDropper alongside shooter
+  // projectile logic. 2 HP — punishable but you have to spend bullets.
+  dropper: {
+    type: 'dropper',
+    forwardSpeed: 280,
+    matchSpeedDelta: 90,
+    width: 46,
+    height: 78,
+    hp: 2,
+    scoreValue: 320,
+    coinDrop: 3,
+    bulletproof: false,
+    bumpResistance: 1.2,
+    color: '#1f5a78',
+    accentColor: '#FFD700',
+  },
+  // v7 — Strafing jet-boat. Patrol-style sine weave + shooter-style aim-lead
+  // bursts. Distinct from the static shooter (which holds lane and fires) —
+  // strafer's weave makes its bullets harder to predict, and the same weave
+  // makes the boat itself harder to put bullets into.
+  strafer: {
+    type: 'strafer',
+    forwardSpeed: 290,
+    matchSpeedDelta: 50,
+    width: 44,
+    height: 72,
+    hp: 2,
+    scoreValue: 280,
+    coinDrop: 2,
+    bulletproof: false,
+    bumpResistance: 1.0,
+    color: '#7a2aaa',
+    accentColor: '#FF66BB',
+    bulletSpeed: 480,
+  },
 };
 
 const APPROACH_RANGE = 280; // px of distAhead below which enemies ramp to match
@@ -224,8 +262,11 @@ export class EnemyCar {
       } else if (this.config.type === 'armored' || this.config.type === 'enforcer') {
         // Both share the lane-blocker behavior — enforcer is just smaller/faster cruise.
         this.updateArmoredAI(dt, playerX, playerY);
-      } else if (this.config.type === 'patrol') {
+      } else if (this.config.type === 'patrol' || this.config.type === 'strafer') {
+        // Strafer shares patrol's sine-weave; firing happens in EnemySpawner.
         this.updatePatrolAI(dt, playerX);
+      } else if (this.config.type === 'dropper') {
+        this.updateDropperAI(dt, playerX);
       }
       // Shooter AI handled by EnemySpawner (needs projectile spawning)
     }
@@ -378,6 +419,16 @@ export class EnemyCar {
     if (!playerSeg || !enemySeg) return false;
     return playerShape.segments.indexOf(playerSeg) ===
       enemyShape.segments.indexOf(enemySeg);
+  }
+
+  // v7 — Dropper drifts slowly toward the player's lateral position so its
+  // depth charges land near the player's lane. 50 px/sec is much slower
+  // than player STEER_MAX (380), so a committed lane change always escapes.
+  // The threat compounds when several droppers + a strafer share the screen.
+  private updateDropperAI(dt: number, playerX: number): void {
+    const dx = playerX - this.x;
+    const maxLat = 50 * dt;
+    this.x += Math.max(-maxLat, Math.min(maxLat, dx));
   }
 
   private updatePatrolAI(dt: number, playerX: number): void {
@@ -898,6 +949,8 @@ export class EnemyCar {
     else if (c.type === 'enforcer') this.drawEnforcerBoat(ctx, x, y, w, h);
     else if (c.type === 'armored') this.drawArmoredBoat(ctx, x, y, w, h);
     else if (c.type === 'patrol') this.drawPatrolBoat(ctx, x, y, w, h);
+    else if (c.type === 'dropper') this.drawDropperBoat(ctx, x, y, w, h);
+    else if (c.type === 'strafer') this.drawStraferBoat(ctx, x, y, w, h);
 
     // Ram lock tracer — mirror the car version so water-section rams telegraph too
     if (isRamLocking) {
@@ -1214,6 +1267,107 @@ export class EnemyCar {
       ctx.fillRect(cx + 2, py, 2, 2);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // v7 — Dropper jet-boat. Wide stern with a visible release rack; a row of
+  // depth-charge canisters waiting to be dropped reads at a glance as the
+  // threat profile. Slate-blue hull, gold accent banding.
+  private drawDropperBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Hull
+    ctx.fillStyle = c.color;
+    this.jetboatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Cabin — small canopy near the bow
+    ctx.fillStyle = '#0a1828';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.34, w * 0.22, h * 0.13, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(140,220,255,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(cx, y + h * 0.31, w * 0.18, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Gold deck stripe
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(cx - 1, y + h * 0.42, 2, h * 0.32);
+
+    // Release rack — three small canisters on the stern, each capped with a
+    // tiny gold band and indicator dot.
+    for (let i = 0; i < 3; i++) {
+      const px = cx - 14 + i * 14;
+      const py = y + h * 0.78;
+      ctx.fillStyle = '#0a1422';
+      ctx.beginPath();
+      ctx.ellipse(px, py, 4, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = c.accentColor;
+      ctx.fillRect(px - 3, py - 1, 6, 1);
+      ctx.fillStyle = '#FF3333';
+      ctx.fillRect(px - 1, py - 4, 2, 1);
+    }
+
+    // Stern rail
+    ctx.fillStyle = '#aab2bc';
+    ctx.fillRect(x + 4, y + h - 3, w - 8, 2);
+  }
+
+  // v7 — Strafer jet-boat. Twin forward-mounted gun barrels flanking a low
+  // cockpit, magenta hull. Visually announces "this one shoots while
+  // weaving" as distinct from the wider patrol boat.
+  private drawStraferBoat(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ): void {
+    const c = this.config;
+    const cx = x + w / 2;
+
+    // Hull
+    ctx.fillStyle = c.color;
+    this.jetboatHullPath(ctx, x, y, w, h);
+    ctx.fill();
+
+    // Twin barrels protruding past the bow
+    ctx.fillStyle = '#1a1a1a';
+    ctx.fillRect(cx - 10, y - 6, 4, 14);
+    ctx.fillRect(cx + 6, y - 6, 4, 14);
+    // Barrel tips — accent-colored muzzle bands
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(cx - 10, y - 6, 4, 2);
+    ctx.fillRect(cx + 6, y - 6, 4, 2);
+
+    // Gun mount block between the barrels
+    ctx.fillStyle = '#3a1a4a';
+    ctx.fillRect(cx - 6, y + 4, 12, 8);
+
+    // Cockpit — flat hexagonal pod for the pilot
+    ctx.fillStyle = '#0a0a14';
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.16, y + h * 0.42);
+    ctx.lineTo(cx + w * 0.16, y + h * 0.42);
+    ctx.lineTo(cx + w * 0.18, y + h * 0.58);
+    ctx.lineTo(cx - w * 0.18, y + h * 0.58);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,140,220,0.45)';
+    ctx.fillRect(cx - w * 0.13, y + h * 0.45, w * 0.26, 2);
+
+    // Side accent stripes — magenta racing trim
+    ctx.fillStyle = c.accentColor;
+    ctx.fillRect(x + 4, y + h * 0.62, w - 8, 2);
+    ctx.fillRect(x + 8, y + h * 0.72, w - 16, 1);
   }
 
   private jetboatHullPath(

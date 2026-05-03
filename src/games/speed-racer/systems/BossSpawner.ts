@@ -52,6 +52,7 @@ export class BossSpawner {
     sectionsCleared: number,
     playerX: number,
     playerY: number,
+    playerVx: number,
     playerSpeed: number,
     sectionId: string,
   ): void {
@@ -79,7 +80,7 @@ export class BossSpawner {
     for (const shell of this.shells) shell.update(dt);
     this.shells = this.shells.filter((s) => s.alive);
 
-    for (const drone of this.drones) drone.update(dt, playerX, playerY);
+    for (const drone of this.drones) drone.update(dt, playerX, playerY, playerVx);
     this.drones = this.drones.filter((d) => d.alive);
   }
 

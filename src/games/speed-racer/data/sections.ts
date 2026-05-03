@@ -69,6 +69,32 @@ export interface TunnelZone {
   endWorldY: number;
 }
 
+// v7 — palette override zone. Crossfades any subset of color fields on the
+// section palette across a section-relative worldY range. Used to promote
+// scenery-only set-pieces (e.g., the Steel Span bridge) into a true road
+// body / edge transition. Reusable for future sections (e.g., a tunnel
+// where the road itself goes concrete inside).
+//
+// Only string color fields are interpolated. sceneryStyle / numeric fields
+// stay on the base palette — those describe layout, not paint.
+type PaletteColorField =
+  | 'roadColor' | 'roadShadeColor'
+  | 'edgeColor' | 'edgeGlowColor'
+  | 'laneLineColor' | 'centerLineColor'
+  | 'grassTop' | 'grassBottom'
+  | 'horizonColor'
+  | 'sceneryColor' | 'sceneryAccent' | 'sceneryRimColor'
+  | 'postColor' | 'postAccent'
+  | 'bannerColor' | 'bannerGlow';
+
+export interface PaletteOverrideZone {
+  startWorldY: number;
+  endWorldY: number;
+  // Fade-in/fade-out length at each end (worldY units). Defaults to 200.
+  fadeLength?: number;
+  palette: Partial<Pick<SectionPalette, PaletteColorField>>;
+}
+
 export interface SectionDef {
   id: string;
   name: string; // banner headline
@@ -86,6 +112,79 @@ export interface SectionDef {
   // covering the entire visible area while the player's worldY sits inside
   // a zone. Multiple zones per section supported.
   tunnelZones?: ReadonlyArray<TunnelZone>;
+  // v7 — palette override zones. Crossfade road / edge / lane colors across
+  // a worldY range so a set-piece (e.g., a bridge) reshapes the surface
+  // itself, not just the surrounding scenery.
+  paletteOverrides?: ReadonlyArray<PaletteOverrideZone>;
+}
+
+// === Palette resolution ================================================
+
+// Hex parser supporting #RGB / #RRGGBB. Returns [r, g, b] in 0..255.
+function parseHex(hex: string): [number, number, number] {
+  if (hex.length === 4) {
+    return [
+      parseInt(hex[1] + hex[1], 16),
+      parseInt(hex[2] + hex[2], 16),
+      parseInt(hex[3] + hex[3], 16),
+    ];
+  }
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function toHex(c: number): string {
+  const v = Math.max(0, Math.min(255, Math.round(c)));
+  return v.toString(16).padStart(2, '0');
+}
+
+function lerpHex(a: string, b: string, t: number): string {
+  const [ar, ag, ab] = parseHex(a);
+  const [br, bg, bb] = parseHex(b);
+  const r = ar + (br - ar) * t;
+  const g = ag + (bg - ag) * t;
+  const bl = ab + (bb - ab) * t;
+  return `#${toHex(r)}${toHex(g)}${toHex(bl)}`;
+}
+
+// Resolve the effective palette at a section-relative worldY by crossfading
+// any active paletteOverride zones onto the base palette. Pure function —
+// used each frame from SpeedRacerGame.onRender.
+export function resolvePalette(
+  section: SectionDef,
+  sectionRelativeWorldY: number,
+): SectionPalette {
+  const overrides = section.paletteOverrides;
+  if (!overrides || overrides.length === 0) return section.palette;
+
+  let result: SectionPalette = section.palette;
+  for (const z of overrides) {
+    if (sectionRelativeWorldY < z.startWorldY || sectionRelativeWorldY > z.endWorldY) {
+      continue;
+    }
+    const fade = z.fadeLength ?? 200;
+    const distFromEdge = Math.min(
+      sectionRelativeWorldY - z.startWorldY,
+      z.endWorldY - sectionRelativeWorldY,
+    );
+    const t = Math.max(0, Math.min(1, distFromEdge / fade));
+    if (t <= 0) continue;
+    // Lerp each declared field from current resolved palette toward the
+    // override target. Stacking zones compose left-to-right.
+    const next: SectionPalette = { ...result };
+    for (const key of Object.keys(z.palette) as Array<keyof typeof z.palette>) {
+      const target = z.palette[key];
+      if (typeof target !== 'string') continue;
+      const base = result[key];
+      if (typeof base !== 'string') continue;
+      (next[key] as string) = lerpHex(base, target, t);
+    }
+    result = next;
+  }
+  return result;
 }
 
 // === Section 1 — gentle intro. No armored, sparse traffic. ===
@@ -222,6 +321,35 @@ const STEEL_SPAN: SectionDef = {
     shooterBurstChance: 0.12,
     formationChance: 0.08,
   },
+  // v7 — promote the existing scenery-bridge into a true bridge transition.
+  // Mid-section, the road body crossfades to weathered concrete and the edges
+  // shift to industrial steel-railing tones. The bridge towers (already drawn
+  // by sceneryStyle: 'bridge') line up with this stretch so the set-piece
+  // reads as one coherent crossing instead of "neon road that happens to have
+  // towers next to it." 200-unit fade in/out gives a perceptible-but-not-
+  // jarring transition.
+  paletteOverrides: [
+    {
+      startWorldY: 1500,
+      endWorldY: 6500,
+      fadeLength: 350,
+      palette: {
+        // Road body: weathered concrete deck with darker expansion-joint shade
+        roadColor: '#5a5a62',
+        roadShadeColor: '#2e2e36',
+        // Edges become steel railings — desaturated industrial silver, with a
+        // faint warning-amber glow that matches the existing tower lights.
+        edgeColor: '#a8b0bc',
+        edgeGlowColor: '#FFB840',
+        // High-contrast lane paint on concrete
+        laneLineColor: '#FFFFFF',
+        centerLineColor: '#FFD700',
+        // Roadside posts read as bridge stanchions
+        postColor: '#c8d0dc',
+        postAccent: '#FFB840',
+      },
+    },
+  ],
 };
 
 // === Section 4 — alpine pass, dodge focus, civilian-heavy. ===
@@ -396,14 +524,15 @@ const HARBOR_RUN: SectionDef = {
     bannerGlow: '#88FFFF',
   },
   spawnerConfig: {
-    // Penultimate stretch. Patrol identity preserved (still patrol-heavy
-    // weight). Spawn cadence used to be 1.5s in v4 — slower than §5's 1.05
-    // — which broke the curve. Now tightened to 1.05 with stronger burst
-    // + formation rolls so water genuinely raises the bar. Enforcer cruisers
-    // take most of the "armored slot"; SWAT gunship stays rare.
+    // Penultimate stretch. Patrol identity preserved. v7 introduces the
+    // aquatic-specific threats — droppers (depth charges) and strafers
+    // (weaving shooters) — that lean into the section's water identity
+    // instead of just reskinning road enemies. Patrol weight dropped to
+    // make room; ram weight trimmed slightly so the section feels more
+    // distinctly aquatic vs §5/§7's car mixes. SWAT gunship stays rare.
     spawnInterval: 1.05,
-    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored', 'patrol'],
-    enemyTypeWeights: [4, 3, 2, 1, 5],
+    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored', 'patrol', 'dropper', 'strafer'],
+    enemyTypeWeights: [3, 2, 2, 1, 4, 3, 3],
     civilianChance: 0.55,
     civilianSpawnInterval: 2.1,
     vanIntervalMin: 16,
