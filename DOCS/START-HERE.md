@@ -9,7 +9,7 @@ This is the minimal handoff set for the next team. The production-hardening pass
 1. `README.md`
 2. `DOCS/PROJECT-RELEARN-HANDOFF-2026-04-13.md`
 3. `DOCS/ActionPlan.md`
-4. `DOCS/VERCEL-PRODUCTION-RUNBOOK.md`
+4. `DOCS/VERCEL-PRODUCTION-RUNBOOK.md` if you are assisting in any vercel production tasks
 5. `DOCS/AUDIO-SYSTEM-HANDOFF.md` if you are touching music, sound effects, the audio settings modal, or launch/hub music
 6. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, analytics ownership, or local-save boundaries
 7. `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` if you need to change the live Supabase schema or verify the trusted progression RPC path
