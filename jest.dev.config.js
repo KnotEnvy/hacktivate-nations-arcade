@@ -12,14 +12,13 @@ const customJestConfig = {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
-  testMatch: ['<rootDir>/src/__approval__/**/*.test.ts'],
   coverageProvider: 'v8',
   collectCoverageFrom: [
     'src/**/*.{ts,tsx}',
     '!src/**/index.ts',
     '!src/**/*.d.ts',
-    '!src/app/**/*', // Exclude Next.js app directory
-    '!src/components/**/*', // Exclude React components for now
+    '!src/app/**/*',
+    '!src/components/**/*',
   ],
 };
 

@@ -54,9 +54,9 @@ Verified on April 30, 2026 after Speed Racer completion and startup optimization
 - production build reports `/` at 103 kB first-load JS
 - `npm.cmd run type-check` passes
 - `npm.cmd run lint` passes
-- `npm.cmd test -- --runInBand` passes
+- `npm.cmd test -- --runInBand` passes as a 10-test release approval suite
 - `npm.cmd run build` passes
-- Playwright specs are not the current launch source of truth until refreshed for the signed-in-only product flow; use signed-in manual smoke testing for deployment readiness
+- Playwright now covers a lightweight browser smoke path for the current signed-in access boundary, but signed-in gameplay QA remains a manual deployment-readiness check
 
 ## What To Work On Next
 
@@ -69,7 +69,7 @@ Highest-value remaining work:
    - Add monitoring/error tracking if that is still part of launch scope
    - Rotate Supabase keys if any prior real values were shared outside the current secure deployment setup
 3. Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned after any future SQL change.
-4. Run the deploy gate before promotion: `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, and `npm.cmd run build`.
+4. Run the deploy gate before promotion: `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, and `npm.cmd run build`. Use `npm.cmd run test:dev -- --runInBand` only when actively changing a subsystem and you want the broader development-era Jest coverage.
 
 ## Docs To Ignore Unless You Need Deep History
 

@@ -1,229 +1,96 @@
-# Test 101 - HacktivateNations Arcade Testing Suite
+# Test 101 - HacktivateNations Arcade
 
-> Current launch note, April 30, 2026: this document is historical and still describes earlier guest-flow Playwright coverage. The active automated deploy gate is `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, and `npm.cmd run build`. Refresh the Playwright specs for the signed-in-only product flow before treating `npm run e2e` as blocking again.
+Last updated: May 7, 2026
 
-## ðŸŽ¯ Current Testing Status
+This project uses a small, practical quality gate. The goal is to catch broken TypeScript, lint regressions, service logic failures, and production build failures without making every change wait on slow or brittle browser automation.
 
-### **Coverage Summary (unit)**
-- Fresh run snapshot (global): ~6â€“7% lines (services/lib only; app/components excluded). See `coverage/coverage-summary.json` for details.
-- Note: Prior figures (30% services/27% lib) reflected a narrower include set; weâ€™ll lift coverage and re-align thresholds as we stabilize.
+## Current CI Shape
 
-### **Unit Tests**
-- 7 test suites, 77 total tests (49 passing, 28 need fixes)
+Required GitHub Actions job:
 
-### **E2E (Playwright) â€” Implemented**
-- Framework added with webServer auto-boot and HTML report.
-- Passing suites (Chromium): 5/5
-  - Smoke: land + hub visible
-  - Smoke: start Runner and see canvas
-  - Tabs navigation: Games â‡„ Challenges â‡„ Achievements
-  - Audio settings: open, adjust sliders, mute, close
-  - Theme presence: title + ready overlay in game view
-
-This repo uses Jest + ts-jest for unit tests and Playwright for E2E. Jest includes mocks for Web Audio API, Canvas API, and localStorage.
-
----
-
-## ðŸ“‹ What's Currently Tested
-
-### **âœ… Core Services (Well Covered)**
-- **CurrencyService** (85% coverage): Reward calculation, add/spend behavior, storage, change listeners
-- **AchievementService** (66% coverage): Unlocking logic by requirement and `gameId` filtering  
-- **GameLoader** (84% coverage): Registration, discovery, graceful handling of unknown IDs
-- **UserServices** (87% coverage): Profile management, experience/leveling, stats tracking
-- **Analytics** (59% coverage): Session tracking, player insights, metrics calculation
-
-### **âœ… New Systems (100% Covered)**
-- **GameThemes** (100% coverage): All 5 themes validated (colors, fonts, effects, animations)
-- **Constants** (100% coverage): Economy settings, configuration values
-
-### **âš ï¸ Partially Tested**
-- **AudioManager** (10% coverage): Basic mocking setup, needs implementation alignment
-- **BaseGame** (0% coverage): Complex game engine logic (intentionally deferred)
-
-### **âŒ Not Yet Tested**
-- **React Components**: Excluded from unit tests (will be covered by E2E)
-- **Hooks**: useCanvas, useGameModule, useInput (complex DOM integration)
-- **Game Engines**: Individual games (RunnerGame, SnakeGame, etc.)
-- **Stores**: Zustand state management
-- **ChallengeService & InputManager**: Lower priority services
-
----
-
-## ðŸ§ª Test Infrastructure
-
-### **Current Setup**
 ```bash
-# Installed Dependencies
-jest@30.1.3
-ts-jest@29.4.1
-@testing-library/jest-dom@6.8.0
-@testing-library/react@16.3.0
-jest-environment-jsdom@30.1.2
+npm run type-check
+npm run lint
+npm test -- --runInBand
+npm run build
 ```
 
-### **Key Configuration Files**
-- `jest.config.js` â€“ ts-jest preset, jsdom env, `@/*` alias mapping, coverage exclusions
-- `jest.setup.ts` â€“ Enhanced with Web Audio API mocks, Canvas API mocks, localStorage cleanup
+`npm test` now runs the final release approval suite only: 10 real-data checks covering the catalog, registry, game loading, assets, unlock economy, daily challenges, trusted progression, procedural music assignments, and Supabase auth configuration guard.
 
-### **Current Test Files**
-```
-src/services/__tests__/
-â”œâ”€â”€ CurrencyService.test.ts      âœ… 85% coverage
-â”œâ”€â”€ AchievementService.test.ts   âœ… 66% coverage  
-â”œâ”€â”€ GameLoader.test.ts           âœ… 84% coverage
-â”œâ”€â”€ UserServices.test.ts         âš ï¸ 87% coverage (some fixes needed)
-â”œâ”€â”€ Analytics.test.ts            âœ… 59% coverage
-â””â”€â”€ AudioManager.test.ts         âš ï¸ 10% coverage (mock alignment needed)
+Optional browser smoke job:
 
-src/lib/__tests__/
-â””â”€â”€ gameThemes.test.ts           âœ… 100% coverage
-```
-
----
-
-## ðŸš€ How to Run Tests
-
-### **Basic Commands**
 ```bash
-# Run all tests
-npm test
-
-# Run with coverage report
-npm test -- --coverage
-
-# Watch mode for development
-npm run test:watch
-
-# Run specific test file
-npm test -- AudioManager.test.ts
-
-# Silent mode (less output)
-npm test -- --silent
+npm run e2e
 ```
 
-### **Coverage Targets**
+The Playwright job is manual in GitHub Actions. Use it when changing the app shell, auth gate, core navigation, public instructions page, or when you want browser-level confidence before sharing a build. It is not intended to block every small game or service change.
+
+## What Is Tested
+
+### Unit and Integration Tests
+
+The default Jest gate covers the systems that most directly affect launch stability:
+
+- current 17 playable / 10 coming-soon catalog shape
+- registry and playable catalog alignment
+- all playable game modules load with matching manifests
+- shipped thumbnail assets and asset budgets
+- signed-in unlock economy and default Runner access
+- real daily challenge generation from valid templates
+- trusted Speed Racer progression and achievement derivation
+- procedural music assignments for hub and playable games
+- Supabase public auth configuration fail-closed behavior
+
+The broader development-era Jest suites are still available when they are useful:
+
 ```bash
-# Current exclusions (in jest.config.js):
-- src/app/**/*           # Next.js app directory
-- src/components/**/*    # React components (E2E will handle)
-- src/**/index.ts        # Barrel exports
-- src/**/*.d.ts          # Type definitions
+npm run test:dev -- --runInBand
 ```
 
----
-## dYZr E2E Testing (Playwright)
+Use `test:dev` while actively changing hooks, services, Supabase sync, audio internals, or any subsystem where the old focused tests help. Do not make those development suites part of the final approval gate unless the launch risk changes.
 
-### **Installed Packages**
- ```bash 
-@playwright/test
- ``` 
+### Browser Smoke Tests
 
-### **Suites Added (Passing)**
--  `tests/e2e/first-time-user.spec.ts` 
--  `tests/e2e/tabs-navigation.spec.ts` 
--  `tests/e2e/audio-settings.spec.ts` 
--  `tests/e2e/theme-presence.spec.ts` 
+Playwright currently covers the current signed-in product boundary:
 
-### **data-testid Conventions (added)**
-- Hub:  `arcade-root`, `arcade-hub` 
-- Carousel:  `game-carousel`, `game-card-<id>`, `game-play-<id>`, `game-unlock-<id>` 
-- Onboarding:  `onboarding-overlay`, `onboarding-finish` 
-- Audio:  `audio-settings-modal`, `master-volume-slider`, `sfx-volume-slider`, `music-volume-slider`, `mute-toggle`, `audio-settings-close` 
-- Panels:  `daily-challenges`, `achievements-panel` 
+- `/` boots into the arcade shell
+- the user reaches either the sign-in gate or the authentication-unavailable state
+- the sign-in modal opens when Supabase auth is configured
+- `/instructions` remains available without an authenticated session
 
-### **Running E2E**
- ```bash 
-npm run e2e:install   # first time only (browser binaries)
-npm run e2e           # headless run with HTML report
-npm run e2e:ui        # interactive UI runner
-npm run e2e:headed    # visible browser
-npm run e2e:report    # open last HTML report
- ``` 
+The old guest-era e2e specs were removed because they expected direct hub access, onboarding dismissal, and guest game launch. Those assumptions no longer match the production app.
 
-### **Notes**
-- Onboarding overlay is suppressed in tests via  `page.addInitScript(() => localStorage.setItem( 'hacktivate-onboarding-shown','true')) ` and defensive dismissal if present. 
-- Dev server auto-starts from  `playwright.config.ts` (`webServer`). 
----
+## Commands
 
-## ðŸ› ï¸ Development Guidelines
-
-### **Adding Unit Tests**
-- **Target**: Services, utilities, pure logic functions
-- **Approach**: Mock browser APIs (AudioContext, Canvas, localStorage)
-- **Coverage Goal**: 80% for critical business logic
-- **Performance**: Keep tests fast (<5s total runtime)
-
-### **Mock Patterns**
-```typescript
-// Web Audio API (already configured)
-global.AudioContext = jest.fn(() => mockAudioContext);
-
-// Canvas API (already configured) 
-HTMLCanvasElement.prototype.getContext = jest.fn(() => mockCanvasContext);
-
-// localStorage (auto-cleared between tests)
-beforeEach(() => localStorage.clear());
+```bash
+npm run type-check          # TypeScript, no emit
+npm run lint                # Next/ESLint
+npm test -- --runInBand     # 10-test release approval suite
+npm run test:dev -- --runInBand # broader development-era Jest suites
+npm run build               # production build
 ```
 
-### **Test Organization**
-```typescript
-describe('ServiceName', () => {
-  beforeEach(() => {
-    // Setup
-  });
+Browser checks:
 
-  describe('feature group', () => {
-    test('specific behavior', () => {
-      // Test implementation
-    });
-  });
-});
+```bash
+npm run e2e:install         # first time only
+npm run e2e                 # current browser smoke tests
+npm run e2e:headed          # visible browser
+npm run e2e:ui              # Playwright UI runner
+npm run e2e:report          # open latest HTML report
 ```
 
----
+## Adding New Games
 
-## ðŸ“Š Known Issues & Next Steps
+Before merging a new playable game:
 
-### **Immediate Fixes Needed (Unit)**
-1. **UserServices**: Add/align level-up listener API or update tests
-2. **Analytics**: Add missing methods and stabilize time-based tests with fake timers
-3. **AudioManager**: Ensure mocks match implementation
+1. Register the game in `src/games/registry.ts`.
+2. Keep the catalog entry in `src/data/Games.ts` aligned.
+3. Add focused development tests while building if the change is risky, then decide whether the final approval suite needs one durable check updated or added.
+4. Run the required local gate: `npm run type-check`, `npm run lint`, `npm test -- --runInBand`, and `npm run build`.
+5. Run `npm run e2e` when the game changes the shell, auth boundary, public pages, or shared navigation.
+6. Manually smoke the new game through a signed-in account before public release.
 
-### **Phase 1 Priorities**
-- [ ] Fix failing unit tests (UserServices, Analytics, AudioManager)
-- [ ] Add ChallengeService and InputManager unit tests
-- [x] Set up Playwright E2E framework
-- [x] Implement core smoke suites (hub, game start, tabs, audio, theme)
+## CI Philosophy
 
-### **Phase 2 Expansion**
-- [ ] Component tests for key widgets (optional)
-- [ ] Visual regression testing
-- [ ] Performance benchmarking & Lighthouse CI
-- [ ] Cross-browser E2E matrix (Firefox/WebKit)
-
-### **Phase 3 Advanced**
-- [ ] Load testing for concurrent users
-- [ ] A11y automated testing with axe-core
-- [ ] CI/CD pipeline integration
-- [ ] Test data management and fixtures
-
----
-
-## ðŸ† Success Metrics
-
-### **Current Achievement**
-- âœ… **13x Coverage Improvement**: From 2.25% to 30.47% in services
-- âœ… **7 Test Suites**: Covering all critical business logic
-- âœ… **Comprehensive Mocking**: Web Audio, Canvas, localStorage
-- âœ… **Theme System**: 100% coverage of visual theming system
-- âœ… **E2E Strategy**: Complete implementation roadmap
-
-### **Quality Gates**
-- **Unit Tests**: Must pass before deployment
-- **Coverage Threshold**: 80% for services, 60% overall
-- **E2E Critical Path**: Game selection, play, progression must pass
-- **Performance**: LCP < 2.5s, FID < 100ms
-- **Accessibility**: WCAG 2.1 AA compliance
-
-The testing foundation is now solid and ready for both immediate bug fixes and comprehensive E2E test implementation! ðŸŽ®âœ¨
+This arcade is expected to have a small audience, so the workflow should help development rather than dominate it. Keep the required gate deterministic and fast. Use Playwright as a targeted browser smoke tool, not as a full production-grade cross-browser matrix.

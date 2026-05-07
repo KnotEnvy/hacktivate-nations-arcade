@@ -1,16 +1,31 @@
-name: CI
+name: Arcade Quality
 
 on:
+  pull_request:
   push:
     branches:
       - main
       - master
-  pull_request:
+  workflow_dispatch:
+    inputs:
+      browser_smoke:
+        description: Run the optional Playwright browser smoke job
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arcade-quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  verify:
+  quality:
+    name: TypeScript, lint, unit tests, build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       CI: true
       NEXT_TELEMETRY_DISABLED: 1
@@ -33,14 +48,35 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Unit tests
+      - name: Release approval tests
         run: npm test -- --runInBand
 
       - name: Production build
         run: npm run build
 
-      - name: Install Playwright browsers
+  browser-smoke:
+    name: Optional browser smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: github.event_name == 'workflow_dispatch' && inputs.browser_smoke
+    env:
+      CI: true
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: End-to-end tests
+      - name: Run Playwright smoke tests
         run: npm run e2e

@@ -72,8 +72,10 @@ If you are replacing an existing coming-soon catalog entry, keep the id aligned 
 - `npm start` runs the production build
 - `npm run lint` runs ESLint
 - `npm run type-check` runs TypeScript without emitting files
-- `npm test -- --runInBand` runs Jest serially
-- `npm run e2e` runs Playwright
+- `npm test -- --runInBand` runs the 10-test release approval suite
+- `npm run test:dev -- --runInBand` runs the broader development-era Jest suites when you need them
+- `npm run build` creates a production build
+- `npm run e2e` runs the optional Playwright browser smoke tests
 
 The current deploy gate is:
 
@@ -84,7 +86,7 @@ npm.cmd test -- --runInBand
 npm.cmd run build
 ```
 
-Playwright specs should be refreshed before treating `npm run e2e` as a blocking launch gate because older specs still assumed the retired guest hub flow.
+GitHub Actions runs that same required gate on push and pull request. The Jest step is intentionally small and data-driven; use `npm run test:dev` while actively changing a subsystem. Playwright is kept as a manual browser-smoke job because it checks the current signed-in access boundary, not a full signed-in gameplay session.
 
 ## Production Notes
 
