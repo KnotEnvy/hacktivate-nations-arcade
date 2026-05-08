@@ -80,6 +80,11 @@ const SECTION_CLEAR_BONUS_PER_COMBO_LIFE = 250; // bonus = base + combo * lives 
 const SECTION_CLEAR_FLASH_DURATION = 1.8;
 const SECTION_CLEAR_VAN_DELAY = 2.2; // seconds into next section before guaranteed van
 
+// v8 — fade duration for per-section music swaps in advanceSection. Long enough
+// that the cut isn't jarring, short enough that the new track is audible before
+// the next gameplay beat. Audio team can revisit during the v7 §4.2 polish pass.
+const SECTION_MUSIC_FADE_SECONDS = 1.5;
+
 type DeathCause =
   | 'enemy_ram'
   | 'enemy_bullet'
@@ -188,6 +193,13 @@ export class SpeedRacerGame extends BaseGame {
   private sectionClearFlash = 0; // counts down; > 0 means SECTION CLEAR overlay shows
   private sectionClearBonusLast = 0; // most recent bonus amount (for overlay text)
 
+  // v8 — last music track we explicitly swapped TO via advanceSection. Null
+  // means we haven't swapped yet (the hub-installed primary is still playing,
+  // or the game just (re)started). Sections without musicTrack inherit the
+  // currently-playing track; sections with a different musicTrack trigger a
+  // crossfade and update this field.
+  private currentMusicTrack: string | null = null;
+
   protected onInit(): void {
     this.roadProfile = new RoadProfile();
     this.sectionStartScroll = 0;
@@ -243,6 +255,12 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionClearBonusLast = 0;
     this.hp = MAX_HP;
     this.hitFlash = 0;
+    // Reset music tracking so a restart re-evaluates from §1's track (if any).
+    // The hub already installed speed-racer's primary on game launch — we don't
+    // try to re-trigger that here; we just align our tracker so the first
+    // section with an explicit musicTrack will swap correctly.
+    this.currentMusicTrack = null;
+    this.applySectionMusic(this.currentSection);
 
     // Make sure the first section delivers a weapon van early so new players
     // see the pickup loop during the tutorial stretch.
@@ -513,6 +531,21 @@ export class SpeedRacerGame extends BaseGame {
     // Subtle visual punctuation for the transition
     this.shake.add(0.18);
     this.services?.audio?.playSound?.('powerUp', { volume: 0.35 });
+    // v8 — per-section music swap. Only fires when the new section declares a
+    // track AND it differs from what we last installed. Sections without
+    // musicTrack inherit (sticky), so we don't pay a crossfade per boundary.
+    this.applySectionMusic(this.currentSection);
+  }
+
+  // v8 — crossfades to the section's musicTrack via AudioManager.playMusic.
+  // No-ops when section omits the field or when the desired track is already
+  // current. Tolerant of missing audio service (mocked tests, hub-less harnesses).
+  private applySectionMusic(section: SectionDef): void {
+    const track = section.musicTrack;
+    if (!track) return;
+    if (track === this.currentMusicTrack) return;
+    this.services?.audio?.playMusic?.(track, SECTION_MUSIC_FADE_SECONDS);
+    this.currentMusicTrack = track;
   }
 
   // Lap scaling — each full loop through the section list tightens spawns
@@ -1684,6 +1717,9 @@ export class SpeedRacerGame extends BaseGame {
     this.sectionClearBonusLast = 0;
     this.hp = MAX_HP;
     this.hitFlash = 0;
+    // v8 — same music re-evaluation as onInit on restart.
+    this.currentMusicTrack = null;
+    this.applySectionMusic(this.currentSection);
     this.spawner.scheduleVanIn(6);
   }
 }

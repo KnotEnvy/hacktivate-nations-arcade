@@ -3,6 +3,7 @@
 // scenery style, and spawner difficulty. Sections cycle in order;
 // after the last one, progression loops back to the first.
 
+import type { MusicName } from '@/services/AudioManager';
 import type { SpawnerOptions } from '../systems/EnemySpawner';
 import type { RoadGeometry } from '../systems/RoadProfile';
 import {
@@ -116,6 +117,14 @@ export interface SectionDef {
   // a worldY range so a set-piece (e.g., a bridge) reshapes the surface
   // itself, not just the surrounding scenery.
   paletteOverrides?: ReadonlyArray<PaletteOverrideZone>;
+  // v8 — optional procedural music track for this section. When set AND
+  // different from the currently playing track, SpeedRacerGame.advanceSection
+  // crossfades to it via AudioManager.playMusic. Sections that omit musicTrack
+  // inherit whatever's already playing (sticky inheritance), so we only spend
+  // a swap when a section genuinely needs a different vibe than its predecessor.
+  // The hub starts the speed-racer primary ('action_chase') on game launch, so
+  // §1 typically omits this and inherits.
+  musicTrack?: MusicName;
 }
 
 // === Palette resolution ================================================
@@ -411,6 +420,8 @@ const ALPINE_PASS: SectionDef = {
     { worldY: 6500, xMin: 160, xMax: 640, laneCount: 4 }, // back to full width
     { worldY: 8000, xMin: 160, xMax: 640, laneCount: 4 }, // section end
   ]),
+  // First explicit music swap of the loop — mountain pressure suits a tenser bed.
+  musicTrack: 'epic_tension',
 };
 
 // === Section 5 — sunset coast, balanced mid-late mix. ===
@@ -494,6 +505,8 @@ const SUNSET_COAST: SectionDef = {
       { xMin: 400, xMax: 640, laneCount: 2 },
     ]},
   ]),
+  // Sunset coast leans into the cinematic horizon glow — heroic bed.
+  musicTrack: 'epic_heroic',
 };
 
 // === Section 6 — harbor run on water. Calm aquatic intro, patrol-led. ===
@@ -571,6 +584,10 @@ const HARBOR_RUN: SectionDef = {
       },
     },
   ],
+  // Calm aquatic intro — drops the tension, leans on chill water atmosphere.
+  // OPEN_SEA inherits this so the cinematic dawn→day fade plays over the same
+  // chill bed; the visual carries the drama, not the music.
+  musicTrack: 'casual_chill',
 };
 
 // === Section 7 — open sea. Strafer-led peak with dawn → day palette crossfade. ===
@@ -740,6 +757,8 @@ const CHANNEL: SectionDef = {
     { worldY: 4800, xMin: 160, xMax: 640, laneCount: 4 },
     { worldY: 6000, xMin: 160, xMax: 640, laneCount: 4 },
   ]),
+  // Aquatic finale — chokepoint pressure swaps the chill bed for intensity.
+  musicTrack: 'action_intense',
 };
 
 // === Section 7 — frost pass. Slippy ice, reduced traction, snowfall. ===
@@ -786,6 +805,8 @@ const FROST_PASS: SectionDef = {
     shooterBurstChance: 0.40,
     formationChance: 0.28,
   },
+  // Final road sprint — competitive sports bed (also speed-racer's secondary).
+  musicTrack: 'sports_competitive',
 };
 
 // Section order. Difficulty ramps monotonically §1 → §9. Game loops back to
