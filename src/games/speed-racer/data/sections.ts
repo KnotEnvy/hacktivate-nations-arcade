@@ -496,12 +496,19 @@ const SUNSET_COAST: SectionDef = {
   ]),
 };
 
-// === Section 6 — harbor run on water. Lighter steering, jet-boat enemies. ===
+// === Section 6 — harbor run on water. Calm aquatic intro, patrol-led. ===
+// v8 — Aquatic arc expansion. Harbor Run was previously cramming all 7 enemy
+// types (ram, shooter, enforcer, armored, patrol, dropper, strafer) into a
+// single 7000-unit section, which read as chaotic noise once lap-scaling
+// tightened spawn cadence. The aquatic stretch now spans three sections:
+// HARBOR_RUN (calm patrol intro) → OPEN_SEA (strafer peak with time-of-day
+// crossfade) → CHANNEL (dropper-led chokepoint finale). Each carries a focused
+// 3–4 type mix and one signature feature.
 const HARBOR_RUN: SectionDef = {
   id: 'harbor-run',
   name: 'HARBOR RUN',
-  subtitle: 'Jet-boat lanes · Floaty handling',
-  lengthMeters: 7000,
+  subtitle: 'Working harbor · Patrol lanes',
+  lengthMeters: 6000,
   terrain: 'water',
   palette: {
     roadColor: '#0a3a5a',
@@ -524,23 +531,215 @@ const HARBOR_RUN: SectionDef = {
     bannerGlow: '#88FFFF',
   },
   spawnerConfig: {
-    // Penultimate stretch. Patrol identity preserved. v7 introduces the
-    // aquatic-specific threats — droppers (depth charges) and strafers
-    // (weaving shooters) — that lean into the section's water identity
-    // instead of just reskinning road enemies. Patrol weight dropped to
-    // make room; ram weight trimmed slightly so the section feels more
-    // distinctly aquatic vs §5/§7's car mixes. SWAT gunship stays rare.
-    spawnInterval: 1.05,
-    enemyTypes: ['ram', 'shooter', 'enforcer', 'armored', 'patrol', 'dropper', 'strafer'],
-    enemyTypeWeights: [3, 2, 2, 1, 4, 3, 3],
+    // Calm aquatic intro. Patrol AI is the headliner; ram + shooter give
+    // continuity from §5's car mix while the player learns the floatier
+    // water handling. Aggressive aquatic types (strafer, dropper) and the
+    // armored gunship are deferred to OPEN_SEA / CHANNEL.
+    spawnInterval: 1.15,
+    enemyTypes: ['ram', 'shooter', 'patrol'],
+    enemyTypeWeights: [3, 2, 5],
     civilianChance: 0.55,
     civilianSpawnInterval: 2.1,
     vanIntervalMin: 16,
     vanIntervalMax: 22,
     enemyVisual: 'jetboat',
-    shooterBurstChance: 0.32,
-    formationChance: 0.22,
+    shooterBurstChance: 0.20,
+    formationChance: 0.14,
   },
+  // 50px wooden boardwalks / floating pontoons either side. Tactical hop-out
+  // option in the calm aquatic stretch; existing v6 shoulder modifier handles
+  // the sluggish handling without per-section work.
+  roadGeometry: new ShoulderedRoadGeometry(160, 640, 4, 50),
+  // Back half of the section crossfades into a working-harbor look — concrete
+  // pier walls, sodium-amber lighting. Reuses the v7 STEEL_SPAN pattern.
+  paletteOverrides: [
+    {
+      startWorldY: 2200,
+      endWorldY: 5800,
+      fadeLength: 300,
+      palette: {
+        roadColor: '#0a3050',
+        roadShadeColor: '#031a30',
+        edgeColor: '#FFB840',
+        edgeGlowColor: '#FFB840',
+        laneLineColor: '#FFE9B0',
+        sceneryColor: '#1f3a5a',
+        sceneryAccent: '#FFB840',
+        sceneryRimColor: '#3a5a7a',
+        postColor: '#FFB840',
+        postAccent: '#FFE9B0',
+      },
+    },
+  ],
+};
+
+// === Section 7 — open sea. Strafer-led peak with dawn → day palette crossfade. ===
+// v8 — Middle of the aquatic arc. No road geometry feature; the dramatic moment
+// is a two-zone palette crossfade that takes the section from a coral/peach
+// dawn to a saturated cyan high-day. Base palette is set to mid-tones so the
+// crossfade midpoint lands on intentional colors instead of muddy interpolation
+// (sidesteps the v7 RGB-lerp gotcha). horizonAlpha is intentionally NOT
+// crossfaded — PaletteOverrideZone is string-color only by design, and the
+// numeric horizon glow strength stays on the base palette.
+const OPEN_SEA: SectionDef = {
+  id: 'open-sea',
+  name: 'OPEN SEA',
+  subtitle: 'Dawn to day · Open water',
+  lengthMeters: 7000,
+  terrain: 'water',
+  palette: {
+    // Mid-tone "transition" palette — what shows between the two override
+    // zones at full crossfade. Set deliberately so neither zone has to fight
+    // a base color that contradicts its mood.
+    roadColor: '#0a6090',
+    roadShadeColor: '#053048',
+    edgeColor: '#88E0FF',
+    edgeGlowColor: '#88E0FF',
+    laneLineColor: '#FFFFFF',
+    centerLineColor: '#FFE066',
+    grassTop: '#003860',
+    grassBottom: '#0070A0',
+    horizonColor: '#FFCC88',
+    horizonAlpha: 0.30,
+    sceneryStyle: 'water',
+    sceneryColor: '#0a6090',
+    sceneryAccent: '#88FFFF',
+    sceneryRimColor: '#1a80B0',
+    postColor: '#FFFFFF',
+    postAccent: '#88E0FF',
+    bannerColor: '#88E0FF',
+    bannerGlow: '#88FFFF',
+  },
+  spawnerConfig: {
+    // Strafer-led aquatic peak. Open water with no edges to hide behind suits
+    // strafer's aim-lead bursts and patrol's sine weave. Dropper appears
+    // sparingly here as foreshadowing for CHANNEL where it headlines.
+    spawnInterval: 1.05,
+    enemyTypes: ['patrol', 'strafer', 'shooter', 'dropper'],
+    enemyTypeWeights: [3, 5, 2, 2],
+    civilianChance: 0.50,
+    civilianSpawnInterval: 2.2,
+    vanIntervalMin: 18,
+    vanIntervalMax: 24,
+    enemyVisual: 'jetboat',
+    shooterBurstChance: 0.30,
+    formationChance: 0.20,
+  },
+  paletteOverrides: [
+    // Zone A — dawn. Strong at section entry, fades out toward midpoint.
+    {
+      startWorldY: 0,
+      endWorldY: 3500,
+      fadeLength: 600,
+      palette: {
+        roadColor: '#0a4a6a',
+        roadShadeColor: '#04283a',
+        edgeColor: '#FFAA66',
+        edgeGlowColor: '#FF8866',
+        laneLineColor: '#FFE0B0',
+        grassTop: '#4a1a2a',
+        grassBottom: '#28284a',
+        horizonColor: '#FF8866',
+        sceneryColor: '#2a3a5a',
+        sceneryAccent: '#FFAA66',
+        sceneryRimColor: '#FF6666',
+        postColor: '#FFAA66',
+        postAccent: '#FFE0B0',
+        bannerColor: '#FFAA66',
+        bannerGlow: '#FF8866',
+      },
+    },
+    // Zone B — high day. Fades in past midpoint, full strength at exit.
+    {
+      startWorldY: 3500,
+      endWorldY: 7000,
+      fadeLength: 600,
+      palette: {
+        roadColor: '#0888B8',
+        roadShadeColor: '#05607F',
+        edgeColor: '#FFFFFF',
+        edgeGlowColor: '#88FFFF',
+        laneLineColor: '#FFFFFF',
+        centerLineColor: '#FFE9B0',
+        grassTop: '#0070A8',
+        grassBottom: '#00B0E0',
+        horizonColor: '#FFFFFF',
+        sceneryColor: '#0a8ac8',
+        sceneryAccent: '#FFFFFF',
+        sceneryRimColor: '#88FFFF',
+        postColor: '#FFFFFF',
+        postAccent: '#88FFFF',
+        bannerColor: '#88FFFF',
+        bannerGlow: '#FFFFFF',
+      },
+    },
+  ],
+};
+
+// === Section 8 — channel. Dropper showcase, industrial canal with chokepoints. ===
+// v8 — Aquatic finale. Mirrors ALPINE_PASS's WidthChangeGeometry pattern with
+// two narrow lock segments (4-lane → 2-lane). Depth charges in 4-lane water are
+// dodgeable; in 2-lane water they're a real threat. That's the signature
+// gameplay payoff for the aquatic arc — droppers were teased in OPEN_SEA, here
+// they take center stage with the chokepoints amplifying their pressure.
+const CHANNEL: SectionDef = {
+  id: 'channel',
+  name: 'CHANNEL',
+  subtitle: 'Lock channels · Depth charges',
+  lengthMeters: 6000,
+  terrain: 'water',
+  palette: {
+    roadColor: '#2a3a48',
+    roadShadeColor: '#162028',
+    edgeColor: '#FFC840',
+    edgeGlowColor: '#FFC840',
+    laneLineColor: '#FFFFFF',
+    centerLineColor: '#FFE066',
+    grassTop: '#0a1418',
+    grassBottom: '#1a2830',
+    horizonColor: '#FFC840',
+    horizonAlpha: 0.22,
+    sceneryStyle: 'water',
+    sceneryColor: '#3a4a58',
+    sceneryAccent: '#FFC840',
+    sceneryRimColor: '#5a6a78',
+    postColor: '#FFC840',
+    postAccent: '#FFFFFF',
+    bannerColor: '#FFC840',
+    bannerGlow: '#FFFFFF',
+  },
+  spawnerConfig: {
+    // Aquatic finale. Dropper headlines — depth charges in narrow lock
+    // segments are the gameplay payoff. Enforcer returns as armor pressure
+    // since chokepoints make bumping mandatory. Strafer carries through from
+    // OPEN_SEA. Patrol drops out to keep the cast tight.
+    spawnInterval: 0.98,
+    enemyTypes: ['ram', 'enforcer', 'dropper', 'strafer'],
+    enemyTypeWeights: [2, 2, 5, 3],
+    civilianChance: 0.55,
+    civilianSpawnInterval: 2.0,
+    vanIntervalMin: 14,
+    vanIntervalMax: 20,
+    enemyVisual: 'jetboat',
+    shooterBurstChance: 0.36,
+    formationChance: 0.25,
+  },
+  // Two narrow lock segments mirror the ALPINE_PASS chokepoint pattern. Each
+  // narrow stretch is 600 worldY long — long enough that a dropper releasing a
+  // depth charge inside the lock leaves the player navigating detonation while
+  // still in the 2-lane corridor.
+  roadGeometry: new WidthChangeGeometry([
+    { worldY:    0, xMin: 160, xMax: 640, laneCount: 4 },
+    { worldY: 1600, xMin: 160, xMax: 640, laneCount: 4 },
+    { worldY: 1800, xMin: 240, xMax: 560, laneCount: 2 },
+    { worldY: 2400, xMin: 240, xMax: 560, laneCount: 2 },
+    { worldY: 2600, xMin: 160, xMax: 640, laneCount: 4 },
+    { worldY: 3800, xMin: 160, xMax: 640, laneCount: 4 },
+    { worldY: 4000, xMin: 240, xMax: 560, laneCount: 2 },
+    { worldY: 4600, xMin: 240, xMax: 560, laneCount: 2 },
+    { worldY: 4800, xMin: 160, xMax: 640, laneCount: 4 },
+    { worldY: 6000, xMin: 160, xMax: 640, laneCount: 4 },
+  ]),
 };
 
 // === Section 7 — frost pass. Slippy ice, reduced traction, snowfall. ===
@@ -589,9 +788,11 @@ const FROST_PASS: SectionDef = {
   },
 };
 
-// Section order. Difficulty ramps monotonically §1 → §7. Game loops back to
+// Section order. Difficulty ramps monotonically §1 → §9. Game loops back to
 // index 0 after the last; lap scaling in SpeedRacerGame.applyLapScaling()
 // tightens spawnInterval and burst/formation chances each wraparound.
+// v8 — aquatic arc spans §6 → §8 (HARBOR_RUN, OPEN_SEA, CHANNEL); FROST_PASS
+// shifts §7 → §9 as the road-finale of the loop.
 export const SECTIONS: readonly SectionDef[] = [
   NEON_HIGHWAY,
   NEON_CITY,
@@ -599,6 +800,8 @@ export const SECTIONS: readonly SectionDef[] = [
   ALPINE_PASS,
   SUNSET_COAST,
   HARBOR_RUN,
+  OPEN_SEA,
+  CHANNEL,
   FROST_PASS,
 ];
 

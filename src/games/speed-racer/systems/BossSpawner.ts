@@ -18,7 +18,9 @@ type BossKind = 'chopper' | 'tank' | 'drones';
 // back to DEFAULT_BOSS_WEIGHTS (the v3 baseline).
 const DEFAULT_BOSS_WEIGHTS: readonly [number, number, number] = [0.45, 0.3, 0.25];
 const BOSS_WEIGHTS_BY_SECTION: Record<string, readonly [number, number, number]> = {
-  'harbor-run': [0.6, 0.3, 0.1],  // chopper-heavy — air strikes over water read well
+  'harbor-run': [0.55, 0.3, 0.15], // chopper-leaning aquatic intro; tank kept low (water)
+  'open-sea':   [0.7, 0.28, 0.02], // chopper dominant on open water; tank near-zero (no narrative read)
+  'channel':    [0.4, 0.55, 0.05], // drones rule the canyon-feel narrows; chopper less effective in tight water
   'alpine-pass': [0.25, 0.2, 0.55], // tank-heavy — mountain road corridors favor tanks
   'steel-span': [0.45, 0.3, 0.25],  // balanced baseline (explicit for clarity)
 };
