@@ -1,6 +1,8 @@
 import type { RoadProfile } from '../systems/RoadProfile';
 import { SecondaryWeaponType } from '../data/secondaryWeapons';
 
+export type WeaponVanMode = 'pickup' | 'respawn';
+
 export class WeaponVan {
   x: number;
   y: number;
@@ -9,8 +11,15 @@ export class WeaponVan {
   docked = false;
   readonly width = 80;
   readonly height = 130;
-  readonly forwardSpeed = 320; // World-frame, near player base speed
+  // Pickup vans cruise just ahead of the player; respawn-cinematic vans
+  // override forwardSpeed every frame to drive the catch-up / peel-off arc.
+  forwardSpeed = 320;
   readonly payload: SecondaryWeaponType;
+  // Render variants — 'respawn' hides the payload glyph (no pickup happens
+  // for the cinematic van), and doorsOpen swaps the rear-doors render so the
+  // player car visibly emerges from the back during the dropoff phase.
+  mode: WeaponVanMode = 'pickup';
+  doorsOpen = false;
   private pulseT = 0; // drives roof warning beacon rotation
   private roadProfile: RoadProfile;
 
@@ -168,37 +177,69 @@ export class WeaponVan {
     ctx.fillStyle = '#FF1493';
     ctx.fillRect(x + 14, stencilY + 14, w - 28, 2);
 
-    // Payload type glyph — small diamond beneath the stencil
-    ctx.fillStyle = '#00FFFF';
-    ctx.beginPath();
-    ctx.moveTo(cx, stencilY + 22);
-    ctx.lineTo(cx + 6, stencilY + 28);
-    ctx.lineTo(cx, stencilY + 34);
-    ctx.lineTo(cx - 6, stencilY + 28);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#003030';
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    // Payload type glyph — small diamond beneath the stencil. Skipped in
+    // respawn mode since the cinematic van isn't carrying a pickup.
+    if (this.mode !== 'respawn') {
+      ctx.fillStyle = '#00FFFF';
+      ctx.beginPath();
+      ctx.moveTo(cx, stencilY + 22);
+      ctx.lineTo(cx + 6, stencilY + 28);
+      ctx.lineTo(cx, stencilY + 34);
+      ctx.lineTo(cx - 6, stencilY + 28);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#003030';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
 
-    // Rear cargo doors — split down the middle with an inviting dock zone.
-    ctx.fillStyle = '#1a1a2e';
-    ctx.fillRect(x + 12, y + h - 26, w - 24, 22);
-    // Door seam (vertical split)
-    ctx.strokeStyle = '#555';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(cx, y + h - 26);
-    ctx.lineTo(cx, y + h - 4);
-    ctx.stroke();
-    // Door handles — two small horizontal chrome bars
-    ctx.fillStyle = '#cccccc';
-    ctx.fillRect(cx - 8, y + h - 15, 5, 2);
-    ctx.fillRect(cx + 3, y + h - 15, 5, 2);
-    // Dock-zone highlight — yellow border (matches the old "inviting ramp" look)
-    ctx.fillStyle = '#FFFF00';
-    ctx.fillRect(x + 12, y + h - 26, w - 24, 2);
-    ctx.fillRect(x + 12, y + h - 6, w - 24, 2);
+    // Rear cargo doors — closed by default; swing open during the respawn
+    // dropoff phase so the player car visibly emerges from the back.
+    if (this.doorsOpen) {
+      // Open doors — show a darker interior with the doors splayed outward
+      // as two angled panels along the rear flanks.
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(x + 12, y + h - 26, w - 24, 22);
+      // Splayed door panels (left + right), drawn as thin angled rectangles
+      // hanging off the rear corners — reads as "doors swung open."
+      ctx.fillStyle = '#3a3a4a';
+      ctx.save();
+      ctx.translate(x + 12, y + h - 14);
+      ctx.rotate(-0.35);
+      ctx.fillRect(-14, -10, 14, 20);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(x + w - 12, y + h - 14);
+      ctx.rotate(0.35);
+      ctx.fillRect(0, -10, 14, 20);
+      ctx.restore();
+      // Inner-edge highlights so the open doors read against the dark interior
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(x + 12, y + h - 24, 2, 18);
+      ctx.fillRect(x + w - 14, y + h - 24, 2, 18);
+      // Bright dock-zone bottom edge (still hints at the ramp)
+      ctx.fillStyle = '#FFD700';
+      ctx.fillRect(x + 14, y + h - 5, w - 28, 2);
+    } else {
+      // Closed doors (default pickup variant).
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(x + 12, y + h - 26, w - 24, 22);
+      // Door seam (vertical split)
+      ctx.strokeStyle = '#555';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx, y + h - 26);
+      ctx.lineTo(cx, y + h - 4);
+      ctx.stroke();
+      // Door handles — two small horizontal chrome bars
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(cx - 8, y + h - 15, 5, 2);
+      ctx.fillRect(cx + 3, y + h - 15, 5, 2);
+      // Dock-zone highlight — yellow border (matches the old "inviting ramp" look)
+      ctx.fillStyle = '#FFFF00';
+      ctx.fillRect(x + 12, y + h - 26, w - 24, 2);
+      ctx.fillRect(x + 12, y + h - 6, w - 24, 2);
+    }
 
     // Headlights (top/front)
     ctx.fillStyle = '#FFFFC8';

@@ -90,11 +90,17 @@ export class RoadProfile {
   private geometry: RoadGeometry = new StraightRoadGeometry();
   private sectionStartScroll = 0;
   private currentScroll = 0;
+  // v9 — dynamic player screen Y. The road coordinate system anchors at
+  // PLAYER.Y (worldY = currentScroll-sectionStartScroll there); but the
+  // PLAYER's own worldY follows their actual screen position so shape queries
+  // / palette zones / lane math at the player track them up and down.
+  private playerScreenY: number = PLAYER.Y;
 
   reset(): void {
     this.geometry = new StraightRoadGeometry();
     this.sectionStartScroll = 0;
     this.currentScroll = 0;
+    this.playerScreenY = PLAYER.Y;
   }
 
   // Swap geometry at a section boundary. Pass the worldScroll value at which
@@ -109,16 +115,29 @@ export class RoadProfile {
     this.currentScroll = scroll;
   }
 
+  // v9 — call once per frame after player.update so playerWorldY / shapeAtPlayer
+  // see the player's actual screen position. Defaults to PLAYER.Y if never
+  // called (covers harnesses / tests that don't drive the player car).
+  setPlayerScreenY(y: number): void {
+    this.playerScreenY = y;
+  }
+
   getGeometry(): RoadGeometry {
     return this.geometry;
   }
 
-  // Section-relative worldY for the player's row.
+  // Section-relative worldY for the player's row, accounting for dynamic Y.
+  // worldYAtScreen anchors at PLAYER.Y (the canonical reference); when the
+  // player visually moves up to e.g. y=380, their worldY advances by +100
+  // because they're rendered over road that scrolled past PLAYER.Y already.
   playerWorldY(): number {
-    return this.currentScroll - this.sectionStartScroll;
+    return this.worldYAtScreen(this.playerScreenY);
   }
 
-  // Section-relative worldY for an entity at the given screen Y.
+  // Section-relative worldY for an entity at the given screen Y. Anchored at
+  // the canonical PLAYER.Y constant — entities at PLAYER.Y see worldY equal to
+  // the scroll-derived section anchor regardless of where the player's car
+  // is currently rendered.
   worldYAtScreen(screenY: number): number {
     return this.currentScroll - this.sectionStartScroll + (PLAYER.Y - screenY);
   }

@@ -20,6 +20,7 @@ import {
   DRONE_COIN_REWARD,
 } from './entities/BossEnemies';
 import { SECONDARY_CONFIGS } from './data/secondaryWeapons';
+import { WeaponVan } from './entities/WeaponVan';
 import { PLAYER } from './data/constants';
 import { SECTIONS, getSection, TERRAIN_HANDLING, resolvePalette, type SectionDef } from './data/sections';
 
@@ -84,6 +85,19 @@ const SECTION_CLEAR_VAN_DELAY = 2.2; // seconds into next section before guarant
 // that the cut isn't jarring, short enough that the new track is audible before
 // the next gameplay beat. Audio team can revisit during the v7 §4.2 polish pass.
 const SECTION_MUSIC_FADE_SECONDS = 1.5;
+
+// v9 — Spy-Hunter weapons-truck respawn cinematic. Plays on game start AND
+// every respawn. Three phases totaling 2.0s; input is blocked through
+// 'incoming' + 'dropoff' (1.3s), then control returns at 'departing' start
+// while the van peels off the top. Tunable; keep total <= section flash.
+const RESPAWN_VAN_INCOMING_DURATION = 0.7;
+const RESPAWN_VAN_DROPOFF_DURATION = 0.6;
+const RESPAWN_VAN_DEPARTING_DURATION = 0.7;
+const RESPAWN_VAN_DROP_Y = 380; // van settles here (just above PLAYER.Y = 480)
+const RESPAWN_VAN_INCOMING_FORWARD_SPEED = 600; // catch-up
+const RESPAWN_VAN_DEPARTING_FORWARD_SPEED = 700; // peel-off
+
+type RespawnPhase = 'idle' | 'incoming' | 'dropoff' | 'departing';
 
 type DeathCause =
   | 'enemy_ram'
@@ -200,6 +214,15 @@ export class SpeedRacerGame extends BaseGame {
   // crossfade and update this field.
   private currentMusicTrack: string | null = null;
 
+  // v9 — respawn cinematic state. The state machine owns van animation,
+  // input gating, and the GET READY / LIFE N overlay. While respawnPhase is
+  // 'incoming' or 'dropoff', onUpdate skips the normal player+collision pass.
+  private respawnPhase: RespawnPhase = 'idle';
+  private respawnTimer = 0;
+  private respawnVan: WeaponVan | null = null;
+  private respawnOverlayText = '';
+  private currentLifeNumber = 1;
+
   protected onInit(): void {
     this.roadProfile = new RoadProfile();
     this.sectionStartScroll = 0;
@@ -266,6 +289,11 @@ export class SpeedRacerGame extends BaseGame {
     // see the pickup loop during the tutorial stretch.
     this.spawner.scheduleVanIn(6);
 
+    // v9 — kick off the Spy-Hunter style "GET READY" drop-off cinematic.
+    // First life uses the GET READY overlay; respawns use LIFE N.
+    this.currentLifeNumber = 1;
+    this.startRespawnCinematic('GET READY!');
+
     this.endHandler = (e) => {
       if (!this.isRunning || this.isPaused) return;
       if (e.key === 'Escape') {
@@ -283,6 +311,37 @@ export class SpeedRacerGame extends BaseGame {
       this.updateRecap(dt);
       return;
     }
+
+    // v9 — respawn cinematic owns the screen during 'incoming' and 'dropoff'
+    // (input blocked, no collisions, no player update). Gameplay resumes at
+    // 'departing' start while the van peels off the top concurrently.
+    if (this.respawnPhase === 'incoming' || this.respawnPhase === 'dropoff') {
+      this.tickRespawnVan(dt);
+      // Visual continuity — keep the road scrolling and particles alive so
+      // the screen doesn't freeze for 1.3 seconds.
+      this.road.update(PLAYER.BASE_SPEED, dt);
+      this.roadProfile.setScroll(this.road.getScroll());
+      this.particles.update(dt);
+      this.shake.update(dt);
+      // Tick HUD/flash timers so death-ack and overlay animations play through
+      if (this.respawnInvuln > 0) this.respawnInvuln = Math.max(0, this.respawnInvuln - dt);
+      if (this.lifeLostFlash > 0) this.lifeLostFlash = Math.max(0, this.lifeLostFlash - dt);
+      if (this.lifeBonusFlash > 0) this.lifeBonusFlash = Math.max(0, this.lifeBonusFlash - dt);
+      if (this.sectionClearFlash > 0) this.sectionClearFlash = Math.max(0, this.sectionClearFlash - dt);
+      if (this.bannerTimer > 0) {
+        this.bannerTimer -= dt;
+        if (this.bannerTimer <= 0) {
+          this.bannerTimer = 0;
+          this.bannerSection = null;
+        }
+      }
+      return;
+    }
+
+    // 'departing' or 'idle' — normal gameplay path runs; tickRespawnVan is
+    // a no-op when 'idle' and advances the van off-screen during 'departing'.
+    this.tickRespawnVan(dt);
+
     const input = this.services.input;
     this.touch.update(input.getTouches());
     const tc = this.touch;
@@ -293,6 +352,11 @@ export class SpeedRacerGame extends BaseGame {
       isDownPressed: () => input.isDownPressed() || tc.downHeld(),
     };
     this.player.update(dt, playerInput);
+    // v9 — push the player's dynamic screen Y to RoadProfile so shapeAtPlayer
+    // / playerWorldY / palette zone resolution all follow the visual position
+    // when the car moves up under boost or down under brake. Must come BEFORE
+    // any shape queries this frame (shoulder check, collision, AI).
+    this.roadProfile.setPlayerScreenY(this.player.y);
     // Route divider crashes through the damage funnel — the player.update
     // detects the contact (segment-aware clamp), takeDamage handles HP/recap.
     if (this.player.pendingDividerHit) {
@@ -715,9 +779,104 @@ export class SpeedRacerGame extends BaseGame {
     // Full chassis restore on a new life.
     this.hp = MAX_HP;
     this.hitFlash = 0;
-    // Arm invulnerability + UI flash
-    this.respawnInvuln = RESPAWN_INVULN_DURATION;
+    // The death-ack red flash plays during the cinematic incoming phase.
     this.lifeLostFlash = LIFE_LOST_FLASH_DURATION;
+    // v9 — kick off the weapons-truck drop-off cinematic. respawnInvuln is
+    // armed inside the cinematic at the 'departing' phase boundary, NOT here,
+    // so the player gets full i-frames starting the moment they take control.
+    this.currentLifeNumber += 1;
+    this.startRespawnCinematic(`LIFE ${this.currentLifeNumber}`);
+  }
+
+  // v9 — Spy-Hunter weapons-truck respawn cinematic. Spawns the cinematic van
+  // at the bottom edge of the road, lane-centered. Phases advance via
+  // tickRespawnVan() each frame. Player input is blocked while phase is
+  // 'incoming' or 'dropoff' (see onUpdate gate).
+  private startRespawnCinematic(text: string): void {
+    this.respawnPhase = 'incoming';
+    this.respawnTimer = 0;
+    this.respawnOverlayText = text;
+    const shape = this.roadProfile.shapeAtScreen(720);
+    const cx = (shape.xMin + shape.xMax) / 2;
+    const van = new WeaponVan(cx, 720, 'missile', this.roadProfile);
+    van.mode = 'respawn';
+    van.doorsOpen = false;
+    van.forwardSpeed = RESPAWN_VAN_INCOMING_FORWARD_SPEED;
+    this.respawnVan = van;
+    // Belt-and-suspenders invuln across the cinematic — the official i-frames
+    // get armed at 'departing' start when the player takes control.
+    this.respawnInvuln = Math.max(
+      this.respawnInvuln,
+      RESPAWN_VAN_INCOMING_DURATION + RESPAWN_VAN_DROPOFF_DURATION,
+    );
+  }
+
+  // Advances the respawn cinematic state machine. Called every frame from
+  // onUpdate (whether or not gameplay is running) so the van animates and
+  // phase transitions still fire during the 'departing' tail when normal
+  // gameplay has resumed.
+  private tickRespawnVan(dt: number): void {
+    if (this.respawnPhase === 'idle') return;
+    this.respawnTimer += dt;
+
+    if (
+      this.respawnPhase === 'incoming' &&
+      this.respawnTimer >= RESPAWN_VAN_INCOMING_DURATION
+    ) {
+      this.respawnPhase = 'dropoff';
+      this.respawnTimer = 0;
+      if (this.respawnVan) this.respawnVan.doorsOpen = true;
+      // Reposition the player car directly behind the van's rear, lane-
+      // centered. Reset clears stale x/vx/speed left over from the previous
+      // life (or unset if this is the first life).
+      this.player.reset();
+      if (this.respawnVan) this.player.x = this.respawnVan.x;
+    } else if (
+      this.respawnPhase === 'dropoff' &&
+      this.respawnTimer >= RESPAWN_VAN_DROPOFF_DURATION
+    ) {
+      this.respawnPhase = 'departing';
+      this.respawnTimer = 0;
+      if (this.respawnVan) {
+        this.respawnVan.doorsOpen = false;
+        this.respawnVan.forwardSpeed = RESPAWN_VAN_DEPARTING_FORWARD_SPEED;
+      }
+      // Hand control back. Fresh i-frames begin now so the player can react.
+      this.respawnInvuln = RESPAWN_INVULN_DURATION;
+    } else if (
+      this.respawnPhase === 'departing' &&
+      this.respawnTimer >= RESPAWN_VAN_DEPARTING_DURATION
+    ) {
+      this.respawnPhase = 'idle';
+      this.respawnTimer = 0;
+      this.respawnVan = null;
+      this.respawnOverlayText = '';
+      return;
+    }
+
+    if (this.respawnVan) {
+      // Drive forwardSpeed for visual continuity (pulse beacon, road wake), then
+      // override y directly each frame from a phase-relative lerp so the van
+      // always lands exactly on the drop point and exits exactly off-screen
+      // regardless of frame rate or the BASE_SPEED scroll math.
+      if (this.respawnPhase === 'incoming') {
+        this.respawnVan.forwardSpeed = RESPAWN_VAN_INCOMING_FORWARD_SPEED;
+        this.respawnVan.update(dt, PLAYER.BASE_SPEED);
+        const t = Math.min(1, this.respawnTimer / RESPAWN_VAN_INCOMING_DURATION);
+        const eased = 1 - Math.pow(1 - t, 3); // ease-out — fast then slows
+        this.respawnVan.y = 720 + (RESPAWN_VAN_DROP_Y - 720) * eased;
+      } else if (this.respawnPhase === 'dropoff') {
+        this.respawnVan.forwardSpeed = PLAYER.BASE_SPEED;
+        this.respawnVan.update(dt, PLAYER.BASE_SPEED);
+        this.respawnVan.y = RESPAWN_VAN_DROP_Y;
+      } else if (this.respawnPhase === 'departing') {
+        this.respawnVan.forwardSpeed = RESPAWN_VAN_DEPARTING_FORWARD_SPEED;
+        this.respawnVan.update(dt, PLAYER.BASE_SPEED);
+        const t = Math.min(1, this.respawnTimer / RESPAWN_VAN_DEPARTING_DURATION);
+        const eased = Math.pow(t, 2); // ease-in — slow then fast
+        this.respawnVan.y = RESPAWN_VAN_DROP_Y + (-260 - RESPAWN_VAN_DROP_Y) * eased;
+      }
+    }
   }
 
   private updateRecap(dt: number): void {
@@ -1197,10 +1356,17 @@ export class SpeedRacerGame extends BaseGame {
     this.spawner.render(ctx);
     this.boss.render(ctx);
     if (!this.recapMode) {
-      // Flicker player while invulnerable post-respawn
-      const visible = this.respawnInvuln <= 0 || Math.floor(this.respawnInvuln * 12) % 2 === 0;
-      if (visible) this.player.render(ctx);
+      // Hidden during 'incoming' — the player car hasn't been delivered yet.
+      const cinematicHidesPlayer = this.respawnPhase === 'incoming';
+      if (!cinematicHidesPlayer) {
+        // Flicker player while invulnerable post-respawn
+        const visible = this.respawnInvuln <= 0 || Math.floor(this.respawnInvuln * 12) % 2 === 0;
+        if (visible) this.player.render(ctx);
+      }
     }
+    // v9 — respawn cinematic van rides on top of the spawner's pickup vans
+    // because it's a separate transient entity owned by SpeedRacerGame.
+    if (this.respawnVan) this.respawnVan.render(ctx);
     this.weapon.render(ctx);
     this.particles.render(ctx);
     // Tunnel overlay sits above gameplay so the darkness covers traffic too —
@@ -1484,8 +1650,46 @@ export class SpeedRacerGame extends BaseGame {
     if (this.lifeLostFlash > 0) this.renderLifeLostOverlay(ctx);
     if (this.lifeBonusFlash > 0) this.renderExtraLifeOverlay(ctx);
     if (this.sectionClearFlash > 0) this.renderSectionClearOverlay(ctx);
+    if (this.respawnPhase !== 'idle' && this.respawnOverlayText) {
+      this.renderRespawnOverlay(ctx);
+    }
 
     this.touch.render(ctx);
+  }
+
+  // v9 — GET READY / LIFE N overlay during the respawn cinematic. Fades in
+  // through 'incoming', holds at full opacity through 'dropoff', fades out
+  // through 'departing'. Pulses gently so it reads as "alive" arcade text.
+  private renderRespawnOverlay(ctx: CanvasRenderingContext2D): void {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    let alpha = 1;
+    if (this.respawnPhase === 'incoming') {
+      alpha = Math.min(1, this.respawnTimer / (RESPAWN_VAN_INCOMING_DURATION * 0.55));
+    } else if (this.respawnPhase === 'departing') {
+      alpha = Math.max(0, 1 - this.respawnTimer / (RESPAWN_VAN_DEPARTING_DURATION * 0.7));
+    }
+    if (alpha <= 0) return;
+
+    const pulse = 1 + 0.04 * Math.sin(this.respawnTimer * 6);
+    const cx = w / 2;
+    const cy = h * 0.42;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Drop shadow for arcade weight
+    ctx.shadowColor = '#FFB000';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = '#FFE070';
+    ctx.font = `bold ${Math.round(48 * pulse)}px Arial`;
+    ctx.fillText(this.respawnOverlayText, cx, cy);
+    ctx.shadowBlur = 0;
+    // Subtitle hint reinforces the moment
+    ctx.fillStyle = '#FFFFFFAA';
+    ctx.font = 'bold 12px Arial';
+    ctx.fillText('— WEAPONS TRUCK INBOUND —', cx, cy + 38);
+    ctx.restore();
   }
 
   // Chassis integrity meter — three angled armor plates that fill with neon
@@ -1780,5 +1984,13 @@ export class SpeedRacerGame extends BaseGame {
     this.currentMusicTrack = null;
     this.applySectionMusic(this.currentSection);
     this.spawner.scheduleVanIn(6);
+    // v9 — kick off the cinematic again on restart so each new run opens
+    // with the GET READY drop-off, matching first-launch behavior.
+    this.respawnPhase = 'idle';
+    this.respawnTimer = 0;
+    this.respawnVan = null;
+    this.respawnOverlayText = '';
+    this.currentLifeNumber = 1;
+    this.startRespawnCinematic('GET READY!');
   }
 }

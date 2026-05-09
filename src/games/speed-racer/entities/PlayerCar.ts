@@ -25,6 +25,15 @@ export interface DirectionalInput {
   isDownPressed(): boolean;
 }
 
+// v9 — Spy-Hunter speed-driven Y dynamics. The car visually moves up the screen
+// when boosting and gently down when braking, anchored at PLAYER.Y for cruise.
+// Asymmetric: brake side gentler than boost side per playtest tuning.
+const Y_AT_BRAKE = 510;  // PLAYER.BRAKE_SPEED → this Y
+const Y_AT_BASE = 480;   // PLAYER.BASE_SPEED  → this Y (matches PLAYER.Y)
+const Y_AT_BOOST = 380;  // PLAYER.BOOST_SPEED → this Y
+// Exponential lerp time-constant. Smaller = snappier. ~0.5s response.
+const Y_LERP_TAU = 0.18;
+
 export type PlayerVisual = 'car' | 'boat';
 
 export interface SecondaryHint {
@@ -225,6 +234,22 @@ export class PlayerCar {
     } else if (this.speed > targetSpeed) {
       this.speed = Math.max(targetSpeed, this.speed - PLAYER.SPEED_DECEL * dt);
     }
+
+    // v9 — speed-driven Y. Map speed onto an asymmetric piecewise-linear curve
+    // (brake side gentler, boost side dramatic) and exponentially lerp toward
+    // it so the car settles smoothly instead of snapping with every speed
+    // change. RoadProfile reads this dynamic Y back via setPlayerScreenY each
+    // frame so road clamp / shape queries follow the visual position.
+    let targetY: number;
+    if (this.speed <= PLAYER.BASE_SPEED) {
+      const t = (this.speed - PLAYER.BRAKE_SPEED) / (PLAYER.BASE_SPEED - PLAYER.BRAKE_SPEED);
+      targetY = Y_AT_BRAKE + (Y_AT_BASE - Y_AT_BRAKE) * Math.max(0, Math.min(1, t));
+    } else {
+      const t = (this.speed - PLAYER.BASE_SPEED) / (PLAYER.BOOST_SPEED - PLAYER.BASE_SPEED);
+      targetY = Y_AT_BASE + (Y_AT_BOOST - Y_AT_BASE) * Math.max(0, Math.min(1, t));
+    }
+    const lerp = 1 - Math.exp(-dt / Y_LERP_TAU);
+    this.y += (targetY - this.y) * lerp;
 
     this.wakeT += dt * (1 + this.speed / PLAYER.BOOST_SPEED);
     if (this.damageLevel > 0) this.damageT += dt;
