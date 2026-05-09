@@ -417,6 +417,44 @@ export class SpeedRacerGame extends BaseGame {
       }
     }
 
+    // Off-road bump strikes — civilians. Mirrors the enemy scan above:
+    // a civilian bumped past the road edge or into a divider gap counts
+    // as a casualty (strike + combo drop, no score). Threshold check
+    // here can trigger civilian_spree just like the bullet path does.
+    for (const civ of this.spawner.getCivilians()) {
+      if (!civ.alive) continue;
+      const halfW = civ.width / 2;
+      const shape = this.roadProfile.shapeAtScreen(civ.y);
+      const offLeft = civ.x + halfW < shape.xMin - BUMP_OFF_ROAD_MARGIN;
+      const offRight = civ.x - halfW > shape.xMax + BUMP_OFF_ROAD_MARGIN;
+      let civOffRoad = offLeft || offRight;
+      if (!civOffRoad && shape.segments) {
+        const DIVIDER_REAL_THRESHOLD = 6;
+        for (let i = 0; i < shape.segments.length - 1; i++) {
+          const leftEdge = shape.segments[i].xMax;
+          const rightEdge = shape.segments[i + 1].xMin;
+          if (rightEdge - leftEdge <= DIVIDER_REAL_THRESHOLD) continue;
+          if (civ.x + halfW > leftEdge && civ.x - halfW < rightEdge) {
+            civOffRoad = true;
+            break;
+          }
+        }
+      }
+      if (civOffRoad) {
+        civ.alive = false;
+        this.civiliansLost += 1;
+        this.civiliansLostThisSection += 1;
+        this.dropCombo();
+        this.particles.burstExplosion(civ.x, civ.y, 0.9);
+        this.shake.add(0.3);
+        this.services?.audio?.playSound?.('collision', { volume: 0.45 });
+        if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
+          this.triggerDeath('civilian_spree');
+          return;
+        }
+      }
+    }
+
     this.boss.update(
       dt,
       this.sectionsCleared,
@@ -668,7 +706,9 @@ export class SpeedRacerGame extends BaseGame {
     for (const e of this.spawner.getEnemies()) e.alive = false;
     for (const p of this.spawner.getProjectiles()) p.alive = false;
     this.boss.reset();
-    // Reset civilian-spree counter so the next civilian doesn't end the run
+    // Each extra life gets a fresh civilian budget. Without this the player
+    // would respawn already at or near the spree threshold and a single
+    // accidental civ would re-end the run.
     this.civiliansLost = 0;
     // Drop combo — death always breaks the chain
     this.dropCombo();
@@ -761,16 +801,20 @@ export class SpeedRacerGame extends BaseGame {
         if (!civ.alive) continue;
         if (aabb(bb, civ.getBounds())) {
           bullet.alive = false;
-          civ.alive = false;
-          this.civiliansLost += 1;
-          this.civiliansLostThisSection += 1;
-          this.dropCombo();
-          this.particles.burstExplosion(civ.x, civ.y, 0.8);
-          this.shake.add(0.25);
-          this.services?.audio?.playSound?.('hit', { volume: 0.4 });
-          if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
-            this.triggerDeath('civilian_spree');
-            return;
+          if (civ.takeHit(bullet.damage)) {
+            this.civiliansLost += 1;
+            this.civiliansLostThisSection += 1;
+            this.dropCombo();
+            this.particles.burstExplosion(civ.x, civ.y, 0.8);
+            this.shake.add(0.25);
+            this.services?.audio?.playSound?.('hit', { volume: 0.4 });
+            if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
+              this.triggerDeath('civilian_spree');
+              return;
+            }
+          } else {
+            this.particles.burstHit(bullet.x, bullet.y);
+            this.services?.audio?.playSound?.('hit', { volume: 0.2 });
           }
           hitCiv = true;
           break;
@@ -1036,22 +1080,37 @@ export class SpeedRacerGame extends BaseGame {
       }
     }
 
-    // Player vs civilian — collateral
+    // Player vs civilian — soft traffic. Mirrors the enemy bump-knockoff
+    // loop: contact applies a lateral bump, never an insta-kill. Civilians
+    // become a "strike" only via shoot-down (bullet path) or bump-off-road
+    // (the off-road scan after spawner.update). This is what makes
+    // accidental civ deaths recoverable instead of run-ending.
     if (playerVulnerable) {
       for (const civ of this.spawner.getCivilians()) {
         if (!civ.alive) continue;
         if (aabb(pb, civ.getBounds())) {
-          civ.alive = false;
-          this.civiliansLost += 1;
-          this.civiliansLostThisSection += 1;
-          this.dropCombo();
-          this.particles.burstExplosion(civ.x, civ.y, 0.9);
-          this.shake.add(0.35);
-          this.services?.audio?.playSound?.('collision', { volume: 0.45 });
-          if (this.civiliansLost >= CIVILIANS_LOST_GAME_OVER) {
-            this.triggerDeath('civilian_spree');
-            return;
-          }
+          const dx = this.player.x - civ.x;
+          // Pick a stable sign for rear-end overlaps where dx ≈ 0, otherwise
+          // the bump force is zero and the civ stays glued in front of us.
+          const sign = Math.abs(dx) < 1 ? 1 : Math.sign(dx);
+          const speedRatio = Math.max(
+            0,
+            Math.min(
+              1,
+              (this.player.speed - PLAYER.BRAKE_SPEED) /
+                (PLAYER.BOOST_SPEED - PLAYER.BRAKE_SPEED),
+            ),
+          );
+          const force = BUMP_FORCE_MIN + (BUMP_FORCE_MAX - BUMP_FORCE_MIN) * speedRatio;
+          civ.applyBump(-sign * force);
+          this.player.vx += sign * (50 + civ.bumpResistance * 30);
+          this.particles.burstExplosion(
+            (this.player.x + civ.x) / 2,
+            (this.player.y + civ.y) / 2,
+            0.4,
+          );
+          this.shake.add(0.12);
+          this.services?.audio?.playSound?.('collision', { volume: 0.32 });
         }
       }
     }

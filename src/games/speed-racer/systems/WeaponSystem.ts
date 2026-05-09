@@ -1,7 +1,7 @@
 import { Projectile } from '../entities/Projectile';
 import { PLAYER } from '../data/constants';
 
-const FIRE_COOLDOWN = 0.085;
+const FIRE_COOLDOWN = 0.10;
 const BULLET_SPEED = 950;
 const BARREL_OFFSET_X = 12;
 
@@ -21,11 +21,9 @@ export class WeaponSystem {
     this.fireCooldown -= dt;
     if (firing && this.fireCooldown <= 0) {
       const muzzleY = playerY - PLAYER.HEIGHT / 2 - 8;
+      const offsetX = this.shotsFired % 2 === 0 ? -BARREL_OFFSET_X : BARREL_OFFSET_X;
       this.projectiles.push(
-        new Projectile(playerX - BARREL_OFFSET_X, muzzleY, -BULLET_SPEED, 'player'),
-      );
-      this.projectiles.push(
-        new Projectile(playerX + BARREL_OFFSET_X, muzzleY, -BULLET_SPEED, 'player'),
+        new Projectile(playerX + offsetX, muzzleY, -BULLET_SPEED, 'player'),
       );
       this.fireCooldown = FIRE_COOLDOWN;
       this.shotsFired++;

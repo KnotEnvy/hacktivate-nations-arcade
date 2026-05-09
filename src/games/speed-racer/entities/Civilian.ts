@@ -1,5 +1,16 @@
 import type { RoadProfile } from '../systems/RoadProfile';
 
+// Bump physics — mirrors EnemyCar's knockoff loop so civilians behave as
+// soft traffic: side-swipes inject lateral velocity, road clamp releases
+// while a fresh bump is sliding them, off-road scan in SpeedRacerGame
+// credits the strike. Constants match EnemyCar.ts intentionally.
+const BUMP_FRICTION = 240;
+const BUMP_AI_SUPPRESS = 30;
+const BUMP_COOLDOWN = 0.12;
+
+const CIVILIAN_HP = 2;
+const CIVILIAN_BUMP_RESISTANCE = 1.3;
+
 // Two-tone palettes give civilians readable personality without the enemy-car
 // palette. Body + trim + driver silhouette color; trim reads as roof/skirt.
 interface CivilianPalette {
@@ -22,9 +33,13 @@ export class Civilian {
   y: number;
   vy = 0;
   alive = true;
+  hp: number = CIVILIAN_HP;
   readonly width = 40;
   readonly height = 68;
   readonly forwardSpeed = 240; // World-frame forward speed (slower than ram)
+  readonly bumpResistance = CIVILIAN_BUMP_RESISTANCE;
+  bumpVx = 0;
+  private bumpCooldown = 0;
   readonly palette: CivilianPalette;
   readonly roofRack: boolean;
   readonly signalPhase: number; // randomized so not every civ blinks in sync
@@ -45,10 +60,40 @@ export class Civilian {
     this.y += this.vy * dt;
     if (this.y > 720) this.alive = false;
 
-    const halfW = this.width / 2;
-    const shape = this.roadProfile.shapeAtScreen(this.y);
-    if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
-    else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
+    // Bump impulse + linear decay (mirrors EnemyCar)
+    this.x += this.bumpVx * dt;
+    if (this.bumpVx > 0) {
+      this.bumpVx = Math.max(0, this.bumpVx - BUMP_FRICTION * dt);
+    } else if (this.bumpVx < 0) {
+      this.bumpVx = Math.min(0, this.bumpVx + BUMP_FRICTION * dt);
+    }
+    if (this.bumpCooldown > 0) {
+      this.bumpCooldown = Math.max(0, this.bumpCooldown - dt);
+    }
+
+    // Road clamp — released while a fresh bump is sliding the civ off the
+    // road, so the off-road scan in SpeedRacerGame can credit the strike.
+    if (Math.abs(this.bumpVx) < BUMP_AI_SUPPRESS) {
+      const halfW = this.width / 2;
+      const shape = this.roadProfile.shapeAtScreen(this.y);
+      if (this.x - halfW < shape.xMin) this.x = shape.xMin + halfW;
+      else if (this.x + halfW > shape.xMax) this.x = shape.xMax - halfW;
+    }
+  }
+
+  applyBump(forceVx: number): void {
+    if (this.bumpCooldown > 0) return;
+    this.bumpVx += forceVx / this.bumpResistance;
+    this.bumpCooldown = BUMP_COOLDOWN;
+  }
+
+  takeHit(damage: number): boolean {
+    this.hp -= damage;
+    if (this.hp <= 0) {
+      this.alive = false;
+      return true;
+    }
+    return false;
   }
 
   getBounds(): { x: number; y: number; w: number; h: number } {
