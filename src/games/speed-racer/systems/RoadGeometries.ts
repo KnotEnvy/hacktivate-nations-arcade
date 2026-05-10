@@ -7,7 +7,7 @@
 //
 // Future Step 3 / 4 geometries (forks, bridges) live alongside in this file.
 
-import type { RoadGeometry, RoadSegment, RoadShape } from './RoadProfile';
+import type { CurveSchedule, RoadGeometry, RoadSegment, RoadShape } from './RoadProfile';
 
 export interface WidthKeyframe {
   // Section-relative worldY (0 = section start). Keyframes must be authored in
@@ -23,6 +23,7 @@ export interface WidthKeyframe {
 
 export class WidthChangeGeometry implements RoadGeometry {
   private readonly keyframes: ReadonlyArray<WidthKeyframe>;
+  private curve: CurveSchedule | null = null;
 
   constructor(keyframes: ReadonlyArray<WidthKeyframe>) {
     if (keyframes.length === 0) {
@@ -31,11 +32,16 @@ export class WidthChangeGeometry implements RoadGeometry {
     this.keyframes = keyframes;
   }
 
+  setCurve(curve: CurveSchedule | null): void {
+    this.curve = curve;
+  }
+
   shapeAt(worldY: number): RoadShape {
     const { prev, next, t } = this.findInterp(worldY);
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
     return {
-      xMin: prev.xMin + (next.xMin - prev.xMin) * t,
-      xMax: prev.xMax + (next.xMax - prev.xMax) * t,
+      xMin: prev.xMin + (next.xMin - prev.xMin) * t + offset,
+      xMax: prev.xMax + (next.xMax - prev.xMax) * t + offset,
     };
   }
 
@@ -118,6 +124,7 @@ export interface ForkKeyframe {
 export class ForkGeometry implements RoadGeometry {
   private readonly keyframes: ReadonlyArray<ForkKeyframe>;
   private readonly segmentCount: number;
+  private curve: CurveSchedule | null = null;
 
   constructor(keyframes: ReadonlyArray<ForkKeyframe>) {
     if (keyframes.length === 0) {
@@ -134,15 +141,20 @@ export class ForkGeometry implements RoadGeometry {
     this.keyframes = keyframes;
   }
 
+  setCurve(curve: CurveSchedule | null): void {
+    this.curve = curve;
+  }
+
   shapeAt(worldY: number): RoadShape {
     const { prev, next, t } = this.findInterp(worldY);
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
     const segments: RoadSegment[] = [];
     for (let i = 0; i < this.segmentCount; i++) {
       const a = prev.segments[i];
       const b = next.segments[i];
       segments.push({
-        xMin: a.xMin + (b.xMin - a.xMin) * t,
-        xMax: a.xMax + (b.xMax - a.xMax) * t,
+        xMin: a.xMin + (b.xMin - a.xMin) * t + offset,
+        xMax: a.xMax + (b.xMax - a.xMax) * t + offset,
         laneCount: a.laneCount,
       });
     }
@@ -229,8 +241,12 @@ export class ForkGeometry implements RoadGeometry {
 // the bump knockoff loop).
 
 export class ShoulderedRoadGeometry implements RoadGeometry {
-  private readonly shape: RoadShape;
+  private readonly pavementXMin: number;
+  private readonly pavementXMax: number;
+  private readonly shoulderWidth: number;
   private readonly lanes: number;
+  private readonly cachedShape: RoadShape;
+  private curve: CurveSchedule | null = null;
 
   constructor(
     pavementXMin: number,
@@ -238,8 +254,11 @@ export class ShoulderedRoadGeometry implements RoadGeometry {
     laneCount: number,
     shoulderWidth: number,
   ) {
+    this.pavementXMin = pavementXMin;
+    this.pavementXMax = pavementXMax;
+    this.shoulderWidth = shoulderWidth;
     this.lanes = laneCount;
-    this.shape = {
+    this.cachedShape = {
       xMin: pavementXMin,
       xMax: pavementXMax,
       shoulder: {
@@ -249,31 +268,48 @@ export class ShoulderedRoadGeometry implements RoadGeometry {
     };
   }
 
-  shapeAt(): RoadShape {
-    return this.shape;
+  setCurve(curve: CurveSchedule | null): void {
+    this.curve = curve;
+  }
+
+  shapeAt(worldY: number): RoadShape {
+    if (!this.curve) return this.cachedShape;
+    const offset = this.curve.offsetAt(worldY);
+    return {
+      xMin: this.pavementXMin + offset,
+      xMax: this.pavementXMax + offset,
+      shoulder: {
+        xMin: this.pavementXMin - this.shoulderWidth + offset,
+        xMax: this.pavementXMax + this.shoulderWidth + offset,
+      },
+    };
   }
 
   laneCount(): number {
     return this.lanes;
   }
 
-  laneCenterAt(_worldY: number, lane: number): number {
-    void _worldY;
-    const laneWidth = (this.shape.xMax - this.shape.xMin) / this.lanes;
-    return this.shape.xMin + laneWidth * (lane + 0.5);
+  laneCenterAt(worldY: number, lane: number): number {
+    const laneWidth = (this.pavementXMax - this.pavementXMin) / this.lanes;
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
+    return this.pavementXMin + offset + laneWidth * (lane + 0.5);
   }
 
   // True if x is on pavement OR on a shoulder. The bump-knockoff
   // off-road check in SpeedRacerGame uses the pavement bounds explicitly
   // (so bumping an enemy onto the shoulder still scores), this method is
   // for fork-style "is on any drivable surface" queries.
-  isOnRoad(_worldY: number, x: number): boolean {
-    void _worldY;
-    return x >= this.shape.shoulder!.xMin && x <= this.shape.shoulder!.xMax;
+  isOnRoad(worldY: number, x: number): boolean {
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
+    return (
+      x >= this.pavementXMin - this.shoulderWidth + offset &&
+      x <= this.pavementXMax + this.shoulderWidth + offset
+    );
   }
 
-  // Uniform geometry — same shape every row. Renderer fast path applies.
+  // Uniform only when no curve is attached. Once a curve is installed, the
+  // road shifts per row and the renderer slow path engages.
   isUniform(): boolean {
-    return true;
+    return this.curve === null;
   }
 }

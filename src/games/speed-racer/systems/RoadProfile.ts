@@ -55,31 +55,84 @@ export interface RoadGeometry {
   // Renderer fast-path hint: when true, every visible row of the section
   // returns the same shape, so the renderer can fall back to single-fillRect
   // draws instead of per-row strips. StraightRoadGeometry returns true; any
-  // dynamic profile (width change, forks, etc.) returns false.
+  // dynamic profile (width change, forks, etc.) returns false. Geometries
+  // also drop to non-uniform once a curve is attached via setCurve.
   isUniform(): boolean;
+  // v10 — attach an optional lateral curve schedule. shapeAt applies the
+  // schedule's offset to xMin/xMax/segments/shoulder bounds. Pass null to
+  // detach. Geometries with no curve match v9 behavior exactly.
+  setCurve(curve: CurveSchedule | null): void;
+}
+
+// v10 — curve schedule. Authored per section in SectionDef.roadCurve and
+// installed on the geometry by SpeedRacerGame.applyRoadProfile via setCurve.
+// Keyframes are smoothstep-interpolated (curves are visually prominent;
+// linear-interp would feel kinked). Outside the authored range, offset is
+// clamped to the nearest endpoint — but every authored schedule starts and
+// ends at offset 0, so that clamp degenerates to "no curve."
+export interface CurveKeyframe {
+  worldY: number;   // section-relative, ascending order
+  offset: number;   // lateral pixels (positive = right, negative = left)
+}
+
+export class CurveSchedule {
+  constructor(private readonly keyframes: ReadonlyArray<CurveKeyframe>) {}
+
+  offsetAt(worldY: number): number {
+    if (this.keyframes.length === 0) return 0;
+    const first = this.keyframes[0];
+    const last = this.keyframes[this.keyframes.length - 1];
+    if (worldY <= first.worldY) return first.offset;
+    if (worldY >= last.worldY) return last.offset;
+    for (let i = 0; i < this.keyframes.length - 1; i++) {
+      const a = this.keyframes[i];
+      const b = this.keyframes[i + 1];
+      if (worldY >= a.worldY && worldY <= b.worldY) {
+        const span = b.worldY - a.worldY;
+        if (span <= 0) return a.offset;
+        const t = (worldY - a.worldY) / span;
+        // Smoothstep — natural-feeling acceleration in/out of bends without
+        // authoring extra keyframes for ease curves.
+        const eased = t * t * (3 - 2 * t);
+        return a.offset + (b.offset - a.offset) * eased;
+      }
+    }
+    return 0;
+  }
 }
 
 // Trivial geometry — returns the v5 straight-rectangle road regardless of
 // worldY. Used as the default for every section until per-section profiles
-// are introduced in Step 2.
+// are introduced in Step 2. v10 — accepts an optional curve schedule that
+// shifts the rectangle laterally per row.
 export class StraightRoadGeometry implements RoadGeometry {
-  shapeAt(): RoadShape {
-    return { xMin: ROAD.X_MIN, xMax: ROAD.X_MAX };
+  private curve: CurveSchedule | null = null;
+
+  setCurve(curve: CurveSchedule | null): void {
+    this.curve = curve;
+  }
+
+  shapeAt(worldY: number): RoadShape {
+    if (!this.curve) {
+      return { xMin: ROAD.X_MIN, xMax: ROAD.X_MAX };
+    }
+    const offset = this.curve.offsetAt(worldY);
+    return { xMin: ROAD.X_MIN + offset, xMax: ROAD.X_MAX + offset };
   }
   laneCount(): number {
     return ROAD.LANE_COUNT;
   }
-  laneCenterAt(_worldY: number, lane: number): number {
-    void _worldY;
+  laneCenterAt(worldY: number, lane: number): number {
     const laneWidth = ROAD.WIDTH / ROAD.LANE_COUNT;
-    return ROAD.X_MIN + laneWidth * (lane + 0.5);
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
+    return ROAD.X_MIN + offset + laneWidth * (lane + 0.5);
   }
-  isOnRoad(_worldY: number, x: number): boolean {
-    void _worldY;
-    return x >= ROAD.X_MIN && x <= ROAD.X_MAX;
+  isOnRoad(worldY: number, x: number): boolean {
+    const offset = this.curve ? this.curve.offsetAt(worldY) : 0;
+    return x >= ROAD.X_MIN + offset && x <= ROAD.X_MAX + offset;
   }
   isUniform(): boolean {
-    return true;
+    return this.curve === null;
   }
 }
 

@@ -187,7 +187,91 @@ export class RoadRenderer {
       ctx.fillRect(shape.xMin, 0, shape.xMax - shape.xMin, h);
       return;
     }
+    // v10 — slow path now also draws shoulders per-row when the geometry
+    // exposes them. Without this, sections with shoulders that go non-uniform
+    // (curves attached to ShoulderedRoadGeometry, e.g. §1 / §6) would lose
+    // their shoulder strips entirely — perceived as "the road palette
+    // changed" because pavement now meets grass directly with no shoulder
+    // interlude. Shoulders draw before the pavement strips so the pavement
+    // gradient stays on top at the inner edge.
+    this.renderShouldersStripped(ctx, h, palette, profile);
     this.renderRoadBodyStripped(ctx, h, palette, profile);
+  }
+
+  // Slow-path equivalent of fillShoulder. Walks rows, run-accumulates
+  // contiguous shoulder bounds, fills the base shoulder color (roadShadeColor)
+  // for each block, then draws rumble-strip dashes that follow the curve at
+  // each dash Y. Symmetric in spirit to fillShoulder's full-screen fillRect +
+  // dash loop, but row-aware so curved/shouldered sections render correctly.
+  private renderShouldersStripped(
+    ctx: CanvasRenderingContext2D,
+    h: number,
+    palette: SectionPalette,
+    profile: RoadProfile,
+  ): void {
+    type Run = { startY: number; xMin: number; xMax: number };
+    let leftRun: Run | null = null;
+    let rightRun: Run | null = null;
+
+    const flush = (run: Run | null, endY: number): void => {
+      if (!run) return;
+      if (run.xMax > run.xMin && endY > run.startY) {
+        ctx.fillStyle = palette.roadShadeColor;
+        ctx.fillRect(run.xMin, run.startY, run.xMax - run.xMin, endY - run.startY);
+      }
+    };
+
+    let sawShoulder = false;
+    for (let y = 0; y < h; y++) {
+      const shape = profile.shapeAtScreen(y);
+      if (!shape.shoulder) {
+        flush(leftRun, y);
+        flush(rightRun, y);
+        leftRun = null;
+        rightRun = null;
+        continue;
+      }
+      sawShoulder = true;
+      const lMin = shape.shoulder.xMin;
+      const lMax = shape.xMin;
+      const rMin = shape.xMax;
+      const rMax = shape.shoulder.xMax;
+      if (!leftRun || leftRun.xMin !== lMin || leftRun.xMax !== lMax) {
+        flush(leftRun, y);
+        leftRun = { startY: y, xMin: lMin, xMax: lMax };
+      }
+      if (!rightRun || rightRun.xMin !== rMin || rightRun.xMax !== rMax) {
+        flush(rightRun, y);
+        rightRun = { startY: y, xMin: rMin, xMax: rMax };
+      }
+    }
+    flush(leftRun, h);
+    flush(rightRun, h);
+
+    // Rumble-strip dashes — same scroll-driven cadence as fillShoulder, but
+    // queries the shoulder bounds at each dash Y so the strips bend with the
+    // curve. Skip entirely when no row had a shoulder (most sections).
+    if (!sawShoulder) return;
+    const dashLen = 10;
+    const gapLen = 10;
+    const cycle = dashLen + gapLen;
+    const offset = ((this.worldScroll % cycle) + cycle) % cycle;
+    ctx.fillStyle = palette.edgeColor;
+    for (let yStart = offset - cycle; yStart < h; yStart += cycle) {
+      const yClamped = Math.max(0, yStart);
+      const yEnd = Math.min(yStart + dashLen, h);
+      if (yEnd <= yClamped) continue;
+      const shape = profile.shapeAtScreen((yClamped + yEnd) / 2);
+      if (!shape.shoulder) continue;
+      const dh = yEnd - yClamped;
+      // Match fillShoulder's "draw at both edges of each shoulder rect" rule:
+      //   left shoulder: at shoulder.xMin + 2 (outer) and shape.xMin - 4 (inner)
+      //   right shoulder: at shape.xMax + 2 (inner) and shoulder.xMax - 4 (outer)
+      ctx.fillRect(shape.shoulder.xMin + 2, yClamped, 2, dh);
+      ctx.fillRect(shape.xMin - 4, yClamped, 2, dh);
+      ctx.fillRect(shape.xMax + 2, yClamped, 2, dh);
+      ctx.fillRect(shape.shoulder.xMax - 4, yClamped, 2, dh);
+    }
   }
 
   // Shoulder fill — darker than pavement, with periodic rumble-strip dashes

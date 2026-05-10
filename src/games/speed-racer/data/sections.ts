@@ -5,7 +5,7 @@
 
 import type { MusicName } from '@/services/AudioManager';
 import type { SpawnerOptions } from '../systems/EnemySpawner';
-import type { RoadGeometry } from '../systems/RoadProfile';
+import type { CurveKeyframe, RoadGeometry } from '../systems/RoadProfile';
 import {
   ForkGeometry,
   ShoulderedRoadGeometry,
@@ -125,6 +125,14 @@ export interface SectionDef {
   // The hub starts the speed-racer primary ('action_chase') on game launch, so
   // §1 typically omits this and inherits.
   musicTrack?: MusicName;
+  // v10 (Wave 4) — optional bear-left/bear-right curve schedule. Applied to
+  // the section's geometry via setCurve in SpeedRacerGame.applyRoadProfile.
+  // Authoring invariant: every schedule starts and ends at offset 0 so the
+  // road is centered at section transitions. Smoothstep interpolation between
+  // adjacent keyframes — 4 keyframes per bear is the typical pattern (entry@0,
+  // ramp-end@peak, hold-end@peak, exit@0). Positive offset = bear right
+  // (player must steer right to track); negative = bear left.
+  roadCurve?: ReadonlyArray<CurveKeyframe>;
 }
 
 // === Palette resolution ================================================
@@ -241,6 +249,22 @@ const NEON_HIGHWAY: SectionDef = {
   // option early, with the trade-off that shoulder handling is sluggish.
   // Pavement: [160, 640], shoulder envelope: [100, 700].
   roadGeometry: new ShoulderedRoadGeometry(160, 640, 4, 60),
+  // v10 — gentle tutorial curves: one mild bear right, one mild bear left.
+  // 50px magnitude (~half a lane); plenty of shoulder headroom if the player
+  // misses the cue. Each hold is ~1500 worldY (~4.2 sec at base speed) so the
+  // bend lasts long enough to feel like a sustained turn rather than a drift.
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY: 1300, offset:   0 },
+    { worldY: 1500, offset:  50 },
+    { worldY: 3200, offset:  50 },
+    { worldY: 3400, offset:   0 },
+    { worldY: 4300, offset:   0 },
+    { worldY: 4500, offset: -50 },
+    { worldY: 6200, offset: -50 },
+    { worldY: 6400, offset:   0 },
+    { worldY: 8000, offset:   0 },
+  ],
 };
 
 // === Section 2 — urban shooters, no armored yet. ===
@@ -287,6 +311,21 @@ const NEON_CITY: SectionDef = {
   // visibility drops so the section's snipers feel more dangerous in the dark.
   tunnelZones: [
     { startWorldY: 3000, endWorldY: 5000 },
+  ],
+  // v10 — bear left before the tunnel, bear right after. Curves stay clear
+  // of the dark stretch (3000–5000) where reduced visibility plus a curve
+  // would compound unfairly. Each hold is ~1500 worldY (~4.2 sec).
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY:  700, offset:   0 },
+    { worldY:  900, offset: -80 },
+    { worldY: 2400, offset: -80 },
+    { worldY: 2600, offset:   0 },
+    { worldY: 5100, offset:   0 },
+    { worldY: 5300, offset:  80 },
+    { worldY: 6800, offset:  80 },
+    { worldY: 7000, offset:   0 },
+    { worldY: 8000, offset:   0 },
   ],
 };
 
@@ -359,6 +398,22 @@ const STEEL_SPAN: SectionDef = {
       },
     },
   ],
+  // v10 — long suspension-bridge sweepers. Two large-radius bears, one each
+  // direction. Magnitudes 70 / 90 — bridges curve gently in real life and
+  // the steel railings (visualized via the palette override) read as
+  // following the road, not opposing it.
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY:  500, offset:   0 },
+    { worldY:  700, offset:  70 },
+    { worldY: 2500, offset:  70 },
+    { worldY: 2700, offset:   0 },
+    { worldY: 4500, offset:   0 },
+    { worldY: 4700, offset: -90 },
+    { worldY: 6300, offset: -90 },
+    { worldY: 6500, offset:   0 },
+    { worldY: 8000, offset:   0 },
+  ],
 };
 
 // === Section 4 — alpine pass, dodge focus, civilian-heavy. ===
@@ -420,6 +475,24 @@ const ALPINE_PASS: SectionDef = {
     { worldY: 6500, xMin: 160, xMax: 640, laneCount: 4 }, // back to full width
     { worldY: 8000, xMin: 160, xMax: 640, laneCount: 4 }, // section end
   ]),
+  // v10 — sharp mountain switchbacks. Two long curves placed in the wider
+  // open stretches between the chokepoints (gaps at 0–2200 and 3200–5500).
+  // The 6500–8000 stretch is too short for a 4-sec hold so the third curve
+  // got dropped in favor of letting the longer two breathe. Magnitudes
+  // 110 / 120 — the loop's biggest bears, fitting the switchback identity.
+  // Holds are ~1500 worldY (~4.2 sec).
+  roadCurve: [
+    { worldY:    0, offset:    0 },
+    { worldY:  200, offset:    0 },
+    { worldY:  400, offset: -110 },
+    { worldY: 1900, offset: -110 },
+    { worldY: 2100, offset:    0 }, // exit before chokepoint taper at 2200
+    { worldY: 3300, offset:    0 }, // post-chokepoint at 3200
+    { worldY: 3500, offset:  120 },
+    { worldY: 5000, offset:  120 },
+    { worldY: 5200, offset:    0 }, // exit before chokepoint taper at 5500
+    { worldY: 8000, offset:    0 },
+  ],
   // First explicit music swap of the loop — mountain pressure suits a tenser bed.
   musicTrack: 'epic_tension',
 };
@@ -505,6 +578,23 @@ const SUNSET_COAST: SectionDef = {
       { xMin: 400, xMax: 640, laneCount: 2 },
     ]},
   ]),
+  // v10 — coastal sweepers framing the central fork. Curves only in pre-fork
+  // (0–3000) and post-fork (5200–8000) stretches; the fork itself stays
+  // straight so the "commit to a side" decision isn't muddied by lateral
+  // shift. ForkGeometry would bend both segments together if asked, but
+  // visually it's busier than the section needs.
+  roadCurve: [
+    { worldY:    0, offset:    0 },
+    { worldY:  700, offset:    0 },
+    { worldY:  900, offset:  100 },
+    { worldY: 2700, offset:  100 },
+    { worldY: 2900, offset:    0 }, // straight before fork open at 3200
+    { worldY: 5300, offset:    0 }, // straight after fork close at 5200
+    { worldY: 5500, offset: -100 },
+    { worldY: 7300, offset: -100 },
+    { worldY: 7500, offset:    0 },
+    { worldY: 8000, offset:    0 },
+  ],
   // Sunset coast leans into the cinematic horizon glow — heroic bed.
   musicTrack: 'epic_heroic',
 };
@@ -583,6 +673,21 @@ const HARBOR_RUN: SectionDef = {
         postAccent: '#FFE9B0',
       },
     },
+  ],
+  // v10 — gentle harbor sweepers, scaled to the calmer aquatic intro. Two
+  // bears (left then right), magnitudes 70 / 80. Boardwalk shoulders catch
+  // the player if they miss the cue. Holds are ~1500 worldY (~4.2 sec).
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY:  200, offset:   0 },
+    { worldY:  400, offset: -70 },
+    { worldY: 1900, offset: -70 },
+    { worldY: 2100, offset:   0 },
+    { worldY: 3000, offset:   0 },
+    { worldY: 3200, offset:  80 },
+    { worldY: 4700, offset:  80 },
+    { worldY: 4900, offset:   0 },
+    { worldY: 6000, offset:   0 },
   ],
   // Calm aquatic intro — drops the tension, leans on chill water atmosphere.
   // OPEN_SEA inherits this so the cinematic dawn→day fade plays over the same
@@ -691,6 +796,21 @@ const OPEN_SEA: SectionDef = {
       },
     },
   ],
+  // v10 — the most "open road" feel of the loop. Two long sweepers, one
+  // each direction, aligned roughly with the dawn→day palette transition at
+  // 3500. Magnitude 100 over long holds (~2300 worldY each).
+  roadCurve: [
+    { worldY:    0, offset:    0 },
+    { worldY:  600, offset:    0 },
+    { worldY:  900, offset:  100 },
+    { worldY: 3200, offset:  100 },
+    { worldY: 3400, offset:    0 },
+    { worldY: 3700, offset:    0 },
+    { worldY: 4000, offset: -100 },
+    { worldY: 6500, offset: -100 },
+    { worldY: 6800, offset:    0 },
+    { worldY: 7000, offset:    0 },
+  ],
 };
 
 // === Section 8 — channel. Dropper showcase, industrial canal with chokepoints. ===
@@ -757,6 +877,25 @@ const CHANNEL: SectionDef = {
     { worldY: 4800, xMin: 160, xMax: 640, laneCount: 4 },
     { worldY: 6000, xMin: 160, xMax: 640, laneCount: 4 },
   ]),
+  // v10 — two long bears in the wider open stretches around the lock
+  // chokepoints. The middle stretch (2600–3800) is dropped to give the
+  // remaining two room to sustain. The 0–1600 and 4800–6000 stretches are
+  // each only 1200–1600 worldY long, so holds settle for ~3 sec rather than
+  // the 4-sec target — chokepoint geometry dominates the section's identity
+  // and the curves act as accents. Curves still clear the narrow corridors
+  // (1800–2400 and 4000–4600) so depth-charge navigation isn't compounded
+  // by lateral shift. Magnitudes 80 / 80.
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY:  100, offset:   0 },
+    { worldY:  300, offset: -80 },
+    { worldY: 1400, offset: -80 },
+    { worldY: 1500, offset:   0 }, // exit before lock taper at 1600
+    { worldY: 4800, offset:   0 }, // post-lock at 4800
+    { worldY: 5000, offset:  80 },
+    { worldY: 5800, offset:  80 },
+    { worldY: 6000, offset:   0 },
+  ],
   // Aquatic finale — chokepoint pressure swaps the chill bed for intensity.
   musicTrack: 'action_intense',
 };
@@ -805,6 +944,21 @@ const FROST_PASS: SectionDef = {
     shooterBurstChance: 0.40,
     formationChance: 0.28,
   },
+  // v10 — moderate curves, long-held. Ice already cuts steerMul to 0.55, so
+  // 90px magnitudes with sustained holds (~2000 worldY each) stay challenging
+  // without becoming punishing. Two bears: left then right.
+  roadCurve: [
+    { worldY:    0, offset:   0 },
+    { worldY:  500, offset:   0 },
+    { worldY:  700, offset: -90 },
+    { worldY: 2700, offset: -90 },
+    { worldY: 2900, offset:   0 },
+    { worldY: 4500, offset:   0 },
+    { worldY: 4700, offset:  90 },
+    { worldY: 6500, offset:  90 },
+    { worldY: 6700, offset:   0 },
+    { worldY: 7000, offset:   0 },
+  ],
   // Final road sprint — competitive sports bed (also speed-racer's secondary).
   musicTrack: 'sports_competitive',
 };

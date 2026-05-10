@@ -2,7 +2,7 @@ import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import { PlayerCar } from './entities/PlayerCar';
 import { RoadRenderer } from './systems/RoadRenderer';
-import { RoadProfile, StraightRoadGeometry } from './systems/RoadProfile';
+import { CurveSchedule, RoadProfile, StraightRoadGeometry } from './systems/RoadProfile';
 import { WeaponSystem } from './systems/WeaponSystem';
 import { EnemySpawner, SpawnerOptions } from './systems/EnemySpawner';
 import { SecondaryWeaponSystem } from './systems/SecondaryWeaponSystem';
@@ -676,12 +676,20 @@ export class SpeedRacerGame extends BaseGame {
   }
 
   // Snapshot the scroll value at section start and install the section's road
-  // geometry on the live profile. Until per-section geometries are introduced
-  // in Step 2, every section reuses StraightRoadGeometry — behavior identical
-  // to v5, but every consumer now goes through the profile pipeline.
+  // geometry on the live profile. v10 — also attaches the section's optional
+  // curve schedule so the same geometry instance picks up authored bear-left/
+  // bear-right zones. Sections without roadCurve clear any prior curve so a
+  // wraparound back to a straight section doesn't carry over the previous
+  // section's bends.
   private applyRoadProfile(): void {
     this.sectionStartScroll = this.road.getScroll();
     const geometry = this.currentSection.roadGeometry ?? new StraightRoadGeometry();
+    const curveKeyframes = this.currentSection.roadCurve;
+    geometry.setCurve(
+      curveKeyframes && curveKeyframes.length > 0
+        ? new CurveSchedule(curveKeyframes)
+        : null,
+    );
     this.roadProfile.setGeometry(geometry, this.sectionStartScroll);
   }
 
@@ -1567,81 +1575,22 @@ export class SpeedRacerGame extends BaseGame {
     ctx.restore();
   }
 
+  // v10 (Wave 3b) — HUD redesigned around an arcade-cabinet feel. Score is
+  // promoted to a hero element at top-center, combo sits next to it. The
+  // bottom-left becomes an instrument panel (semi-circle speedometer +
+  // chassis plates), bottom-right is the secondary-weapon bay. Lives + civs
+  // sit top-left, section progress + dist/kills sit top-right. All HUD zones
+  // stay outside the player Y range (380–510) and the road body — readable
+  // at all times during action without obscuring the car.
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
     if (this.recapMode) return; // recap panel takes over the screen
-    ctx.save();
-    ctx.fillStyle = '#00FFFF';
-    ctx.font = 'bold 18px Arial';
-    ctx.textAlign = 'right';
-    ctx.fillText(`SPEED ${Math.round(this.player.speed)}`, this.canvas.width - 20, 40);
-    ctx.fillText(`DIST ${Math.round(this.distance)}m`, this.canvas.width - 20, 65);
-    ctx.fillText(`KILLS ${this.enemiesDestroyed}`, this.canvas.width - 20, 90);
 
-    // Section indicator + progress bar (right HUD)
-    const sectIdx = this.sectionIndex + 1;
-    const sectTotal = SECTIONS.length;
-    const sectColor = this.currentSection.palette.bannerColor;
-    ctx.fillStyle = sectColor;
-    ctx.font = 'bold 12px Arial';
-    ctx.fillText(`SECTION ${sectIdx}/${sectTotal}`, this.canvas.width - 20, 114);
-    const barW = 110;
-    const barH = 4;
-    const barX = this.canvas.width - 20 - barW;
-    const barY = 120;
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fillRect(barX, barY, barW, barH);
-    const pct = Math.min(1, this.sectionProgress / this.currentSection.lengthMeters);
-    ctx.fillStyle = sectColor;
-    ctx.fillRect(barX, barY, barW * pct, barH);
-    ctx.textAlign = 'right';
-
-    // Combo meter
-    ctx.textAlign = 'left';
-    if (this.combo > 1) {
-      ctx.fillStyle = '#FF1493';
-      ctx.font = 'bold 22px Arial';
-      ctx.fillText(`x${this.combo}`, 20, 40);
-      ctx.fillStyle = '#FFFFFF88';
-      ctx.font = '11px Arial';
-      const barW = 60;
-      const filled = Math.max(0, this.comboTimer / COMBO_DECAY_TIME) * barW;
-      ctx.fillRect(20, 46, barW, 3);
-      ctx.fillStyle = '#FF1493';
-      ctx.fillRect(20, 46, filled, 3);
-    }
-
-    // Civilian danger
-    ctx.fillStyle = this.civiliansLost > 0 ? '#FF6347' : '#FFFFFF88';
-    ctx.font = 'bold 14px Arial';
-    ctx.fillText(`CIVS ${this.civiliansLost}/${CIVILIANS_LOST_GAME_OVER}`, 20, 70);
-
-    // Lives indicator — small car icons
-    this.renderLivesIcons(ctx, 130, 60);
-
-    // Chassis integrity — stylized armor-plate meter below the lives icons.
-    this.renderChassisMeter(ctx, 130, 78);
-
-    // Secondary weapon
-    if (this.secondary.active) {
-      const cfg = SECONDARY_CONFIGS[this.secondary.active];
-      ctx.fillStyle = cfg.hudColor;
-      ctx.font = 'bold 14px Arial';
-      ctx.fillText(`[Q] ${cfg.label} ×${this.secondary.ammo}`, 20, 92);
-    } else {
-      ctx.fillStyle = '#FFFFFF44';
-      ctx.font = '12px Arial';
-      ctx.fillText('NO SECONDARY — find a weapon van', 20, 92);
-    }
-
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#FFFFFFAA';
-    ctx.font = '12px Arial';
-    ctx.fillText(
-      'A/D steer · W accel · S brake · SPACE fire · Q secondary · ESC end',
-      this.canvas.width / 2,
-      this.canvas.height - 12,
-    );
-    ctx.restore();
+    this.renderScoreBanner(ctx);
+    this.renderTopLeftPanel(ctx);
+    this.renderTopRightPanel(ctx);
+    this.renderInstrumentPanel(ctx);
+    this.renderSecondaryPanel(ctx);
+    this.renderControlsHint(ctx);
 
     if (this.bannerTimer > 0 && this.bannerSection) {
       this.renderSectionBanner(ctx, this.bannerSection);
@@ -1655,6 +1604,268 @@ export class SpeedRacerGame extends BaseGame {
     }
 
     this.touch.render(ctx);
+  }
+
+  // Hero score at top-center. The arcade game's score was hidden in the
+  // recap before — promoting it to top-center makes every kill feel earned
+  // and gives the cabinet feel the rest of the section identities deserve.
+  // Combo multiplier sits to the right with its own decay bar so the player
+  // can read both at once without eye-darting.
+  private renderScoreBanner(ctx: CanvasRenderingContext2D): void {
+    const cx = this.canvas.width / 2;
+    ctx.save();
+    ctx.textBaseline = 'top';
+
+    // Score — big neon numeric, white-on-cyan-glow for high contrast on
+    // every section palette. Drop shadow doubles as the arcade glow.
+    const scoreText = this.score.toLocaleString();
+    ctx.textAlign = 'center';
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 36px Arial';
+    ctx.fillText(scoreText, cx, 10);
+    ctx.shadowBlur = 0;
+
+    // SCORE label under the digits — small, dim, centered.
+    ctx.fillStyle = '#FFFFFF66';
+    ctx.font = 'bold 9px Arial';
+    ctx.fillText('SCORE', cx, 50);
+
+    // Combo multiplier to the right of the score, with its own decay bar.
+    // Hidden when combo == 1 so the HUD stays calm during exploration play.
+    if (this.combo > 1) {
+      const scoreWidth = ctx.measureText(scoreText).width;
+      const comboX = cx + scoreWidth / 2 + 18;
+      ctx.textAlign = 'left';
+      ctx.shadowColor = '#FF1493';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#FF6BB5';
+      ctx.font = 'bold 26px Arial';
+      ctx.fillText(`×${this.combo}`, comboX, 14);
+      ctx.shadowBlur = 0;
+
+      const barW = 50;
+      const barH = 3;
+      const barY = 44;
+      ctx.fillStyle = '#FFFFFF22';
+      ctx.fillRect(comboX, barY, barW, barH);
+      const filled = Math.max(0, this.comboTimer / COMBO_DECAY_TIME) * barW;
+      ctx.fillStyle = '#FF1493';
+      ctx.fillRect(comboX, barY, filled, barH);
+    }
+
+    ctx.restore();
+  }
+
+  // Top-left: lives row + civilian counter. Compact and glanceable so the
+  // player can read "do I have margin?" at a flick.
+  private renderTopLeftPanel(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    this.renderLivesIcons(ctx, 20, 16);
+
+    ctx.fillStyle = this.civiliansLost > 0 ? '#FF6347' : '#FFFFFF99';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(
+      `CIVS ${this.civiliansLost}/${CIVILIANS_LOST_GAME_OVER}`,
+      20,
+      40,
+    );
+
+    ctx.restore();
+  }
+
+  // Top-right: section indicator (color-keyed to the section banner palette)
+  // with a progress bar, plus tertiary stats (DIST / KILLS) at smaller weight
+  // so they don't compete with the hero score.
+  private renderTopRightPanel(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+
+    const sectIdx = this.sectionIndex + 1;
+    const sectTotal = SECTIONS.length;
+    const sectColor = this.currentSection.palette.bannerColor;
+    ctx.fillStyle = sectColor;
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(`SECTION ${sectIdx}/${sectTotal}`, this.canvas.width - 20, 14);
+
+    const barW = 110;
+    const barH = 4;
+    const barX = this.canvas.width - 20 - barW;
+    const barY = 34;
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(barX, barY, barW, barH);
+    const pct = Math.min(
+      1,
+      this.sectionProgress / this.currentSection.lengthMeters,
+    );
+    ctx.fillStyle = sectColor;
+    ctx.fillRect(barX, barY, barW * pct, barH);
+
+    ctx.fillStyle = '#FFFFFFAA';
+    ctx.font = 'bold 11px Arial';
+    ctx.fillText(`DIST ${Math.round(this.distance)}m`, this.canvas.width - 20, 46);
+    ctx.fillText(`KILLS ${this.enemiesDestroyed}`, this.canvas.width - 20, 60);
+
+    ctx.restore();
+  }
+
+  // Bottom-left instrument cluster. Speedometer arc + chassis plates read
+  // as a single "dashboard" element directly under the player car.
+  private renderInstrumentPanel(ctx: CanvasRenderingContext2D): void {
+    this.renderSpeedometer(ctx, 60, 555);
+    this.renderChassisMeter(ctx, 110, 555);
+  }
+
+  // Stylized speedometer — top-half arc with a needle, color shifts cyan →
+  // green → orange as speed climbs from BRAKE_SPEED through BASE_SPEED to
+  // BOOST_SPEED. Digital readout sits just below the hub for at-a-glance
+  // numeric reads. The arcade visual is the centerpiece; the number is
+  // backup.
+  private renderSpeedometer(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+  ): void {
+    const radius = 28;
+    const speedRatio = Math.max(
+      0,
+      Math.min(1, this.player.speed / PLAYER.BOOST_SPEED),
+    );
+    const startAngle = -Math.PI;
+    const endAngle = startAngle + Math.PI * speedRatio;
+
+    ctx.save();
+
+    // Background arc — dim, sets up the unfilled "track"
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, -Math.PI, 0);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.stroke();
+
+    // Filled arc — color tiered to current speed
+    if (speedRatio > 0) {
+      const speedColor =
+        speedRatio < 0.45
+          ? '#00BFFF'
+          : speedRatio < 0.85
+          ? '#00FF88'
+          : '#FFAA22';
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius, startAngle, endAngle);
+      ctx.lineWidth = 6;
+      ctx.shadowColor = speedColor;
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = speedColor;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+
+    // Needle from hub to current angle
+    const needleAngle = -Math.PI + Math.PI * speedRatio;
+    const needleX = cx + Math.cos(needleAngle) * (radius - 4);
+    const needleY = cy + Math.sin(needleAngle) * (radius - 4);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(needleX, needleY);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
+
+    // Center hub
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Digital readout below the gauge
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = 'bold 14px Arial';
+    ctx.fillText(`${Math.round(this.player.speed)}`, cx, cy + 4);
+    ctx.fillStyle = '#FFFFFF66';
+    ctx.font = 'bold 8px Arial';
+    ctx.fillText('SPEED', cx, cy + 22);
+
+    ctx.restore();
+  }
+
+  // Bottom-right secondary-weapon bay. When loaded, an outlined panel reads
+  // out the weapon label, ammo count, and the [Q] hotkey. When empty, a
+  // dimmer panel prompts the player to find a weapon van — keeps the visual
+  // anchor consistent so the eye returns here on each run.
+  private renderSecondaryPanel(ctx: CanvasRenderingContext2D): void {
+    const panelW = 95;
+    const panelH = 54;
+    const panelX = this.canvas.width - 20 - panelW;
+    const panelY = 530;
+
+    ctx.save();
+    ctx.textBaseline = 'top';
+
+    if (this.secondary.active) {
+      const cfg = SECONDARY_CONFIGS[this.secondary.active];
+
+      ctx.fillStyle = 'rgba(0,0,0,0.40)';
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.strokeStyle = cfg.hudColor;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+
+      ctx.fillStyle = cfg.hudColor;
+      ctx.font = 'bold 11px Arial';
+      ctx.textAlign = 'left';
+      ctx.fillText('[Q]', panelX + 6, panelY + 6);
+
+      ctx.font = 'bold 13px Arial';
+      ctx.fillText(cfg.label, panelX + 28, panelY + 7);
+
+      ctx.shadowColor = cfg.hudColor;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 22px Arial';
+      ctx.textAlign = 'right';
+      ctx.fillText(`×${this.secondary.ammo}`, panelX + panelW - 8, panelY + 26);
+      ctx.shadowBlur = 0;
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(panelX, panelY, panelW, panelH);
+      ctx.strokeStyle = '#FFFFFF22';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+
+      ctx.fillStyle = '#FFFFFF55';
+      ctx.font = 'bold 9px Arial';
+      ctx.textAlign = 'center';
+      const cx = panelX + panelW / 2;
+      ctx.fillText('NO SECONDARY', cx, panelY + 16);
+      ctx.fillText('FIND A VAN', cx, panelY + 30);
+    }
+
+    ctx.restore();
+  }
+
+  // Compact controls hint at the very bottom — single-line key list, dimmed
+  // so it disappears when the player isn't looking for it but stays
+  // referenceable on demand.
+  private renderControlsHint(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#FFFFFF55';
+    ctx.font = '11px Arial';
+    ctx.fillText(
+      'A/D steer · W accel · S brake · SPACE fire · Q secondary · ESC end',
+      this.canvas.width / 2,
+      this.canvas.height - 8,
+    );
+    ctx.restore();
   }
 
   // v9 — GET READY / LIFE N overlay during the respawn cinematic. Fades in
