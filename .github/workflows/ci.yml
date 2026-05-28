@@ -61,7 +61,9 @@ jobs:
     name: Optional browser smoke
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.event_name == 'workflow_dispatch' && inputs.browser_smoke
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'workflow_dispatch' && inputs.browser_smoke)
     env:
       CI: true
       NEXT_TELEMETRY_DISABLED: 1
