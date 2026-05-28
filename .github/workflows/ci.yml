@@ -51,6 +51,9 @@ jobs:
       - name: Release approval tests
         run: npm test -- --runInBand
 
+      - name: Unit tests
+        run: npm run test:dev -- --runInBand
+
       - name: Production build
         run: npm run build
 
