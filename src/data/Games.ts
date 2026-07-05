@@ -165,11 +165,11 @@ export const AVAILABLE_GAMES: GameManifest[] = [
   {
     id: 'dungeon-crawl',
     title: 'Dungeon Crawl',
-    thumbnail: '/games/coming-soon-thumb.svg',
+    thumbnail: '/games/dungeon-crawl/dungeon-crawl-thumb.svg',
     inputSchema: ['keyboard'],
     assetBudgetKB: 160,
     tier: 3,
-    description: 'Coming soon!'
+    description: 'Descend the Ember Depths! Torchlit procedural dungeons, sword-and-dagger combat, relic drafts, and the Ember Guardian waiting below.'
   },
   {
     id: 'target-shooter',

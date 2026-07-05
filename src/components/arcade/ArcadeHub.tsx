@@ -113,6 +113,23 @@ interface GameEndData {
   perfect_sections?: number;
   unique_sections_visited?: number;
   shots_fired?: number;
+  // Dungeon Crawl
+  depth?: number;
+  enemies_slain?: number;
+  gold_collected?: number;
+  bosses_slain?: number;
+  relics_collected?: number;
+  rooms_explored?: number;
+  daggers_thrown?: number;
+  mimics_found?: number;
+  perfect_floors?: number;
+  keys_used?: number;
+  potions_used?: number;
+  elites_slain?: number;
+  items_bought?: number;
+  gold_spent?: number;
+  unique_bosses?: number;
+  dashes_used?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

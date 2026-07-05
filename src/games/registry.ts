@@ -72,6 +72,10 @@ gameLoader.registerGame('speed-racer', async () => {
   const { SpeedRacerGame } = await import('./speed-racer/SpeedRacerGame');
   return new SpeedRacerGame();
 });
+gameLoader.registerGame('dungeon-crawl', async () => {
+  const { DungeonCrawlGame } = await import('./dungeon-crawl/DungeonCrawlGame');
+  return new DungeonCrawlGame();
+});
 
 // Future games will be registered here
 // gameLoader.registerGame('puzzle', async () => {

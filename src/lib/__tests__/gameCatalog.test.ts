@@ -17,7 +17,7 @@ describe('gameCatalog', () => {
     });
 
     test('returns false for catalog games that are not registered (coming soon)', () => {
-      expect(isGameImplemented('dungeon-crawl')).toBe(false);
+      expect(isGameImplemented('target-shooter')).toBe(false);
       expect(isGameImplemented('rhythm-challenge')).toBe(false);
     });
 
@@ -72,8 +72,7 @@ describe('gameCatalog', () => {
     });
 
     test('returns empty array for a tier with no implemented games', () => {
-      // Tier 3 and 4 are all coming-soon per the registry
-      expect(getImplementedGamesInTier(3)).toEqual([]);
+      // Tier 4 is all coming-soon per the registry (tier 3 shipped dungeon-crawl)
       expect(getImplementedGamesInTier(4)).toEqual([]);
     });
 
@@ -94,10 +93,10 @@ describe('gameCatalog', () => {
       expect(hasImplementedGamesInTier(0)).toBe(true);
       expect(hasImplementedGamesInTier(1)).toBe(true);
       expect(hasImplementedGamesInTier(2)).toBe(true);
+      expect(hasImplementedGamesInTier(3)).toBe(true);
     });
 
     test('false for tiers without implemented games', () => {
-      expect(hasImplementedGamesInTier(3)).toBe(false);
       expect(hasImplementedGamesInTier(4)).toBe(false);
       expect(hasImplementedGamesInTier(99)).toBe(false);
     });
@@ -105,7 +104,7 @@ describe('gameCatalog', () => {
 
   describe('sanitizeUnlockedGameIds', () => {
     test('removes unimplemented ids', () => {
-      const result = sanitizeUnlockedGameIds(['runner', 'dungeon-crawl', 'snake']);
+      const result = sanitizeUnlockedGameIds(['runner', 'target-shooter', 'snake']);
       expect(result).toEqual(['runner', 'snake']);
     });
 
@@ -125,7 +124,7 @@ describe('gameCatalog', () => {
     });
 
     test('returns empty array when nothing is implemented', () => {
-      expect(sanitizeUnlockedGameIds(['dungeon-crawl', 'bogus'])).toEqual([]);
+      expect(sanitizeUnlockedGameIds(['target-shooter', 'bogus'])).toEqual([]);
     });
 
     test('only returns implemented ids', () => {

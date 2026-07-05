@@ -37,6 +37,7 @@ const EXPECTED_PLAYABLE_GAME_IDS = [
   'breakout',
   'bubble',
   'color-drop',
+  'dungeon-crawl',
   'frog-hop',
   'memory',
   'mini-golf',
@@ -66,13 +67,13 @@ const speedRacerSession = {
 };
 
 describe('release approval checks', () => {
-  it('keeps the release catalog at the expected 17 playable games and 10 coming-soon games', () => {
+  it('keeps the release catalog at the expected 18 playable games and 9 coming-soon games', () => {
     const ids = AVAILABLE_GAMES.map(game => game.id);
 
     expect(new Set(ids).size).toBe(AVAILABLE_GAMES.length);
     expect(AVAILABLE_GAMES).toHaveLength(27);
-    expect(PLAYABLE_GAME_CATALOG).toHaveLength(17);
-    expect(COMING_SOON_GAME_CATALOG).toHaveLength(10);
+    expect(PLAYABLE_GAME_CATALOG).toHaveLength(18);
+    expect(COMING_SOON_GAME_CATALOG).toHaveLength(9);
   });
 
   it('keeps the registry and playable catalog in sync', () => {

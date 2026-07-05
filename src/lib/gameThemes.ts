@@ -232,6 +232,39 @@ export const GAME_THEMES: Record<string, GameTheme> = {
     },
   },
 
+  'dungeon-crawl': {
+    id: 'dungeon-crawl',
+    name: 'Ember Depths',
+    colors: {
+      primary: '#FF7A1A',      // Ember orange
+      secondary: '#FFD24A',    // Torch gold
+      accent: '#C878FF',       // Relic violet
+      background: '#0D0A08',   // Deep cavern black-brown
+      surface: '#241D16',      // Worn stone
+      text: '#FFE8C8',         // Warm parchment
+      textSecondary: '#B09A7E', // Dusty tan
+      success: '#5DBB46',      // Slime green
+      warning: '#FFD24A',      // Gold
+      error: '#C22F2F',        // Blood red
+    },
+    fonts: {
+      primary: 'var(--font-vt323)',
+      secondary: 'var(--font-courier-prime)',
+      mono: 'var(--font-anonymous-pro)',
+    },
+    effects: {
+      glow: true,
+      particles: true,
+      scanlines: true,
+      chromatic: false,
+    },
+    animations: {
+      fast: '0.1s ease-out',
+      medium: '0.3s ease-in-out',
+      slow: '0.7s ease-in-out',
+    },
+  },
+
   // Default theme for unthemed games
   default: {
     id: 'default',

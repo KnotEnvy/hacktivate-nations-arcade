@@ -103,7 +103,7 @@ describe('unlocks', () => {
     });
 
     test('ignores unimplemented / unknown ids', () => {
-      expect(getPaidUnlockedCountInTier(3, ['dungeon-crawl', 'bogus'])).toBe(0);
+      expect(getPaidUnlockedCountInTier(3, ['target-shooter', 'bogus'])).toBe(0);
     });
 
     test('returns 0 for empty unlocked list', () => {
@@ -136,7 +136,7 @@ describe('unlocks', () => {
     });
 
     test('false for unimplemented games even if listed as unlocked', () => {
-      expect(isGameUnlocked('dungeon-crawl', [0, 1, 2, 3], ['dungeon-crawl'])).toBe(false);
+      expect(isGameUnlocked('target-shooter', [0, 1, 2, 3], ['target-shooter'])).toBe(false);
     });
 
     test('false for unknown game ids', () => {
