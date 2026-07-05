@@ -1,6 +1,6 @@
 # Start Here
 
-Last updated: April 30, 2026
+Last updated: May 28, 2026
 
 This is the minimal handoff set for the next team. The production-hardening pass, Speed Racer implementation, procedural audio pass, and startup-performance pass are complete. The remaining work before public launch is deployment-readiness review, signed-in browser smoke testing, and final production operations.
 
@@ -57,6 +57,25 @@ Verified on April 30, 2026 after Speed Racer completion and startup optimization
 - `npm.cmd test -- --runInBand` passes as a 10-test release approval suite
 - `npm.cmd run build` passes
 - Playwright now covers a lightweight browser smoke path for the current signed-in access boundary, but signed-in gameplay QA remains a manual deployment-readiness check
+
+Verified on May 28, 2026 after the test-coverage + CI-realignment pass:
+
+- development-era Jest coverage expanded 155 → 323 tests: new unit tests for `src/lib` pure logic (`unlocks`, `challenges`, `gameCatalog`, `utils`), React component render tests, and characterization tests pinning the `GameModule` public surface of PlatformGame / SpaceShooter / FrogHop (plus a reusable `src/games/shared/gameTestHarness.ts`)
+- these run via `npm run test:dev -- --runInBand` and are for development use; they are intentionally NOT part of the production CI gate (see Testing Philosophy below)
+- the production CI gate remains lean and unchanged: `type-check`, `lint`, the 10-test release-approval suite (`npm test -- --runInBand`), and `build`
+- Playwright `browser-smoke` stays a manual `workflow_dispatch` job; signed-in browser/gameplay QA remains a manual deployment-readiness check
+- a warning-only `max-lines` ESLint guardrail (1500 logical lines, tests exempt) flags monoliths without failing CI; current flagged files are the known large games/services, to be refactored when each is next actively extended
+- `npm test -- --runInBand`, `npm run type-check`, and `npm run lint` pass
+
+## Testing Philosophy
+
+Tests are written and exercised while **building** a game or subsystem. Once a feature ships, the production gate does not re-run the full development-era suite — it confirms the platform builds, the release-critical paths pass, and (via manual QA) that games load and play correctly. Concretely:
+
+- **Production / deploy gate (fast, the only CI gate):** `npm run type-check`, `npm run lint`, `npm test -- --runInBand` (10-test release-approval suite), `npm run build`.
+- **Development suite (situational):** `npm run test:dev -- --runInBand` (323 tests) — run when actively building or changing a subsystem, not as a release gate.
+- **Platform / gameplay correctness:** verified by manual signed-in browser QA and the optional Playwright `browser-smoke` job (`workflow_dispatch`).
+
+**Do not add the development suite to the CI gate — the lean gate is a deliberate choice to keep builds fast.**
 
 ## What To Work On Next
 
