@@ -122,6 +122,13 @@ describe('DungeonGenerator', () => {
       expect(types.has('bat')).toBe(false);
       expect(types.has('bomber')).toBe(false);
       expect(types.has('wraith')).toBe(false);
+      // v3 — floor 1 is ember: other biomes' families never appear there.
+      expect(types.has('zombie')).toBe(false);
+      expect(types.has('ghoul')).toBe(false);
+      expect(types.has('deep-ooze')).toBe(false);
+      expect(types.has('lizardman')).toBe(false);
+      expect(types.has('shade')).toBe(false);
+      expect(types.has('cinder-hound')).toBe(false);
       // Elites start at floor 3.
       expect(plan.enemies.every(e => e.elite === null)).toBe(true);
     }

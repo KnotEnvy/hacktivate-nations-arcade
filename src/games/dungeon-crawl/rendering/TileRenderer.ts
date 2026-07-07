@@ -2,7 +2,8 @@
 // All retro drawing: tiles in camera space plus the chunky code-drawn sprites
 // for hero, monsters, boss and loot. No assets — everything is fillRect art.
 
-import { BiomePalette, PALETTE, PLAYER, TILE } from '../data/constants';
+import { CLASSES } from '../data/classes';
+import { BiomePalette, PALETTE, TILE } from '../data/constants';
 import { ShopItemPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Enemy } from '../entities/Enemy';
@@ -157,20 +158,35 @@ export class TileRenderer {
       ctx.strokeStyle = `rgba(255, 232, 200, ${0.9 - progress * 0.8})`;
       ctx.lineWidth = 4;
       ctx.beginPath();
-      const sweep = (PLAYER.SWORD_ARC_DEG * Math.PI) / 180;
-      ctx.arc(px, py, PLAYER.SWORD_RANGE - 6, angle - sweep / 2 + sweep * progress * 0.4, angle + sweep / 2 - sweep * (1 - progress) * 0.1);
+      const sweep = (player.meleeArcDeg() * Math.PI) / 180;
+      ctx.arc(px, py, player.meleeRange() - 6, angle - sweep / 2 + sweep * progress * 0.4, angle + sweep / 2 - sweep * (1 - progress) * 0.1);
       ctx.stroke();
       ctx.lineWidth = 1;
     }
 
+    // v3 — class recolor + silhouette; thief fades while hidden.
+    const cls = player.classId ? CLASSES[player.classId] : null;
+    const tunic = cls?.tunic ?? '#7a3b1e';
+    const trim = cls?.trim ?? '#5c2c14';
+    ctx.save();
+    if (player.hiddenTimer > 0) ctx.globalAlpha = 0.4;
+
     // Cloak.
-    ctx.fillStyle = player.hitFlash > 0 ? '#ff8f8f' : '#7a3b1e';
+    ctx.fillStyle = player.hitFlash > 0 ? '#ff8f8f' : tunic;
     ctx.fillRect(px - 8, py - 6, 16, 14);
     // Head + hood.
     ctx.fillStyle = '#e8b98a';
     ctx.fillRect(px - 5, py - 13, 10, 8);
-    ctx.fillStyle = '#5c2c14';
+    ctx.fillStyle = trim;
     ctx.fillRect(px - 7, py - 15, 14, 4);
+    if (cls?.id === 'thief') {
+      // Low hood pulled over the brow.
+      ctx.fillRect(px - 6, py - 12, 12, 2);
+    } else if (cls?.id === 'mage') {
+      // Pointed hat.
+      ctx.fillRect(px - 4, py - 18, 8, 3);
+      ctx.fillRect(px - 2, py - 21, 4, 3);
+    }
     // Eyes track facing.
     ctx.fillStyle = '#1a0e06';
     const eyeShift = Math.round(player.faceX * 2);
@@ -181,13 +197,35 @@ export class TileRenderer {
     ctx.fillRect(px - 8, py + 2, 16, 3);
     ctx.fillRect(px - 6, py + 8, 4, 4);
     ctx.fillRect(px + 2, py + 8, 4, 4);
-    // Idle sword held at the side.
-    if (player.swingAnim <= 0) {
-      ctx.fillStyle = PALETTE.dagger;
-      ctx.fillRect(px + 7, py - 8, 3, 12);
-      ctx.fillStyle = '#8a6a1e';
-      ctx.fillRect(px + 6, py + 3, 5, 3);
+    if (cls?.id === 'cleric') {
+      // Chest sigil.
+      ctx.fillStyle = trim;
+      ctx.fillRect(px - 1, py - 5, 2, 8);
+      ctx.fillRect(px - 3, py - 3, 6, 2);
     }
+    // Idle weapon held at the side.
+    if (player.swingAnim <= 0) {
+      if (cls?.id === 'cleric') {
+        // Mace: haft + heavy head.
+        ctx.fillStyle = '#8a6a1e';
+        ctx.fillRect(px + 7, py - 4, 3, 10);
+        ctx.fillStyle = PALETTE.dagger;
+        ctx.fillRect(px + 6, py - 9, 5, 5);
+      } else if (cls?.id === 'mage') {
+        // Staff with an arcane focus.
+        ctx.fillStyle = '#6b4a2a';
+        ctx.fillRect(px + 7, py - 8, 2, 16);
+        ctx.fillStyle = cls.color;
+        ctx.fillRect(px + 6, py - 11, 4, 4);
+      } else {
+        // Sword (the fighter's runs a touch broader).
+        ctx.fillStyle = PALETTE.dagger;
+        ctx.fillRect(px + 7, py - 8, cls?.id === 'fighter' ? 4 : 3, 12);
+        ctx.fillStyle = '#8a6a1e';
+        ctx.fillRect(px + 6, py + 3, 5, 3);
+      }
+    }
+    ctx.restore();
   }
 
   drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number): void {
@@ -208,10 +246,20 @@ export class TileRenderer {
       ctx.lineWidth = 1;
     }
 
+    // v3 — Turn Undead stun: blinking halo over the frozen monster.
+    if (enemy.stunned > 0 && Math.floor(time * 8) % 2 === 0) {
+      ctx.strokeStyle = 'rgba(255, 224, 138, 0.9)';
+      ctx.beginPath();
+      ctx.arc(px, py - half - 7, 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
     switch (enemy.config.behavior) {
-      case 'wander': // slime
+      case 'wander': // blobs amble; walkers chase
       case 'chase': {
-        if (enemy.config.id === 'slime' || enemy.config.id === 'slime-mini') {
+        const id = enemy.config.id;
+        if (id === 'slime' || id === 'slime-mini' || id === 'deep-ooze' || id === 'ooze-mini') {
+          // Blob — slimes and deep oozes share the squish; palette tells them apart.
           const squish = Math.sin(time * 6 + enemy.id) * 2;
           ctx.fillStyle = body;
           ctx.fillRect(px - half, py - half + 3 + squish / 2, half * 2, half * 2 - 3 - squish);
@@ -219,6 +267,67 @@ export class TileRenderer {
           ctx.fillStyle = accent;
           ctx.fillRect(px - 4, py - 2, 3, 3);
           ctx.fillRect(px + 2, py - 2, 3, 3);
+        } else if (id === 'fire-beetle') {
+          // v3 — fire beetle: domed carapace, mandibles, pulsing glow glands.
+          const scuttle = Math.sin(time * 14 + enemy.id) > 0 ? 1 : 0;
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 2, py - half + 4, half * 2 - 4, half * 2 - 6);
+          ctx.fillRect(px - 3, py - half + 1, 6, 4); // head
+          ctx.fillStyle = '#5c2014';
+          ctx.fillRect(px - 5 - scuttle, py - half + 1, 3, 3); // mandibles
+          ctx.fillRect(px + 3 + scuttle, py - half + 1, 3, 3);
+          const glow = Math.floor(time * 6) % 2 === 0;
+          ctx.fillStyle = glow ? accent : '#ff7a1a';
+          ctx.fillRect(px - 4, py - 1, 3, 3); // the glands that light the warrens
+          ctx.fillRect(px + 2, py - 1, 3, 3);
+          ctx.fillRect(px - 1, py + half - 5, 3, 3);
+        } else if (id === 'zombie') {
+          // v3 — zombie: lurching shambler, arms out, one dead eye.
+          const lurch = Math.round(Math.sin(time * 3 + enemy.id) * 2);
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 6 + lurch, py - 4, 12, half * 2 - 6);
+          ctx.fillRect(px - 4 + lurch, py - half, 9, 8); // head askew
+          ctx.fillRect(px - 10 + lurch, py - 2, 5, 3); // reaching arms
+          ctx.fillRect(px + 5 + lurch, py - 3, 5, 3);
+          ctx.fillStyle = accent; // rotted rags
+          ctx.fillRect(px - 6 + lurch, py + 2, 12, 3);
+          ctx.fillStyle = '#e8f6d8';
+          ctx.fillRect(px - 2 + lurch, py - half + 3, 2, 2);
+        } else if (id === 'ghoul') {
+          // v3 — ghoul: hunched low, long claws, pale hungry eyes.
+          const crouch = Math.round(Math.abs(Math.sin(time * 10 + enemy.id)) * 2);
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 6, py - half + 6 + crouch, 12, half * 2 - 8 - crouch);
+          ctx.fillRect(px - 4, py - half + crouch, 8, 8); // low-slung head
+          ctx.fillRect(px - 9, py + 2, 3, 2); // claws
+          ctx.fillRect(px + 6, py + 2, 3, 2);
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 3, py - half + 2 + crouch, 2, 2);
+          ctx.fillRect(px + 1, py - half + 2 + crouch, 2, 2);
+        } else if (id === 'lizardman') {
+          // v3 — lizardman: scaled marsh warrior with a spear.
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 6, py - 4, 12, half * 2 - 6);
+          ctx.fillRect(px - 4, py - half, 8, 7); // head
+          ctx.fillRect(px + 2, py - half + 1, 5, 3); // snout
+          ctx.fillStyle = '#2b5c34';
+          ctx.fillRect(px - 6, py, 12, 2); // scale banding
+          ctx.fillStyle = '#6b4a2a';
+          ctx.fillRect(px + 7, py - half - 2, 2, half * 2 + 2); // spear haft
+          ctx.fillStyle = accent;
+          ctx.fillRect(px + 6, py - half - 5, 4, 4); // spearhead
+          ctx.fillRect(px - 2, py - half + 2, 2, 2); // eye
+        } else if (id === 'cinder-hound') {
+          // v3 — cinder hound: low quadruped at a run, ember eye.
+          const gait = Math.sin(time * 16 + enemy.id) > 0 ? 1 : -1;
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 1, py - 3, half * 2 - 2, 7); // body
+          ctx.fillRect(px + half - 7, py - 8, 7, 7); // head forward
+          ctx.fillRect(px - half + 1, py - 7, 4, 4); // tail up
+          ctx.fillRect(px - half + 2, py + 4, 3, 4 + gait); // legs
+          ctx.fillRect(px + half - 5, py + 4, 3, 4 - gait);
+          ctx.fillStyle = accent;
+          ctx.fillRect(px + half - 4, py - 6, 2, 2);
         } else {
           // Skeleton: rib-cage stack + skull.
           ctx.fillStyle = body;
@@ -455,6 +564,16 @@ export class TileRenderer {
         ctx.fillRect(px - 2, iy - 2, 2, 2);
         break;
       }
+      case 'scroll': {
+        // v3 — rolled parchment, ribbon-tied; contents unknown.
+        ctx.fillStyle = '#e8dcbc';
+        ctx.fillRect(px - 6, iy - 3, 12, 7);
+        ctx.fillStyle = '#cfc09a';
+        ctx.fillRect(px - 6, iy - 3, 12, 2);
+        ctx.fillStyle = '#c22f2f';
+        ctx.fillRect(px - 1, iy - 4, 2, 9);
+        break;
+      }
     }
     // Price tag under the pedestal.
     ctx.fillStyle = PALETTE.gold;
@@ -579,6 +698,21 @@ export class TileRenderer {
         ctx.fillRect(px - 4, py - 10, 8, 8);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(px - 2, py - 8, 2, 2);
+        break;
+      }
+      case 'scroll': {
+        // v3 — unidentified scroll: rolled parchment with a wax-red ribbon.
+        ctx.fillStyle = '#e8dcbc';
+        ctx.fillRect(px - 6, py - 3, 12, 7);
+        ctx.fillStyle = '#cfc09a';
+        ctx.fillRect(px - 6, py - 3, 12, 2);
+        ctx.fillStyle = '#c22f2f';
+        ctx.fillRect(px - 1, py - 4, 2, 9);
+        const shimmer = Math.floor(time * 4 + pickup.bobPhase) % 3 === 0;
+        if (shimmer) {
+          ctx.fillStyle = 'rgba(255, 224, 138, 0.5)';
+          ctx.fillRect(px - 7, py - 5, 2, 2);
+        }
         break;
       }
     }

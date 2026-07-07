@@ -3,8 +3,10 @@
 // hearts, i-frames, and relic/potion stat stacking. DungeonCrawlGame owns
 // damage bookkeeping; this class owns the body.
 
+import { ClassDef, ClassId, ClassKit, CLASS_TUNING, DEFAULT_KIT } from '../data/classes';
 import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
+import { ScrollId } from '../data/scrolls';
 import { TileMap } from '../dungeon/TileMap';
 
 export interface SwordSwing {
@@ -43,6 +45,17 @@ export class Player {
   private dashDirX = 0;
   private dashDirY = 1;
 
+  // v3 — class kit (neutral until the run-start pick) + signature ability.
+  kit: ClassKit = DEFAULT_KIT;
+  classId: ClassId | null = null;
+  abilityCooldown = 0;
+  hiddenTimer = 0; // thief Hide in Shadows — enemies drop aggro while > 0
+  private manaRegenTimer = 0;
+
+  // v3 wave 3 — the scroll satchel (one at a time) + Ring of Renewal timer.
+  scroll: ScrollId | null = null;
+  private hpRegenTimer = 0;
+
   // Relic stacks + potion buffs.
   relics = new Map<RelicId, number>();
   buffs = new Map<PotionBuff, number>(); // buff -> seconds remaining
@@ -52,13 +65,20 @@ export class Player {
   reset(x: number, y: number): void {
     this.x = x;
     this.y = y;
-    this.hp = PLAYER.MAX_HP;
-    this.maxHp = PLAYER.MAX_HP;
+    this.kit = DEFAULT_KIT;
+    this.classId = null;
+    this.abilityCooldown = 0;
+    this.hiddenTimer = 0;
+    this.manaRegenTimer = 0;
+    this.scroll = null;
+    this.hpRegenTimer = 0;
+    this.hp = this.kit.maxHp;
+    this.maxHp = this.kit.maxHp;
     this.invuln = 0;
     this.hitFlash = 0;
     this.faceX = 0;
     this.faceY = 1;
-    this.daggers = PLAYER.START_DAGGERS;
+    this.daggers = this.kit.startDaggers;
     this.keys = 0;
     this.swing = null;
     this.swordCooldown = 0;
@@ -81,6 +101,18 @@ export class Player {
     this.dashTimer = 0;
   }
 
+  /** v3 — the run-start class pick: kit stats, hearts and daggers in one go. */
+  applyKit(def: ClassDef): void {
+    this.kit = def.kit;
+    this.classId = def.id;
+    this.maxHp = def.kit.maxHp;
+    this.hp = def.kit.maxHp;
+    this.daggers = def.kit.startDaggers;
+    this.abilityCooldown = 0;
+    this.hiddenTimer = 0;
+    this.manaRegenTimer = def.kit.daggerRegenInterval;
+  }
+
   relicCount(id: RelicId): number {
     return this.relics.get(id) ?? 0;
   }
@@ -97,7 +129,7 @@ export class Player {
   }
 
   daggerCap(): number {
-    return PLAYER.DAGGER_CAP + this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS;
+    return this.kit.daggerCap + this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS;
   }
 
   daggersPierce(): boolean {
@@ -107,11 +139,25 @@ export class Player {
   speed(): number {
     let mult = 1 + this.relicCount('swift-boots') * RELIC_TUNING.SWIFT_BOOTS_SPEED_MULT;
     if (this.buffs.has('haste')) mult *= 1.35;
-    return PLAYER.SPEED * mult;
+    return PLAYER.SPEED * this.kit.speedMult * mult;
+  }
+
+  meleeRange(): number {
+    return this.kit.meleeRange;
+  }
+
+  meleeArcDeg(): number {
+    return this.kit.meleeArcDeg;
+  }
+
+  meleeKnockback(): number {
+    const ogre = this.relicCount('ogre-gauntlets');
+    return this.kit.meleeKnockback * (1 + ogre * RELIC_TUNING.OGRE_KNOCKBACK_MULT);
   }
 
   swordDamage(): number {
-    let dmg = 1 + this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE;
+    let dmg =
+      1 + this.kit.meleeDamageBonus + this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE;
     if (this.buffs.has('strength')) dmg += 1;
     if (
       this.relicCount('berserker-rage') > 0 &&
@@ -192,7 +238,37 @@ export class Player {
     if (this.swordCooldown > 0) this.swordCooldown = Math.max(0, this.swordCooldown - dt);
     if (this.daggerCooldown > 0) this.daggerCooldown = Math.max(0, this.daggerCooldown - dt);
     if (this.dashCooldown > 0) this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    if (this.abilityCooldown > 0) this.abilityCooldown = Math.max(0, this.abilityCooldown - dt);
+    if (this.hiddenTimer > 0) this.hiddenTimer = Math.max(0, this.hiddenTimer - dt);
     if (this.swingAnim > 0) this.swingAnim = Math.max(0, this.swingAnim - dt);
+    // v3 — dagger regen: mage kit and/or Bottomless Quiver (fastest wins).
+    const quiver = this.relicCount('bottomless-quiver');
+    const quiverInterval = quiver > 0 ? RELIC_TUNING.QUIVER_REGEN_INTERVAL / quiver : 0;
+    const kitInterval = this.kit.daggerRegenInterval;
+    const regenInterval =
+      kitInterval > 0 && quiverInterval > 0
+        ? Math.min(kitInterval, quiverInterval)
+        : kitInterval || quiverInterval;
+    if (regenInterval > 0 && this.daggers < this.daggerCap()) {
+      this.manaRegenTimer -= dt;
+      if (this.manaRegenTimer <= 0) {
+        this.daggers++;
+        this.manaRegenTimer += regenInterval;
+      }
+    }
+
+    // v3 — Ring of Renewal: wounds slowly knit closed.
+    const renewal = this.relicCount('ring-of-renewal');
+    if (renewal > 0 && this.hp < this.maxHp) {
+      this.hpRegenTimer += dt;
+      const interval = RELIC_TUNING.RENEWAL_INTERVAL / renewal;
+      if (this.hpRegenTimer >= interval) {
+        this.hpRegenTimer -= interval;
+        this.heal(1);
+      }
+    } else {
+      this.hpRegenTimer = 0;
+    }
     if (this.swing) {
       this.swing.timer -= dt;
       if (this.swing.timer <= 0) this.swing = null;
@@ -271,10 +347,38 @@ export class Player {
     return full > 0 ? this.dashCooldown / full : 0;
   }
 
+  /** Full ability cooldown after relic discounts (War Bracers). */
+  abilityCooldownFull(): number {
+    const bracers = this.relicCount('war-bracers');
+    return this.kit.abilityCooldown * Math.pow(RELIC_TUNING.WAR_BRACERS_CD_MULT, bracers);
+  }
+
+  /**
+   * v3 — start the signature ability's cooldown. Effects resolve in the game
+   * (they touch enemies/projectiles); this only gates and times the cast.
+   */
+  tryAbility(): boolean {
+    if (this.abilityCooldown > 0) return false;
+    this.abilityCooldown = this.abilityCooldownFull();
+    return true;
+  }
+
+  /** Fraction of ability cooldown remaining (1 = just used, 0 = ready). */
+  abilityCooldownFrac(): number {
+    const full = this.abilityCooldownFull();
+    return full > 0 ? this.abilityCooldown / full : 0;
+  }
+
+  /** Thief Hide in Shadows: untargetable, safety riding the shared invuln. */
+  startHide(): void {
+    this.hiddenTimer = CLASS_TUNING.HIDE_DURATION;
+    this.invuln = Math.max(this.invuln, CLASS_TUNING.HIDE_DURATION);
+  }
+
   /** Attempt a sword swing. Returns true if it started (cooldown ready). */
   trySwing(): boolean {
     if (this.swordCooldown > 0) return false;
-    this.swordCooldown = PLAYER.SWORD_COOLDOWN;
+    this.swordCooldown = this.kit.meleeCooldown;
     this.swing = {
       timer: PLAYER.SWORD_ACTIVE,
       dirX: this.faceX,
@@ -299,10 +403,10 @@ export class Player {
     const dx = targetX - this.x;
     const dy = targetY - this.y;
     const dist = Math.hypot(dx, dy);
-    if (dist > PLAYER.SWORD_RANGE + targetRadius) return false;
+    if (dist > this.kit.meleeRange + targetRadius) return false;
     if (dist < 0.001) return true;
     const dot = (dx / dist) * this.swing.dirX + (dy / dist) * this.swing.dirY;
-    const halfArcCos = Math.cos(((PLAYER.SWORD_ARC_DEG / 2) * Math.PI) / 180);
+    const halfArcCos = Math.cos(((this.kit.meleeArcDeg / 2) * Math.PI) / 180);
     return dot >= halfArcCos;
   }
 }

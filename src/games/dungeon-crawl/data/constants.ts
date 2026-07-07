@@ -82,6 +82,8 @@ export const SHOP = {
   PRICE_POTION: 30,
   PRICE_RELIC_BASE: 60,
   PRICE_RELIC_PER_FLOOR: 10,
+  PRICE_SCROLL: 35, // v3 — unidentified scroll
+
   INTERACT_RADIUS: 26, // px to a pedestal to show the buy prompt
 } as const;
 

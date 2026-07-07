@@ -10,7 +10,6 @@ import {
   BiomePalette,
   biomeForFloor,
   COMBAT,
-  EXPLOSIONS,
   FLOOR_NAMES,
   HAZARDS,
   OVERLAY,
@@ -18,13 +17,14 @@ import {
   PICKUPS,
   PLAYER,
   PotionBuff,
-  SHOCKWAVE,
   SHOP,
   TILE,
   VIEW,
 } from './data/constants';
+import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
+import { ALL_SCROLL_IDS, SCROLL_TUNING, SCROLLS, ScrollId } from './data/scrolls';
 import {
   FloorPlan,
   generateFloor,
@@ -40,6 +40,7 @@ import { Pickup } from './entities/Pickup';
 import { Projectile } from './entities/Projectile';
 import { Player } from './entities/Player';
 import { Urn } from './entities/Urn';
+import { causeForEnemy, Combat, DeathCause } from './systems/Combat';
 import { Lighting, LightSource } from './systems/Lighting';
 import { Minimap } from './systems/Minimap';
 import { ParticleSystem } from './systems/ParticleSystem';
@@ -47,23 +48,7 @@ import { ScreenShake } from './systems/ScreenShake';
 import { HudRenderer } from './rendering/HudRenderer';
 import { TileRenderer } from './rendering/TileRenderer';
 
-type GameState = 'playing' | 'relic' | 'recap';
-
-type DeathCause =
-  | 'slime'
-  | 'skeleton'
-  | 'bat'
-  | 'sorcerer_bolt'
-  | 'knight'
-  | 'mimic'
-  | 'bomber'
-  | 'wraith'
-  | 'hazard'
-  | 'explosion'
-  | 'shockwave'
-  | 'boss_touch'
-  | 'boss_charge'
-  | 'boss_bolt';
+type GameState = 'classSelect' | 'playing' | 'relic' | 'recap';
 
 const CAUSE_LABELS: Record<DeathCause, string> = {
   slime: 'DISSOLVED BY A SLIME',
@@ -74,6 +59,13 @@ const CAUSE_LABELS: Record<DeathCause, string> = {
   mimic: 'EATEN BY A MIMIC',
   bomber: 'MUGGED BY A BOMBER',
   wraith: 'CHILLED BY A WRAITH',
+  beetle: 'PINCERED BY A FIRE BEETLE',
+  zombie: 'DRAGGED DOWN BY A ZOMBIE',
+  ghoul: 'TORN APART BY A GHOUL',
+  ooze: 'ENGULFED BY AN OOZE',
+  lizardman: 'SPEARED BY A LIZARDMAN',
+  shade: 'SMOTHERED BY A SHADE',
+  hound: 'RUN DOWN BY A CINDER HOUND',
   hazard: 'CAUGHT BY A TRAP',
   explosion: 'CAUGHT IN THE BLAST',
   shockwave: 'FLATTENED BY THE SLAM',
@@ -91,6 +83,13 @@ const CAUSE_HINTS: Record<DeathCause, string> = {
   mimic: 'Not every chest is a friend. Watch for the ones that breathe.',
   bomber: 'Bombers lob where you WILL be. Change direction on the throw.',
   wraith: 'Wraiths walk through walls. Open ground is your friend.',
+  beetle: 'Fire beetles light their own way — you always see them coming. Use that.',
+  zombie: 'Zombies are slow as grave-dirt. Never let them corner you.',
+  ghoul: 'Ghouls hunt in fearless packs. Thin them at range before they close.',
+  ooze: 'Oozes split when they die. Clear the halves before carving the next one.',
+  lizardman: 'Lizardmen are tough and hit hard. Trade carefully — or not at all.',
+  shade: 'Shades slip through walls like the wraiths they serve. Keep to open ground.',
+  hound: 'Cinder hounds outrun you in a straight line. Dash sideways, not away.',
   hazard: 'Traps telegraph before they strike. Watch the floor.',
   explosion: 'The blast ring shows the radius. Dash out — Shift is faster than feet.',
   shockwave: 'Shockwave rings have gaps in time, not space. Dash through the ring.',
@@ -108,32 +107,6 @@ interface RecapStats {
   relics: number;
   maxCombo: number;
   timeMs: number;
-}
-
-// v2 — staged explosion (bomber payloads + volatile elite deaths).
-interface StagedExplosion {
-  x: number;
-  y: number;
-  fuse: number;
-  radius: number;
-}
-
-// v2 — bomb arcing toward its landing spot (pure visual until it lands).
-interface BombInFlight {
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-  t: number; // 0..1 flight progress
-}
-
-// v2 — Bone Colossus shockwave ring.
-interface Shockwave {
-  x: number;
-  y: number;
-  radius: number;
-  delay: number;
-  hitPlayer: boolean;
 }
 
 // v2 — live shop item (plan + sold state).
@@ -168,9 +141,6 @@ export class DungeonCrawlGame extends BaseGame {
   private urns: Urn[] = [];
   private shopItems: LiveShopItem[] = [];
   private merchant: { x: number; y: number } | null = null;
-  private explosions: StagedExplosion[] = [];
-  private bombs: BombInFlight[] = [];
-  private shockwaves: Shockwave[] = [];
   private stairsLocked = false;
 
   // Systems.
@@ -182,6 +152,28 @@ export class DungeonCrawlGame extends BaseGame {
   private hud = new HudRenderer();
   private camX = 0;
   private camY = 0;
+
+  // v3 — combat resolution system; the host closes over live run state so the
+  // per-floor array/rng reassignments below stay visible to it.
+  private combat = new Combat({
+    player: () => this.player,
+    rng: () => this.rng,
+    map: () => this.map,
+    enemies: () => this.enemies,
+    urns: () => this.urns,
+    boss: () => this.boss,
+    particles: this.particles,
+    shake: this.shake,
+    addEnemy: enemy => this.enemies.push(enemy),
+    addPickup: pickup => this.pickupItems.push(pickup),
+    findOpenSpotNear: (x, y) => this.findOpenSpotNear(x, y),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    damagePlayer: (amount, cause) => this.damagePlayer(amount, cause),
+    registerKill: baseScore => this.registerKill(baseScore),
+    onEnemySlain: enemy => this.onEnemySlain(enemy),
+    onBossSlain: boss => this.onBossSlain(boss),
+    onMimicWake: enemy => this.onMimicWake(enemy),
+  });
 
   // Run stats (extendedGameData / achievements).
   private floor = 1;
@@ -201,6 +193,11 @@ export class DungeonCrawlGame extends BaseGame {
   private itemsBought = 0;
   private goldSpent = 0;
   private dashesUsed = 0;
+  // v3 stats
+  private abilitiesUsed = 0;
+  private undeadSlain = 0;
+  private uniqueSlainTypes = new Set<string>();
+  private scrollsUsed = 0;
   private uniqueBossKits = new Set<string>();
   private goldBalance = 0; // spendable; `pickups` stays cumulative for the arcade
 
@@ -220,6 +217,9 @@ export class DungeonCrawlGame extends BaseGame {
   private bannerTimer = 0;
   private relicChoices: RelicId[] = [];
   private relicIndex = 0;
+  // v3 — run-start class draft.
+  private chosenClass: ClassId | null = null;
+  private classIndex = 0;
   private recapStats: RecapStats | null = null;
   private recapTimer = 0;
   private shopDeniedFlash = 0;
@@ -229,6 +229,8 @@ export class DungeonCrawlGame extends BaseGame {
   private attackWas = false;
   private daggerWas = false;
   private dashWas = false;
+  private abilityWas = false;
+  private scrollWas = false;
   private interactWas = false;
   private confirmWas = false;
   private navLeftWas = false;
@@ -271,12 +273,20 @@ export class DungeonCrawlGame extends BaseGame {
     this.itemsBought = 0;
     this.goldSpent = 0;
     this.dashesUsed = 0;
+    this.abilitiesUsed = 0;
+    this.undeadSlain = 0;
+    this.uniqueSlainTypes.clear();
+    this.scrollsUsed = 0;
     this.uniqueBossKits.clear();
     this.goldBalance = 0;
     this.combo = 1;
     this.killChain = 0;
     this.comboTimer = 0;
-    this.state = 'playing';
+    // v3 — floor 1 loads and renders behind the class-select overlay; play
+    // begins when the pick lands (updateClassSelect).
+    this.state = 'classSelect';
+    this.chosenClass = null;
+    this.classIndex = 0;
     this.recapStats = null;
     this.player.reset(0, 0);
     this.shake.reset();
@@ -299,9 +309,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.shopItems = this.plan.shop ? this.plan.shop.items.map(i => ({ ...i, sold: false })) : [];
     this.merchant = this.plan.shop?.merchant ?? null;
     this.projectiles = [];
-    this.explosions = [];
-    this.bombs = [];
-    this.shockwaves = [];
+    this.combat.reset();
     this.activeShopItem = null;
     this.boss = this.plan.isBossFloor && this.plan.bossSpawn
       ? new Boss(
@@ -340,6 +348,9 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.shopDeniedFlash > 0) this.shopDeniedFlash = Math.max(0, this.shopDeniedFlash - dt);
 
     switch (this.state) {
+      case 'classSelect':
+        this.updateClassSelect();
+        break;
       case 'playing':
         this.updatePlaying(dt);
         break;
@@ -362,11 +373,47 @@ export class DungeonCrawlGame extends BaseGame {
     this.daggerWas = input.isKeyPressed('KeyX') || input.isKeyPressed('KeyK');
     this.dashWas =
       input.isKeyPressed('ShiftLeft') || input.isKeyPressed('ShiftRight') || input.isKeyPressed('KeyC');
+    this.abilityWas = input.isKeyPressed('KeyQ') || input.isKeyPressed('KeyL');
+    this.scrollWas = input.isKeyPressed('KeyF') || input.isKeyPressed('KeyO');
     this.interactWas = input.isKeyPressed('KeyE');
     this.confirmWas =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     this.navLeftWas = input.isLeftPressed();
     this.navRightWas = input.isRightPressed();
+  }
+
+  /** v3 — run-start class draft. Mirrors the relic draft's input handling. */
+  private updateClassSelect(): void {
+    const input = this.services?.input;
+    if (!input) return;
+
+    const count = ALL_CLASS_IDS.length;
+    const left = input.isLeftPressed();
+    const right = input.isRightPressed();
+    if (left && !this.navLeftWas) {
+      this.classIndex = (this.classIndex + count - 1) % count;
+      this.services?.audio?.playSound?.('click', { volume: 0.3 });
+    }
+    if (right && !this.navRightWas) {
+      this.classIndex = (this.classIndex + 1) % count;
+      this.services?.audio?.playSound?.('click', { volume: 0.3 });
+    }
+    for (let i = 0; i < count; i++) {
+      if (input.isKeyPressed(`Digit${i + 1}`)) this.classIndex = i;
+    }
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    const directPick = ALL_CLASS_IDS.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
+    if ((confirm && !this.confirmWas) || directPick) {
+      const def = CLASSES[ALL_CLASS_IDS[this.classIndex]];
+      this.player.applyKit(def);
+      this.chosenClass = def.id;
+      this.trackStat(`${def.id}_depth`, this.floor);
+      this.services?.audio?.playSound?.('powerup', { volume: 0.55 });
+      this.showBanner(def.name, `${def.abilityName} — press Q`);
+      this.state = 'playing';
+    }
   }
 
   private updatePlaying(dt: number): void {
@@ -404,6 +451,7 @@ export class DungeonCrawlGame extends BaseGame {
             thrown.dirY * PLAYER.DAGGER_SPEED,
             this.player.daggerDamage(),
             this.player.daggersPierce(),
+            this.player.kit.daggerHoming, // v3 — mage mana bolts seek
           ),
         );
         this.services?.audio?.playSound?.('whoosh', { volume: 0.35 });
@@ -421,22 +469,56 @@ export class DungeonCrawlGame extends BaseGame {
       this.trackStat('dashes_used', this.dashesUsed);
     }
 
+    // v3 — signature class ability (Q / L). Effects resolve in Combat; the
+    // thief's hide is pure player state.
+    const abilityDown = input ? input.isKeyPressed('KeyQ') || input.isKeyPressed('KeyL') : false;
+    if (abilityDown && !this.abilityWas && this.chosenClass && this.player.tryAbility()) {
+      this.abilitiesUsed++;
+      this.trackStat('abilities_used', this.abilitiesUsed);
+      switch (this.player.kit.abilityId) {
+        case 'cleave':
+          this.player.swingAnim = 0.22; // visual swing tail for the spin
+          this.combat.cleave();
+          break;
+        case 'shadow-hide':
+          this.player.startHide();
+          this.services?.audio?.playSound?.('whoosh', { volume: 0.5 });
+          this.particles.burst(this.player.x, this.player.y, '#9a7bff', 16, 120, 0.5);
+          break;
+        case 'turn-undead':
+          this.combat.turnUndead();
+          break;
+        case 'fireball':
+          this.combat.spawnFireball();
+          break;
+      }
+    }
+
+    // v3 wave 3 — read the held scroll (F / O).
+    const scrollDown = input ? input.isKeyPressed('KeyF') || input.isKeyPressed('KeyO') : false;
+    if (scrollDown && !this.scrollWas && this.player.scroll) {
+      this.castScroll(this.player.scroll);
+      this.player.scroll = null;
+      this.scrollsUsed++;
+      this.trackStat('scrolls_used', this.scrollsUsed);
+    }
+
     // --- Sword swing resolution (enemies, boss, urns).
     if (this.player.swing) {
       for (const enemy of this.enemies) {
         if (!enemy.alive || this.player.swing.hitIds.has(enemy.id)) continue;
         if (!this.player.swingHits(enemy.x, enemy.y, enemy.radius)) continue;
         this.player.swing.hitIds.add(enemy.id);
-        this.hitEnemy(enemy, this.player.swordDamage(), 'sword');
+        this.combat.hitEnemy(enemy, this.player.swordDamage(), 'sword');
       }
       if (this.boss?.alive && !this.player.swing.hitIds.has(-1)) {
         if (this.player.swingHits(this.boss.x, this.boss.y, this.boss.radius)) {
           this.player.swing.hitIds.add(-1);
-          this.hitBoss(this.player.swordDamage());
+          this.combat.hitBoss(this.player.swordDamage());
         }
       }
       for (const urn of this.urns) {
-        if (urn.alive && this.player.swingHits(urn.x, urn.y, urn.radius)) this.breakUrn(urn);
+        if (urn.alive && this.player.swingHits(urn.x, urn.y, urn.radius)) this.combat.breakUrn(urn);
       }
     }
 
@@ -449,19 +531,21 @@ export class DungeonCrawlGame extends BaseGame {
       fireBolt: (x, y, dirX, dirY, speed) => {
         this.projectiles.push(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1));
       },
-      throwBomb: (x, y, targetX, targetY) => {
-        this.bombs.push({ fromX: x, fromY: y, toX: targetX, toY: targetY, t: 0 });
-        this.services?.audio?.playSound?.('whoosh', { volume: 0.25 });
-      },
+      throwBomb: (x, y, targetX, targetY) => this.combat.throwBomb(x, y, targetX, targetY),
       onMimicWake: enemy => this.onMimicWake(enemy),
+      playerHidden: this.player.hiddenTimer > 0,
     };
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
       enemy.update(dt, enemyCtx);
-      // Touch damage.
+      // Touch damage (stunned monsters are safe to brush past).
       const reach = enemy.radius + this.player.size / 2;
-      if (!enemy.dormant && Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) < reach) {
-        this.damagePlayer(enemy.config.touchDamage, this.causeForEnemy(enemy));
+      if (
+        !enemy.dormant &&
+        enemy.stunned <= 0 &&
+        Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) < reach
+      ) {
+        this.damagePlayer(enemy.config.touchDamage, causeForEnemy(enemy));
       }
     }
     this.enemies = this.enemies.filter(e => e.alive);
@@ -471,9 +555,15 @@ export class DungeonCrawlGame extends BaseGame {
       this.updateBoss(dt);
     }
 
-    // --- Projectiles.
+    // --- Projectiles. Hostile bolts home on the player; mage mana bolts
+    // home on the nearest living monster instead.
     for (const proj of this.projectiles) {
-      proj.update(dt, this.map, this.player.x, this.player.y);
+      if (proj.kind === 'dagger' && proj.homing > 0) {
+        const target = this.nearestEnemyTo(proj.x, proj.y);
+        proj.update(dt, this.map, target?.x, target?.y);
+      } else {
+        proj.update(dt, this.map, this.player.x, this.player.y);
+      }
       if (!proj.alive) continue;
       if (proj.kind === 'bolt') {
         const reach = proj.radius + this.player.size / 2;
@@ -487,7 +577,7 @@ export class DungeonCrawlGame extends BaseGame {
           if (!enemy.alive || proj.hitIds.has(enemy.id)) continue;
           if (Math.hypot(proj.x - enemy.x, proj.y - enemy.y) < proj.radius + enemy.radius) {
             proj.hitIds.add(enemy.id);
-            this.hitEnemy(enemy, proj.damage, 'dagger');
+            this.combat.hitEnemy(enemy, proj.damage, 'dagger');
             if (!proj.pierce) {
               proj.alive = false;
               break;
@@ -498,7 +588,7 @@ export class DungeonCrawlGame extends BaseGame {
           for (const urn of this.urns) {
             if (!urn.alive) continue;
             if (Math.hypot(proj.x - urn.x, proj.y - urn.y) < proj.radius + urn.radius) {
-              this.breakUrn(urn);
+              this.combat.breakUrn(urn);
               if (!proj.pierce) {
                 proj.alive = false;
                 break;
@@ -509,7 +599,7 @@ export class DungeonCrawlGame extends BaseGame {
         if (proj.alive && this.boss?.alive && !proj.hitIds.has(-1)) {
           if (Math.hypot(proj.x - this.boss.x, proj.y - this.boss.y) < proj.radius + this.boss.radius) {
             proj.hitIds.add(-1);
-            this.hitBoss(proj.damage);
+            this.combat.hitBoss(proj.damage);
             if (!proj.pierce) proj.alive = false;
           }
         }
@@ -518,8 +608,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.projectiles = this.projectiles.filter(p => p.alive);
 
     // --- v2: bombs in flight -> staged explosions -> booms; shockwaves; hazards.
-    this.updateBombsAndExplosions(dt);
-    this.updateShockwaves(dt);
+    this.combat.update(dt);
     this.updateHazards(dt);
 
     // --- Pickups.
@@ -574,13 +663,7 @@ export class DungeonCrawlGame extends BaseGame {
       fireHomingBolt: (x, y, dirX, dirY, speed) => {
         this.projectiles.push(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1, false, 2.2));
       },
-      spawnShockwave: (x, y, delay) => {
-        this.shockwaves.push({ x, y, radius: 0, delay, hitPlayer: false });
-        if (delay === 0) {
-          this.shake.add(0.45);
-          this.services?.audio?.playSound?.('explosion', { volume: 0.45 });
-        }
-      },
+      spawnShockwave: (x, y, delay) => this.combat.spawnShockwave(x, y, delay),
       requestTeleportSpot: () => this.pickTeleportSpot(),
       summonMinion: (x, y, type) => {
         const spawn = this.findOpenSpotNear(x, y);
@@ -623,64 +706,32 @@ export class DungeonCrawlGame extends BaseGame {
     return { x: this.boss?.x ?? this.player.x, y: this.boss?.y ?? this.player.y };
   }
 
-  private updateBombsAndExplosions(dt: number): void {
-    // Bombs arc toward their landing spot, then become a fused explosion.
-    for (let i = this.bombs.length - 1; i >= 0; i--) {
-      const bomb = this.bombs[i];
-      bomb.t += dt / EXPLOSIONS.BOMB_FLIGHT;
-      if (bomb.t >= 1) {
-        this.bombs.splice(i, 1);
-        this.explosions.push({
-          x: bomb.toX,
-          y: bomb.toY,
-          fuse: EXPLOSIONS.BOMB_FUSE,
-          radius: EXPLOSIONS.BOMB_RADIUS,
-        });
-      }
-    }
-
-    for (let i = this.explosions.length - 1; i >= 0; i--) {
-      const explosion = this.explosions[i];
-      explosion.fuse -= dt;
-      if (explosion.fuse > 0) continue;
-      this.explosions.splice(i, 1);
-      // Boom: player + urns inside the radius.
-      const reach = explosion.radius + this.player.size / 2;
-      if (Math.hypot(explosion.x - this.player.x, explosion.y - this.player.y) < reach) {
-        this.damagePlayer(EXPLOSIONS.DAMAGE, 'explosion');
-      }
-      for (const urn of this.urns) {
-        if (urn.alive && Math.hypot(explosion.x - urn.x, explosion.y - urn.y) < explosion.radius + urn.radius) {
-          this.breakUrn(urn);
-        }
-      }
-      this.shake.add(0.35);
-      this.particles.burst(explosion.x, explosion.y, PALETTE.ember, 22, 190, 0.6, 140);
-      this.particles.burst(explosion.x, explosion.y, PALETTE.emberBright, 10, 120, 0.4);
-      this.services?.audio?.playSound?.('explosion', { volume: 0.4 });
-    }
-  }
-
-  private updateShockwaves(dt: number): void {
-    for (let i = this.shockwaves.length - 1; i >= 0; i--) {
-      const wave = this.shockwaves[i];
-      if (wave.delay > 0) {
-        wave.delay -= dt;
-        if (wave.delay <= 0) {
-          this.shake.add(0.3);
-          this.services?.audio?.playSound?.('explosion', { volume: 0.3 });
-        }
-        continue;
-      }
-      wave.radius += SHOCKWAVE.SPEED * dt;
-      if (!wave.hitPlayer) {
-        const dist = Math.hypot(wave.x - this.player.x, wave.y - this.player.y);
-        if (Math.abs(dist - wave.radius) < SHOCKWAVE.THICKNESS + this.player.size / 2) {
-          wave.hitPlayer = true;
-          this.damagePlayer(SHOCKWAVE.DAMAGE, 'shockwave');
-        }
-      }
-      if (wave.radius > SHOCKWAVE.MAX_RADIUS) this.shockwaves.splice(i, 1);
+  /** v3 wave 3 — one-shot scroll effects. The satchel empties after the cast. */
+  private castScroll(id: ScrollId): void {
+    this.showBanner(SCROLLS[id].name, SCROLLS[id].blurb);
+    switch (id) {
+      case 'flame':
+        this.combat.castFlameBurst();
+        break;
+      case 'frost':
+        this.combat.frostNova();
+        break;
+      case 'healing':
+        this.player.heal(SCROLL_TUNING.HEAL_HP);
+        this.services?.audio?.playSound?.('extraLife', { volume: 0.5 });
+        this.particles.burst(this.player.x, this.player.y, PALETTE.heart, 14, 110, 0.6);
+        break;
+      case 'shielding':
+        this.player.addBuff('stoneskin');
+        this.player.invuln = Math.max(this.player.invuln, SCROLL_TUNING.SHIELD_INVULN);
+        this.services?.audio?.playSound?.('powerup', { volume: 0.5 });
+        this.particles.burst(this.player.x, this.player.y, '#9aa5b5', 14, 110, 0.6);
+        break;
+      case 'revelation':
+        this.minimap.revealAll(this.map);
+        this.services?.audio?.playSound?.('unlock', { volume: 0.55 });
+        this.particles.burst(this.player.x, this.player.y, PALETTE.keyGold, 18, 140, 0.7);
+        break;
     }
   }
 
@@ -724,7 +775,7 @@ export class DungeonCrawlGame extends BaseGame {
     best.sold = true;
     switch (best.product) {
       case 'heart':
-        this.player.heal(PICKUPS.HEART_HEAL);
+        this.player.heal(PICKUPS.HEART_HEAL + this.player.kit.healBonus);
         break;
       case 'daggers':
         this.player.daggers = Math.min(this.player.daggerCap(), this.player.daggers + PICKUPS.DAGGER_BUNDLE + 2);
@@ -738,6 +789,13 @@ export class DungeonCrawlGame extends BaseGame {
       case 'relic':
         this.grantRelic(this.rng.pick(ALL_RELIC_IDS));
         break;
+      case 'scroll': {
+        // v3 — you paid for it: a bought scroll replaces whatever was held.
+        const id = this.rng.pick(ALL_SCROLL_IDS);
+        this.player.scroll = id;
+        this.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
+        break;
+      }
     }
     this.services?.audio?.playSound?.('success', { volume: 0.5 });
     this.particles.burst(best.x, best.y, PALETTE.gold, 12, 100, 0.6);
@@ -745,26 +803,20 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackStat('gold_spent', this.goldSpent);
   }
 
-  private causeForEnemy(enemy: Enemy): DeathCause {
-    switch (enemy.config.id) {
-      case 'slime':
-      case 'slime-mini':
-        return 'slime';
-      case 'skeleton':
-        return 'skeleton';
-      case 'bat':
-        return 'bat';
-      case 'sorcerer':
-        return 'sorcerer_bolt';
-      case 'knight':
-        return 'knight';
-      case 'mimic':
-        return 'mimic';
-      case 'bomber':
-        return 'bomber';
-      case 'wraith':
-        return 'wraith';
+  /** Closest living, non-dormant monster (boss as fallback) — mana bolt target. */
+  private nearestEnemyTo(x: number, y: number): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+    for (const enemy of this.enemies) {
+      if (!enemy.alive || enemy.dormant) continue;
+      const dist = Math.hypot(enemy.x - x, enemy.y - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { x: enemy.x, y: enemy.y };
+      }
     }
+    if (!best && this.boss?.alive) best = { x: this.boss.x, y: this.boss.y };
+    return best;
   }
 
   private findOpenSpotNear(x: number, y: number): { x: number; y: number } {
@@ -791,168 +843,41 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackStat('mimics_found', this.mimicsFound);
   }
 
-  private hitEnemy(enemy: Enemy, damage: number, source: 'sword' | 'dagger'): void {
-    if (enemy.dormant) {
-      enemy.wake({
-        playerX: this.player.x,
-        playerY: this.player.y,
-        map: this.map,
-        rng: this.rng,
-        fireBolt: () => {},
-        throwBomb: () => {},
-        onMimicWake: e => this.onMimicWake(e),
-      });
-    }
-
-    const dx = enemy.x - this.player.x;
-    const dy = enemy.y - this.player.y;
-    const dist = Math.hypot(dx, dy) || 1;
-    const dirX = dx / dist;
-    const dirY = dy / dist;
-
-    // Knight armor blocks frontal sword hits — daggers punch through.
-    if (source === 'sword' && enemy.blocksFrontalHit(dirX, dirY)) {
-      this.services?.audio?.playSound?.('sword_clash', { volume: 0.5 });
-      this.particles.spray(enemy.x - dirX * enemy.radius, enemy.y - dirY * enemy.radius, -dirX, -dirY, '#cfd6e0', 5);
-      enemy.applyKnockback(dirX, dirY, PLAYER.SWORD_KNOCKBACK * 0.4);
-      return;
-    }
-
-    enemy.hp -= damage;
-    enemy.flash = 0.15;
-    enemy.aggro = true;
-    enemy.applyKnockback(dirX, dirY, PLAYER.SWORD_KNOCKBACK);
-    this.services?.audio?.playSound?.('hit', { volume: 0.35 });
-    this.particles.spray(enemy.x, enemy.y, dirX, dirY, enemy.config.color, 6);
-
-    if (enemy.hp <= 0) this.killEnemy(enemy);
-  }
-
-  /** Direct wound with no knockback/sound spam — Thorn Mail retaliation. */
-  private woundEnemy(enemy: Enemy, damage: number): void {
-    if (!enemy.alive || enemy.dormant) return;
-    enemy.hp -= damage;
-    enemy.flash = 0.15;
-    enemy.aggro = true;
-    if (enemy.hp <= 0) this.killEnemy(enemy);
-  }
-
-  private killEnemy(enemy: Enemy): void {
-    enemy.alive = false;
+  /** Post-kill stat bookkeeping — mechanics live in systems/Combat.ts. */
+  private onEnemySlain(enemy: Enemy): void {
     this.enemiesSlain++;
-    this.registerKill(enemy.config.score * (enemy.elite?.scoreMult ?? 1));
-    this.particles.burst(enemy.x, enemy.y, enemy.config.color, 14, 130, 0.6);
-    this.services?.audio?.playSound?.('explosion', { volume: 0.2 });
-
-    // v2 — elite bookkeeping + volatile death fuse.
     if (enemy.elite) {
       this.elitesSlain++;
       this.trackStat('elites_slain', this.elitesSlain);
-      if (enemy.elite.trait === 'volatile') {
-        this.explosions.push({
-          x: enemy.x,
-          y: enemy.y,
-          fuse: EXPLOSIONS.VOLATILE_FUSE,
-          radius: EXPLOSIONS.VOLATILE_RADIUS,
-        });
-      }
     }
-
-    // Gold drops (elite gold multiplier + Lucky Charm bonus).
-    const [min, max] = enemy.config.goldDrop;
-    const lucky = this.player.relicCount('lucky-charm');
-    const drops =
-      this.rng.int(min, max) * (enemy.elite?.goldMult ?? 1) + lucky * RELIC_TUNING.LUCKY_GOLD_BONUS;
-    for (let i = 0; i < drops; i++) {
-      const angle = this.rng.range(0, Math.PI * 2);
-      const spot = this.findOpenSpotNear(
-        enemy.x + Math.cos(angle) * 14,
-        enemy.y + Math.sin(angle) * 14,
-      );
-      this.pickupItems.push(new Pickup('gold', spot.x, spot.y));
+    // v3 — bestiary stats: the restless dead + the menagerie tally.
+    if (enemy.config.undead) {
+      this.undeadSlain++;
+      this.trackStat('undead_slain', this.undeadSlain);
     }
-    if (lucky > 0 && this.rng.chance(lucky * RELIC_TUNING.LUCKY_HEART_CHANCE)) {
-      const spot = this.findOpenSpotNear(enemy.x, enemy.y);
-      this.pickupItems.push(new Pickup('heart', spot.x, spot.y));
+    if (!this.uniqueSlainTypes.has(enemy.config.id)) {
+      this.uniqueSlainTypes.add(enemy.config.id);
+      this.trackStat('unique_slain', this.uniqueSlainTypes.size);
     }
-
-    // Slimes split.
-    if (enemy.config.id === 'slime') {
-      for (const offset of [-10, 10]) {
-        const spot = this.findOpenSpotNear(enemy.x + offset, enemy.y + offset / 2);
-        const mini = new Enemy('slime-mini', spot.x, spot.y);
-        mini.aggro = true;
-        this.enemies.push(mini);
-      }
-    }
-
     this.trackStat('enemies_slain', this.enemiesSlain);
   }
 
-  private breakUrn(urn: Urn): void {
-    if (!urn.alive) return;
-    urn.alive = false;
-    this.services?.audio?.playSound?.('collision', { volume: 0.25 });
-    this.particles.burst(urn.x, urn.y, '#8a6244', 10, 110, 0.5, 220);
-
-    // Loot roll — modest, but urns are everywhere.
-    const lucky = this.player.relicCount('lucky-charm');
-    const roll = this.rng.next();
-    if (roll < 0.12 + lucky * RELIC_TUNING.LUCKY_HEART_CHANCE) {
-      this.pickupItems.push(new Pickup('heart', urn.x, urn.y));
-    } else if (roll < 0.24) {
-      this.pickupItems.push(new Pickup('dagger', urn.x, urn.y));
-    } else if (roll < 0.8) {
-      const count = this.rng.int(1, 2 + lucky);
-      for (let i = 0; i < count; i++) {
-        const spot = this.findOpenSpotNear(urn.x + this.rng.range(-10, 10), urn.y + this.rng.range(-10, 10));
-        this.pickupItems.push(new Pickup('gold', spot.x, spot.y));
-      }
-    }
-  }
-
-  private hitBoss(damage: number): void {
-    if (!this.boss?.alive) return;
-    this.boss.hp -= damage;
-    this.boss.flash = 0.15;
-    this.services?.audio?.playSound?.('hit', { volume: 0.4 });
-    this.particles.burst(this.boss.x, this.boss.y, this.boss.kit.crackColor, 8, 120, 0.4);
-    if (this.boss.hp <= 0) this.killBoss();
-  }
-
-  private killBoss(): void {
-    if (!this.boss) return;
-    this.boss.alive = false;
+  /** Boss-kill bookkeeping: stats, score bonus, stairs unlock, fanfare. */
+  private onBossSlain(boss: Boss): void {
     this.bossesSlain++;
     this.enemiesSlain++;
-    this.uniqueBossKits.add(this.boss.kit.id);
+    this.uniqueBossKits.add(boss.kit.id);
     this.registerKill(BOSS.SCORE);
     this.score += COMBAT.BOSS_BONUS;
-    this.shake.add(0.8);
-    this.particles.burst(this.boss.x, this.boss.y, PALETTE.emberBright, 40, 220, 1.0, 120);
-    this.particles.burst(this.boss.x, this.boss.y, this.boss.kit.crackColor, 24, 160, 0.8);
-    this.services?.audio?.playSound?.('death_cry', { volume: 0.7 });
     this.services?.audio?.triggerMusicStinger?.('success');
-
-    // Gold shower + a heart for the road.
-    for (let i = 0; i < BOSS.GOLD_SHOWER; i++) {
-      const angle = this.rng.range(0, Math.PI * 2);
-      const radius = this.rng.range(20, 70);
-      const spot = this.findOpenSpotNear(
-        this.boss.x + Math.cos(angle) * radius,
-        this.boss.y + Math.sin(angle) * radius,
-      );
-      this.pickupItems.push(new Pickup('gold', spot.x, spot.y));
-    }
-    const heartSpot = this.findOpenSpotNear(this.boss.x, this.boss.y + 40);
-    this.pickupItems.push(new Pickup('heart', heartSpot.x, heartSpot.y));
 
     // Unlock the way down.
     this.stairsLocked = false;
     this.services?.audio?.playSound?.('gate_open', { volume: 0.6 });
-    this.showBanner(`${this.boss.kit.name} FELLED`, 'THE STAIRS ARE OPEN');
+    this.showBanner(`${boss.kit.name} FELLED`, 'THE STAIRS ARE OPEN');
     this.trackStat('bosses_slain', this.bossesSlain);
     this.trackStat('unique_bosses', this.uniqueBossKits.size);
+    this.trackStat('enemies_slain', this.enemiesSlain);
   }
 
   /** Combo/depth-scaled score credit for a kill + vampire fang bookkeeping. */
@@ -979,6 +904,20 @@ export class DungeonCrawlGame extends BaseGame {
   /** Single damage funnel for the player. */
   private damagePlayer(amount: number, cause: DeathCause): void {
     if (this.state !== 'playing') return;
+    // v3 — Blur Cloak: sometimes the blow finds only afterimage.
+    const blur = this.player.relicCount('blur-cloak');
+    if (blur > 0 && this.player.invuln <= 0) {
+      const dodge = Math.min(
+        RELIC_TUNING.BLUR_DODGE_CAP,
+        blur * RELIC_TUNING.BLUR_DODGE_PER_STACK,
+      );
+      if (this.rng.chance(dodge)) {
+        this.player.invuln = Math.max(this.player.invuln, RELIC_TUNING.BLUR_INVULN);
+        this.services?.audio?.playSound?.('whoosh', { volume: 0.3 });
+        this.particles.burst(this.player.x, this.player.y, '#8fd8ff', 8, 90, 0.4);
+        return;
+      }
+    }
     const applied = this.player.takeDamage(amount);
     if (!applied) return;
     this.damageTakenThisFloor = true;
@@ -995,7 +934,7 @@ export class DungeonCrawlGame extends BaseGame {
       for (const enemy of this.enemies) {
         if (!enemy.alive || enemy.dormant) continue;
         if (Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) < RELIC_TUNING.THORN_MAIL_RADIUS) {
-          this.woundEnemy(enemy, thorns * RELIC_TUNING.THORN_MAIL_DAMAGE);
+          this.combat.woundEnemy(enemy, thorns * RELIC_TUNING.THORN_MAIL_DAMAGE);
         }
       }
       this.particles.burst(this.player.x, this.player.y, '#7fae3f', 12, 140, 0.4);
@@ -1031,7 +970,7 @@ export class DungeonCrawlGame extends BaseGame {
         break;
       }
       case 'heart': {
-        this.player.heal(PICKUPS.HEART_HEAL);
+        this.player.heal(PICKUPS.HEART_HEAL + this.player.kit.healBonus);
         this.services?.audio?.playSound?.('extraLife', { volume: 0.4 });
         this.particles.burst(pickup.x, pickup.y, PALETTE.heart, 8, 80, 0.5);
         break;
@@ -1053,6 +992,19 @@ export class DungeonCrawlGame extends BaseGame {
         this.player.keys++;
         this.services?.audio?.playSound?.('unlock', { volume: 0.5 });
         this.particles.burst(pickup.x, pickup.y, PALETTE.keyGold, 8, 80, 0.5);
+        break;
+      }
+      case 'scroll': {
+        // v3 — the satchel holds one; a full satchel leaves the find in place.
+        if (this.player.scroll) {
+          pickup.alive = true;
+          return;
+        }
+        const id = this.rng.pick(ALL_SCROLL_IDS);
+        this.player.scroll = id;
+        this.services?.audio?.playSound?.('unlock', { volume: 0.5 });
+        this.particles.burst(pickup.x, pickup.y, SCROLLS[id].color, 10, 90, 0.5);
+        this.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
         break;
       }
       case 'relic-shrine': {
@@ -1175,6 +1127,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.score += COMBAT.FLOOR_CLEAR_BONUS_BASE + COMBAT.FLOOR_CLEAR_BONUS_PER_FLOOR * this.floor;
     this.floor++;
     this.trackStat('depth', this.floor);
+    if (this.chosenClass) this.trackStat(`${this.chosenClass}_depth`, this.floor);
     this.services?.audio?.playSound?.('gate_open', { volume: 0.5 });
     this.services?.audio?.triggerMusicStinger?.('transition');
     this.state = 'playing';
@@ -1278,6 +1231,15 @@ export class DungeonCrawlGame extends BaseGame {
       gold_spent: this.goldSpent,
       unique_bosses: this.uniqueBossKits.size,
       dashes_used: this.dashesUsed,
+      // v3 — class keys: depth reached this run under that class, else 0.
+      fighter_depth: this.chosenClass === 'fighter' ? this.floor : 0,
+      thief_depth: this.chosenClass === 'thief' ? this.floor : 0,
+      cleric_depth: this.chosenClass === 'cleric' ? this.floor : 0,
+      mage_depth: this.chosenClass === 'mage' ? this.floor : 0,
+      abilities_used: this.abilitiesUsed,
+      undead_slain: this.undeadSlain,
+      unique_slain: this.uniqueSlainTypes.size,
+      scrolls_used: this.scrollsUsed,
     };
   }
 
@@ -1326,6 +1288,12 @@ export class DungeonCrawlGame extends BaseGame {
       },
     ];
     for (const torch of this.plan.torches) lights.push(Lighting.wallTorchLight(torch.tx, torch.ty));
+    // v3 — fire beetles carry their own glow: glands bright enough to read by.
+    for (const enemy of this.enemies) {
+      if (enemy.alive && enemy.config.id === 'fire-beetle') {
+        lights.push({ x: enemy.x, y: enemy.y, radius: 70, flicker: 0.6 });
+      }
+    }
     if (!this.stairsLocked) {
       const stairs = this.map.tileCenter(this.plan.stairsTile.tx, this.plan.stairsTile.ty);
       lights.push({ x: stairs.x, y: stairs.y, radius: 80, flicker: 0.4 });
@@ -1339,7 +1307,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.lighting.render(ctx, VIEW.WIDTH, VIEW.HEIGHT, this.camX - offset.x, this.camY - offset.y, this.floor, lights);
   }
 
-  /** World-space combat FX: projectiles, bombs, explosion fuses, shockwaves. */
+  /** World-space combat FX: projectiles here, bombs/booms/waves in Combat. */
   private renderCombatEffects(ctx: CanvasRenderingContext2D): void {
     for (const proj of this.projectiles) {
       if (proj.kind === 'bolt') {
@@ -1348,53 +1316,17 @@ export class DungeonCrawlGame extends BaseGame {
         ctx.fillStyle = '#d8ecff';
         ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
       } else {
-        ctx.fillStyle = PALETTE.dagger;
+        // v3 — mage mana bolts glow arcane; plain daggers stay steel.
+        ctx.fillStyle = proj.homing > 0 ? '#9ad8ff' : PALETTE.dagger;
         ctx.fillRect(Math.round(proj.x) - 2, Math.round(proj.y) - 2, 4, 4);
+        if (proj.homing > 0) {
+          ctx.fillStyle = '#e8f6ff';
+          ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
+        }
       }
     }
 
-    // Bombs arc with a fake-height hop; landing spot marked from launch.
-    for (const bomb of this.bombs) {
-      const t = Math.min(1, bomb.t);
-      const x = bomb.fromX + (bomb.toX - bomb.fromX) * t;
-      const y = bomb.fromY + (bomb.toY - bomb.fromY) * t - Math.sin(t * Math.PI) * 46;
-      ctx.strokeStyle = 'rgba(255, 122, 26, 0.5)';
-      ctx.beginPath();
-      ctx.arc(bomb.toX, bomb.toY, EXPLOSIONS.BOMB_RADIUS * 0.5, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.fillStyle = '#22242b';
-      ctx.fillRect(Math.round(x) - 4, Math.round(y) - 4, 8, 8);
-      const spark = Math.floor(this.gameTime * 18) % 2 === 0;
-      ctx.fillStyle = spark ? '#ffd24a' : '#ff7a1a';
-      ctx.fillRect(Math.round(x) + 2, Math.round(y) - 7, 3, 3);
-    }
-
-    // Fused explosions: blinking danger circle that tightens as the fuse burns.
-    for (const explosion of this.explosions) {
-      const urgency = Math.max(
-        0,
-        Math.min(1, 1 - explosion.fuse / Math.max(EXPLOSIONS.BOMB_FUSE, EXPLOSIONS.VOLATILE_FUSE)),
-      );
-      const blink = Math.floor(this.gameTime * (8 + urgency * 16)) % 2 === 0;
-      ctx.strokeStyle = blink ? 'rgba(255, 80, 40, 0.9)' : 'rgba(255, 160, 60, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(explosion.x, explosion.y, explosion.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-    }
-
-    // Shockwave rings.
-    for (const wave of this.shockwaves) {
-      if (wave.delay > 0 || wave.radius <= 0) continue;
-      const fade = 1 - wave.radius / SHOCKWAVE.MAX_RADIUS;
-      ctx.strokeStyle = `rgba(232, 220, 188, ${0.35 + 0.55 * fade})`;
-      ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-    }
+    this.combat.renderEffects(ctx, this.gameTime);
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
@@ -1409,6 +1341,16 @@ export class DungeonCrawlGame extends BaseGame {
       combo: this.combo,
       comboTimer: this.comboTimer,
       dashFrac: this.player.dashCooldownFrac(),
+      ability: this.chosenClass
+        ? {
+            frac: this.player.abilityCooldownFrac(),
+            icon: CLASSES[this.chosenClass].icon,
+            color: CLASSES[this.chosenClass].color,
+          }
+        : null,
+      scroll: this.player.scroll
+        ? { icon: SCROLLS[this.player.scroll].icon, color: SCROLLS[this.player.scroll].color }
+        : null,
       buffs: this.player.buffs,
       relics: this.player.relics,
     });
@@ -1430,6 +1372,7 @@ export class DungeonCrawlGame extends BaseGame {
         daggers: 'DAGGER BUNDLE',
         potion: 'MYSTERY POTION',
         relic: 'MYSTERY RELIC',
+        scroll: 'MYSTERY SCROLL',
       };
       this.hud.renderShopPrompt(
         ctx,
@@ -1439,6 +1382,9 @@ export class DungeonCrawlGame extends BaseGame {
       );
     }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
+    if (this.state === 'classSelect') {
+      this.hud.renderClassSelect(ctx, ALL_CLASS_IDS, this.classIndex);
+    }
     if (this.state === 'relic') {
       this.hud.renderRelicDraft(ctx, this.relicChoices, this.relicIndex, id => this.player.relicCount(id));
     }

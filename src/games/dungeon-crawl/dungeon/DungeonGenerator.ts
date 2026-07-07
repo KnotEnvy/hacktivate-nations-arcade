@@ -25,7 +25,7 @@ export interface Room {
   kind: RoomKind;
 }
 
-export type PickupKind = 'gold' | 'heart' | 'dagger' | 'potion' | 'key' | 'relic-shrine';
+export type PickupKind = 'gold' | 'heart' | 'dagger' | 'potion' | 'key' | 'relic-shrine' | 'scroll';
 
 export interface EnemySpawnPlan {
   type: EnemyTypeId;
@@ -40,7 +40,7 @@ export interface PickupSpawnPlan {
   y: number;
 }
 
-export type ShopProduct = 'heart' | 'daggers' | 'potion' | 'relic';
+export type ShopProduct = 'heart' | 'daggers' | 'potion' | 'relic' | 'scroll';
 
 export interface ShopItemPlan {
   product: ShopProduct;
@@ -365,7 +365,8 @@ function randomFloorTileInRoom(rng: Rng, room: Room): { tx: number; ty: number }
 }
 
 function pickWeighted(rng: Rng, floor: number): EnemyTypeId {
-  const rows = spawnWeightsForFloor(floor).filter(r => r.weight > 0);
+  // Biome derives purely from the floor number, so determinism is untouched.
+  const rows = spawnWeightsForFloor(floor, biomeForFloor(floor).id).filter(r => r.weight > 0);
   const total = rows.reduce((sum, r) => sum + r.weight, 0);
   let roll = rng.next() * total;
   for (const row of rows) {
@@ -424,7 +425,9 @@ function maybePlaceShop(map: TileMap, rng: Rng, reachableRooms: Room[], floor: n
   const c = roomCenter(room);
   const merchant = map.tileCenter(c.tx, c.ty - 1);
 
-  const products: ShopProduct[] = ['heart', 'daggers', rng.chance(0.5) ? 'relic' : 'potion'];
+  // Third pedestal: relic, potion or (v3) an unidentified scroll.
+  const third: ShopProduct = rng.chance(0.4) ? 'relic' : rng.chance(0.5) ? 'potion' : 'scroll';
+  const products: ShopProduct[] = ['heart', 'daggers', third];
   const priceFor = (product: ShopProduct): number => {
     switch (product) {
       case 'heart':
@@ -435,6 +438,8 @@ function maybePlaceShop(map: TileMap, rng: Rng, reachableRooms: Room[], floor: n
         return SHOP.PRICE_POTION;
       case 'relic':
         return SHOP.PRICE_RELIC_BASE + SHOP.PRICE_RELIC_PER_FLOOR * floor;
+      case 'scroll':
+        return SHOP.PRICE_SCROLL;
     }
   };
   const items: ShopItemPlan[] = products.map((product, i) => {
@@ -517,6 +522,8 @@ function spawnPickups(
   const daggerCount = rng.int(1, 2);
   for (let i = 0; i < daggerCount; i++) place('dagger', rng.pick(normalRooms));
   if (rng.chance(0.8)) place('potion', rng.pick(normalRooms));
+  // v3 — an unidentified scroll, most floors (identity rolls at pickup).
+  if (rng.chance(0.5)) place('scroll', rng.pick(normalRooms));
 
   // Treasure room: shrine + gold pile; key hidden in a normal room.
   if (treasureRoom) {

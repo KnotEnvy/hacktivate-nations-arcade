@@ -130,6 +130,14 @@ interface GameEndData {
   gold_spent?: number;
   unique_bosses?: number;
   dashes_used?: number;
+  fighter_depth?: number;
+  thief_depth?: number;
+  cleric_depth?: number;
+  mage_depth?: number;
+  abilities_used?: number;
+  undead_slain?: number;
+  unique_slain?: number;
+  scrolls_used?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

@@ -28,6 +28,8 @@ export interface EnemyUpdateContext {
   throwBomb: (x: number, y: number, targetX: number, targetY: number) => void;
   /** Mimic woke up this frame. */
   onMimicWake: (enemy: Enemy) => void;
+  /** v3 — thief Hide in Shadows: aggro drops and cannot re-acquire. */
+  playerHidden?: boolean;
 }
 
 export class Enemy {
@@ -48,6 +50,7 @@ export class Enemy {
 
   // Behavior state.
   aggro = false;
+  stunned = 0; // v3 — Turn Undead freeze, seconds remaining
   dormant: boolean; // mimic only — looks like a chest until woken
   private wanderTimer = 0;
   private wanderDirX = 0;
@@ -116,6 +119,16 @@ export class Enemy {
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt);
     if (this.windup > 0) this.windup = Math.max(0, this.windup - dt);
 
+    // v3 — stunned: frozen in place except for knockback decay.
+    if (this.stunned > 0) {
+      this.stunned = Math.max(0, this.stunned - dt);
+      this.applyKnockbackStep(dt, ctx.map);
+      return;
+    }
+
+    // v3 — a hidden player is no player at all: drop and block aggro.
+    if (ctx.playerHidden) this.aggro = false;
+
     const dx = ctx.playerX - this.x;
     const dy = ctx.playerY - this.y;
     const dist = Math.hypot(dx, dy) || 0.001;
@@ -137,7 +150,7 @@ export class Enemy {
 
     // Aggro check — needs proximity, chasers also need line of sight once.
     // Wraiths sense through walls: proximity alone wakes them.
-    if (!this.aggro && dist < this.config.aggroRange) {
+    if (!this.aggro && !ctx.playerHidden && dist < this.config.aggroRange) {
       if (
         this.config.behavior === 'wraith' ||
         ctx.map.hasLineOfSight(this.x, this.y, ctx.playerX, ctx.playerY)
@@ -207,7 +220,7 @@ export class Enemy {
         if (this.windup > 0 && this.windup - dt <= 0) {
           ctx.fireBolt(this.x, this.y, dirX, dirY, SORCERER.BOLT_SPEED);
         }
-      } else if (dist < this.config.aggroRange) {
+      } else if (!ctx.playerHidden && dist < this.config.aggroRange) {
         this.aggro = ctx.map.hasLineOfSight(this.x, this.y, ctx.playerX, ctx.playerY);
       }
     } else if (behavior === 'bomber') {

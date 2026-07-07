@@ -43,3 +43,6 @@ tmp-next-dev*
 
 # Generated local-only development routes
 src/app/dev/level-editor/page.tsx
+
+DOCS/ADD2ndEdition/*
+

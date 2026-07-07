@@ -11,7 +11,16 @@ export type EnemyTypeId =
   | 'knight'
   | 'mimic'
   | 'bomber'
-  | 'wraith';
+  | 'wraith'
+  // v3 — biome families (Bestiary of the Depths)
+  | 'fire-beetle'
+  | 'zombie'
+  | 'ghoul'
+  | 'deep-ooze'
+  | 'ooze-mini'
+  | 'lizardman'
+  | 'shade'
+  | 'cinder-hound';
 
 export type EnemyBehavior =
   | 'wander'
@@ -99,6 +108,8 @@ export interface EnemyConfig {
   aggroRange: number; // px — starts chasing/attacking inside this
   color: string; // body color for the retro sprite
   accent: string; // eyes / trim
+  undead?: boolean; // v3 — seared + stunned by the cleric's Turn Undead
+  splitsInto?: EnemyTypeId; // v3 — divides into two of these on death
 }
 
 export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
@@ -114,6 +125,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 160,
     color: '#5dbb46',
     accent: '#1e3a14',
+    splitsInto: 'slime-mini',
   },
   'slime-mini': {
     id: 'slime-mini',
@@ -140,6 +152,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 230,
     color: '#d8d2c2',
     accent: '#2b2118',
+    undead: true,
   },
   bat: {
     id: 'bat',
@@ -218,6 +231,116 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 260, // senses through walls — no LOS needed
     color: '#b9c8e8',
     accent: '#3a4a6e',
+    undead: true,
+  },
+  // ===== v3 biome families =====
+  'fire-beetle': {
+    id: 'fire-beetle',
+    behavior: 'chase',
+    hp: 2,
+    speed: 58,
+    size: 20,
+    touchDamage: 1,
+    score: 25,
+    goldDrop: [1, 2],
+    aggroRange: 200,
+    color: '#c9542a',
+    accent: '#ffd24a', // glow glands — the game gives these real light
+  },
+  zombie: {
+    id: 'zombie',
+    behavior: 'chase',
+    hp: 5,
+    speed: 34,
+    size: 22,
+    touchDamage: 1,
+    score: 35,
+    goldDrop: [1, 3],
+    aggroRange: 210,
+    color: '#7a8a5a',
+    accent: '#4a3b2a',
+    undead: true,
+  },
+  ghoul: {
+    id: 'ghoul',
+    behavior: 'chase',
+    hp: 3,
+    speed: 88,
+    size: 20,
+    touchDamage: 2,
+    score: 55,
+    goldDrop: [1, 3],
+    aggroRange: 260,
+    color: '#a8b890',
+    accent: '#e8f6d8',
+    undead: true,
+  },
+  'deep-ooze': {
+    id: 'deep-ooze',
+    behavior: 'wander',
+    hp: 3,
+    speed: 40,
+    size: 24,
+    touchDamage: 1,
+    score: 30,
+    goldDrop: [1, 2],
+    aggroRange: 170,
+    color: '#3ea88a',
+    accent: '#1a4a3c',
+    splitsInto: 'ooze-mini',
+  },
+  'ooze-mini': {
+    id: 'ooze-mini',
+    behavior: 'chase',
+    hp: 1,
+    speed: 72,
+    size: 14,
+    touchDamage: 1,
+    score: 8,
+    goldDrop: [0, 1],
+    aggroRange: 220,
+    color: '#5ec9a8',
+    accent: '#1a4a3c',
+  },
+  lizardman: {
+    id: 'lizardman',
+    behavior: 'chase',
+    hp: 4,
+    speed: 62,
+    size: 22,
+    touchDamage: 2,
+    score: 50,
+    goldDrop: [2, 4],
+    aggroRange: 240,
+    color: '#4a8a56',
+    accent: '#ffd24a',
+  },
+  shade: {
+    id: 'shade',
+    behavior: 'wraith',
+    hp: 2,
+    speed: 62,
+    size: 20,
+    touchDamage: 1,
+    score: 65,
+    goldDrop: [1, 2],
+    aggroRange: 260,
+    color: '#5a5a72',
+    accent: '#9a7bff',
+    undead: true,
+  },
+  'cinder-hound': {
+    id: 'cinder-hound',
+    behavior: 'chase',
+    hp: 2,
+    speed: 105,
+    size: 18,
+    touchDamage: 1,
+    score: 45,
+    goldDrop: [1, 2],
+    aggroRange: 280,
+    color: '#8a3a2a',
+    accent: '#ffd24a',
   },
 };
 
@@ -247,8 +370,9 @@ export interface SpawnWeightRow {
   weight: number;
 }
 
-export function spawnWeightsForFloor(floor: number): SpawnWeightRow[] {
-  return [
+export function spawnWeightsForFloor(floor: number, biomeId: string): SpawnWeightRow[] {
+  // Common core — the depths' shared population. Floor gates unchanged from v2.
+  const rows: SpawnWeightRow[] = [
     { type: 'slime', weight: Math.max(1, 6 - floor) },
     { type: 'skeleton', weight: 4 + Math.min(4, floor) },
     { type: 'bat', weight: floor >= 2 ? 3 + Math.min(3, floor - 2) : 0 },
@@ -258,6 +382,26 @@ export function spawnWeightsForFloor(floor: number): SpawnWeightRow[] {
     { type: 'wraith', weight: floor >= 4 ? 1 + Math.min(3, floor - 4) : 0 },
     { type: 'mimic', weight: floor >= 4 ? 1 : 0 },
   ];
+
+  // v3 — biome family: a heavy local presence, absent everywhere else.
+  switch (biomeId) {
+    case 'ember':
+      rows.push({ type: 'fire-beetle', weight: 4 + Math.min(3, floor) });
+      break;
+    case 'bone':
+      rows.push({ type: 'zombie', weight: 5 });
+      rows.push({ type: 'ghoul', weight: floor >= 5 ? 4 : 0 });
+      break;
+    case 'sunken':
+      rows.push({ type: 'deep-ooze', weight: 5 });
+      rows.push({ type: 'lizardman', weight: floor >= 3 ? 3 + Math.min(3, floor - 3) : 0 });
+      break;
+    case 'ash':
+      rows.push({ type: 'shade', weight: floor >= 4 ? 4 : 0 });
+      rows.push({ type: 'cinder-hound', weight: floor >= 4 ? 4 : 0 });
+      break;
+  }
+  return rows;
 }
 
 // How many enemies a room gets: area-proportional with a floor-scaled bonus.

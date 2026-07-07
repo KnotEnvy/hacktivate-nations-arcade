@@ -15,7 +15,14 @@ export type RelicId =
   | 'shadow-cloak'
   | 'thorn-mail'
   | 'lucky-charm'
-  | 'phoenix-feather';
+  | 'phoenix-feather'
+  // v3 — Vaults of the Magica
+  | 'ring-of-renewal'
+  | 'war-bracers'
+  | 'grave-ward'
+  | 'ogre-gauntlets'
+  | 'blur-cloak'
+  | 'bottomless-quiver';
 
 export interface RelicDef {
   id: RelicId;
@@ -110,6 +117,49 @@ export const RELICS: Record<RelicId, RelicDef> = {
     icon: '⌁',
     color: '#ff9a3d',
   },
+  // v3 — Vaults of the Magica
+  'ring-of-renewal': {
+    id: 'ring-of-renewal',
+    name: 'RING OF RENEWAL',
+    blurb: 'Slowly knits your wounds closed',
+    icon: '✾',
+    color: '#7ae0a8',
+  },
+  'war-bracers': {
+    id: 'war-bracers',
+    name: 'WAR BRACERS',
+    blurb: 'Your signature ability returns faster',
+    icon: '⟳',
+    color: '#c9a2ff',
+  },
+  'grave-ward': {
+    id: 'grave-ward',
+    name: 'GRAVE WARD',
+    blurb: '+1 damage to the undead',
+    icon: '✟',
+    color: '#e8dcbc',
+  },
+  'ogre-gauntlets': {
+    id: 'ogre-gauntlets',
+    name: 'OGRE GAUNTLETS',
+    blurb: 'Blows send monsters flying',
+    icon: '⊞',
+    color: '#d8843a',
+  },
+  'blur-cloak': {
+    id: 'blur-cloak',
+    name: 'BLUR CLOAK',
+    blurb: 'Sometimes the blow finds only afterimage',
+    icon: '≈',
+    color: '#8fd8ff',
+  },
+  'bottomless-quiver': {
+    id: 'bottomless-quiver',
+    name: 'BOTTOMLESS QUIVER',
+    blurb: 'Daggers slowly return to your belt',
+    icon: '⇶',
+    color: '#cfd6e0',
+  },
 };
 
 export const ALL_RELIC_IDS = Object.keys(RELICS) as RelicId[];
@@ -130,4 +180,13 @@ export const RELIC_TUNING = {
   LUCKY_HEART_CHANCE: 0.05, // heart drop chance per stack
   PHOENIX_REVIVE_HP: 2, // one heart
   PHOENIX_INVULN: 2.0,
+  // v3 — Vaults of the Magica
+  RENEWAL_INTERVAL: 45, // seconds per 1 hp; stacks divide it
+  WAR_BRACERS_CD_MULT: 0.85, // ability cooldown multiplier per stack
+  GRAVE_WARD_DAMAGE: 1, // bonus vs undead per stack
+  OGRE_KNOCKBACK_MULT: 0.4, // additive knockback fraction per stack
+  BLUR_DODGE_PER_STACK: 0.08,
+  BLUR_DODGE_CAP: 0.4,
+  BLUR_INVULN: 0.5, // grace after an evade so touch damage can't re-roll every frame
+  QUIVER_REGEN_INTERVAL: 8, // seconds per +1 dagger; stacks divide it
 } as const;

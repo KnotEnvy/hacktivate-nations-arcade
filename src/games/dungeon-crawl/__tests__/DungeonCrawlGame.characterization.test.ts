@@ -83,6 +83,15 @@ describe('DungeonCrawlGame characterization', () => {
           gold_spent: 0,
           unique_bosses: 0,
           dashes_used: 0,
+          // v3 metric contract (class system + bestiary)
+          fighter_depth: 0,
+          thief_depth: 0,
+          cleric_depth: 0,
+          mage_depth: 0,
+          abilities_used: 0,
+          undead_slain: 0,
+          unique_slain: 0,
+          scrolls_used: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');
@@ -160,6 +169,10 @@ describe('DungeonCrawlGame characterization', () => {
         'ShiftLeft', // v2 dash
         'KeyC', // v2 dash alt
         'KeyE', // v2 shop interact
+        'Digit4', // v3 class select direct pick
+        'KeyQ', // v3 class ability
+        'KeyF', // v3 read scroll
+        'KeyO', // v3 read scroll alt
       ];
       expect(() => {
         for (let frame = 0; frame < 3000; frame++) {

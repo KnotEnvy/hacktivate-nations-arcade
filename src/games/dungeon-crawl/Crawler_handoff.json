@@ -2,15 +2,26 @@
   "handoff": {
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
-    "lastUpdated": "2026-07-04",
-    "status": "v2 (Depth Pass) shipped; all validation gates green; awaiting user playtest sign-off on v2 balance",
+    "lastUpdated": "2026-07-06",
+    "status": "v3 waves 1 (classes) + 2 (bestiary) + 3 (loot: scrolls + 6 relics) shipped; all validation gates green; awaiting user playtest",
     "tier": 3,
-    "significance": "First Tier 3 game in the arcade. Sets the depth bar for the tier: procedural floors, roguelite relic builds, boss roster, in-run economy.",
+    "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
       "DOCS/START-HERE.md (arcade-wide state + testing philosophy)",
-      "tasks/todo.md (v2 wave plan + review notes, if still present)",
+      "tasks/todo.md (v3 wave specs + review notes)",
       "src/games/dungeon-crawl/DungeonCrawlGame.ts (orchestrator — start here for code)"
     ]
+  },
+
+  "v3TransformationCharter": {
+    "vision": "Transform the base crawler using the AD&D 2e library in DOCS/ADD2ndEdition (~120 OCR'd books) as an INSPIRATION LAYER: the books drive content (classes, monsters, items, rooms, flavor); the fast arcade combat stays untouched; no dice math on screen.",
+    "waveOrder": [
+      "1. Character classes — SHIPPED 2026-07-06",
+      "2. Monstrous Compendium bestiary per biome — SHIPPED 2026-07-06",
+      "3. Encyclopedia Magica loot (scrolls + 6 relics) — SHIPPED 2026-07-06",
+      "4. Dungeon Builder's Guidebook special rooms + secret cracked walls — NEXT"
+    ],
+    "libraryRules": "Mine the books by eye — OCR scrambles multi-column stat blocks, never build a parser. All in-game text must be ORIGINAL (no verbatim book text). Generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly)."
   },
 
   "versionHistory": {
@@ -20,142 +31,160 @@
     },
     "v2_depthPass": {
       "date": "2026-07-04",
-      "summary": "Dodge dash with i-frames; elite monster modifiers (frenzied/bulwark/volatile/gilded); bomber + wraith enemies; 3-boss rotating roster (Ember Guardian / Bone Colossus / Hollow King); 4 floor biomes; spike/vent hazards; destructible urns; merchant shop with spendable gold balance; 4 new relics (shadow-cloak/thorn-mail/lucky-charm/phoenix-feather); 6 new achievements; HUD extracted to HudRenderer to stay under the 1500-line ESLint guardrail."
+      "summary": "Dodge dash with i-frames; elite monster modifiers (frenzied/bulwark/volatile/gilded); bomber + wraith enemies; 3-boss rotating roster; 4 floor biomes; spike/vent hazards; destructible urns; merchant shop with spendable gold balance; 4 new relics; 6 new achievements; HudRenderer extracted."
+    },
+    "v3_wave1_classes": {
+      "date": "2026-07-06",
+      "summary": "Four playable classes (Fighter/Thief/Cleric/Mage) picked on a run-start class-select screen (relic-draft pattern, Digit1-4 direct). Each = stat kit + weapon feel + signature Q/L ability (Cleave / Hide in Shadows / Turn Undead / Fireball). Passives: backstab 2x from behind, thief +25% gold drops, cleric heal bonus, mage homing mana bolts with regen. systems/Combat.ts extracted from the orchestrator (killEnemy/hitBoss/explosions/shockwaves + ability effects) for guardrail headroom. 5 metric keys + 5 achievements."
+    },
+    "v3_wave2_bestiary": {
+      "date": "2026-07-06",
+      "summary": "Per-biome monster families (7 new types + 1 mini, ALL reusing existing behavior verbs): ember=fire-beetle (emits real torchlight), bone=zombie+ghoul, sunken=deep-ooze (splits)+lizardman, ash=shade (through walls)+cinder-hound. spawnWeightsForFloor(floor, biomeId) with v2 gates intact; splitsInto generalizes slime division; undead tags feed Turn Undead; 7 DeathCauses; undead_slain + unique_slain metrics + 2 achievements."
+    },
+    "v3_wave3_loot": {
+      "date": "2026-07-06",
+      "summary": "Vaults of the Magica: relic pool 12 -> 18 (Ring of Renewal hp regen / War Bracers ability CD / Grave Ward vs undead / Ogre Gauntlets knockback / Blur Cloak dodge / Bottomless Quiver dagger regen) + UNIDENTIFIED SCROLLS: one satchel slot, read with F/O; identity rolls from the live rng at pickup (generator stays pure). Five scrolls: Flame (player blast), Frost (stuns all in sight — reuses Enemy.stunned), Healing, Shielding (stoneskin + invuln), Revelation (reveals minimap). Found on floors (~50%), in urns, and as a 35g shop mystery. BombInFlight refactored to carry an explicit boom payload (bomber/fireball/scroll = one path). scrolls_used metric + 1 achievement. achievements.ts crossed the 1500-line guardrail and its 26 dungeon entries were extracted to src/data/dungeonCrawlAchievements.ts."
     }
   },
 
   "architecture": {
-    "overview": "One BaseGame subclass orchestrates pure/seeded generation, data-driven entities, and stateless renderers. Every file stays under the repo's 1500-logical-line warning guardrail.",
+    "overview": "One BaseGame subclass orchestrates pure/seeded generation, data-driven entities, stateless renderers, and a stateful Combat system behind a narrow host interface. Every file stays under the 1500-logical-line ESLint guardrail (orchestrator ~1229 after the Combat extraction).",
     "files": {
-      "DungeonCrawlGame.ts": "Orchestrator: state machine (playing/relic/recap), input edges, combat resolution, staged explosions, shockwaves, shop, scoring, metrics sync, service calls. All screen-space drawing is delegated.",
+      "DungeonCrawlGame.ts": "Orchestrator: state machine (classSelect/playing/relic/recap), input edges, ability dispatch, scoring, metrics sync, service calls. Combat resolution and screen-space drawing are delegated.",
       "index.ts": "Re-export for the registry.",
       "data/constants.ts": "ALL tuning: player/dash, combat/combo, pickups, shop prices, hazard cycle, explosion fuses, shockwave, lighting, overlay timing, BIOMES palette table + biomeForFloor().",
-      "data/enemies.ts": "Enemy archetype configs (data-driven AI params), elite trait table + spawn-chance ramp, sorcerer/bomber tuning, floor-gated spawn weights, per-room enemy budget, shared BOSS baseline numbers.",
-      "data/bosses.ts": "The three Guardian kits (attack cycles, summons, colors, hp/speed multipliers) + bossKitForTier().",
-      "data/relics.ts": "12 relic definitions + RELIC_TUNING numbers. Relics are stacking counters read by Player.ts.",
-      "dungeon/rng.ts": "Mulberry32 seeded PRNG (Rng class). Generator and relic drafts are fully deterministic per (seed, floor).",
-      "dungeon/TileMap.ts": "Tile enum + grid + collision: rectCollides, axis-separated moveWithCollision (slide along walls), line-of-sight sampling.",
-      "dungeon/DungeonGenerator.ts": "Pure seeded floor generator: rooms + 2-wide L corridors + loops, wall wrapping, treasure-room locking with BFS revert, shop/hazard/urn/elite placement, boss arena. Exports isReachable (BFS) used by tests.",
-      "entities/Player.ts": "Movement, sword arc, dagger throw, dash (i-frames via the shared invuln field), hearts, relic stat stacking, potion buffs, phoenix revive.",
-      "entities/Enemy.ts": "One class interprets all archetypes from config: wander/chase/flit/ranged/armored/mimic/bomber/wraith. Elite multipliers applied in constructor/getters. Wraiths bypass wall collision entirely.",
-      "entities/Boss.ts": "Kit-driven phase machine: pursue -> telegraph -> (charge|spread|summon|slam|teleport|homing) -> recover. Enrage under 35% HP.",
-      "entities/Projectile.ts": "Bolts + daggers; optional homing steer (rad/sec, fades after 3s); dies on walls; 6s TTL.",
+      "data/classes.ts": "v3 — ClassId/ClassKit/ClassDef, CLASSES (4 kits incl. tunic/trim sprite colors + ability blurbs), DEFAULT_KIT (reproduces the pre-v3 hero exactly; active until the pick), CLASS_TUNING (ability numbers).",
+      "data/enemies.ts": "17 enemy configs (data-driven AI params, undead + splitsInto tags), elite trait table + spawn-chance ramp, spawnWeightsForFloor(floor, biomeId) = common core with v2 floor gates + per-biome family rows, per-room enemy budget, BOSS baseline.",
+      "data/bosses.ts": "The three Guardian kits + bossKitForTier().",
+      "data/relics.ts": "18 relic definitions + RELIC_TUNING. Relics are stacking counters read by Player.ts (a few consumed in Combat/damagePlayer: grave-ward, blur-cloak).",
+      "data/scrolls.ts": "v3 wave 3 — ScrollId/ScrollDef/SCROLLS/ALL_SCROLL_IDS + SCROLL_TUNING. Pure data; effects dispatch in DungeonCrawlGame.castScroll + Combat.",
+      "dungeon/rng.ts": "Mulberry32 seeded PRNG. Generator and relic drafts fully deterministic per (seed, floor).",
+      "dungeon/TileMap.ts": "Tile enum + grid + collision + line-of-sight.",
+      "dungeon/DungeonGenerator.ts": "Pure seeded floor generator. pickWeighted derives biome purely from floor number. Exports isReachable (BFS) used by tests.",
+      "entities/Player.ts": "Movement, sword arc, dagger throw, dash, hearts, relic stacking, potion buffs, phoenix revive. v3: `kit` field drives melee range/arc/cooldown/knockback, speed, dagger cap/homing/regen; applyKit(); tryAbility() + abilityCooldownFrac(); startHide() (rides invuln); backstab/heal/gold multipliers read by Combat/game.",
+      "entities/Enemy.ts": "One class interprets all archetypes from config. v3: `stunned` timer (Turn Undead — frozen, no touch damage), ctx.playerHidden drops+blocks aggro every frame (thief hide).",
+      "entities/Boss.ts": "Kit-driven phase machine; enrage under 35% HP.",
+      "entities/Projectile.ts": "Bolts + daggers; homing steer reused by mage mana bolts (game passes nearest-enemy target for player daggers, player pos for hostile bolts).",
       "entities/Pickup.ts": "Gold/heart/dagger/potion/key/relic-shrine; gold magnetizes with Coin Magnet.",
-      "entities/Hazard.ts": "Cycling trap state machine: down -> telegraph -> up. Damage only while 'up'.",
-      "entities/Urn.ts": "Destructible prop; game rolls loot on break.",
-      "systems/Lighting.ts": "Offscreen darkness buffer + destination-out radial holes. SELF-DISABLES if the 2D context lacks createRadialGradient (jest canvas stub) — keep this guard.",
+      "entities/Hazard.ts": "Cycling trap state machine.",
+      "entities/Urn.ts": "Destructible prop; Combat rolls loot on break.",
+      "systems/Combat.ts": "v3 — extracted combat resolution: hitEnemy (knight block, backstab), woundEnemy, killEnemy (drops, splitsInto division, host stat callbacks), breakUrn, hitBoss/killBoss, bombs/staged explosions (source: enemy|player — player booms never hurt the player)/shockwaves + their rendering, ability effects (cleave/turnUndead/spawnFireball). Reaches the run ONLY via the CombatHost interface (accessor functions because the game reassigns arrays per floor). Exports DeathCause + causeForEnemy.",
+      "systems/Lighting.ts": "Offscreen darkness buffer + radial holes. SELF-DISABLES without createRadialGradient (jest) — keep this guard.",
       "systems/Minimap.ts": "Fog-of-war explored grid + top-right minimap.",
-      "systems/ParticleSystem.ts": "Capped chunky-pixel particles: burst/spray/ember.",
-      "systems/ScreenShake.ts": "Trauma-squared shake, house style.",
-      "rendering/TileRenderer.ts": "All world-space drawing: biome-colored tiles, every sprite (player/enemies/boss kits/pickups/merchant/urns/hazards). No game logic.",
-      "rendering/HudRenderer.ts": "All screen-space chrome: HUD panel, boss bar, banners, shop prompt, relic draft, death recap. Pure view — receives explicit state."
+      "systems/ParticleSystem.ts": "Capped chunky-pixel particles.",
+      "systems/ScreenShake.ts": "Trauma-squared shake.",
+      "rendering/TileRenderer.ts": "All world-space drawing. v3: per-class player sprite (tunic/trim from CLASSES + silhouette: thief low hood, cleric mace+sigil, mage hat+staff, fighter broad sword; hidden = 0.4 alpha), stun halo, 5 new monster draws + blob/wraith paths parameterized by config colors (oozes/shade ride them free).",
+      "rendering/HudRenderer.ts": "All screen-space chrome. v3: renderClassSelect (4 cards), ability cooldown pip (Q + class icon) under the dash pip. Pure view — receives explicit state."
     }
   },
 
   "arcadeWiring": {
     "registry": "src/games/registry.ts — dynamic import of DungeonCrawlGame (18th game).",
-    "catalog": "src/data/Games.ts — id dungeon-crawl, tier 3, keyboard-only, thumbnail /games/dungeon-crawl/dungeon-crawl-thumb.svg (hand-authored SVG in public/).",
-    "theme": "src/lib/gameThemes.ts — 'dungeon-crawl' / 'Ember Depths' (vt323 retro fonts, glow+scanlines).",
-    "music": "GAME_TRACK_MAPPING in ProceduralMusicEngine.ts: primary epic_tension, secondary epic_heroic. Hub auto-plays on launch. Game drives setMusicIntensity (explore 0.5 / combat 0.7 / boss 0.85 / enrage 0.95) and stingers: success (boss kill), transition (descent), danger (player at <=2 hp).",
-    "sounds": "Existing procedural SoundName palette ONLY — no new sounds were added. Uses sword_swing, sword_clash, sword_draw (mimic wake), hit, hurt_grunt, death_cry, coin, powerup, extraLife, unlock, gate_open, whoosh, explosion, collision, click, success, error.",
-    "gameEndData": "src/components/arcade/ArcadeHub.tsx GameEndData interface lists all dungeon metric keys (optional numbers). Any numeric key on getScore() flows into trusted session metrics automatically.",
-    "achievements": "src/data/achievements.ts — 18 dungeon-crawl achievements. requirement.type strings MUST exactly match extendedGameData keys (see metricsContract).",
-    "trustedProgression": "No custom server work needed: src/lib/trustedProgression.ts derives achievement unlocks from session metrics via the default getMetricValue path."
+    "catalog": "src/data/Games.ts — id dungeon-crawl, tier 3, keyboard-only.",
+    "theme": "src/lib/gameThemes.ts — 'dungeon-crawl' / 'Ember Depths'.",
+    "music": "GAME_TRACK_MAPPING: primary epic_tension, secondary epic_heroic. Game drives setMusicIntensity (explore 0.5 / combat 0.7 / boss 0.85 / enrage 0.95) + stingers.",
+    "sounds": "Existing procedural SoundName palette ONLY — v3 added no new sounds (class confirm=powerup, cleave=sword_swing+collision, turn undead=unlock, fireball=whoosh+explosion, hide=whoosh).",
+    "gameEndData": "src/components/arcade/ArcadeHub.tsx GameEndData lists all 24 dungeon metric keys as optional numbers.",
+    "achievements": "src/data/dungeonCrawlAchievements.ts — 26 dungeon-crawl achievements (extracted from achievements.ts, which spreads them in). requirement.type strings MUST exactly match extendedGameData keys.",
+    "trustedProgression": "No custom server work: src/lib/trustedProgression.ts derives unlocks from session metrics."
   },
 
   "metricsContract": {
-    "note": "extendedGameData is rebuilt every frame in syncExtendedData() and frozen at death. Keys double as achievement requirement types. If you add a stat: add the field, sync it, add the optional key to ArcadeHub GameEndData, and pin it in the characterization test.",
+    "note": "extendedGameData is rebuilt every frame in syncExtendedData() and frozen at death. Keys double as achievement requirement types. Adding a stat = add the field, sync it, add the optional key to ArcadeHub GameEndData, pin it in the characterization test.",
     "keys": [
-      "depth",
-      "enemies_slain",
-      "gold_collected",
-      "bosses_slain",
-      "relics_collected",
-      "rooms_explored",
-      "combo",
-      "daggers_thrown",
-      "mimics_found",
-      "perfect_floors",
-      "keys_used",
-      "potions_used",
-      "elites_slain",
-      "items_bought",
-      "gold_spent",
-      "unique_bosses",
-      "dashes_used"
-    ]
+      "depth", "enemies_slain", "gold_collected", "bosses_slain", "relics_collected",
+      "rooms_explored", "combo", "daggers_thrown", "mimics_found", "perfect_floors",
+      "keys_used", "potions_used", "elites_slain", "items_bought", "gold_spent",
+      "unique_bosses", "dashes_used",
+      "fighter_depth", "thief_depth", "cleric_depth", "mage_depth", "abilities_used",
+      "undead_slain", "unique_slain", "scrolls_used"
+    ],
+    "v3Semantics": "<class>_depth = floor reached this run IF that class was picked, else 0 (enables 'reach floor N as X' achievements through the plain threshold path). unique_slain = distinct monster config ids killed this run."
   },
 
   "gameplaySystems": {
     "controls": {
+      "classSelect": "Left/Right + Space, or 1/2/3/4 direct (run start; world renders behind the overlay)",
       "move": "Arrows / WASD",
-      "sword": "Space / J (arc melee, knight fronts block it)",
-      "dagger": "X / K (ammo; pierces knight armor; Dagger Sage adds pierce-through)",
-      "dash": "Shift / C (i-frames; cooldown pip on HUD)",
+      "sword": "Space / J (arc melee; kit-driven range/arc/cooldown; knights block frontal)",
+      "dagger": "X / K (ammo; mage: homing mana bolts that regen)",
+      "dash": "Shift / C (i-frames; cooldown pip)",
+      "ability": "Q / L (signature class ability; cooldown pip under dash)",
+      "readScroll": "F / O (reads the held scroll; satchel holds one)",
       "interact": "E (shop pedestals)",
       "relicDraft": "Left/Right + Space, or 1/2/3 direct",
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
-    "coreLoop": "Explore floor -> fight -> loot (gold/hearts/keys/daggers/potions/urns) -> optional locked treasure room (key) -> optional shop -> stairs -> relic draft -> descend (deeper = harder + higher score multiplier). Boss arena every 3rd floor; stairs stay locked until the Guardian falls.",
-    "economyRule": "CRITICAL: gold is two numbers. `pickups` (BaseGame) is CUMULATIVE and feeds the arcade coin economy — never decrement it. `goldBalance` is the run-local spendable wallet the shop drains.",
-    "scoring": "kill score x combo (x1-x5, 3s chain, 3 kills/step) x depth multiplier (1 + 0.25*(floor-1)); gold +15 score; +10 per room discovered; floor-clear bonus 150+75*floor; boss bonus 1000 on top of kit score.",
-    "bosses": "Tier = floor/3. Kit rotation: 1=Ember Guardian (charge/spread/summon), 2=Bone Colossus (slam shockwaves/summon/spread, 1.3x hp, 0.8x speed), 3=Hollow King (teleport+burst/homing bolts/summons wraiths), then repeats with BOSS.HP_PER_TIER scaling.",
-    "elites": "Floor 3+, chance 8% + 2%/floor (cap 25%). frenzied=+45% speed, bulwark=2.5x hp + knockback-immune-ish, volatile=fused AoE on death, gilded=4x gold + 1.5x hp. 3x score, 1.2x radius, aura ring.",
-    "relicDraftDeterminism": "Stair drafts use a dedicated Rng seeded from (runSeed ^ floor*0x85ebca6b) — same run+floor always offers the same 3 relics. Shrine/shop relics draw from the live gameplay rng instead."
+    "classes": "fighter (4 hearts, 120° arc, Cleave 6s) / thief (+14% speed, 8 daggers, +25% gold, 2x backstab from behind or shadows, Hide 1.5s per 10s) / cleric (mace +1dmg slow heavy, hearts heal +1, Turn Undead 8s: 2dmg+1s stun to undead in 140px, shoves the living) / mage (2 hearts, weak staff, homing bolts cap 6 regen 1/4s, Fireball 8s: player-sourced 56px boom). All tuning in data/classes.ts.",
+    "bestiary": "Biome families on top of the shared core: ember=fire-beetle (emits LightSource r70), bone=zombie (slow hp5) + ghoul (fast, floor 5+), sunken=deep-ooze (splits to 2 minis) + lizardman (floor 3+), ash=shade (through walls, undead) + cinder-hound (speed 105) (floor 4+). Undead set for Turn Undead: skeleton, wraith, zombie, ghoul, shade. Biome ambient floors in the 4-cycle with bosses every 3rd: ember 1/5, bone 2/10, sunken 7/11, ash 4/8.",
+    "scrolls": "One satchel slot; found unidentified (floor ~50%, urn loot band, shop 35g); identity rolls from the LIVE rng at pickup + banner; F/O reads it. flame=player blast r72 dmg3 / frost=stun all in 380px for 2.5s / healing=4hp / shielding=stoneskin+1s invuln / revelation=reveal minimap. Full satchel leaves floor scrolls in place; a bought scroll replaces the held one.",
+    "coreLoop": "Pick class -> explore floor -> fight -> loot -> optional treasure room (key) -> optional shop -> stairs -> relic draft -> descend. Boss arena every 3rd floor.",
+    "economyRule": "CRITICAL: gold is two numbers. `pickups` (BaseGame) is CUMULATIVE arcade economy — never decrement. `goldBalance` is the run wallet the shop drains. Thief gold bonus multiplies drop COUNT only.",
+    "scoring": "kill score x combo (x1-x5) x depth multiplier; gold +15; +10/room; floor-clear 150+75*floor; boss bonus 1000.",
+    "bosses": "Tier = floor/3. Ember Guardian / Bone Colossus / Hollow King rotation with HP_PER_TIER scaling.",
+    "elites": "Floor 3+, 8% + 2%/floor (cap 25%). frenzied/bulwark/volatile/gilded; 3x score.",
+    "relicDraftDeterminism": "Stair drafts seeded from (runSeed ^ floor*0x85ebca6b). Shrine/shop relics use the live rng. Class choice is user input — no rng."
   },
 
   "invariants": {
     "doNotBreak": [
-      "All player damage funnels through damagePlayer(cause). New damage sources need: DeathCause member + CAUSE_LABELS + CAUSE_HINTS entries (TS will error on the Records if you forget).",
-      "Dash safety rides Player.invuln — never add a damage path that ignores invuln.",
-      "Never decrement BaseGame.pickups (arcade coin economy). Spend from goldBalance only.",
-      "Generator stays pure + seeded: no Math.random inside dungeon/ — use the passed Rng. Determinism is pinned by tests.",
-      "Stairs must be reachable WITHOUT the key: lockRoom is BFS-verified and reverts if it cuts the path. Keep that check if you touch room locking.",
-      "Every service call is optional-chained (this.services?.audio?.playSound?.(...)) so the jest harness and hub-less contexts never throw.",
-      "Lighting.ts must keep its createRadialGradient feature-detect no-op — jsdom's mocked canvas has no gradients.",
-      "extendedGameData keys == achievement requirement.type strings, scoped by gameId.",
-      "Input uses edge detection (wasPressed flags updated at END of onUpdate). Holding a key must not re-trigger.",
-      "Keep every file under the 1500-line ESLint guardrail; grow by extracting (HudRenderer is the precedent)."
+      "All player damage funnels through damagePlayer(cause). New damage sources need: DeathCause member (systems/Combat.ts) + CAUSE_LABELS + CAUSE_HINTS entries (TS errors if you forget).",
+      "Dash AND thief-hide safety ride Player.invuln — never add a damage path that ignores invuln.",
+      "Never decrement BaseGame.pickups. Spend from goldBalance only.",
+      "Generator stays pure + seeded: no Math.random inside dungeon/. Biome for spawns derives from floor number.",
+      "Stairs must be reachable WITHOUT the key (BFS-verified lockRoom).",
+      "Every service call optional-chained (this.services?.audio?.playSound?.(...)).",
+      "Lighting.ts keeps its createRadialGradient feature-detect no-op.",
+      "extendedGameData keys == achievement requirement.type strings; new keys go in syncExtendedData + GameEndData + characterization test, all three.",
+      "Input uses edge detection (was-flags updated at END of onUpdate).",
+      "Keep every file under the 1500-line guardrail; grow by extracting (HudRenderer, Combat are the precedents).",
+      "player-sourced explosions (source: 'player') must never damage the player.",
+      "New undead-flavored monsters get `undead: true` so Turn Undead scales for free; new splitters use `splitsInto` (never hardcode ids in Combat).",
+      "Floor 1 stays gentle: slime/skeleton/fire-beetle only (pinned by generator + bestiary tests)."
     ]
   },
 
   "balanceKnobs": {
-    "playerFeel": "data/constants.ts PLAYER (speed, sword arc/cooldown, dash duration/cooldown/i-frames)",
-    "difficultyCurve": "data/enemies.ts spawnWeightsForFloor + enemyBudgetForRoom + ELITES ramp; data/constants.ts FLOOR_GEN sizing",
-    "bosses": "data/enemies.ts BOSS baseline; data/bosses.ts per-kit hpMult/speedMult/attackCycle",
-    "economy": "data/constants.ts PICKUPS, SHOP prices, COMBAT bonuses; urn loot table in DungeonCrawlGame.breakUrn",
-    "hazards": "data/constants.ts HAZARDS cycle + EXPLOSIONS fuse/radius + SHOCKWAVE speed/thickness",
+    "classes": "data/classes.ts — per-kit numbers + CLASS_TUNING ability numbers",
+    "playerFeel": "data/constants.ts PLAYER (base speed, sword timing defaults, dash)",
+    "difficultyCurve": "data/enemies.ts spawnWeightsForFloor (core gates + biome family weights) + enemyBudgetForRoom + ELITES ramp",
+    "bestiary": "data/enemies.ts ENEMY_CONFIGS (hp/speed/touch/score/gold per type)",
+    "bosses": "data/enemies.ts BOSS baseline; data/bosses.ts per-kit",
+    "economy": "data/constants.ts PICKUPS, SHOP; urn loot in Combat.breakUrn",
+    "hazards": "data/constants.ts HAZARDS + EXPLOSIONS + SHOCKWAVE",
     "relics": "data/relics.ts RELIC_TUNING",
-    "atmosphere": "data/constants.ts LIGHTING darkness/radii + BIOMES palettes"
+    "atmosphere": "data/constants.ts LIGHTING + BIOMES palettes"
   },
 
   "testing": {
-    "philosophy": "Per DOCS/START-HERE.md: dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI.",
+    "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "generator": "dungeon/__tests__/DungeonGenerator.test.ts — determinism (incl. v2 plan fields), stairs/key reachability BFS, shop safety, hazard/urn placement, elite gating, boss arena shape (18 tests)",
-      "characterization": "__tests__/DungeonCrawlGame.characterization.test.ts — manifest, init/step/render no-throw, metric-key contract, restart, destroy->endGame coins, 3000-frame seeded input monkey test (13 tests)"
+      "suites": "5 suites / 64 tests: DungeonGenerator.test.ts (determinism, reachability, gating incl. v3 biome exclusions), DungeonCrawlGame.characterization.test.ts (manifest, 25-key metric contract, 3000-frame monkey incl. Digit4/KeyQ/KeyF/KeyO), classes.test.ts (15), bestiary.test.ts (9), scrolls.test.ts (9: scroll/relic contracts, placement, revealAll, read flow)"
     },
-    "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ npm.cmd run build before deploys). The release suite pins the catalog at 18 playable / 9 coming-soon — update src/__approval__/releaseApproval.test.ts when the NEXT game ships.",
-    "gotcha": "gameCatalog/unlocks dev tests use 'target-shooter' as the canonical UNIMPLEMENTED game (dungeon-crawl used to fill that role). Re-point them again when target-shooter ships.",
-    "manualQA": "Gameplay/balance is validated by user playtest of the live build — do not write manual QA scripts."
+    "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
+    "fullDevSuite": "387 tests as of 2026-07-06, all green.",
+    "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
     "awaitingPlaytest": [
-      "Dash feel (duration/cooldown), shop pricing, elite frequency ramp",
-      "Bone Colossus slam-ring readability; Hollow King teleport fairness",
-      "Biome readability under torchlight (Sunken/Ash darkness levels)",
-      "Boss-floor difficulty at deep tiers (HP_PER_TIER scaling past tier 3)"
+      "Wave 1: mage fragility (2 hearts + 4s bolt regen), thief hide 1.5s vs 10s cooldown, cleric 0.48s swing rhythm, cleave reach, class-card readability",
+      "Wave 2: bone-biome touch pressure (zombie hp5 + ghoul touch 2), cinder-hound 105 speed fairness, ooze split chains, biome family readability under torchlight",
+      "Wave 3: scroll drop rate (may be generous with a one-slot satchel), frost radius/duration, Blur Cloak dodge readability, Ring of Renewal draft value",
+      "Carried from v2: shop pricing, elite ramp, boss-floor difficulty at deep tiers"
+    ],
+    "nextWaves": [
+      "Wave 4 — Dungeon Builder's Guidebook: special rooms (crypt/library/shrine/laboratory), secret rooms behind cracked walls (bomber bombs + player fireballs/flame scrolls could reveal them — player-sourced booms already exist), richer tricks"
     ],
     "backlogIdeas": [
-      "Secret rooms behind cracked walls (bombs could reveal them — bomber bombs already exist)",
-      "Keyholder elite variant that carries the treasure key instead of a floor pickup",
-      "Per-biome enemy skins/variants; biome-specific hazards beyond spikes/vents",
-      "Floating damage numbers / elite name tags (EliteConfig.name is already there, unused)",
-      "Hazard.phaseProgress() is implemented but unused — meant for smoother trap animation",
-      "Gamepad support (InputManager already tracks gamepads; manifest is keyboard-only)"
+      "Keyholder elite variant carrying the treasure key",
+      "Biome-specific hazards beyond spikes/vents",
+      "Floating damage numbers / elite name tags (EliteConfig.name still unused)",
+      "Hazard.phaseProgress() still unused — smoother trap animation",
+      "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
+      "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "All 354 dev tests and the 10-test release suite pass as of lastUpdated. No open defects known."
+    "noKnownBugs": "All 387 dev tests and the 10-test release suite pass as of lastUpdated. No open defects known."
   }
 }

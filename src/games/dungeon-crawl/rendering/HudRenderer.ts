@@ -3,6 +3,7 @@
 // boss bar, floor banners, the relic draft, shop prompts and the death recap.
 // Pure rendering: the game passes explicit view state, nothing reaches back.
 
+import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
 import { RELICS, RelicId } from '../data/relics';
 
@@ -17,6 +18,10 @@ export interface HudState {
   combo: number;
   comboTimer: number;
   dashFrac: number; // dash cooldown remaining, 0 = ready
+  // v3 — class ability pip; null before the class pick.
+  ability: { frac: number; icon: string; color: string } | null;
+  // v3 wave 3 — held scroll (one satchel slot); null when empty.
+  scroll: { icon: string; color: string } | null;
   buffs: ReadonlyMap<PotionBuff, number>;
   relics: ReadonlyMap<RelicId, number>;
 }
@@ -84,6 +89,25 @@ export class HudRenderer {
     ctx.fillRect(216, 42, 34, 8);
     ctx.fillStyle = '#9a7bff';
     ctx.fillRect(216, 42, 34 * (1 - Math.max(0, Math.min(1, s.dashFrac))), 8);
+
+    // v3 — class ability pip (Q), mirroring the dash row.
+    if (s.ability) {
+      const ready = s.ability.frac <= 0;
+      ctx.fillStyle = ready ? s.ability.color : '#3d3652';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`Q ${s.ability.icon}`, 170, 72);
+      ctx.fillStyle = '#241d38';
+      ctx.fillRect(216, 62, 34, 8);
+      ctx.fillStyle = s.ability.color;
+      ctx.fillRect(216, 62, 34 * (1 - Math.max(0, Math.min(1, s.ability.frac))), 8);
+    }
+
+    // v3 wave 3 — scroll satchel slot (F to read).
+    if (s.scroll) {
+      ctx.fillStyle = s.scroll.color;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`F ${s.scroll.icon}`, 216, 96);
+    }
 
     // Combo meter.
     if (s.combo > 1) {
@@ -192,6 +216,69 @@ export class HudRenderer {
     } else {
       ctx.fillStyle = canAfford ? PALETTE.textWarm : PALETTE.textDim;
       ctx.fillText(label, VIEW.WIDTH / 2, y + 1);
+    }
+  }
+
+  /** v3 — run-start class draft: four hero cards, relic-draft house style. */
+  renderClassSelect(
+    ctx: CanvasRenderingContext2D,
+    ids: readonly ClassId[],
+    selectedIndex: number,
+  ): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.82)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('CHOOSE YOUR HERO', VIEW.WIDTH / 2, 104);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '14px monospace';
+    ctx.fillText('← → to browse · SPACE to choose · 1-4 direct', VIEW.WIDTH / 2, 132);
+
+    const cardW = 168;
+    const cardH = 280;
+    const gap = 20;
+    const startX = (VIEW.WIDTH - cardW * ids.length - gap * (ids.length - 1)) / 2;
+    for (let i = 0; i < ids.length; i++) {
+      const def = CLASSES[ids[i]];
+      const x = startX + i * (cardW + gap);
+      const y = 168;
+      const selected = i === selectedIndex;
+
+      ctx.fillStyle = selected ? 'rgba(45, 25, 10, 0.95)' : 'rgba(18, 12, 8, 0.95)';
+      ctx.fillRect(x, y, cardW, cardH);
+      ctx.strokeStyle = selected ? def.color : '#4d4238';
+      ctx.lineWidth = selected ? 3 : 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, cardW, cardH);
+      ctx.lineWidth = 1;
+
+      ctx.fillStyle = selected ? def.color : PALETTE.textDim;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`[${i + 1}]`, x + cardW / 2, y - 10);
+
+      ctx.fillStyle = def.color;
+      ctx.font = 'bold 40px monospace';
+      ctx.fillText(def.icon, x + cardW / 2, y + 64);
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(def.name, x + cardW / 2, y + 100);
+
+      // Hearts row shows the kit's toughness at a glance.
+      const hearts = Math.ceil(def.kit.maxHp / 2);
+      ctx.fillStyle = PALETTE.heart;
+      ctx.font = '13px monospace';
+      ctx.fillText('♥'.repeat(hearts).split('').join(' '), x + cardW / 2, y + 124);
+
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '12px monospace';
+      this.wrapText(ctx, def.blurb, x + cardW / 2, y + 152, cardW - 20, 15);
+
+      ctx.fillStyle = def.color;
+      ctx.font = 'bold 12px monospace';
+      this.wrapText(ctx, def.abilityName, x + cardW / 2, y + 212, cardW - 20, 14);
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '11px monospace';
+      this.wrapText(ctx, def.abilityBlurb, x + cardW / 2, y + 232, cardW - 20, 13);
     }
   }
 

@@ -31,6 +31,15 @@ export class Minimap {
     }
   }
 
+  /** v3 — Scroll of Revelation: the whole floor, known at once. */
+  revealAll(map: TileMap): void {
+    for (let ty = 0; ty < this.rows; ty++) {
+      for (let tx = 0; tx < this.cols; tx++) {
+        if (map.get(tx, ty) !== Tile.Void) this.explored[ty * this.cols + tx] = 1;
+      }
+    }
+  }
+
   isExplored(tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= this.cols || ty >= this.rows) return false;
     return this.explored[ty * this.cols + tx] === 1;
