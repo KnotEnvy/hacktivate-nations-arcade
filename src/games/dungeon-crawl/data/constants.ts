@@ -31,7 +31,7 @@ export const PLAYER = {
   HITBOX: 20, // square, centered
   SPEED: 150, // px/s
   MAX_HP: 6, // drawn as 3 hearts (2 hp per heart)
-  HP_CAP: 12, // absolute ceiling with Tower Shields
+  HP_CAP: 20, // absolute ceiling with levels + Toughness + Tower Shields (v4)
   HIT_INVULN: 1.0, // seconds of i-frames after damage
   SWORD_RANGE: 40, // px from player center
   SWORD_ARC_DEG: 100, // total arc width centered on facing

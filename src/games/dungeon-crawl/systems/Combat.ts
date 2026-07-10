@@ -7,8 +7,8 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { CLASS_TUNING } from '../data/classes';
-import { EXPLOSIONS, PALETTE, SHOCKWAVE } from '../data/constants';
-import { SCROLL_TUNING } from '../data/scrolls';
+import { EXPLOSIONS, PALETTE, SHOCKWAVE, TILE } from '../data/constants';
+import { SCROLL_TUNING, ScrollId } from '../data/scrolls';
 import { BOSS } from '../data/enemies';
 import { RELIC_TUNING } from '../data/relics';
 import { Rng } from '../dungeon/rng';
@@ -17,6 +17,7 @@ import { Boss } from '../entities/Boss';
 import { Enemy, EnemyUpdateContext } from '../entities/Enemy';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
+import { Projectile } from '../entities/Projectile';
 import { Urn } from '../entities/Urn';
 import { ParticleSystem } from './ParticleSystem';
 import { ScreenShake } from './ScreenShake';
@@ -130,7 +131,10 @@ export interface CombatHost {
   shake: ScreenShake;
   addEnemy(enemy: Enemy): void;
   addPickup(pickup: Pickup): void;
+  addProjectile(projectile: Projectile): void;
   findOpenSpotNear(x: number, y: number): { x: number; y: number };
+  levelPressure(): number; // v4 — hero-level hp multiplier for spawned monsters
+  revealMap(): void; // Scroll of Revelation — fog-of-war lifts
   playSound(name: SoundName, volume: number): void;
   damagePlayer(amount: number, cause: DeathCause): void;
   registerKill(baseScore: number): void;
@@ -293,7 +297,13 @@ export class Combat {
     if (enemy.config.splitsInto) {
       for (const offset of [-10, 10]) {
         const spot = this.host.findOpenSpotNear(enemy.x + offset, enemy.y + offset / 2);
-        const mini = new Enemy(enemy.config.splitsInto, spot.x, spot.y);
+        const mini = new Enemy(
+          enemy.config.splitsInto,
+          spot.x,
+          spot.y,
+          null,
+          this.host.levelPressure(),
+        );
         mini.aggro = true;
         this.host.addEnemy(mini);
       }
@@ -417,6 +427,35 @@ export class Combat {
     }
   }
 
+  /** v3/v4 — one-shot scroll effects (the game banners; effects land here). */
+  castScroll(id: ScrollId, scholarMult: number): void {
+    const player = this.host.player();
+    switch (id) {
+      case 'flame':
+        this.castFlameBurst();
+        break;
+      case 'frost':
+        this.frostNova();
+        break;
+      case 'healing':
+        player.heal(Math.ceil(SCROLL_TUNING.HEAL_HP * scholarMult));
+        this.host.playSound('extraLife', 0.5);
+        this.host.particles.burst(player.x, player.y, PALETTE.heart, 14, 110, 0.6);
+        break;
+      case 'shielding':
+        player.addBuff('stoneskin');
+        player.invuln = Math.max(player.invuln, SCROLL_TUNING.SHIELD_INVULN * scholarMult);
+        this.host.playSound('powerup', 0.5);
+        this.host.particles.burst(player.x, player.y, '#9aa5b5', 14, 110, 0.6);
+        break;
+      case 'revelation':
+        this.host.revealMap();
+        this.host.playSound('unlock', 0.55);
+        this.host.particles.burst(player.x, player.y, PALETTE.keyGold, 18, 140, 0.7);
+        break;
+    }
+  }
+
   /** Mage FIREBALL: lob a player-sourced bomb toward the facing direction. */
   spawnFireball(): void {
     const player = this.host.player();
@@ -474,6 +513,73 @@ export class Combat {
   update(dt: number): void {
     this.updateBombsAndExplosions(dt);
     this.updateShockwaves(dt);
+  }
+
+  // ---------------------------------------------------------------- boss
+
+  /** v4 — the Guardian's whole turn: kit AI, summons, touch damage. */
+  updateBoss(dt: number): void {
+    const boss = this.host.boss();
+    if (!boss?.alive) return;
+    const player = this.host.player();
+    boss.update(dt, {
+      playerX: player.x,
+      playerY: player.y,
+      map: this.host.map(),
+      rng: this.host.rng(),
+      fireBolt: (x, y, dirX, dirY, speed) => {
+        this.host.addProjectile(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1));
+      },
+      fireHomingBolt: (x, y, dirX, dirY, speed) => {
+        this.host.addProjectile(
+          new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1, false, 2.2),
+        );
+      },
+      spawnShockwave: (x, y, delay) => this.spawnShockwave(x, y, delay),
+      requestTeleportSpot: () => this.pickTeleportSpot(),
+      summonMinion: (x, y, type) => {
+        const spawn = this.host.findOpenSpotNear(x, y);
+        const minion = new Enemy(type, spawn.x, spawn.y, null, this.host.levelPressure());
+        minion.aggro = true;
+        this.host.addEnemy(minion);
+        this.host.particles.burst(spawn.x, spawn.y, PALETTE.ember, 8, 90, 0.4);
+      },
+      minionCount: () => this.host.enemies().filter(e => e.alive).length,
+      onChargeSlam: (x, y) => {
+        this.host.shake.add(0.5);
+        this.host.particles.burst(x, y, PALETTE.emberBright, 16, 180, 0.6, 200);
+        this.host.playSound('explosion', 0.4);
+      },
+      onTeleport: (fromX, fromY, toX, toY) => {
+        this.host.particles.burst(fromX, fromY, boss.kit.crackColor, 14, 120, 0.5);
+        this.host.particles.burst(toX, toY, boss.kit.crackColor, 14, 120, 0.5);
+        this.host.playSound('whoosh', 0.5);
+      },
+    });
+    const touchReach = boss.radius + player.size / 2;
+    if (Math.hypot(boss.x - player.x, boss.y - player.y) < touchReach) {
+      this.host.damagePlayer(
+        boss.isCharging ? BOSS.CHARGE_DAMAGE : BOSS.TOUCH_DAMAGE,
+        boss.isCharging ? 'boss_charge' : 'boss_touch',
+      );
+    }
+  }
+
+  /** Random open tile 3-6 tiles away from the player (Hollow King teleport). */
+  private pickTeleportSpot(): { x: number; y: number } {
+    const player = this.host.player();
+    const map = this.host.map();
+    const rng = this.host.rng();
+    for (let attempt = 0; attempt < 14; attempt++) {
+      const angle = rng.range(0, Math.PI * 2);
+      const dist = rng.range(TILE * 3, TILE * 6);
+      const x = player.x + Math.cos(angle) * dist;
+      const y = player.y + Math.sin(angle) * dist;
+      const { tx, ty } = map.tileAtWorld(x, y);
+      if (!map.isSolidAt(tx, ty)) return map.tileCenter(tx, ty);
+    }
+    const boss = this.host.boss();
+    return { x: boss?.x ?? player.x, y: boss?.y ?? player.y };
   }
 
   private updateBombsAndExplosions(dt: number): void {

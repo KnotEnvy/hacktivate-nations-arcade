@@ -3,7 +3,10 @@
 // hearts, i-frames, and relic/potion stat stacking. DungeonCrawlGame owns
 // damage bookkeeping; this class owns the body.
 
+import { BoonId, BOON_TUNING } from '../data/boons';
 import { ClassDef, ClassId, ClassKit, CLASS_TUNING, DEFAULT_KIT } from '../data/classes';
+import { GEAR_TUNING, GearId } from '../data/gear';
+import { LevelGain } from '../data/progression';
 import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
 import { ScrollId } from '../data/scrolls';
@@ -56,6 +59,14 @@ export class Player {
   scroll: ScrollId | null = null;
   private hpRegenTimer = 0;
 
+  // v4 — persistent hero training, re-applied from the save each run.
+  boons = new Map<BoonId, number>();
+  levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
+  survivorUsed = false;
+  // v4 Wave B — blacksmith gear tiers + the alchemist's candle.
+  gear = new Map<GearId, number>();
+  provisionTorch = 0;
+
   // Relic stacks + potion buffs.
   relics = new Map<RelicId, number>();
   buffs = new Map<PotionBuff, number>(); // buff -> seconds remaining
@@ -72,6 +83,11 @@ export class Player {
     this.manaRegenTimer = 0;
     this.scroll = null;
     this.hpRegenTimer = 0;
+    this.boons.clear();
+    this.levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
+    this.survivorUsed = false;
+    this.gear.clear();
+    this.provisionTorch = 0;
     this.hp = this.kit.maxHp;
     this.maxHp = this.kit.maxHp;
     this.invuln = 0;
@@ -113,6 +129,68 @@ export class Player {
     this.manaRegenTimer = def.kit.daggerRegenInterval;
   }
 
+  boonCount(id: BoonId): number {
+    return this.boons.get(id) ?? 0;
+  }
+
+  gearTier(id: GearId): number {
+    return this.gear.get(id) ?? 0;
+  }
+
+  /**
+   * v4 — apply the hero's banked training on top of the class kit: level
+   * gains + boon stacks + blacksmith gear. Call right after applyKit at
+   * expedition start.
+   */
+  applyProgression(
+    gains: { hp: number; speed: number; daggerCap: number },
+    boons: Partial<Record<BoonId, number>>,
+    gear: Partial<Record<GearId, number>> = {},
+  ): void {
+    this.levelBonus = { ...gains };
+    this.boons.clear();
+    for (const [id, count] of Object.entries(boons)) {
+      if (typeof count === 'number' && count > 0) this.boons.set(id as BoonId, count);
+    }
+    this.gear.clear();
+    for (const [id, tier] of Object.entries(gear)) {
+      if (typeof tier === 'number' && tier > 0) this.gear.set(id as GearId, tier);
+    }
+    this.survivorUsed = false;
+    this.maxHp = Math.min(
+      PLAYER.HP_CAP,
+      this.kit.maxHp +
+        gains.hp +
+        this.boonCount('toughness') * BOON_TUNING.TOUGHNESS_HP +
+        this.gearTier('armor') * GEAR_TUNING.ARMOR_HP,
+    );
+    this.hp = this.maxHp;
+    this.daggers = Math.min(
+      this.daggerCap(),
+      this.kit.startDaggers + this.gearTier('quiver') * GEAR_TUNING.QUIVER_START,
+    );
+  }
+
+  /** v4 — a mid-run level-up lands its gains (and heals what it grants). */
+  gainLevelBenefits(gain: LevelGain): void {
+    this.levelBonus.hp += gain.hp ?? 0;
+    this.levelBonus.speed += gain.speed ?? 0;
+    this.levelBonus.daggerCap += gain.daggerCap ?? 0;
+    if (gain.hp) {
+      this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + gain.hp);
+      this.hp = Math.min(this.maxHp, this.hp + gain.hp);
+    }
+  }
+
+  /** v4 — a freshly chosen boon takes hold immediately. */
+  gainBoon(id: BoonId): void {
+    this.boons.set(id, this.boonCount(id) + 1);
+    if (id === 'toughness') {
+      this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + BOON_TUNING.TOUGHNESS_HP);
+      this.hp = Math.min(this.maxHp, this.hp + BOON_TUNING.TOUGHNESS_HP);
+    }
+  }
+
   relicCount(id: RelicId): number {
     return this.relics.get(id) ?? 0;
   }
@@ -129,7 +207,12 @@ export class Player {
   }
 
   daggerCap(): number {
-    return this.kit.daggerCap + this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS;
+    return (
+      this.kit.daggerCap +
+      this.levelBonus.daggerCap +
+      this.gearTier('quiver') * GEAR_TUNING.QUIVER_CAP +
+      this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS
+    );
   }
 
   daggersPierce(): boolean {
@@ -139,7 +222,12 @@ export class Player {
   speed(): number {
     let mult = 1 + this.relicCount('swift-boots') * RELIC_TUNING.SWIFT_BOOTS_SPEED_MULT;
     if (this.buffs.has('haste')) mult *= 1.35;
-    return PLAYER.SPEED * this.kit.speedMult * mult;
+    const training =
+      1 +
+      this.levelBonus.speed +
+      this.boonCount('fleet-foot') * BOON_TUNING.FLEET_FOOT_SPEED +
+      this.gearTier('boots') * GEAR_TUNING.BOOTS_SPEED;
+    return PLAYER.SPEED * this.kit.speedMult * training * mult;
   }
 
   meleeRange(): number {
@@ -157,7 +245,11 @@ export class Player {
 
   swordDamage(): number {
     let dmg =
-      1 + this.kit.meleeDamageBonus + this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE;
+      1 +
+      this.kit.meleeDamageBonus +
+      this.boonCount('weapon-specialization') * BOON_TUNING.WEAPON_SPEC_DAMAGE +
+      this.gearTier('blade') * GEAR_TUNING.BLADE_DAMAGE +
+      this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE;
     if (this.buffs.has('strength')) dmg += 1;
     if (
       this.relicCount('berserker-rage') > 0 &&
@@ -169,11 +261,17 @@ export class Player {
   }
 
   daggerDamage(): number {
-    return this.swordDamage(); // daggers ride the same stat stack
+    // Daggers ride the melee stack, plus dedicated Marksman training.
+    return this.swordDamage() + this.boonCount('marksman') * BOON_TUNING.MARKSMAN_DAMAGE;
+  }
+
+  /** Heart pickups: kit bonus (cleric) + Herbalism training. */
+  heartHealBonus(): number {
+    return this.kit.healBonus + this.boonCount('herbalism') * BOON_TUNING.HERBALISM_HEAL;
   }
 
   torchBonus(): number {
-    return this.relicCount('keen-eye');
+    return this.relicCount('keen-eye') + this.provisionTorch;
   }
 
   hasCoinMagnet(): boolean {
@@ -193,7 +291,9 @@ export class Player {
       return false;
     }
     this.hp = Math.max(0, this.hp - amount);
-    this.invuln = PLAYER.HIT_INVULN;
+    this.invuln =
+      PLAYER.HIT_INVULN *
+      (1 + this.boonCount('blind-fighting') * BOON_TUNING.BLIND_FIGHT_INVULN_MULT);
     this.hitFlash = 0.4;
     return true;
   }
@@ -211,6 +311,19 @@ export class Player {
     this.phoenixUsed++;
     this.hp = RELIC_TUNING.PHOENIX_REVIVE_HP;
     this.invuln = RELIC_TUNING.PHOENIX_INVULN;
+    this.hitFlash = 0;
+    return true;
+  }
+
+  /**
+   * v4 — Survivor training: cheat death once per expedition. Checked after
+   * Phoenix Feathers (magic burns before grit).
+   */
+  tryConsumeSurvivor(): boolean {
+    if (this.boonCount('survivor') === 0 || this.survivorUsed) return false;
+    this.survivorUsed = true;
+    this.hp = BOON_TUNING.SURVIVOR_HP;
+    this.invuln = BOON_TUNING.SURVIVOR_INVULN;
     this.hitFlash = 0;
     return true;
   }
@@ -347,10 +460,15 @@ export class Player {
     return full > 0 ? this.dashCooldown / full : 0;
   }
 
-  /** Full ability cooldown after relic discounts (War Bracers). */
+  /** Full ability cooldown after relic + training discounts. */
   abilityCooldownFull(): number {
     const bracers = this.relicCount('war-bracers');
-    return this.kit.abilityCooldown * Math.pow(RELIC_TUNING.WAR_BRACERS_CD_MULT, bracers);
+    const ironWill = this.boonCount('iron-will');
+    return (
+      this.kit.abilityCooldown *
+      Math.pow(RELIC_TUNING.WAR_BRACERS_CD_MULT, bracers) *
+      Math.pow(BOON_TUNING.IRON_WILL_CD_MULT, ironWill)
+    );
   }
 
   /**

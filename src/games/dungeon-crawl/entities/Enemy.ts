@@ -59,13 +59,19 @@ export class Enemy {
   windup = 0; // sorcerer/bomber telegraph (also drawn)
   private flitPhase: number;
 
-  constructor(type: EnemyTypeId, x: number, y: number, elite: EliteTrait | null = null) {
+  constructor(
+    type: EnemyTypeId,
+    x: number,
+    y: number,
+    elite: EliteTrait | null = null,
+    hpMult = 1, // v4 — level pressure: hero level scales monster vitality
+  ) {
     this.id = nextEnemyId++;
     this.config = ENEMY_CONFIGS[type];
     this.elite = elite ? ELITE_CONFIGS[elite] : null;
     this.x = x;
     this.y = y;
-    this.hp = Math.round(this.config.hp * (this.elite?.hpMult ?? 1));
+    this.hp = Math.max(1, Math.round(this.config.hp * (this.elite?.hpMult ?? 1) * hpMult));
     this.dormant = this.config.behavior === 'mimic';
     this.fireTimer = SORCERER.FIRE_INTERVAL * (0.5 + Math.random() * 0.5);
     this.flitPhase = Math.random() * Math.PI * 2;

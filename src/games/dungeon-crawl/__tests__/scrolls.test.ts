@@ -5,6 +5,7 @@
 
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS } from '@/games/dungeon-crawl/data/relics';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, SCROLLS, ScrollId } from '@/games/dungeon-crawl/data/scrolls';
+import { QUESTS } from '@/games/dungeon-crawl/data/quests';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { generateFloor } from '@/games/dungeon-crawl/dungeon/DungeonGenerator';
 import { TileMap, Tile } from '@/games/dungeon-crawl/dungeon/TileMap';
@@ -133,8 +134,10 @@ describe('read-scroll flow (public metric surface)', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
     held.add('Digit1');
-    h.game.update(1 / 60); // pick a class, enter play
+    h.game.update(1 / 60); // pick a class -> Lastlight
     held.clear();
+    // v4 Wave B — scrolls are read in the depths; set out through the gate.
+    (h.game as unknown as { departOnQuest(q: unknown): void }).departOnQuest(QUESTS.endless);
     h.game.update(1 / 60);
 
     // Grant a scroll directly — acquisition is rng-driven, the read flow isn't.

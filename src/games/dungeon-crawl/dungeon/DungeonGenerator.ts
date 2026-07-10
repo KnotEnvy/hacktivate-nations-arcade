@@ -3,7 +3,7 @@
 // same FloorPlan out. All world-space outputs are pixels; tile-space fields
 // are named tx/ty.
 
-import { TILE, FLOOR_GEN, SHOP, biomeForFloor, HazardStyle } from '../data/constants';
+import { TILE, FLOOR_GEN, SHOP, BIOMES, biomeForFloor, HazardStyle } from '../data/constants';
 import {
   ELITES,
   EliteTrait,
@@ -90,14 +90,29 @@ export function isBossFloor(floor: number): boolean {
   return floor % FLOOR_GEN.BOSS_EVERY_N_FLOORS === 0;
 }
 
-export function generateFloor(seed: number, floor: number): FloorPlan {
+/**
+ * v4 Wave B — quest shaping. Both fields optional; omitted reproduces the
+ * classic endless rules exactly. The caller derives them deterministically
+ * from the quest definition, so (seed, floor, opts) stays pure.
+ */
+export interface FloorOpts {
+  forceBoss?: boolean; // quests: boss arena ONLY on the final floor
+  biomeId?: string; // quests: fixed biome; default cycles by floor
+}
+
+function biomeFor(floor: number, biomeId?: string) {
+  return (biomeId && BIOMES.find(b => b.id === biomeId)) || biomeForFloor(floor);
+}
+
+export function generateFloor(seed: number, floor: number, opts?: FloorOpts): FloorPlan {
   const rng = new Rng((seed ^ (floor * 0x9e3779b9)) >>> 0);
-  return isBossFloor(floor) ? generateBossArena(rng, floor) : generateRoomsFloor(rng, floor);
+  const boss = opts?.forceBoss ?? isBossFloor(floor);
+  return boss ? generateBossArena(rng, floor) : generateRoomsFloor(rng, floor, opts?.biomeId);
 }
 
 // ---------------------------------------------------------------- rooms floor
 
-function generateRoomsFloor(rng: Rng, floor: number): FloorPlan {
+function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPlan {
   const cols = Math.min(
     FLOOR_GEN.MAX_COLS,
     FLOOR_GEN.BASE_COLS + FLOOR_GEN.GROWTH_COLS_PER_FLOOR * (floor - 1),
@@ -195,13 +210,13 @@ function generateRoomsFloor(rng: Rng, floor: number): FloorPlan {
 
   // 7. Populate enemies + pickups. Key/resources only land in rooms the player
   //    can reach without the key. (Shop rooms stay enemy-free.)
-  const enemies = spawnEnemies(rng, rooms, floor);
+  const enemies = spawnEnemies(rng, rooms, floor, biomeId);
   const pickups = spawnPickups(map, rng, reachableRooms, treasureRoom, floor);
 
   // 8. Environmental depth (v2): hazard tiles + destructible urns. Track
   //    occupied tiles so props never stack on each other or the stairs.
   const occupied = new Set<number>([stairsTile.ty * map.cols + stairsTile.tx]);
-  const hazards = placeHazards(map, rng, rooms, floor, occupied);
+  const hazards = placeHazards(map, rng, rooms, floor, occupied, biomeId);
   const urns = placeUrns(map, rng, rooms, occupied);
 
   const startCenter = map.tileCenter(sc.tx, sc.ty);
@@ -364,9 +379,9 @@ function randomFloorTileInRoom(rng: Rng, room: Room): { tx: number; ty: number }
   };
 }
 
-function pickWeighted(rng: Rng, floor: number): EnemyTypeId {
-  // Biome derives purely from the floor number, so determinism is untouched.
-  const rows = spawnWeightsForFloor(floor, biomeForFloor(floor).id).filter(r => r.weight > 0);
+function pickWeighted(rng: Rng, floor: number, biomeId?: string): EnemyTypeId {
+  // Biome derives purely from (floor, quest biome), so determinism holds.
+  const rows = spawnWeightsForFloor(floor, biomeFor(floor, biomeId).id).filter(r => r.weight > 0);
   const total = rows.reduce((sum, r) => sum + r.weight, 0);
   let roll = rng.next() * total;
   for (const row of rows) {
@@ -387,7 +402,7 @@ function rollElite(rng: Rng, floor: number): EliteTrait | null {
   return rng.chance(chance) ? rng.pick(ELITE_TRAITS) : null;
 }
 
-function spawnEnemies(rng: Rng, rooms: Room[], floor: number): EnemySpawnPlan[] {
+function spawnEnemies(rng: Rng, rooms: Room[], floor: number, biomeId?: string): EnemySpawnPlan[] {
   const enemies: EnemySpawnPlan[] = [];
   for (const room of rooms) {
     if (room.kind === 'start' || room.kind === 'shop') continue;
@@ -403,7 +418,7 @@ function spawnEnemies(rng: Rng, rooms: Room[], floor: number): EnemySpawnPlan[] 
     for (let i = 0; i < budget; i++) {
       const t = randomFloorTileInRoom(rng, room);
       enemies.push({
-        type: pickWeighted(rng, floor),
+        type: pickWeighted(rng, floor, biomeId),
         x: (t.tx + 0.5) * TILE,
         y: (t.ty + 0.5) * TILE,
         elite: rollElite(rng, floor),
@@ -456,10 +471,11 @@ function placeHazards(
   rooms: Room[],
   floor: number,
   occupied: Set<number>,
+  biomeId?: string,
 ): HazardSpawnPlan[] {
   const hazards: HazardSpawnPlan[] = [];
   if (floor < 2) return hazards;
-  const style = biomeForFloor(floor).hazardStyle;
+  const style = biomeFor(floor, biomeId).hazardStyle;
   for (const room of rooms) {
     if (room.kind !== 'normal' && room.kind !== 'stairs') continue;
     const count = rng.int(0, Math.min(3, 1 + Math.floor(floor / 3)));

@@ -138,6 +138,12 @@ interface GameEndData {
   undead_slain?: number;
   unique_slain?: number;
   scrolls_used?: number;
+  character_level?: number;
+  xp_earned?: number;
+  levels_gained?: number;
+  boons_chosen?: number;
+  quests_completed?: number;
+  gold_banked?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

@@ -9,6 +9,7 @@ import {
   CLASSES,
   DEFAULT_KIT,
 } from '@/games/dungeon-crawl/data/classes';
+import { QUESTS } from '@/games/dungeon-crawl/data/quests';
 import { PLAYER } from '@/games/dungeon-crawl/data/constants';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { Player } from '@/games/dungeon-crawl/entities/Player';
@@ -188,29 +189,38 @@ describe('class-select flow (public metric contract)', () => {
     }
   });
 
-  test('Q fires the signature ability once play begins', () => {
+  test('Q fires the signature ability once an expedition begins', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
     held.add('Digit1');
-    h.game.update(1 / 60); // pick fighter, enter play
+    h.game.update(1 / 60); // pick fighter -> Lastlight
     held.clear();
-    h.game.update(1 / 60); // release everything (input edges settle)
+    // v4 Wave B — abilities live in the depths; set out through the gate.
+    (h.game as unknown as { departOnQuest(q: unknown): void }).departOnQuest(QUESTS.endless);
+    h.game.update(1 / 60); // settle input edges
     held.add('KeyQ');
     h.game.update(1 / 60);
     expect(metrics(h).abilities_used).toBeGreaterThanOrEqual(1);
   });
 
-  test('restart returns to the class draft with class keys zeroed', () => {
+  test('restart returns to the roster; the hero persists in its slot (v4.1)', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
     held.add('Digit3');
     h.game.update(1 / 60);
-    expect(metrics(h)[`${ALL_CLASS_IDS[2]}_depth`]).toBe(1);
+    const picked = ALL_CLASS_IDS[2];
+    expect(metrics(h)[`${picked}_depth`]).toBe(1);
     held.clear();
     h.game.restart?.();
-    const s = metrics(h);
+    let s = metrics(h);
+    // Back at the roster select — no class is active yet.
     for (const id of ALL_CLASS_IDS) {
       expect(s[`${id}_depth`]).toBe(0);
     }
+    // Re-picking the same slot resumes that hero.
+    held.add('Digit3');
+    h.game.update(1 / 60);
+    s = metrics(h);
+    expect(s[`${picked}_depth`]).toBe(1);
   });
 });

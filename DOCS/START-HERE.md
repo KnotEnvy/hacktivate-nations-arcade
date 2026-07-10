@@ -13,6 +13,7 @@ This is the minimal handoff set for the next team. The production-hardening pass
 5. `DOCS/AUDIO-SYSTEM-HANDOFF.md` if you are touching music, sound effects, the audio settings modal, or launch/hub music
 6. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, analytics ownership, or local-save boundaries
 7. `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` if you need to change the live Supabase schema or verify the trusted progression RPC path
+8. `src/games/dungeon-crawl/Crawler_handoff.json` if you are touching Dungeon Crawl — it is the single source of truth for the game's v3/v4 AD&D transformation, the remaining wave specs (Sagas, Supabase save promotion), and its metric/achievement contracts. Note: its reference library (`DOCS/ADD2ndEdition/`) is gitignored and must be obtained from the project owner.
 
 ## Current Verified Repo State
 

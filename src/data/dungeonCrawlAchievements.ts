@@ -296,4 +296,83 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 150,
     unlocked: false
   },
+  // v4 — character progression achievements
+  {
+    id: 'dungeon_first_boon',
+    title: 'First Lesson',
+    description: 'Level up and choose your first boon',
+    icon: '📚',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'boons_chosen', value: 1 },
+    reward: 100,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_seasoned_hero',
+    title: 'Veteran of the Depths',
+    description: 'Raise your hero to level 3',
+    icon: '🎖️',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'character_level', value: 3 },
+    reward: 150,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_living_legend',
+    title: 'Living Legend',
+    description: 'Raise your hero to level 5',
+    icon: '🏅',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'character_level', value: 5 },
+    reward: 300,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_xp_hunter',
+    title: 'Deeds Worth Telling',
+    description: 'Earn 500 experience in a single expedition',
+    icon: '⭐',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'xp_earned', value: 500 },
+    reward: 200,
+    unlocked: false
+  },
+  // v4 Wave B — Lastlight quest achievements
+  {
+    id: 'dungeon_first_contract',
+    title: 'First Contract',
+    description: 'Complete a quest from the Lastlight board',
+    icon: '📋',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'quests_completed', value: 1 },
+    reward: 200,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_campaigner',
+    title: 'Campaigner',
+    description: 'Complete 2 quests in a single session',
+    icon: '🗺️',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'quests_completed', value: 2 },
+    reward: 350,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_gold_banker',
+    title: 'Coin Come Home',
+    description: 'Bank 300 gold in a single session',
+    icon: '🏦',
+    gameId: 'dungeon-crawl',
+    category: 'collection',
+    requirement: { type: 'gold_banked', value: 300 },
+    reward: 250,
+    unlocked: false
+  },
 ];

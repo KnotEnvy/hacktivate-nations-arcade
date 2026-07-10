@@ -92,6 +92,13 @@ describe('DungeonCrawlGame characterization', () => {
           undead_slain: 0,
           unique_slain: 0,
           scrolls_used: 0,
+          // v4 metric contract (persistent hero + Lastlight)
+          character_level: 1,
+          xp_earned: 0,
+          levels_gained: 0,
+          boons_chosen: 0,
+          quests_completed: 0,
+          gold_banked: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');

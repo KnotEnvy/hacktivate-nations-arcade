@@ -2,25 +2,91 @@
   "handoff": {
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
-    "lastUpdated": "2026-07-06",
-    "status": "v3 waves 1 (classes) + 2 (bestiary) + 3 (loot: scrolls + 6 relics) shipped; all validation gates green; awaiting user playtest",
+    "lastUpdated": "2026-07-08",
+    "status": "v3 complete (playtested); v4 Wave A playtested; Waves A.1 (hero ROSTER, one per class, v1-save migration) + B (LASTLIGHT town hub: quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) shipped, all gates green, awaiting playtest.",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
-      "DOCS/START-HERE.md (arcade-wide state + testing philosophy)",
-      "tasks/todo.md (v3 wave specs + review notes)",
+      ".claude/CLAUDE.md (team workflow: plan first, spec in tasks/todo.md, verify before done)",
+      "DOCS/START-HERE.md (arcade-wide state + the LEAN testing philosophy — do not fatten CI)",
+      "This file, top to bottom — it is the single source of truth for the game",
+      "tasks/todo.md (the most recent wave's spec + review; prior waves live in git history)",
       "src/games/dungeon-crawl/DungeonCrawlGame.ts (orchestrator — start here for code)"
     ]
+  },
+
+  "nextTeamOnboarding": {
+    "youAreHere": "v3 (classes/bestiary/loot) and v4 waves A/A.1/B (persistent hero roster + the town of Lastlight + winnable quests) are shipped and gate-green. Your job: finish the v4 roadmap — Wave C (Sagas & Stories + secret rooms/miniquests), then Wave D (Depth & Roaming). Specs for both are below.",
+    "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
+    "waveProcess": [
+      "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
+      "2. Implement step by step; run `npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl` after each step.",
+      "3. End of wave: type-check + lint + full dev suite + the 10-test release suite. NO `npm run build` for game waves; NEVER add dev tests to CI (deliberate lean gate — see DOCS/START-HERE.md).",
+      "4. Gameplay/balance is validated by the OWNER'S PLAYTEST of the live dev build — do not write manual QA scripts; ship the wave end-to-end, then report and wait for playtest feedback.",
+      "5. Refresh this handoff (versionHistory entry, metric keys, test counts, awaitingPlaytest) and the tasks/todo.md review section at wave end. Validate this file still parses as JSON."
+    ],
+    "hardRules": [
+      "Metric keys must exist in THREE places or progression silently drops them: syncExtendedData() + ArcadeHub.tsx GameEndData + dungeonCrawlAchievements.ts requirement.type.",
+      "The ESLint 1500-line guardrail is enforced culture: when a file crosses it, EXTRACT (precedents: HudRenderer, Combat, causes.ts, TownController, dungeonCrawlAchievements.ts).",
+      "Existing procedural SoundName palette only — never add sound names.",
+      "The generator stays pure in (seed, floor, opts). Anything hero-dependent (level pressure) applies at Enemy construction in the game, never inside dungeon/.",
+      "Characterization + monkey tests are the canary: update them CONSCIOUSLY (metric keys, monkey key list), never loosen them to pass."
+    ],
+    "playtestKnobsLive": "Everything numeric is data: data/constants.ts (feel), data/enemies.ts (bestiary + spawn weights), data/classes.ts + data/progression.ts + data/boons.ts (hero), data/relics.ts + data/scrolls.ts (run loot), data/quests.ts + data/gear.ts (town economy). Expect the owner to request knob turns after each playtest — those are one-line data edits."
+  },
+
+  "waveC_spec": {
+    "goal": "Sagas & Stories: authored multi-quest campaign arcs with story interludes and a finale, plus the long-promised secret rooms behind cracked walls that feed miniquests.",
+    "sagas": [
+      "data/sagas.ts: SagaDef { id, name, blurb, quests: QuestId[] (ordered), interludes: string[] (original text shown between chapters), finaleBossTier or a NEW unique kit added to data/bosses.ts }.",
+      "Persistence: add `sagaProgress: Partial<Record<SagaId, number>>` to SavedHero (ADDITIVE field — CharacterStore's validator ignores unknowns and clamps knowns; bump nothing, just extend sanitizeHero).",
+      "Board integration: saga chapters appear on the quest board progressively — chapter N+1 unlocks when N is complete for that hero. Reuse renderQuestBoard with a saga banner row, or a second board page toggled with Up/Down.",
+      "Interludes: full-screen text overlay between chapters (reuse the recap/victory overlay pattern in HudRenderer — dim, title, wrapped paragraph, PRESS SPACE). Keep each under ~60 words, original prose, DMG/Dragonlance-module TONE not text.",
+      "Completion: `sagas_completed` metric + achievement; saga finale rewards should be the game's largest banked-gold/XP payouts."
+    ],
+    "secretRooms": [
+      "Generator: carve 0-2 small 'secret' rooms per floor OFF the corridor graph, sealed by a new Tile.CrackedWall (solid, renders as wall with hairline cracks — TileRenderer.renderTiles case + minimap draws it as plain wall). MUST NOT touch stairs/key reachability invariants (secret rooms are never on the critical path; extend DungeonGenerator tests).",
+      "Reveal: player-sourced explosions (source === 'player' — fireball, flame scroll; bomber bombs stay 'enemy') within blast radius convert adjacent CrackedWall tiles to Floor: implement in Combat's boom resolution via a new host.crackWall(tx, ty) callback so the game owns map mutation + minimap/particle feedback.",
+      "Stock secret rooms generously: gold pile + urns + a shrine or scroll (they cost a resource to open — pay it back).",
+      "Miniquests (stretch, only if the wave has room): entering a secret room can trigger a small objective banner (e.g., 'a nest stirs — clear it') spawning a themed pack; reward on clear. Keep it data-driven and rng-seeded from the floor plan."
+    ],
+    "estimatedShape": "Comparable to Wave B. Watch DungeonCrawlGame.ts's budget — next extraction valve: recap/victory row assembly into HudRenderer, or a QuestDirector for saga state."
+  },
+
+  "waveD_spec": {
+    "goal": "Depth & Roaming — priority order set by the owner's playtests.",
+    "supabaseSavePromotion": [
+      "Today saves are account-scoped localStorage (per-device). Promote the SAME SavePayloadV2 JSON to a Supabase table (e.g. game_saves: user_id, game_id, payload jsonb, updated_at) + RPC, following DOCS/SUPABASE-PRODUCTION-RUNBOOK.md discipline (live schema + supabase/001_init.sql + src/lib/supabase.types.ts must stay aligned).",
+      "Local save becomes the offline cache; reconcile on sign-in (server wins on newer updated_at). Solve the guest caveat here: offer a one-time guest->account migration when a signed-in user has no server save but a :guest local save exists.",
+      "Rewards STILL ride trusted session metrics — the save table is state, never currency."
+    ],
+    "spellPicks": "Mage/cleric level-ups can offer SPELLS alongside boons (data/spells.ts; a second active slot or Q-cycling). The scroll effects in Combat.castScroll are the natural effect library to generalize.",
+    "alsoOnTheList": "More sagas/quests/biomes; Monstrous Manual monsters (follow the bestiary recipe below); a character-sheet overlay (Tab) showing hero stats/gear/boons; per-hero leaderboard surfacing."
+  },
+
+  "extensionRecipes": {
+    "newMonster": "data/enemies.ts (EnemyTypeId + config with xp; reuse a behavior verb; undead/splitsInto tags as fit) -> spawnWeightsForFloor biome row -> TileRenderer.drawEnemy case (or config-colored existing path) -> DeathCause + causes.ts labels/hints + causeForEnemy (TS forces these) -> floor-1/biome gating tests if gated.",
+    "newRelic": "data/relics.ts (id + def + RELIC_TUNING) -> read relicCount() at the matching funnel in Player/Combat/game. Draft + HUD auto-include.",
+    "newBoon": "data/boons.ts (id + def + maxStacks + tuning) -> fold into a Player getter or a game call site -> progression.test boon-contract count.",
+    "newScroll": "data/scrolls.ts (id + def + tuning) -> Combat.castScroll case. Acquisition (pickup/shop/provision) is already generic.",
+    "newQuest": "data/quests.ts entry only (floors/biomeId/bossTier/minLevel/rewards) — the board, generator shaping, and victory flow are fully data-driven.",
+    "newGearOrProvision": "data/gear.ts entry + a Player fold (gear) or a departOnQuest application (provision). Smith/alchemist overlays iterate the data.",
+    "newMetric": "syncExtendedData + GameEndData + achievement entry + characterization initial-value — all four, same commit."
   },
 
   "v3TransformationCharter": {
     "vision": "Transform the base crawler using the AD&D 2e library in DOCS/ADD2ndEdition (~120 OCR'd books) as an INSPIRATION LAYER: the books drive content (classes, monsters, items, rooms, flavor); the fast arcade combat stays untouched; no dice math on screen.",
     "waveOrder": [
-      "1. Character classes — SHIPPED 2026-07-06",
-      "2. Monstrous Compendium bestiary per biome — SHIPPED 2026-07-06",
-      "3. Encyclopedia Magica loot (scrolls + 6 relics) — SHIPPED 2026-07-06",
-      "4. Dungeon Builder's Guidebook special rooms + secret cracked walls — NEXT"
+      "v3-1. Character classes — SHIPPED 2026-07-06",
+      "v3-2. Monstrous Compendium bestiary per biome — SHIPPED 2026-07-06",
+      "v3-3. Encyclopedia Magica loot (scrolls + 6 relics) — SHIPPED 2026-07-06",
+      "v4-A. The Character (persistent hero, XP/levels/boons, save infra) — SHIPPED 2026-07-07 (playtested)",
+      "v4-A.1. The Roster (a persistent hero PER CLASS, picked every run; v1 saves migrate) — SHIPPED 2026-07-08",
+      "v4-B. The Town of LASTLIGHT (quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) — SHIPPED 2026-07-08",
+      "v4-C. Sagas & Stories (authored quest arcs, story interludes, final bosses) + secret cracked-wall rooms feeding miniquests — NEXT",
+      "v4-D. Depth & Roaming (Supabase save promotion for cross-device, spell picks on level-up, more sagas/monsters)"
     ],
+    "v4Vision": "One large resumable world per account. The town is the save anchor; expeditions stay seeded roguelite runs; death returns the enduring hero to safety. The remaining roadmap + specs live in nextTeamOnboarding / waveC_spec / waveD_spec in this file.",
     "libraryRules": "Mine the books by eye — OCR scrambles multi-column stat blocks, never build a parser. All in-game text must be ORIGINAL (no verbatim book text). Generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly)."
   },
 
@@ -40,6 +106,14 @@
     "v3_wave2_bestiary": {
       "date": "2026-07-06",
       "summary": "Per-biome monster families (7 new types + 1 mini, ALL reusing existing behavior verbs): ember=fire-beetle (emits real torchlight), bone=zombie+ghoul, sunken=deep-ooze (splits)+lizardman, ash=shade (through walls)+cinder-hound. spawnWeightsForFloor(floor, biomeId) with v2 gates intact; splitsInto generalizes slime division; undead tags feed Turn Undead; 7 DeathCauses; undead_slain + unique_slain metrics + 2 achievements."
+    },
+    "v4_waveA1_roster_and_waveB_town": {
+      "date": "2026-07-08",
+      "summary": "A.1 ROSTER: save v2 = one persistent hero per class (v1 single-hero saves migrate into their slot with stats); every run opens on the hero select (cards show 'NAME · LV n' or UNPROVEN); retire clears only the fallen hero's slot; restart returns to the roster. B LASTLIGHT: session = roster pick -> town (hand-built 26x18 map in town/TownController.ts, synthetic FloorPlan the game loads like a floor; warm TOWN_PALETTE) -> quest board/gate departs on a QUEST (data/quests.ts: 4 authored + Endless; fresh seed per expedition; quest pins biome via generator FloorOpts {forceBoss, biomeId} — omitted opts reproduce classic rules bit-for-bit; boss ONLY on the final floor, tier from the quest) -> stairs after the final boss = VICTORY overlay: carried goldBalance + rewardGold bank into hero.gold, rewardXp granted, stats.victories++, return to town SAME session. Death still recap->endGame (hero endures, carried gold lost, banked safe). BLACKSMITH: 4 permanent gear tracks x3 tiers (data/gear.ts, banked gold, saved per hero, folded in Player like boons). ALCHEMIST: one-expedition provisions (field-scroll/bandolier/blessed-candle) consumed at the gate. HUD gold shows the treasury in town, the run wallet below. Line-budget enforcement: boss director (updateBoss/pickTeleportSpot) + castScroll effects moved into systems/Combat (host += addProjectile/revealMap); draft nav consolidated. Metrics quests_completed + gold_banked; 3 achievements; town.test.ts (10)."
+    },
+    "v4_waveA_character": {
+      "date": "2026-07-07",
+      "summary": "PERSISTENT HERO per arcade account: class pick forges a character (auto-named from HERO_NAMES via seeded rng) saved as versioned JSON under localStorage key dungeon-crawl-save:<ownerId> (owner from hacktivate-session-owner, fallback guest; validated on load, silent try/catch everywhere). 2e-flavored XP per monster (EnemyConfig.xp; elites x3, bosses +200), LEVEL_CURVE to cap 10, per-class hit-die LEVEL_GAINS (fighter/cleric 20hp, thief 15hp+speed, mage 13hp+mana), mid-run level-ups open a 'levelUp' boon draft (10 persistent proficiency boons with maxStacks). Death banks everything (recordDeath); hold R on the recap to retire. Level pressure (enemy hp x 1+0.05/level, cap 1.45) keeps floor 1 honest — applied at Enemy construction, generator untouched. HUD gains LV + XP bar. RESTART SEMANTICS CHANGED: restart resumes the saved hero (classes.test updated deliberately). New: data/progression.ts, data/boons.ts, data/causes.ts (extraction), persistence/CharacterStore.ts, progression/ProgressionController.ts, __tests__/progression.test.ts (18). 4 metric keys + 4 achievements."
     },
     "v3_wave3_loot": {
       "date": "2026-07-06",
@@ -97,7 +171,9 @@
       "keys_used", "potions_used", "elites_slain", "items_bought", "gold_spent",
       "unique_bosses", "dashes_used",
       "fighter_depth", "thief_depth", "cleric_depth", "mage_depth", "abilities_used",
-      "undead_slain", "unique_slain", "scrolls_used"
+      "undead_slain", "unique_slain", "scrolls_used",
+      "character_level", "xp_earned", "levels_gained", "boons_chosen",
+      "quests_completed", "gold_banked"
     ],
     "v3Semantics": "<class>_depth = floor reached this run IF that class was picked, else 0 (enables 'reach floor N as X' achievements through the plain threshold path). unique_slain = distinct monster config ids killed this run."
   },
@@ -112,6 +188,9 @@
       "ability": "Q / L (signature class ability; cooldown pip under dash)",
       "readScroll": "F / O (reads the held scroll; satchel holds one)",
       "interact": "E (shop pedestals)",
+      "levelUpDraft": "Left/Right + Space, or 1-3 direct (pauses play like the relic draft)",
+      "retireHero": "hold R for 1.5s on the death recap (past the input lockout)",
+      "town": "walk with move keys; E opens the board/smith/alchemist in reach (E again closes); on the board SPACE departs at once; the gate also opens the board",
       "relicDraft": "Left/Right + Space, or 1/2/3 direct",
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
@@ -160,23 +239,29 @@
     "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "suites": "5 suites / 64 tests: DungeonGenerator.test.ts (determinism, reachability, gating incl. v3 biome exclusions), DungeonCrawlGame.characterization.test.ts (manifest, 25-key metric contract, 3000-frame monkey incl. Digit4/KeyQ/KeyF/KeyO), classes.test.ts (15), bestiary.test.ts (9), scrolls.test.ts (9: scroll/relic contracts, placement, revealAll, read flow)"
+      "suites": "7 suites / 95 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence), characterization (manifest, 31-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16, incl. roster restart semantics; ability tests depart via QUESTS.endless first), bestiary (9), scrolls (9), progression (19: roster save v2, v1 migration, per-class independence, owner scoping), town (10: quest/gear/provision contracts, town-map reachability, quest-shaped generation, victory banking, provision consumption). jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
-    "fullDevSuite": "387 tests as of 2026-07-06, all green.",
+    "fullDevSuite": "418 tests as of 2026-07-08, all green.",
     "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
     "awaitingPlaytest": [
-      "Wave 1: mage fragility (2 hearts + 4s bolt regen), thief hide 1.5s vs 10s cooldown, cleric 0.48s swing rhythm, cleave reach, class-card readability",
-      "Wave 2: bone-biome touch pressure (zombie hp5 + ghoul touch 2), cinder-hound 105 speed fairness, ooze split chains, biome family readability under torchlight",
-      "Wave 3: scroll drop rate (may be generous with a one-slot satchel), frost radius/duration, Blur Cloak dodge readability, Ring of Renewal draft value",
-      "Carried from v2: shop pricing, elite ramp, boss-floor difficulty at deep tiers"
+      "v4-A.1/B: town feel + readability, quest pacing (3/4/5/6 floors), gear prices vs quest gold rewards, provision value, Ashen Court tier-4 boss, victory->level-up->town flow, roster card readability",
+      "Carried from v4-A: level pressure at L5+ (0.05/cap 1.45), boon draft feel, class hp spread",
+      "Carried from v3: scroll drop rate, frost radius, Blur Cloak readability, bone-biome pressure, hound speed, dungeon-merchant pricing"
     ],
     "nextWaves": [
-      "Wave 4 — Dungeon Builder's Guidebook: special rooms (crypt/library/shrine/laboratory), secret rooms behind cracked walls (bomber bombs + player fireballs/flame scrolls could reveal them — player-sourced booms already exist), richer tricks"
+      "v4-C — Sagas & Stories: authored multi-quest campaign arcs on the quest system (story interludes between floors, unique final bosses, saga completion via trusted metrics) + Dungeon Builder's Guidebook secret rooms behind cracked walls (player-sourced booms already exist to reveal them) feeding miniquests",
+      "v4-D — Supabase save promotion (cross-device roaming of dungeon-crawl-save payloads), mage/cleric spell picks on level-up, more sagas/monsters from the Monstrous Manual"
     ],
+    "v4Notes": {
+      "saveArchitecture": "Save v2 = { version: 2, characters: Partial<Record<ClassId, SavedHero>> }; SavedHero carries level/xp/boons/stats/gold/gear/provisions. v1 saves migrate on load; invalid heroes drop individually; unknown fields ignored (additive evolution). Reward-bearing state rides trusted session metrics ONLY — the local save carries no coins/unlocks.",
+      "goldLedgers": "THREE gold numbers now: BaseGame.pickups (cumulative arcade coins, never decrement), goldBalance (run wallet, dungeon merchants, dies with the run), hero.gold (banked treasury, town shops, safe from death, filled only by VICTORY).",
+      "guestCaveat": "Signed-out heroes save under dungeon-crawl-save:guest and do NOT migrate on sign-in — candidate for Wave D's Supabase save promotion.",
+      "lineBudget": "DungeonCrawlGame.ts back under 1500 logical after moving the boss director + castScroll into systems/Combat (host += addProjectile/revealMap) and consolidating draft nav. Next extraction candidate if Wave C squeezes: recap/victory row assembly into HudRenderer."
+    },
     "backlogIdeas": [
       "Keyholder elite variant carrying the treasure key",
       "Biome-specific hazards beyond spikes/vents",
@@ -185,6 +270,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "All 387 dev tests and the 10-test release suite pass as of lastUpdated. No open defects known."
+    "noKnownBugs": "All 418 dev tests and the 10-test release suite pass as of lastUpdated. No open defects known."
   }
 }

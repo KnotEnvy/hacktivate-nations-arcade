@@ -502,15 +502,22 @@ export class TileRenderer {
 
   // ------------------------------------------------------------- v2 sprites
 
-  drawMerchant(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+  drawMerchant(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    time: number,
+    robe = '#3d2f52', // v4 — town vendors reuse the sprite with their own colors
+    hood = '#241a38',
+  ): void {
     const px = Math.round(x);
     const py = Math.round(y);
     const bob = Math.round(Math.sin(time * 2) * 1.5);
     // Robe.
-    ctx.fillStyle = '#3d2f52';
+    ctx.fillStyle = robe;
     ctx.fillRect(px - 9, py - 6 + bob, 18, 18);
     // Deep hood — no face, just eyes.
-    ctx.fillStyle = '#241a38';
+    ctx.fillStyle = hood;
     ctx.fillRect(px - 7, py - 15 + bob, 14, 10);
     ctx.fillStyle = '#ffd24a';
     ctx.fillRect(px - 4, py - 11 + bob, 3, 2);
@@ -521,6 +528,31 @@ export class TileRenderer {
     const flicker = 0.6 + 0.4 * Math.sin(time * 9);
     ctx.fillStyle = `rgba(255, 210, 74, ${flicker})`;
     ctx.fillRect(px + 7, py + 4 + bob, 6, 6);
+  }
+
+  /** v4 — Lastlight's quest board: post, plank, pinned parchments. */
+  drawQuestBoard(ctx: CanvasRenderingContext2D, x: number, y: number, time: number): void {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    // Posts.
+    ctx.fillStyle = '#54401f';
+    ctx.fillRect(px - 12, py - 8, 3, 18);
+    ctx.fillRect(px + 9, py - 8, 3, 18);
+    // Plank.
+    ctx.fillStyle = '#6b4a2a';
+    ctx.fillRect(px - 14, py - 18, 28, 14);
+    ctx.fillStyle = '#54401f';
+    ctx.fillRect(px - 14, py - 18, 28, 2);
+    // Pinned notices (one flutters).
+    const flutter = Math.floor(time * 3) % 2 === 0 ? 0 : 1;
+    ctx.fillStyle = '#e8dcbc';
+    ctx.fillRect(px - 11, py - 15, 6, 8);
+    ctx.fillRect(px - 3, py - 15, 6, 8 + flutter);
+    ctx.fillRect(px + 5, py - 15, 6, 7);
+    ctx.fillStyle = '#c22f2f';
+    ctx.fillRect(px - 10, py - 15, 2, 2); // wax pins
+    ctx.fillRect(px - 2, py - 15, 2, 2);
+    ctx.fillRect(px + 6, py - 15, 2, 2);
   }
 
   drawShopItem(ctx: CanvasRenderingContext2D, item: ShopItemPlan, sold: boolean, time: number): void {

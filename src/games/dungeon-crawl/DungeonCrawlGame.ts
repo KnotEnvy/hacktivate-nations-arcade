@@ -7,6 +7,7 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import {
+  BIOMES,
   BiomePalette,
   biomeForFloor,
   COMBAT,
@@ -21,10 +22,17 @@ import {
   TILE,
   VIEW,
 } from './data/constants';
+import { BOON_TUNING, BOONS, BoonId } from './data/boons';
+import { CAUSE_HINTS, CAUSE_LABELS } from './data/causes';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
+import { ALL_GEAR_IDS, ALL_PROVISION_IDS, PROVISION_TUNING } from './data/gear';
+import { PROGRESSION } from './data/progression';
+import { ALL_QUEST_IDS, QuestDef } from './data/quests';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
-import { ALL_SCROLL_IDS, SCROLL_TUNING, SCROLLS, ScrollId } from './data/scrolls';
+import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
+import { ProgressionController } from './progression/ProgressionController';
+import { TOWN_PALETTE, TownController } from './town/TownController';
 import {
   FloorPlan,
   generateFloor,
@@ -48,55 +56,7 @@ import { ScreenShake } from './systems/ScreenShake';
 import { HudRenderer } from './rendering/HudRenderer';
 import { TileRenderer } from './rendering/TileRenderer';
 
-type GameState = 'classSelect' | 'playing' | 'relic' | 'recap';
-
-const CAUSE_LABELS: Record<DeathCause, string> = {
-  slime: 'DISSOLVED BY A SLIME',
-  skeleton: 'CUT DOWN BY A SKELETON',
-  bat: 'SWARMED BY BATS',
-  sorcerer_bolt: 'STRUCK BY SORCERY',
-  knight: 'CRUSHED BY A KNIGHT',
-  mimic: 'EATEN BY A MIMIC',
-  bomber: 'MUGGED BY A BOMBER',
-  wraith: 'CHILLED BY A WRAITH',
-  beetle: 'PINCERED BY A FIRE BEETLE',
-  zombie: 'DRAGGED DOWN BY A ZOMBIE',
-  ghoul: 'TORN APART BY A GHOUL',
-  ooze: 'ENGULFED BY AN OOZE',
-  lizardman: 'SPEARED BY A LIZARDMAN',
-  shade: 'SMOTHERED BY A SHADE',
-  hound: 'RUN DOWN BY A CINDER HOUND',
-  hazard: 'CAUGHT BY A TRAP',
-  explosion: 'CAUGHT IN THE BLAST',
-  shockwave: 'FLATTENED BY THE SLAM',
-  boss_touch: 'BURNED BY THE GUARDIAN',
-  boss_charge: 'TRAMPLED BY THE GUARDIAN',
-  boss_bolt: 'SCORCHED BY GUARDIAN FIRE',
-};
-
-const CAUSE_HINTS: Record<DeathCause, string> = {
-  slime: 'Slimes split when they die — finish the minis fast.',
-  skeleton: 'Skeletons chase in straight lines. Kite them around corners.',
-  bat: 'Bats weave — wait for the lunge, then swing.',
-  sorcerer_bolt: 'Sorcerer bolts telegraph. Sidestep on the flash.',
-  knight: 'Knights block frontal swings. Flank them — or daggers pierce.',
-  mimic: 'Not every chest is a friend. Watch for the ones that breathe.',
-  bomber: 'Bombers lob where you WILL be. Change direction on the throw.',
-  wraith: 'Wraiths walk through walls. Open ground is your friend.',
-  beetle: 'Fire beetles light their own way — you always see them coming. Use that.',
-  zombie: 'Zombies are slow as grave-dirt. Never let them corner you.',
-  ghoul: 'Ghouls hunt in fearless packs. Thin them at range before they close.',
-  ooze: 'Oozes split when they die. Clear the halves before carving the next one.',
-  lizardman: 'Lizardmen are tough and hit hard. Trade carefully — or not at all.',
-  shade: 'Shades slip through walls like the wraiths they serve. Keep to open ground.',
-  hound: 'Cinder hounds outrun you in a straight line. Dash sideways, not away.',
-  hazard: 'Traps telegraph before they strike. Watch the floor.',
-  explosion: 'The blast ring shows the radius. Dash out — Shift is faster than feet.',
-  shockwave: 'Shockwave rings have gaps in time, not space. Dash through the ring.',
-  boss_touch: 'Keep moving — the Guardian punishes standing still.',
-  boss_charge: 'The charge telegraphs with a glowing ring. Break line with a pillar.',
-  boss_bolt: 'The bolt ring has gaps. Walk, don’t panic-run.',
-};
+type GameState = 'classSelect' | 'town' | 'playing' | 'relic' | 'levelUp' | 'victory' | 'recap';
 
 interface RecapStats {
   cause: DeathCause;
@@ -166,7 +126,10 @@ export class DungeonCrawlGame extends BaseGame {
     shake: this.shake,
     addEnemy: enemy => this.enemies.push(enemy),
     addPickup: pickup => this.pickupItems.push(pickup),
+    addProjectile: projectile => this.projectiles.push(projectile),
     findOpenSpotNear: (x, y) => this.findOpenSpotNear(x, y),
+    levelPressure: () => this.progression.levelPressure(),
+    revealMap: () => this.minimap.revealAll(this.map),
     playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
     damagePlayer: (amount, cause) => this.damagePlayer(amount, cause),
     registerKill: baseScore => this.registerKill(baseScore),
@@ -220,6 +183,20 @@ export class DungeonCrawlGame extends BaseGame {
   // v3 — run-start class draft.
   private chosenClass: ClassId | null = null;
   private classIndex = 0;
+  // v4 — the persistent hero + level-up draft + retire affordance.
+  private progression = new ProgressionController();
+  private boonChoices: BoonId[] = [];
+  private boonIndex = 0;
+  private boonReturnState: 'playing' | 'town' = 'playing';
+  private retireHold = 0;
+  private recapRetired = false;
+  // v4 Wave B — Lastlight + quest expeditions.
+  private town = new TownController();
+  private activeQuest: QuestDef | null = null;
+  private questsCompleted = 0;
+  private goldBanked = 0;
+  private victoryTimer = 0;
+  private victoryRows: Array<[string, string]> = [];
   private recapStats: RecapStats | null = null;
   private recapTimer = 0;
   private shopDeniedFlash = 0;
@@ -251,6 +228,8 @@ export class DungeonCrawlGame extends BaseGame {
   }
 
   protected onDestroy(): void {
+    // v4 — a mid-floor quit still banks the hero's progress.
+    this.progression.saveCheckpoint();
     this.services?.audio?.setMusicIntensity?.(0.5);
   }
 
@@ -282,9 +261,6 @@ export class DungeonCrawlGame extends BaseGame {
     this.combo = 1;
     this.killChain = 0;
     this.comboTimer = 0;
-    // v3 — floor 1 loads and renders behind the class-select overlay; play
-    // begins when the pick lands (updateClassSelect).
-    this.state = 'classSelect';
     this.chosenClass = null;
     this.classIndex = 0;
     this.recapStats = null;
@@ -292,15 +268,75 @@ export class DungeonCrawlGame extends BaseGame {
     this.shake.reset();
     this.particles.clear();
     this.musicIntensity = -1;
-    this.loadFloor();
+
+    // v4.1 — the roster: every run opens on the hero select; each class keeps
+    // its own persistent hero. LASTLIGHT renders behind the overlay.
+    this.progression.load();
+    this.progression.resetSessionCounters();
+    this.retireHold = 0;
+    this.recapRetired = false;
+    this.activeQuest = null;
+    this.questsCompleted = 0;
+    this.goldBanked = 0;
+    this.victoryTimer = 0;
+    this.state = 'classSelect';
+
+    this.enterTownWorld();
     this.syncExtendedData();
   }
 
-  private loadFloor(): void {
-    this.plan = generateFloor(this.runSeed, this.floor);
+  /** v4 Wave B — swap the live world for Lastlight (state set by callers). */
+  private enterTownWorld(): void {
+    this.town.reset();
+    this.activeQuest = null;
+    this.plan = this.town.plan;
     this.map = this.plan.map;
-    this.biome = biomeForFloor(this.floor);
-    this.enemies = this.plan.enemies.map(s => new Enemy(s.type, s.x, s.y, s.elite));
+    this.biome = TOWN_PALETTE;
+    this.enemies = [];
+    this.pickupItems = [];
+    this.hazards = [];
+    this.urns = [];
+    this.shopItems = [];
+    this.merchant = null;
+    this.projectiles = [];
+    this.combat.reset();
+    this.boss = null;
+    this.stairsLocked = false;
+    this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
+    this.minimap.resetFor(this.map);
+    this.visitedRooms.clear();
+    this.damageTakenThisFloor = false;
+    this.particles.clear();
+    this.musicIntensity = 0.45;
+    this.services?.audio?.setMusicIntensity?.(0.45);
+  }
+
+  /** Whether the live world is Lastlight (for draws + HUD gold source). */
+  private inTownWorld(): boolean {
+    return (
+      this.state === 'town' ||
+      this.state === 'victory' ||
+      this.state === 'classSelect' ||
+      (this.state === 'levelUp' && this.boonReturnState === 'town')
+    );
+  }
+
+  private loadFloor(): void {
+    // v4 Wave B — quest shape: fixed biome, boss ONLY on the final floor.
+    const quest = this.activeQuest;
+    const questFloors = quest && quest.floors > 0 ? quest.floors : 0;
+    const isFinal = questFloors > 0 && this.floor === questFloors;
+    this.plan = generateFloor(
+      this.runSeed,
+      this.floor,
+      questFloors > 0 ? { forceBoss: isFinal, biomeId: quest!.biomeId ?? undefined } : undefined,
+    );
+    this.map = this.plan.map;
+    this.biome =
+      (quest?.biomeId && BIOMES.find(b => b.id === quest.biomeId)) || biomeForFloor(this.floor);
+    // v4 — level pressure: the hero's legend hardens the opposition.
+    const pressure = this.progression.levelPressure();
+    this.enemies = this.plan.enemies.map(s => new Enemy(s.type, s.x, s.y, s.elite, pressure));
     this.pickupItems = this.plan.pickups.map(p => new Pickup(p.kind, p.x, p.y));
     this.hazards = this.plan.hazards.map(
       (h, i) => new Hazard(h.tx, h.ty, h.style, (i * 0.37) % 1),
@@ -315,7 +351,7 @@ export class DungeonCrawlGame extends BaseGame {
       ? new Boss(
           this.plan.bossSpawn.x,
           this.plan.bossSpawn.y,
-          Math.max(1, Math.floor(this.floor / 3)),
+          isFinal ? quest!.bossTier : Math.max(1, Math.floor(this.floor / 3)),
         )
       : null;
     this.stairsLocked = this.plan.isBossFloor;
@@ -325,10 +361,15 @@ export class DungeonCrawlGame extends BaseGame {
     this.damageTakenThisFloor = false;
     this.particles.clear();
 
+    const floorLabel =
+      questFloors > 0 ? `FLOOR ${this.floor} OF ${questFloors}` : `FLOOR ${this.floor}`;
     if (this.boss) {
-      this.showBanner(`FLOOR ${this.floor}`, `${this.boss.kit.name} AWAITS`);
+      this.showBanner(floorLabel, `${this.boss.kit.name} AWAITS`);
     } else {
-      this.showBanner(`FLOOR ${this.floor}`, FLOOR_NAMES[(this.floor - 1) % FLOOR_NAMES.length]);
+      this.showBanner(
+        floorLabel,
+        questFloors > 0 ? quest!.name : FLOOR_NAMES[(this.floor - 1) % FLOOR_NAMES.length],
+      );
     }
   }
 
@@ -351,11 +392,20 @@ export class DungeonCrawlGame extends BaseGame {
       case 'classSelect':
         this.updateClassSelect();
         break;
+      case 'town':
+        this.updateTown(dt);
+        break;
       case 'playing':
         this.updatePlaying(dt);
         break;
       case 'relic':
         this.updateRelicChoice();
+        break;
+      case 'levelUp':
+        this.updateBoonChoice();
+        break;
+      case 'victory':
+        this.updateVictory(dt);
         break;
       case 'recap':
         this.updateRecap(dt);
@@ -382,38 +432,225 @@ export class DungeonCrawlGame extends BaseGame {
     this.navRightWas = input.isRightPressed();
   }
 
+  /** Shared ←/→/digit navigation for every draft overlay (edge-detected). */
+  private draftNav(index: number, count: number): number {
+    const input = this.services?.input;
+    if (!input || count === 0) return index;
+    let next = index;
+    if (input.isLeftPressed() && !this.navLeftWas) {
+      next = (next + count - 1) % count;
+      this.services?.audio?.playSound?.('click', { volume: 0.3 });
+    }
+    if (input.isRightPressed() && !this.navRightWas) {
+      next = (next + 1) % count;
+      this.services?.audio?.playSound?.('click', { volume: 0.3 });
+    }
+    for (let i = 0; i < count; i++) {
+      if (input.isKeyPressed(`Digit${i + 1}`)) next = i;
+    }
+    return next;
+  }
+
   /** v3 — run-start class draft. Mirrors the relic draft's input handling. */
   private updateClassSelect(): void {
     const input = this.services?.input;
     if (!input) return;
 
-    const count = ALL_CLASS_IDS.length;
-    const left = input.isLeftPressed();
-    const right = input.isRightPressed();
-    if (left && !this.navLeftWas) {
-      this.classIndex = (this.classIndex + count - 1) % count;
-      this.services?.audio?.playSound?.('click', { volume: 0.3 });
-    }
-    if (right && !this.navRightWas) {
-      this.classIndex = (this.classIndex + 1) % count;
-      this.services?.audio?.playSound?.('click', { volume: 0.3 });
-    }
-    for (let i = 0; i < count; i++) {
-      if (input.isKeyPressed(`Digit${i + 1}`)) this.classIndex = i;
-    }
+    this.classIndex = this.draftNav(this.classIndex, ALL_CLASS_IDS.length);
 
     const confirm =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     const directPick = ALL_CLASS_IDS.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
     if ((confirm && !this.confirmWas) || directPick) {
       const def = CLASSES[ALL_CLASS_IDS[this.classIndex]];
+      // v4.1 — resume this class's hero, or forge one for an empty slot.
+      const existing = this.progression.heroFor(def.id);
+      const hero = existing
+        ? this.progression.selectHero(def.id)
+        : this.progression.create(def.id, this.rng);
       this.player.applyKit(def);
+      this.player.applyProgression(this.progression.gains(), hero.boons);
       this.chosenClass = def.id;
       this.trackStat(`${def.id}_depth`, this.floor);
+      this.trackStat('character_level', hero.level);
       this.services?.audio?.playSound?.('powerup', { volume: 0.55 });
-      this.showBanner(def.name, `${def.abilityName} — press Q`);
-      this.state = 'playing';
+      this.showBanner(
+        hero.name,
+        existing
+          ? `LEVEL ${hero.level} ${def.name} — WELCOME TO LASTLIGHT`
+          : `${def.name} — THE QUEST BOARD AWAITS`,
+      );
+      this.state = 'town';
     }
+  }
+
+  // ------------------------------------------------------------ v4 the town
+
+  private updateTown(dt: number): void {
+    const input = this.services?.input;
+    this.town.update({
+      dt,
+      input,
+      edges: {
+        interactWas: this.interactWas,
+        confirmWas: this.confirmWas,
+        navLeftWas: this.navLeftWas,
+        navRightWas: this.navRightWas,
+      },
+      player: this.player,
+      hero: this.progression.character(),
+      save: () => this.progression.saveCheckpoint(),
+      playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+      showBanner: (text, sub) => this.showBanner(text, sub),
+      depart: quest => this.departOnQuest(quest),
+    });
+    this.updateCamera();
+    this.minimap.reveal(
+      this.map,
+      this.player.x,
+      this.player.y,
+      Lighting.playerTorchRadius(this.player.torchBonus()),
+    );
+    this.emitTorchEmbers();
+  }
+
+  /** Set out from the gate: fresh seed, quest shape, packed provisions. */
+  private departOnQuest(quest: QuestDef): void {
+    const hero = this.progression.character();
+    this.activeQuest = quest;
+
+    // Expedition-scoped resets (session metrics keep accumulating).
+    this.floor = 1;
+    this.combo = 1;
+    this.killChain = 0;
+    this.comboTimer = 0;
+    this.goldBalance = 0;
+    this.runSeed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
+    this.rng = new Rng(this.runSeed ^ 0x51ed270b);
+
+    // Re-arm the hero: kit + training + gear, then whatever was packed.
+    if (hero) {
+      this.player.reset(0, 0);
+      this.player.applyKit(CLASSES[hero.classId]);
+      this.player.applyProgression(this.progression.gains(), hero.boons, hero.gear);
+      for (const provision of hero.provisions) {
+        if (provision === 'field-scroll') {
+          this.player.scroll = this.rng.pick(ALL_SCROLL_IDS);
+        } else if (provision === 'bandolier') {
+          this.player.daggers = Math.min(
+            this.player.daggerCap(),
+            this.player.daggers + PROVISION_TUNING.BANDOLIER_DAGGERS,
+          );
+        } else if (provision === 'blessed-candle') {
+          this.player.provisionTorch = PROVISION_TUNING.CANDLE_TORCH_BONUS;
+        }
+      }
+      hero.provisions = [];
+      this.progression.saveCheckpoint();
+    }
+
+    this.state = 'playing';
+    this.loadFloor();
+    this.services?.audio?.triggerMusicStinger?.('transition');
+  }
+
+  /** The final boss fell and the stairs were taken: the quest is won. */
+  private openVictory(): void {
+    const quest = this.activeQuest!;
+    const hero = this.progression.character();
+    this.state = 'victory';
+    this.victoryTimer = 0;
+
+    const banked = this.goldBalance + quest.rewardGold;
+    if (hero) {
+      hero.gold += banked;
+      hero.stats.victories++;
+    }
+    this.progression.grantXp(quest.rewardXp);
+    this.trackStat('xp_earned', this.progression.sessionXp);
+    this.progression.saveCheckpoint();
+    this.questsCompleted++;
+    this.goldBanked += banked;
+    this.trackStat('quests_completed', this.questsCompleted);
+    this.trackStat('gold_banked', this.goldBanked);
+
+    this.victoryRows = [
+      ['GOLD CARRIED OUT', `${this.goldBalance}`],
+      ['QUEST REWARD', `${quest.rewardGold}g · ${quest.rewardXp} XP`],
+      ['GOLD BANKED', `${banked}`],
+      ['HERO TREASURY', `${hero?.gold ?? 0}`],
+    ];
+    this.shake.add(0.3);
+    this.services?.audio?.playSound?.('success', { volume: 0.7 });
+    this.services?.audio?.triggerMusicStinger?.('success');
+  }
+
+  private updateVictory(dt: number): void {
+    this.victoryTimer += dt;
+    const input = this.services?.input;
+    const confirm = input
+      ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
+      : false;
+    if (this.victoryTimer > 1.0 && confirm && !this.confirmWas) {
+      this.enterTownWorld();
+      this.state = 'town';
+      this.showBanner('LASTLIGHT', 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT');
+      // Reward XP can cross a threshold — level up right at the gate.
+      if (this.progression.pendingLevelUp()) this.openBoonDraft('town');
+    }
+  }
+
+  // ------------------------------------------------------------ v4 level-ups
+
+  /** Open the boon draft for a pending level (or auto-level when maxed out). */
+  private openBoonDraft(returnTo: 'playing' | 'town' = 'playing'): void {
+    this.boonReturnState = returnTo;
+    this.boonChoices = this.progression.boonChoices(this.rng);
+    this.boonIndex = 0;
+    if (this.boonChoices.length === 0) {
+      // Every training maxed — the level still lands.
+      while (this.progression.pendingLevelUp()) {
+        const { level, gain } = this.progression.confirmLevelUp(null);
+        this.player.gainLevelBenefits(gain);
+        this.showBanner(`LEVEL ${level}!`, 'YOUR LEGEND GROWS');
+      }
+      this.syncProgressionStats();
+      return;
+    }
+    this.state = 'levelUp';
+    this.services?.audio?.playSound?.('success', { volume: 0.5 });
+  }
+
+  /** Level-up draft input — mirrors the relic draft. */
+  private updateBoonChoice(): void {
+    const input = this.services?.input;
+    if (!input) return;
+
+    this.boonIndex = this.draftNav(this.boonIndex, this.boonChoices.length);
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    const directPick = this.boonChoices.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
+    if ((confirm && !this.confirmWas) || directPick) {
+      const boon = this.boonChoices[this.boonIndex];
+      const { level, gain } = this.progression.confirmLevelUp(boon);
+      this.player.gainBoon(boon);
+      this.player.gainLevelBenefits(gain);
+      this.services?.audio?.playSound?.('powerup', { volume: 0.6 });
+      this.particles.burst(this.player.x, this.player.y, BOONS[boon].color, 18, 130, 0.8);
+      this.showBanner(`LEVEL ${level}!`, BOONS[boon].name);
+      this.syncProgressionStats();
+      // Boss XP can cross two thresholds — draft again if another level waits.
+      if (this.progression.pendingLevelUp()) this.openBoonDraft(this.boonReturnState);
+      else this.state = this.boonReturnState;
+    }
+  }
+
+  private syncProgressionStats(): void {
+    const hero = this.progression.character();
+    if (hero) this.trackStat('character_level', hero.level);
+    this.trackStat('levels_gained', this.progression.sessionLevels);
+    this.trackStat('boons_chosen', this.progression.sessionBoons);
   }
 
   private updatePlaying(dt: number): void {
@@ -550,10 +787,8 @@ export class DungeonCrawlGame extends BaseGame {
     }
     this.enemies = this.enemies.filter(e => e.alive);
 
-    // --- Boss.
-    if (this.boss?.alive) {
-      this.updateBoss(dt);
-    }
+    // --- Boss (kit AI + touch damage live in Combat).
+    this.combat.updateBoss(dt);
 
     // --- Projectiles. Hostile bolts home on the player; mage mana bolts
     // home on the nearest living monster instead.
@@ -638,6 +873,12 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackRoomDiscovery();
     this.checkStairs();
 
+    // v4 — banked XP crossing a threshold opens the level-up draft (never
+    // mid-combat-resolution; stairs/relic state wins if it fired this frame).
+    if (this.state === 'playing' && this.progression.pendingLevelUp()) {
+      this.openBoonDraft();
+    }
+
     // --- Camera, fog reveal, ambience.
     this.updateCamera();
     this.minimap.reveal(
@@ -650,89 +891,10 @@ export class DungeonCrawlGame extends BaseGame {
     this.updateMusicIntensity();
   }
 
-  private updateBoss(dt: number): void {
-    if (!this.boss) return;
-    this.boss.update(dt, {
-      playerX: this.player.x,
-      playerY: this.player.y,
-      map: this.map,
-      rng: this.rng,
-      fireBolt: (x, y, dirX, dirY, speed) => {
-        this.projectiles.push(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1));
-      },
-      fireHomingBolt: (x, y, dirX, dirY, speed) => {
-        this.projectiles.push(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1, false, 2.2));
-      },
-      spawnShockwave: (x, y, delay) => this.combat.spawnShockwave(x, y, delay),
-      requestTeleportSpot: () => this.pickTeleportSpot(),
-      summonMinion: (x, y, type) => {
-        const spawn = this.findOpenSpotNear(x, y);
-        const minion = new Enemy(type, spawn.x, spawn.y);
-        minion.aggro = true;
-        this.enemies.push(minion);
-        this.particles.burst(spawn.x, spawn.y, PALETTE.ember, 8, 90, 0.4);
-      },
-      minionCount: () => this.enemies.filter(e => e.alive).length,
-      onChargeSlam: (x, y) => {
-        this.shake.add(0.5);
-        this.particles.burst(x, y, PALETTE.emberBright, 16, 180, 0.6, 200);
-        this.services?.audio?.playSound?.('explosion', { volume: 0.4 });
-      },
-      onTeleport: (fromX, fromY, toX, toY) => {
-        this.particles.burst(fromX, fromY, this.boss!.kit.crackColor, 14, 120, 0.5);
-        this.particles.burst(toX, toY, this.boss!.kit.crackColor, 14, 120, 0.5);
-        this.services?.audio?.playSound?.('whoosh', { volume: 0.5 });
-      },
-    });
-    const touchReach = this.boss.radius + this.player.size / 2;
-    if (Math.hypot(this.boss.x - this.player.x, this.boss.y - this.player.y) < touchReach) {
-      this.damagePlayer(
-        this.boss.isCharging ? BOSS.CHARGE_DAMAGE : BOSS.TOUCH_DAMAGE,
-        this.boss.isCharging ? 'boss_charge' : 'boss_touch',
-      );
-    }
-  }
-
-  /** Random open tile 3-6 tiles away from the player (Hollow King teleport). */
-  private pickTeleportSpot(): { x: number; y: number } {
-    for (let attempt = 0; attempt < 14; attempt++) {
-      const angle = this.rng.range(0, Math.PI * 2);
-      const dist = this.rng.range(TILE * 3, TILE * 6);
-      const x = this.player.x + Math.cos(angle) * dist;
-      const y = this.player.y + Math.sin(angle) * dist;
-      const { tx, ty } = this.map.tileAtWorld(x, y);
-      if (!this.map.isSolidAt(tx, ty)) return this.map.tileCenter(tx, ty);
-    }
-    return { x: this.boss?.x ?? this.player.x, y: this.boss?.y ?? this.player.y };
-  }
-
   /** v3 wave 3 — one-shot scroll effects. The satchel empties after the cast. */
   private castScroll(id: ScrollId): void {
     this.showBanner(SCROLLS[id].name, SCROLLS[id].blurb);
-    switch (id) {
-      case 'flame':
-        this.combat.castFlameBurst();
-        break;
-      case 'frost':
-        this.combat.frostNova();
-        break;
-      case 'healing':
-        this.player.heal(SCROLL_TUNING.HEAL_HP);
-        this.services?.audio?.playSound?.('extraLife', { volume: 0.5 });
-        this.particles.burst(this.player.x, this.player.y, PALETTE.heart, 14, 110, 0.6);
-        break;
-      case 'shielding':
-        this.player.addBuff('stoneskin');
-        this.player.invuln = Math.max(this.player.invuln, SCROLL_TUNING.SHIELD_INVULN);
-        this.services?.audio?.playSound?.('powerup', { volume: 0.5 });
-        this.particles.burst(this.player.x, this.player.y, '#9aa5b5', 14, 110, 0.6);
-        break;
-      case 'revelation':
-        this.minimap.revealAll(this.map);
-        this.services?.audio?.playSound?.('unlock', { volume: 0.55 });
-        this.particles.burst(this.player.x, this.player.y, PALETTE.keyGold, 18, 140, 0.7);
-        break;
-    }
+    this.combat.castScroll(id, this.scholarMult());
   }
 
   private updateHazards(dt: number): void {
@@ -762,20 +924,21 @@ export class DungeonCrawlGame extends BaseGame {
     this.activeShopItem = best;
     if (!best || !interactDown || this.interactWas) return;
 
-    if (this.goldBalance < best.price) {
+    const price = this.hagglerPrice(best.price);
+    if (this.goldBalance < price) {
       this.shopDeniedFlash = 0.8;
       this.services?.audio?.playSound?.('error', { volume: 0.4 });
       return;
     }
 
     // Purchase.
-    this.goldBalance -= best.price;
-    this.goldSpent += best.price;
+    this.goldBalance -= price;
+    this.goldSpent += price;
     this.itemsBought++;
     best.sold = true;
     switch (best.product) {
       case 'heart':
-        this.player.heal(PICKUPS.HEART_HEAL + this.player.kit.healBonus);
+        this.player.heal(PICKUPS.HEART_HEAL + this.player.heartHealBonus());
         break;
       case 'daggers':
         this.player.daggers = Math.min(this.player.daggerCap(), this.player.daggers + PICKUPS.DAGGER_BUNDLE + 2);
@@ -801,6 +964,18 @@ export class DungeonCrawlGame extends BaseGame {
     this.particles.burst(best.x, best.y, PALETTE.gold, 12, 100, 0.6);
     this.trackStat('items_bought', this.itemsBought);
     this.trackStat('gold_spent', this.goldSpent);
+  }
+
+  /** v4 — Haggler training talks merchants down (never below 1 gold). */
+  private hagglerPrice(base: number): number {
+    const haggler = this.player.boonCount('haggler');
+    if (haggler === 0) return base;
+    return Math.max(1, Math.round(base * (1 - haggler * BOON_TUNING.HAGGLER_DISCOUNT)));
+  }
+
+  /** v4 — Scholar training deepens scroll magic where it sensibly can. */
+  private scholarMult(): number {
+    return this.player.boonCount('scholar') > 0 ? BOON_TUNING.SCHOLAR_MULT : 1;
   }
 
   /** Closest living, non-dormant monster (boss as fallback) — mana bolt target. */
@@ -846,6 +1021,11 @@ export class DungeonCrawlGame extends BaseGame {
   /** Post-kill stat bookkeeping — mechanics live in systems/Combat.ts. */
   private onEnemySlain(enemy: Enemy): void {
     this.enemiesSlain++;
+    // v4 — the hero learns from every kill (elites teach triple).
+    this.progression.grantXp(
+      enemy.config.xp * (enemy.elite ? PROGRESSION.ELITE_XP_MULT : 1),
+    );
+    this.trackStat('xp_earned', this.progression.sessionXp);
     if (enemy.elite) {
       this.elitesSlain++;
       this.trackStat('elites_slain', this.elitesSlain);
@@ -866,6 +1046,9 @@ export class DungeonCrawlGame extends BaseGame {
   private onBossSlain(boss: Boss): void {
     this.bossesSlain++;
     this.enemiesSlain++;
+    // v4 — a felled Guardian is a chapter of the hero's legend.
+    this.progression.grantXp(PROGRESSION.BOSS_XP);
+    this.trackStat('xp_earned', this.progression.sessionXp);
     this.uniqueBossKits.add(boss.kit.id);
     this.registerKill(BOSS.SCORE);
     this.score += COMBAT.BOSS_BONUS;
@@ -950,6 +1133,14 @@ export class DungeonCrawlGame extends BaseGame {
         this.showBanner('THE FEATHER BURNS', 'DEATH REFUSED');
         return;
       }
+      // v4 — Survivor training: magic burns before grit, grit before the grave.
+      if (this.player.tryConsumeSurvivor()) {
+        this.shake.add(0.6);
+        this.services?.audio?.playSound?.('extraLife', { volume: 0.7 });
+        this.particles.burst(this.player.x, this.player.y, '#ffd24a', 26, 180, 0.8);
+        this.showBanner('SHEER GRIT', 'DEATH REFUSED — ONCE');
+        return;
+      }
       this.openRecap(cause);
     }
   }
@@ -970,7 +1161,7 @@ export class DungeonCrawlGame extends BaseGame {
         break;
       }
       case 'heart': {
-        this.player.heal(PICKUPS.HEART_HEAL + this.player.kit.healBonus);
+        this.player.heal(PICKUPS.HEART_HEAL + this.player.heartHealBonus());
         this.services?.audio?.playSound?.('extraLife', { volume: 0.4 });
         this.particles.burst(pickup.x, pickup.y, PALETTE.heart, 8, 80, 0.5);
         break;
@@ -1077,7 +1268,13 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.stairsLocked) return;
     const { tx, ty } = this.map.tileAtWorld(this.player.x, this.player.y);
     if (tx === this.plan.stairsTile.tx && ty === this.plan.stairsTile.ty) {
-      this.openRelicDraft();
+      // v4 Wave B — the final floor's stairs lead home, not deeper.
+      const quest = this.activeQuest;
+      if (quest && quest.floors > 0 && this.floor === quest.floors) {
+        this.openVictory();
+      } else {
+        this.openRelicDraft();
+      }
     }
   }
 
@@ -1095,19 +1292,7 @@ export class DungeonCrawlGame extends BaseGame {
     const input = this.services?.input;
     if (!input) return;
 
-    const left = input.isLeftPressed();
-    const right = input.isRightPressed();
-    if (left && !this.navLeftWas) {
-      this.relicIndex = (this.relicIndex + 2) % 3;
-      this.services?.audio?.playSound?.('click', { volume: 0.3 });
-    }
-    if (right && !this.navRightWas) {
-      this.relicIndex = (this.relicIndex + 1) % 3;
-      this.services?.audio?.playSound?.('click', { volume: 0.3 });
-    }
-    for (let i = 0; i < 3; i++) {
-      if (input.isKeyPressed(`Digit${i + 1}`)) this.relicIndex = i;
-    }
+    this.relicIndex = this.draftNav(this.relicIndex, 3);
 
     const confirm =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
@@ -1128,6 +1313,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.floor++;
     this.trackStat('depth', this.floor);
     if (this.chosenClass) this.trackStat(`${this.chosenClass}_depth`, this.floor);
+    this.progression.saveCheckpoint(); // v4 — bank the floor's XP
     this.services?.audio?.playSound?.('gate_open', { volume: 0.5 });
     this.services?.audio?.triggerMusicStinger?.('transition');
     this.state = 'playing';
@@ -1139,6 +1325,10 @@ export class DungeonCrawlGame extends BaseGame {
   private openRecap(cause: DeathCause): void {
     this.state = 'recap';
     this.recapTimer = 0;
+    // v4 — the hero endures: death banks XP/boons and counts the fall.
+    this.progression.recordDeath();
+    this.retireHold = 0;
+    this.recapRetired = false;
     this.recapStats = {
       cause,
       depth: this.floor,
@@ -1160,6 +1350,19 @@ export class DungeonCrawlGame extends BaseGame {
       ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
       : false;
     const canDismiss = this.recapTimer > OVERLAY.RECAP_INPUT_LOCKOUT;
+
+    // v4 — hold R past the lockout to retire the hero (hold-gated on purpose).
+    if (canDismiss && !this.recapRetired && this.progression.hasCharacter() && input?.isKeyPressed('KeyR')) {
+      this.retireHold += dt;
+      if (this.retireHold >= PROGRESSION.RETIRE_HOLD_SECONDS) {
+        this.progression.retire();
+        this.recapRetired = true;
+        this.services?.audio?.playSound?.('gate_open', { volume: 0.5 });
+      }
+    } else {
+      this.retireHold = 0;
+    }
+
     if ((canDismiss && confirm && !this.confirmWas) || this.recapTimer > OVERLAY.RECAP_AUTO_DISMISS) {
       this.endGame();
     }
@@ -1240,6 +1443,13 @@ export class DungeonCrawlGame extends BaseGame {
       undead_slain: this.undeadSlain,
       unique_slain: this.uniqueSlainTypes.size,
       scrolls_used: this.scrollsUsed,
+      // v4 — the hero's ledger.
+      character_level: this.progression.character()?.level ?? 1,
+      xp_earned: this.progression.sessionXp,
+      levels_gained: this.progression.sessionLevels,
+      boons_chosen: this.progression.sessionBoons,
+      quests_completed: this.questsCompleted,
+      gold_banked: this.goldBanked,
     };
   }
 
@@ -1267,6 +1477,12 @@ export class DungeonCrawlGame extends BaseGame {
       if (urn.alive) this.tiles.drawUrn(ctx, urn);
     }
     if (this.merchant) this.tiles.drawMerchant(ctx, this.merchant.x, this.merchant.y, this.gameTime);
+    if (this.inTownWorld()) {
+      // Lastlight's fixtures: smith (soot-brown), alchemist (violet), board.
+      this.tiles.drawMerchant(ctx, this.town.spots.smith.x, this.town.spots.smith.y, this.gameTime, '#5a3a22', '#3a2414');
+      this.tiles.drawMerchant(ctx, this.town.spots.alchemist.x, this.town.spots.alchemist.y, this.gameTime);
+      this.tiles.drawQuestBoard(ctx, this.town.spots.quests.x, this.town.spots.quests.y, this.gameTime);
+    }
     for (const item of this.shopItems) this.tiles.drawShopItem(ctx, item, item.sold, this.gameTime);
     for (const pickup of this.pickupItems) this.tiles.drawPickup(ctx, pickup, this.gameTime);
     for (const enemy of this.enemies) this.tiles.drawEnemy(ctx, enemy, this.gameTime);
@@ -1301,6 +1517,11 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.merchant) {
       lights.push({ x: this.merchant.x, y: this.merchant.y, radius: 110, flicker: 0.5 });
     }
+    if (this.inTownWorld()) {
+      lights.push({ x: this.town.spots.smith.x, y: this.town.spots.smith.y, radius: 110, flicker: 0.5 });
+      lights.push({ x: this.town.spots.alchemist.x, y: this.town.spots.alchemist.y, radius: 110, flicker: 0.5 });
+      lights.push({ x: this.town.spots.quests.x, y: this.town.spots.quests.y, radius: 95, flicker: 0.4 });
+    }
     if (this.boss?.alive) {
       lights.push({ x: this.boss.x, y: this.boss.y, radius: 130, flicker: 1 });
     }
@@ -1332,7 +1553,10 @@ export class DungeonCrawlGame extends BaseGame {
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
     this.hud.renderHud(ctx, {
       score: this.score,
-      goldBalance: this.goldBalance,
+      // In Lastlight the ledger shows the hero's banked treasury.
+      goldBalance: this.inTownWorld()
+        ? this.progression.character()?.gold ?? 0
+        : this.goldBalance,
       floor: this.floor,
       hp: this.player.hp,
       maxHp: this.player.maxHp,
@@ -1350,6 +1574,12 @@ export class DungeonCrawlGame extends BaseGame {
         : null,
       scroll: this.player.scroll
         ? { icon: SCROLLS[this.player.scroll].icon, color: SCROLLS[this.player.scroll].color }
+        : null,
+      hero: this.progression.character()
+        ? {
+            level: this.progression.character()!.level,
+            xpFrac: this.progression.xpFrac(),
+          }
         : null,
       buffs: this.player.buffs,
       relics: this.player.relics,
@@ -1374,19 +1604,67 @@ export class DungeonCrawlGame extends BaseGame {
         relic: 'MYSTERY RELIC',
         scroll: 'MYSTERY SCROLL',
       };
+      const price = this.hagglerPrice(item.price);
       this.hud.renderShopPrompt(
         ctx,
-        `${names[item.product]} — ${item.price}g · press E`,
-        this.goldBalance >= item.price,
+        `${names[item.product]} — ${price}g · press E`,
+        this.goldBalance >= price,
         this.shopDeniedFlash,
       );
     }
+    // v4 Wave B — town prompts + overlays.
+    if (this.state === 'town') {
+      const prompt = this.town.promptText();
+      if (prompt) this.hud.renderShopPrompt(ctx, prompt, true, 0);
+      const hero = this.progression.character();
+      if (this.town.overlay === 'quests') {
+        this.hud.renderQuestBoard(ctx, ALL_QUEST_IDS, this.town.selection, hero?.level ?? 1);
+      } else if (this.town.overlay === 'smith') {
+        this.hud.renderSmith(
+          ctx,
+          ALL_GEAR_IDS,
+          this.town.selection,
+          id => hero?.gear[id] ?? 0,
+          hero?.gold ?? 0,
+        );
+      } else if (this.town.overlay === 'alchemist') {
+        this.hud.renderAlchemist(
+          ctx,
+          ALL_PROVISION_IDS,
+          this.town.selection,
+          id => hero?.provisions.includes(id) ?? false,
+          hero?.gold ?? 0,
+        );
+      }
+    }
+    if (this.state === 'victory' && this.activeQuest) {
+      this.hud.renderVictory(ctx, this.activeQuest.name, this.victoryRows, this.victoryTimer);
+    }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
     if (this.state === 'classSelect') {
-      this.hud.renderClassSelect(ctx, ALL_CLASS_IDS, this.classIndex);
+      this.hud.renderClassSelect(
+        ctx,
+        ALL_CLASS_IDS,
+        this.classIndex,
+        'CHOOSE YOUR HERO',
+        'your heroes persist and grow · ← → · SPACE · 1-4',
+        id => {
+          const hero = this.progression.heroFor(id);
+          return hero ? { name: hero.name, level: hero.level } : null;
+        },
+      );
     }
     if (this.state === 'relic') {
       this.hud.renderRelicDraft(ctx, this.relicChoices, this.relicIndex, id => this.player.relicCount(id));
+    }
+    if (this.state === 'levelUp') {
+      this.hud.renderBoonDraft(
+        ctx,
+        this.boonChoices,
+        this.boonIndex,
+        id => this.player.boonCount(id),
+        (this.progression.character()?.level ?? 1) + 1,
+      );
     }
     if (this.state === 'recap' && this.recapStats) {
       const stats = this.recapStats;
@@ -1396,6 +1674,7 @@ export class DungeonCrawlGame extends BaseGame {
         rows: [
           ['DEPTH REACHED', `FLOOR ${stats.depth}`],
           ['MONSTERS SLAIN', `${stats.kills}`],
+          ['XP EARNED', `${this.progression.sessionXp}`],
           ['GOLD PLUNDERED', `${stats.gold}`],
           ['GUARDIANS FELLED', `${stats.bosses}`],
           ['RELICS CLAIMED', `${stats.relics}`],
@@ -1403,6 +1682,16 @@ export class DungeonCrawlGame extends BaseGame {
           ['FINAL SCORE', `${this.score}`],
         ],
         timer: this.recapTimer,
+        heroLine: this.recapRetired
+          ? 'HERO RETIRED — THE CLASS AWAITS A NEW LEGEND'
+          : this.progression.hasCharacter()
+            ? 'YOUR HERO ENDURES — XP AND BOONS ARE KEPT'
+            : undefined,
+        retireFrac: this.recapRetired
+          ? undefined
+          : this.progression.hasCharacter()
+            ? this.retireHold / PROGRESSION.RETIRE_HOLD_SECONDS
+            : undefined,
       });
     }
   }
