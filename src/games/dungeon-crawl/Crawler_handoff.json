@@ -2,8 +2,8 @@
   "handoff": {
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
-    "lastUpdated": "2026-07-08",
-    "status": "v3 complete (playtested); v4 Wave A playtested; Waves A.1 (hero ROSTER, one per class, v1-save migration) + B (LASTLIGHT town hub: quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) shipped, all gates green, awaiting playtest.",
+    "lastUpdated": "2026-07-11",
+    "status": "v3 + v4 Waves A/A.1/B playtested clean. Wave C (SAGAS: two authored arcs with interludes + unique finale bosses on a second board page; SECRET ROOMS: cracked walls opened by player booms, stocked hoards, nest miniquests) shipped 2026-07-11 — dungeon-crawl gates green (type-check, lint, 9 suites / 105 tests), awaiting playtest. CAVEAT: an UNRELATED unfinished platform change set (Supabase hardening + BaseGame gameTime/destroy semantics, ~40 uncommitted files, not Wave C's) fails the release suite 2/10 and OOMs the full one-process dev run — see knownStateAndOpenItems.parallelWipWarning.",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
@@ -16,7 +16,7 @@
   },
 
   "nextTeamOnboarding": {
-    "youAreHere": "v3 (classes/bestiary/loot) and v4 waves A/A.1/B (persistent hero roster + the town of Lastlight + winnable quests) are shipped and gate-green. Your job: finish the v4 roadmap — Wave C (Sagas & Stories + secret rooms/miniquests), then Wave D (Depth & Roaming). Specs for both are below.",
+    "youAreHere": "v3 (classes/bestiary/loot) and v4 waves A/A.1/B/C (roster + Lastlight + quests + SAGAS & SECRET ROOMS) are shipped; Wave C awaits the owner's playtest. Your job: fold in Wave C playtest knob turns, then Wave D (Depth & Roaming — spec below). Also read knownStateAndOpenItems.parallelWipWarning before trusting the full-suite gates.",
     "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
     "waveProcess": [
       "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
@@ -33,24 +33,6 @@
       "Characterization + monkey tests are the canary: update them CONSCIOUSLY (metric keys, monkey key list), never loosen them to pass."
     ],
     "playtestKnobsLive": "Everything numeric is data: data/constants.ts (feel), data/enemies.ts (bestiary + spawn weights), data/classes.ts + data/progression.ts + data/boons.ts (hero), data/relics.ts + data/scrolls.ts (run loot), data/quests.ts + data/gear.ts (town economy). Expect the owner to request knob turns after each playtest — those are one-line data edits."
-  },
-
-  "waveC_spec": {
-    "goal": "Sagas & Stories: authored multi-quest campaign arcs with story interludes and a finale, plus the long-promised secret rooms behind cracked walls that feed miniquests.",
-    "sagas": [
-      "data/sagas.ts: SagaDef { id, name, blurb, quests: QuestId[] (ordered), interludes: string[] (original text shown between chapters), finaleBossTier or a NEW unique kit added to data/bosses.ts }.",
-      "Persistence: add `sagaProgress: Partial<Record<SagaId, number>>` to SavedHero (ADDITIVE field — CharacterStore's validator ignores unknowns and clamps knowns; bump nothing, just extend sanitizeHero).",
-      "Board integration: saga chapters appear on the quest board progressively — chapter N+1 unlocks when N is complete for that hero. Reuse renderQuestBoard with a saga banner row, or a second board page toggled with Up/Down.",
-      "Interludes: full-screen text overlay between chapters (reuse the recap/victory overlay pattern in HudRenderer — dim, title, wrapped paragraph, PRESS SPACE). Keep each under ~60 words, original prose, DMG/Dragonlance-module TONE not text.",
-      "Completion: `sagas_completed` metric + achievement; saga finale rewards should be the game's largest banked-gold/XP payouts."
-    ],
-    "secretRooms": [
-      "Generator: carve 0-2 small 'secret' rooms per floor OFF the corridor graph, sealed by a new Tile.CrackedWall (solid, renders as wall with hairline cracks — TileRenderer.renderTiles case + minimap draws it as plain wall). MUST NOT touch stairs/key reachability invariants (secret rooms are never on the critical path; extend DungeonGenerator tests).",
-      "Reveal: player-sourced explosions (source === 'player' — fireball, flame scroll; bomber bombs stay 'enemy') within blast radius convert adjacent CrackedWall tiles to Floor: implement in Combat's boom resolution via a new host.crackWall(tx, ty) callback so the game owns map mutation + minimap/particle feedback.",
-      "Stock secret rooms generously: gold pile + urns + a shrine or scroll (they cost a resource to open — pay it back).",
-      "Miniquests (stretch, only if the wave has room): entering a secret room can trigger a small objective banner (e.g., 'a nest stirs — clear it') spawning a themed pack; reward on clear. Keep it data-driven and rng-seeded from the floor plan."
-    ],
-    "estimatedShape": "Comparable to Wave B. Watch DungeonCrawlGame.ts's budget — next extraction valve: recap/victory row assembly into HudRenderer, or a QuestDirector for saga state."
   },
 
   "waveD_spec": {
@@ -83,14 +65,18 @@
       "v4-A. The Character (persistent hero, XP/levels/boons, save infra) — SHIPPED 2026-07-07 (playtested)",
       "v4-A.1. The Roster (a persistent hero PER CLASS, picked every run; v1 saves migrate) — SHIPPED 2026-07-08",
       "v4-B. The Town of LASTLIGHT (quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) — SHIPPED 2026-07-08",
-      "v4-C. Sagas & Stories (authored quest arcs, story interludes, final bosses) + secret cracked-wall rooms feeding miniquests — NEXT",
-      "v4-D. Depth & Roaming (Supabase save promotion for cross-device, spell picks on level-up, more sagas/monsters)"
+      "v4-C. Sagas & Stories (two authored arcs + interludes + unique finale bosses, board saga page) + secret cracked-wall rooms with nest miniquests — SHIPPED 2026-07-11",
+      "v4-D. Depth & Roaming (Supabase save promotion for cross-device, spell picks on level-up, more sagas/monsters) — NEXT"
     ],
     "v4Vision": "One large resumable world per account. The town is the save anchor; expeditions stay seeded roguelite runs; death returns the enduring hero to safety. The remaining roadmap + specs live in nextTeamOnboarding / waveC_spec / waveD_spec in this file.",
     "libraryRules": "Mine the books by eye — OCR scrambles multi-column stat blocks, never build a parser. All in-game text must be ORIGINAL (no verbatim book text). Generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly)."
   },
 
   "versionHistory": {
+    "v4_waveC_sagas_and_secrets": {
+      "date": "2026-07-11",
+      "summary": "SAGAS: data/sagas.ts — THE PALE PROCESSION (3 bone chapters, unique finale THE GRAVE WARDEN) + THE UNDYING EMBER (4 chapters ember->sunken->ash, unique finale THE CINDER REGENT with the game's largest payouts 800g/1000xp). Chapters = saga-flagged QuestDef entries (QUESTS grew 5->12; STANDALONE_QUEST_IDS keeps the classic board at 5); board gains an Up/Down SAGA page (progress pips, departs on the hero's current chapter; finales relivable, progress never rewinds). Unique kits live in UNIQUE_BOSS_KITS BESIDE the rotation (bossKitById; QuestDef.bossKitId -> Boss ctor override) so classic tiers roll unchanged. Interludes (<60 words, original) play via a new 'interlude' state between victory and town; epilogue caps the arc. Per-hero `sagas` chapter map = additive SavedHero field (sanitize clamp, no version bump); ProgressionController.advanceSaga is replay-proof. SECRET ROOMS: generator carves 0-2 sealed pockets into untouched rock per floor (kind 'secret', kept OFF plan.rooms so all room passes + stairs/key BFS invariants hold by construction), sealed by Tile.CrackedWall (solid via the one isSolidTile line; cracked-wall TileRenderer case; minimap free). ONLY player-sourced booms crack seals (Combat blast scan -> host.crackWall; bomber bombs stay 'enemy'). Stock: gold x3-5 + urns + shrine-or-scroll; ~half host a NEST (floor/biome-gated pack pre-rolled in FloorPlan.secrets, spawned by the GAME on entry so level pressure stays out of dungeon/; clear pays run-wallet gold 25+10/floor). systems/SecretRooms.ts tracks reveal/trigger/clear behind a narrow host. Guardrail extraction: recap/victory row assembly + shop-item naming + slim HudState -> HudRenderer; town overlay routing -> TownController.renderOverlay; projectile drawing -> TileRenderer.drawProjectiles (orchestrator back under 1500). Metrics sagas_completed/secrets_found/nests_cleared (31->34 keys); 4 achievements (30 total); suites 7->9 (sagas.test 5, secrets.test 2, +2 generator, +1 store clamp) = 105 dungeon tests."
+    },
     "v1": {
       "date": "2026-07-04",
       "summary": "Core game: seeded rooms-and-corridors floors, torch lighting + fog-of-war minimap, sword/dagger combat, 6 enemy archetypes + mimics, relic draft on descent, Ember Guardian boss every 3rd floor, combo/depth scoring, death recap, full arcade wiring (18th playable game)."
@@ -122,14 +108,16 @@
   },
 
   "architecture": {
-    "overview": "One BaseGame subclass orchestrates pure/seeded generation, data-driven entities, stateless renderers, and a stateful Combat system behind a narrow host interface. Every file stays under the 1500-logical-line ESLint guardrail (orchestrator ~1229 after the Combat extraction).",
+    "overview": "One BaseGame subclass orchestrates pure/seeded generation, data-driven entities, stateless renderers, and stateful Combat + SecretRooms systems behind narrow host interfaces. Every file stays under the 1500-logical-line ESLint guardrail (Wave C valve: view assembly lives with the views — recap/victory rows in HudRenderer, town overlay routing in TownController, projectiles in TileRenderer).",
     "files": {
       "DungeonCrawlGame.ts": "Orchestrator: state machine (classSelect/playing/relic/recap), input edges, ability dispatch, scoring, metrics sync, service calls. Combat resolution and screen-space drawing are delegated.",
       "index.ts": "Re-export for the registry.",
       "data/constants.ts": "ALL tuning: player/dash, combat/combo, pickups, shop prices, hazard cycle, explosion fuses, shockwave, lighting, overlay timing, BIOMES palette table + biomeForFloor().",
       "data/classes.ts": "v3 — ClassId/ClassKit/ClassDef, CLASSES (4 kits incl. tunic/trim sprite colors + ability blurbs), DEFAULT_KIT (reproduces the pre-v3 hero exactly; active until the pick), CLASS_TUNING (ability numbers).",
+      "data/sagas.ts": "v4 Wave C — SagaId/SagaDef/SAGAS (2 arcs: chapters = ordered QuestIds, interludes 1:1 with chapters, last = epilogue) + pure helpers sagaChapterForQuest/chaptersDone/currentChapter. Module-load guard pins interlude pairing + saga flags.",
+      "systems/SecretRooms.ts": "v4 Wave C — runtime secret-room state (revealed/nest triggered/cleared) behind SecretRoomsHost (spawnNest/showBanner/playSound/grantNestReward/onSecretFound/onNestCleared). resetFor(plan.secrets) per floor; update(playerX, playerY) each playing frame.",
       "data/enemies.ts": "17 enemy configs (data-driven AI params, undead + splitsInto tags), elite trait table + spawn-chance ramp, spawnWeightsForFloor(floor, biomeId) = common core with v2 floor gates + per-biome family rows, per-room enemy budget, BOSS baseline.",
-      "data/bosses.ts": "The three Guardian kits + bossKitForTier().",
+      "data/bosses.ts": "The three rotating Guardian kits + bossKitForTier(), PLUS UNIQUE_BOSS_KITS (grave-warden, cinder-regent) outside the rotation + bossKitById() — saga finales pin theirs via QuestDef.bossKitId (Boss ctor optional kit override).",
       "data/relics.ts": "18 relic definitions + RELIC_TUNING. Relics are stacking counters read by Player.ts (a few consumed in Combat/damagePlayer: grave-ward, blur-cloak).",
       "data/scrolls.ts": "v3 wave 3 — ScrollId/ScrollDef/SCROLLS/ALL_SCROLL_IDS + SCROLL_TUNING. Pure data; effects dispatch in DungeonCrawlGame.castScroll + Combat.",
       "dungeon/rng.ts": "Mulberry32 seeded PRNG. Generator and relic drafts fully deterministic per (seed, floor).",
@@ -159,7 +147,7 @@
     "music": "GAME_TRACK_MAPPING: primary epic_tension, secondary epic_heroic. Game drives setMusicIntensity (explore 0.5 / combat 0.7 / boss 0.85 / enrage 0.95) + stingers.",
     "sounds": "Existing procedural SoundName palette ONLY — v3 added no new sounds (class confirm=powerup, cleave=sword_swing+collision, turn undead=unlock, fireball=whoosh+explosion, hide=whoosh).",
     "gameEndData": "src/components/arcade/ArcadeHub.tsx GameEndData lists all 24 dungeon metric keys as optional numbers.",
-    "achievements": "src/data/dungeonCrawlAchievements.ts — 26 dungeon-crawl achievements (extracted from achievements.ts, which spreads them in). requirement.type strings MUST exactly match extendedGameData keys.",
+    "achievements": "src/data/dungeonCrawlAchievements.ts — 30 dungeon-crawl achievements (extracted from achievements.ts, which spreads them in). requirement.type strings MUST exactly match extendedGameData keys.",
     "trustedProgression": "No custom server work: src/lib/trustedProgression.ts derives unlocks from session metrics."
   },
 
@@ -173,7 +161,8 @@
       "fighter_depth", "thief_depth", "cleric_depth", "mage_depth", "abilities_used",
       "undead_slain", "unique_slain", "scrolls_used",
       "character_level", "xp_earned", "levels_gained", "boons_chosen",
-      "quests_completed", "gold_banked"
+      "quests_completed", "gold_banked",
+      "sagas_completed", "secrets_found", "nests_cleared"
     ],
     "v3Semantics": "<class>_depth = floor reached this run IF that class was picked, else 0 (enables 'reach floor N as X' achievements through the plain threshold path). unique_slain = distinct monster config ids killed this run."
   },
@@ -190,13 +179,16 @@
       "interact": "E (shop pedestals)",
       "levelUpDraft": "Left/Right + Space, or 1-3 direct (pauses play like the relic draft)",
       "retireHero": "hold R for 1.5s on the death recap (past the input lockout)",
-      "town": "walk with move keys; E opens the board/smith/alchemist in reach (E again closes); on the board SPACE departs at once; the gate also opens the board",
+      "town": "walk with move keys; E opens the board/smith/alchemist in reach (E again closes); on the board SPACE departs at once; Up/Down flips CONTRACTS <-> SAGAS pages; the gate also opens the board",
+      "interludeDismiss": "Space/Enter after a 1.0s lockout (OVERLAY.INTERLUDE_LOCKOUT)",
       "relicDraft": "Left/Right + Space, or 1/2/3 direct",
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
     "classes": "fighter (4 hearts, 120° arc, Cleave 6s) / thief (+14% speed, 8 daggers, +25% gold, 2x backstab from behind or shadows, Hide 1.5s per 10s) / cleric (mace +1dmg slow heavy, hearts heal +1, Turn Undead 8s: 2dmg+1s stun to undead in 140px, shoves the living) / mage (2 hearts, weak staff, homing bolts cap 6 regen 1/4s, Fireball 8s: player-sourced 56px boom). All tuning in data/classes.ts.",
     "bestiary": "Biome families on top of the shared core: ember=fire-beetle (emits LightSource r70), bone=zombie (slow hp5) + ghoul (fast, floor 5+), sunken=deep-ooze (splits to 2 minis) + lizardman (floor 3+), ash=shade (through walls, undead) + cinder-hound (speed 105) (floor 4+). Undead set for Turn Undead: skeleton, wraith, zombie, ghoul, shade. Biome ambient floors in the 4-cycle with bosses every 3rd: ember 1/5, bone 2/10, sunken 7/11, ash 4/8.",
     "scrolls": "One satchel slot; found unidentified (floor ~50%, urn loot band, shop 35g); identity rolls from the LIVE rng at pickup + banner; F/O reads it. flame=player blast r72 dmg3 / frost=stun all in 380px for 2.5s / healing=4hp / shielding=stoneskin+1s invuln / revelation=reveal minimap. Full satchel leaves floor scrolls in place; a bought scroll replaces the held one.",
+    "sagas": "Two arcs on the board's saga page: PALE PROCESSION (bone, chapters minLevel 2/3/4, finale GRAVE WARDEN t3 x1.15hp) and UNDYING EMBER (ember->sunken->ash, minLevel 6-9, finale CINDER REGENT t5 x1.25hp, biggest payouts). Chapter N+1 unlocks when N completes for THAT hero; interlude after each chapter victory, epilogue after the finale; completed sagas may relive the finale (progress frozen).",
+    "secretRooms": "0-2 per non-boss floor, sealed by a CrackedWall only PLAYER booms open (mage fireball, flame scroll). Dark (no torches), stocked with gold + urns + shrine-or-scroll; ~50% host a nest that stirs on entry — clear the spawned pack for run-wallet gold (SECRETS.NEST_REWARD_BASE + PER_FLOOR). All knobs in data/constants.ts SECRETS.",
     "coreLoop": "Pick class -> explore floor -> fight -> loot -> optional treasure room (key) -> optional shop -> stairs -> relic draft -> descend. Boss arena every 3rd floor.",
     "economyRule": "CRITICAL: gold is two numbers. `pickups` (BaseGame) is CUMULATIVE arcade economy — never decrement. `goldBalance` is the run wallet the shop drains. Thief gold bonus multiplies drop COUNT only.",
     "scoring": "kill score x combo (x1-x5) x depth multiplier; gold +15; +10/room; floor-clear 150+75*floor; boss bonus 1000.",
@@ -218,6 +210,10 @@
       "Input uses edge detection (was-flags updated at END of onUpdate).",
       "Keep every file under the 1500-line guardrail; grow by extracting (HudRenderer, Combat are the precedents).",
       "player-sourced explosions (source: 'player') must never damage the player.",
+      "ONLY player-sourced booms crack CrackedWall seals (Combat's blast scan); enemy bombs never reveal secrets.",
+      "Secret rooms stay OFF plan.rooms and off the critical path — solid-sealed at generation so stairs/key BFS invariants hold by construction; nest packs spawn at GAME level (level pressure never enters dungeon/).",
+      "Saga progress only advances when the completed quest IS the hero's current chapter (ProgressionController.advanceSaga returns null otherwise) — replays must never re-advance, re-reward the metric, or replay interludes.",
+      "Unique saga boss kits live in UNIQUE_BOSS_KITS, never in BOSS_KITS — the classic tier rotation must not shift.",
       "New undead-flavored monsters get `undead: true` so Turn Undead scales for free; new splitters use `splitsInto` (never hardcode ids in Combat).",
       "Floor 1 stays gentle: slime/skeleton/fire-beetle only (pinned by generator + bestiary tests)."
     ]
@@ -232,35 +228,37 @@
     "economy": "data/constants.ts PICKUPS, SHOP; urn loot in Combat.breakUrn",
     "hazards": "data/constants.ts HAZARDS + EXPLOSIONS + SHOCKWAVE",
     "relics": "data/relics.ts RELIC_TUNING",
-    "atmosphere": "data/constants.ts LIGHTING + BIOMES palettes"
+    "atmosphere": "data/constants.ts LIGHTING + BIOMES palettes",
+    "sagas": "data/sagas.ts (arcs/prose) + the chapter QuestDefs in data/quests.ts (floors/minLevel/rewards/bossTier/bossKitId) + UNIQUE_BOSS_KITS numbers in data/bosses.ts",
+    "secretRooms": "data/constants.ts SECRETS (count, room size, stock, shrine/nest chances, nest pack size + reward)"
   },
 
   "testing": {
     "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "suites": "7 suites / 95 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence), characterization (manifest, 31-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16, incl. roster restart semantics; ability tests depart via QUESTS.endless first), bestiary (9), scrolls (9), progression (19: roster save v2, v1 migration, per-class independence, owner scoping), town (10: quest/gear/provision contracts, town-map reachability, quest-shaped generation, victory banking, provision consumption). jest.setup.ts clears localStorage per test — saves cannot leak."
+      "suites": "9 suites / 105 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence + Wave C secret-room seals/stock/nest-gating), characterization (manifest, 34-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16), bestiary (9), scrolls (9), progression (20: roster save v2, v1 migration, per-class independence, owner scoping, saga-progress clamp), town (10), sagas (5: data contract, chapter-walk helpers, board page, victory advance + replay-proofing, unique finale), secrets (2: player-boom-only cracking + metric, nest stir/clear/reward). jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
-    "fullDevSuite": "418 tests as of 2026-07-08, all green.",
+    "fullDevSuite": "As of 2026-07-11 the full one-process dev run FAILS for reasons OUTSIDE dungeon-crawl: an unfinished uncommitted platform change set (see knownStateAndOpenItems.parallelWipWarning) breaks trustedProgression/route/sync-outbox tests and the release suite (2/10), and the single --runInBand process now exhausts the JS heap partway through. All 9 dungeon-crawl suites (105 tests) pass in their own run.",
     "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
+    "parallelWipWarning": "CRITICAL CONTEXT (2026-07-11): the working tree carries a large UNCOMMITTED platform change set that is NOT part of Wave C and was NOT authored by the dungeon-crawl team — Supabase/trusted-progression hardening (clientMutationId requirement in trustedProgression.ts, supabase/003_lock_down_progression.sql, sync outbox/auth/service edits) plus BaseGame semantics changes (gameTime now accumulates MILLISECONDS instead of seconds; destroy() no longer routes through endGame). It is unfinished: trustedProgression/route/sync-outbox dev tests fail, the release suite fails 2/10 (releaseApproval calls validateTrustedGameSession without a clientMutationId), and the full one-process dev run OOMs. The BaseGame gameTime unit change distorts every game's time-driven visuals (dungeon torch flicker/stairs pulse) until its author sweeps consumers. The owner chose to leave it in place for its author — do NOT mistake these failures for dungeon-crawl regressions, and do not 'fix' that change set without the owner's direction.",
     "awaitingPlaytest": [
-      "v4-A.1/B: town feel + readability, quest pacing (3/4/5/6 floors), gear prices vs quest gold rewards, provision value, Ashen Court tier-4 boss, victory->level-up->town flow, roster card readability",
-      "Carried from v4-A: level pressure at L5+ (0.05/cap 1.45), boon draft feel, class hp spread",
-      "Carried from v3: scroll drop rate, frost radius, Blur Cloak readability, bone-biome pressure, hound speed, dungeon-merchant pricing"
+      "v4-C: saga pacing + interlude prose, finale difficulty (Grave Warden t3 x1.15hp, Cinder Regent t5 x1.25hp), secret-room frequency vs fireball/flame-scroll access (non-mages need a flame scroll), nest pack difficulty + reward (25+10/floor), saga-page discoverability (Up/Down hint)",
+      "Carried from v4-A.1/B: quest pacing, gear prices vs rewards, provision value",
+      "Carried from v3/v4-A: level pressure at L5+, scroll drop rate, bone-biome pressure, dungeon-merchant pricing"
     ],
     "nextWaves": [
-      "v4-C — Sagas & Stories: authored multi-quest campaign arcs on the quest system (story interludes between floors, unique final bosses, saga completion via trusted metrics) + Dungeon Builder's Guidebook secret rooms behind cracked walls (player-sourced booms already exist to reveal them) feeding miniquests",
-      "v4-D — Supabase save promotion (cross-device roaming of dungeon-crawl-save payloads), mage/cleric spell picks on level-up, more sagas/monsters from the Monstrous Manual"
+      "v4-D — Supabase save promotion (cross-device roaming of dungeon-crawl-save payloads), mage/cleric spell picks on level-up, more sagas/monsters from the Monstrous Manual (waveD_spec above)"
     ],
     "v4Notes": {
       "saveArchitecture": "Save v2 = { version: 2, characters: Partial<Record<ClassId, SavedHero>> }; SavedHero carries level/xp/boons/stats/gold/gear/provisions. v1 saves migrate on load; invalid heroes drop individually; unknown fields ignored (additive evolution). Reward-bearing state rides trusted session metrics ONLY — the local save carries no coins/unlocks.",
       "goldLedgers": "THREE gold numbers now: BaseGame.pickups (cumulative arcade coins, never decrement), goldBalance (run wallet, dungeon merchants, dies with the run), hero.gold (banked treasury, town shops, safe from death, filled only by VICTORY).",
       "guestCaveat": "Signed-out heroes save under dungeon-crawl-save:guest and do NOT migrate on sign-in — candidate for Wave D's Supabase save promotion.",
-      "lineBudget": "DungeonCrawlGame.ts back under 1500 logical after moving the boss director + castScroll into systems/Combat (host += addProjectile/revealMap) and consolidating draft nav. Next extraction candidate if Wave C squeezes: recap/victory row assembly into HudRenderer."
+      "lineBudget": "DungeonCrawlGame.ts back under 1500 logical after Wave C's valve: recap/victory row assembly + shop-item naming + slim HudState (classId/scrollId/heroLevel instead of pre-built sub-objects) into HudRenderer, town overlay routing into TownController.renderOverlay(ctx, hud, hero), projectile drawing into TileRenderer.drawProjectiles. Next candidates if Wave D squeezes: a QuestDirector for depart/victory/interlude state, or the dungeon-merchant shop block into a system."
     },
     "backlogIdeas": [
       "Keyholder elite variant carrying the treasure key",
@@ -270,6 +268,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "All 418 dev tests and the 10-test release suite pass as of lastUpdated. No open defects known."
+    "noKnownBugs": "No known dungeon-crawl defects: all 9 dungeon-crawl suites (105 tests), type-check and lint pass as of lastUpdated. The failing release/dev gates belong entirely to the parallel platform WIP described in parallelWipWarning."
   }
 }

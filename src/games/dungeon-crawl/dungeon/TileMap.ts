@@ -12,6 +12,7 @@ export enum Tile {
   LockedDoor = 4, // needs a key; solid until opened
   Stairs = 5, // descend when stepped on (if unlocked)
   TorchWall = 6, // wall carrying a lit torch (solid, light source)
+  CrackedWall = 7, // v4 Wave C — seals a secret room; player booms open it
 }
 
 export interface TileRect {
@@ -47,7 +48,8 @@ export class TileMap {
       tile === Tile.Void ||
       tile === Tile.Wall ||
       tile === Tile.TorchWall ||
-      tile === Tile.LockedDoor
+      tile === Tile.LockedDoor ||
+      tile === Tile.CrackedWall
     );
   }
 

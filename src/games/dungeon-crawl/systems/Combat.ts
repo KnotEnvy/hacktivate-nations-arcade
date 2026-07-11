@@ -12,7 +12,7 @@ import { SCROLL_TUNING, ScrollId } from '../data/scrolls';
 import { BOSS } from '../data/enemies';
 import { RELIC_TUNING } from '../data/relics';
 import { Rng } from '../dungeon/rng';
-import { TileMap } from '../dungeon/TileMap';
+import { Tile, TileMap } from '../dungeon/TileMap';
 import { Boss } from '../entities/Boss';
 import { Enemy, EnemyUpdateContext } from '../entities/Enemy';
 import { Pickup } from '../entities/Pickup';
@@ -135,6 +135,7 @@ export interface CombatHost {
   findOpenSpotNear(x: number, y: number): { x: number; y: number };
   levelPressure(): number; // v4 — hero-level hp multiplier for spawned monsters
   revealMap(): void; // Scroll of Revelation — fog-of-war lifts
+  crackWall(tx: number, ty: number): void; // v4 Wave C — a CrackedWall gives way
   playSound(name: SoundName, volume: number): void;
   damagePlayer(amount: number, cause: DeathCause): void;
   registerKill(baseScore: number): void;
@@ -630,6 +631,9 @@ export class Combat {
         ) {
           this.hitBoss(explosion.damage);
         }
+        // v4 Wave C — only the PLAYER's blasts break open cracked walls
+        // (bomber bombs stay 'enemy' and never reveal a secret).
+        this.crackWallsInBlast(explosion.x, explosion.y, explosion.radius);
       }
       for (const urn of this.host.urns()) {
         if (
@@ -643,6 +647,24 @@ export class Combat {
       this.host.particles.burst(explosion.x, explosion.y, PALETTE.ember, 22, 190, 0.6, 140);
       this.host.particles.burst(explosion.x, explosion.y, PALETTE.emberBright, 10, 120, 0.4);
       this.host.playSound('explosion', 0.4);
+    }
+  }
+
+  /** v4 Wave C — every CrackedWall whose tile center the blast reaches gives way. */
+  private crackWallsInBlast(x: number, y: number, radius: number): void {
+    const map = this.host.map();
+    const reach = radius + TILE / 2;
+    const tx0 = Math.max(0, Math.floor((x - reach) / TILE));
+    const tx1 = Math.min(map.cols - 1, Math.floor((x + reach) / TILE));
+    const ty0 = Math.max(0, Math.floor((y - reach) / TILE));
+    const ty1 = Math.min(map.rows - 1, Math.floor((y + reach) / TILE));
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        if (map.get(tx, ty) !== Tile.CrackedWall) continue;
+        const cx = (tx + 0.5) * TILE;
+        const cy = (ty + 0.5) * TILE;
+        if (Math.hypot(x - cx, y - cy) < reach) this.host.crackWall(tx, ty);
+      }
     }
   }
 

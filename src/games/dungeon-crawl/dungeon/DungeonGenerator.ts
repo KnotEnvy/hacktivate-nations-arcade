@@ -3,7 +3,7 @@
 // same FloorPlan out. All world-space outputs are pixels; tile-space fields
 // are named tx/ty.
 
-import { TILE, FLOOR_GEN, SHOP, BIOMES, biomeForFloor, HazardStyle } from '../data/constants';
+import { TILE, FLOOR_GEN, SECRETS, SHOP, BIOMES, biomeForFloor, HazardStyle } from '../data/constants';
 import {
   ELITES,
   EliteTrait,
@@ -14,7 +14,7 @@ import {
 import { Rng } from './rng';
 import { Tile, TileMap } from './TileMap';
 
-export type RoomKind = 'start' | 'stairs' | 'treasure' | 'normal' | 'arena' | 'shop';
+export type RoomKind = 'start' | 'stairs' | 'treasure' | 'normal' | 'arena' | 'shop' | 'secret';
 
 export interface Room {
   // Interior bounds in tile coords (walls sit just outside these).
@@ -60,6 +60,18 @@ export interface HazardSpawnPlan {
   style: HazardStyle;
 }
 
+/**
+ * v4 Wave C — a secret room sealed behind one CrackedWall tile. Lives OFF
+ * FloorPlan.rooms (off the corridor graph), so every room pass skips it and
+ * the stairs/key reachability invariants hold by construction. A nest, when
+ * rolled, is spawned by the GAME on first entry (level pressure stays here-free).
+ */
+export interface SecretRoomPlan {
+  room: Room; // kind 'secret'
+  seal: { tx: number; ty: number }; // the CrackedWall tile
+  nest: { spawns: EnemySpawnPlan[]; rewardGold: number } | null;
+}
+
 export interface FloorPlan {
   map: TileMap;
   rooms: Room[];
@@ -73,6 +85,7 @@ export interface FloorPlan {
   shop: ShopPlan | null;
   hazards: HazardSpawnPlan[];
   urns: Array<{ x: number; y: number; variant: number }>;
+  secrets: SecretRoomPlan[];
 }
 
 const roomCenter = (r: Room): { tx: number; ty: number } => ({
@@ -201,6 +214,11 @@ function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPla
     }
   }
 
+  // 4.5 v4 Wave C — secret rooms: carved into untouched rock beside existing
+  //     rooms, sealed by one CrackedWall tile, dark (no torches) and off the
+  //     graph. Carving before the torch/reachability passes keeps them inert.
+  const secrets = carveSecretRooms(map, rng, rooms);
+
   // 5. Torches on room walls.
   const torches = placeTorches(map, rooms, rng);
 
@@ -219,6 +237,9 @@ function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPla
   const hazards = placeHazards(map, rng, rooms, floor, occupied, biomeId);
   const urns = placeUrns(map, rng, rooms, occupied);
 
+  // 8.5 v4 Wave C — stock the secret rooms generously and roll their nests.
+  stockSecretRooms(map, rng, secrets, floor, pickups, urns, occupied, biomeId);
+
   const startCenter = map.tileCenter(sc.tx, sc.ty);
   return {
     map,
@@ -233,6 +254,7 @@ function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPla
     shop,
     hazards,
     urns,
+    secrets,
   };
 }
 
@@ -551,6 +573,137 @@ function spawnPickups(
   return pickups;
 }
 
+// ---------------------------------------------------------------- v4 Wave C — secret rooms
+
+const SECRET_DIRS = [
+  { dx: 1, dy: 0 },
+  { dx: -1, dy: 0 },
+  { dx: 0, dy: 1 },
+  { dx: 0, dy: -1 },
+] as const;
+
+/**
+ * Carve 0-2 small rooms into untouched rock beside existing rooms, each sealed
+ * by a single CrackedWall tile on the shared wall. The interior is carved only
+ * where the map is Void, so nothing on the corridor graph is disturbed.
+ */
+function carveSecretRooms(map: TileMap, rng: Rng, rooms: Room[]): SecretRoomPlan[] {
+  const secrets: SecretRoomPlan[] = [];
+  if (rooms.length === 0) return secrets;
+  const target = rng.int(0, SECRETS.MAX_PER_FLOOR);
+  for (let s = 0; s < target; s++) {
+    for (let attempt = 0; attempt < SECRETS.PLACE_ATTEMPTS; attempt++) {
+      const carved = tryCarveSecret(map, rng, rng.pick(rooms), rng.pick(SECRET_DIRS));
+      if (carved) {
+        secrets.push({ room: carved.room, seal: carved.seal, nest: null });
+        break;
+      }
+    }
+  }
+  return secrets;
+}
+
+function tryCarveSecret(
+  map: TileMap,
+  rng: Rng,
+  host: Room,
+  dir: { dx: number; dy: number },
+): { room: Room; seal: { tx: number; ty: number } } | null {
+  const w = rng.int(SECRETS.ROOM_MIN, SECRETS.ROOM_MAX);
+  const h = rng.int(SECRETS.ROOM_MIN, SECRETS.ROOM_MAX);
+
+  // A doorway tile on the host's interior edge facing `dir`; the seal sits one
+  // step out on the shared wall, the secret interior one step beyond that.
+  const ex =
+    dir.dx === 1 ? host.tx + host.w - 1 : dir.dx === -1 ? host.tx : rng.int(host.tx, host.tx + host.w - 1);
+  const ey =
+    dir.dy === 1 ? host.ty + host.h - 1 : dir.dy === -1 ? host.ty : rng.int(host.ty, host.ty + host.h - 1);
+  const seal = { tx: ex + dir.dx, ty: ey + dir.dy };
+
+  // Interior origin so the seal's outward neighbor lands inside the room.
+  let sx0: number;
+  let sy0: number;
+  if (dir.dx !== 0) {
+    sx0 = dir.dx === 1 ? ex + 2 : ex - 1 - w;
+    sy0 = ey - rng.int(0, h - 1);
+  } else {
+    sy0 = dir.dy === 1 ? ey + 2 : ey - 1 - h;
+    sx0 = ex - rng.int(0, w - 1);
+  }
+  if (sx0 < 2 || sy0 < 2 || sx0 + w > map.cols - 2 || sy0 + h > map.rows - 2) return null;
+
+  // The doorway must open from host floor through a plain wall.
+  if (map.get(ex, ey) !== Tile.Floor || map.get(seal.tx, seal.ty) !== Tile.Wall) return null;
+
+  // Interior must be untouched rock; the surrounding ring may only be rock or
+  // wall (never floor/stairs/doors — the room must stay off the graph).
+  for (let ty = sy0 - 1; ty <= sy0 + h; ty++) {
+    for (let tx = sx0 - 1; tx <= sx0 + w; tx++) {
+      const t = map.get(tx, ty);
+      const interior = tx >= sx0 && tx < sx0 + w && ty >= sy0 && ty < sy0 + h;
+      if (interior ? t !== Tile.Void : t !== Tile.Void && t !== Tile.Wall) return null;
+    }
+  }
+
+  for (let ty = sy0; ty < sy0 + h; ty++) {
+    for (let tx = sx0; tx < sx0 + w; tx++) map.set(tx, ty, Tile.Floor);
+  }
+  wrapWithWalls(map); // Void → Wall only; existing structure untouched.
+  map.set(seal.tx, seal.ty, Tile.CrackedWall);
+
+  return { room: { tx: sx0, ty: sy0, w, h, kind: 'secret' }, seal };
+}
+
+/** Gold, urns, a shrine or scroll — and maybe a nest the game wakes on entry. */
+function stockSecretRooms(
+  map: TileMap,
+  rng: Rng,
+  secrets: SecretRoomPlan[],
+  floor: number,
+  pickups: PickupSpawnPlan[],
+  urns: Array<{ x: number; y: number; variant: number }>,
+  occupied: Set<number>,
+  biomeId?: string,
+): void {
+  for (const secret of secrets) {
+    const room = secret.room;
+    const place = (kind: PickupKind) => {
+      const t = randomFloorTileInRoom(rng, room);
+      if (map.get(t.tx, t.ty) !== Tile.Floor) return;
+      pickups.push({ kind, x: (t.tx + 0.5) * TILE, y: (t.ty + 0.5) * TILE });
+    };
+
+    for (let i = 0, n = rng.int(SECRETS.GOLD_MIN, SECRETS.GOLD_MAX); i < n; i++) place('gold');
+    place(rng.chance(SECRETS.SHRINE_CHANCE) ? 'relic-shrine' : 'scroll');
+
+    for (let i = 0, n = rng.int(SECRETS.URNS_MIN, SECRETS.URNS_MAX); i < n; i++) {
+      const t = randomFloorTileInRoom(rng, room);
+      const key = t.ty * map.cols + t.tx;
+      if (occupied.has(key) || map.get(t.tx, t.ty) !== Tile.Floor) continue;
+      occupied.add(key);
+      const center = map.tileCenter(t.tx, t.ty);
+      urns.push({ x: center.x, y: center.y, variant: rng.int(0, 2) });
+    }
+
+    if (rng.chance(SECRETS.NEST_CHANCE)) {
+      const spawns: EnemySpawnPlan[] = [];
+      for (let i = 0, n = rng.int(SECRETS.NEST_PACK_MIN, SECRETS.NEST_PACK_MAX); i < n; i++) {
+        const t = randomFloorTileInRoom(rng, room);
+        spawns.push({
+          type: pickWeighted(rng, floor, biomeId),
+          x: (t.tx + 0.5) * TILE,
+          y: (t.ty + 0.5) * TILE,
+          elite: null,
+        });
+      }
+      secret.nest = {
+        spawns,
+        rewardGold: SECRETS.NEST_REWARD_BASE + SECRETS.NEST_REWARD_PER_FLOOR * floor,
+      };
+    }
+  }
+}
+
 // ---------------------------------------------------------------- boss arena
 
 function generateBossArena(rng: Rng, floor: number): FloorPlan {
@@ -607,5 +760,6 @@ function generateBossArena(rng: Rng, floor: number): FloorPlan {
     shop: null,
     hazards: [],
     urns: [],
+    secrets: [],
   };
 }

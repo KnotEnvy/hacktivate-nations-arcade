@@ -23,12 +23,12 @@ import {
   VIEW,
 } from './data/constants';
 import { BOON_TUNING, BOONS, BoonId } from './data/boons';
-import { CAUSE_HINTS, CAUSE_LABELS } from './data/causes';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
-import { ALL_GEAR_IDS, ALL_PROVISION_IDS, PROVISION_TUNING } from './data/gear';
+import { PROVISION_TUNING } from './data/gear';
 import { PROGRESSION } from './data/progression';
-import { ALL_QUEST_IDS, QuestDef } from './data/quests';
+import { bossKitById } from './data/bosses';
+import { QuestDef } from './data/quests';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
 import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
 import { ProgressionController } from './progression/ProgressionController';
@@ -53,21 +53,19 @@ import { Lighting, LightSource } from './systems/Lighting';
 import { Minimap } from './systems/Minimap';
 import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
-import { HudRenderer } from './rendering/HudRenderer';
+import { SecretRooms } from './systems/SecretRooms';
+import { HudRenderer, RecapStats, VictoryLedger } from './rendering/HudRenderer';
 import { TileRenderer } from './rendering/TileRenderer';
 
-type GameState = 'classSelect' | 'town' | 'playing' | 'relic' | 'levelUp' | 'victory' | 'recap';
-
-interface RecapStats {
-  cause: DeathCause;
-  depth: number;
-  kills: number;
-  gold: number;
-  bosses: number;
-  relics: number;
-  maxCombo: number;
-  timeMs: number;
-}
+type GameState =
+  | 'classSelect'
+  | 'town'
+  | 'playing'
+  | 'relic'
+  | 'levelUp'
+  | 'victory'
+  | 'interlude'
+  | 'recap';
 
 // v2 — live shop item (plan + sold state).
 interface LiveShopItem extends ShopItemPlan {
@@ -130,12 +128,36 @@ export class DungeonCrawlGame extends BaseGame {
     findOpenSpotNear: (x, y) => this.findOpenSpotNear(x, y),
     levelPressure: () => this.progression.levelPressure(),
     revealMap: () => this.minimap.revealAll(this.map),
+    crackWall: (tx, ty) => this.crackWall(tx, ty),
     playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
     damagePlayer: (amount, cause) => this.damagePlayer(amount, cause),
     registerKill: baseScore => this.registerKill(baseScore),
     onEnemySlain: enemy => this.onEnemySlain(enemy),
     onBossSlain: boss => this.onBossSlain(boss),
     onMimicWake: enemy => this.onMimicWake(enemy),
+  });
+
+  // v4 Wave C — secret-room reveal/nest tracking behind its own narrow host.
+  private secretRooms = new SecretRooms({
+    spawnNest: spawns =>
+      spawns.map(s => {
+        const enemy = new Enemy(s.type, s.x, s.y, s.elite, this.progression.levelPressure());
+        this.enemies.push(enemy);
+        return enemy;
+      }),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    grantNestReward: gold => {
+      this.goldBalance += gold; // run wallet only — arcade coins untouched
+    },
+    onSecretFound: () => {
+      this.secretsFound++;
+      this.trackStat('secrets_found', this.secretsFound);
+    },
+    onNestCleared: () => {
+      this.nestsCleared++;
+      this.trackStat('nests_cleared', this.nestsCleared);
+    },
   });
 
   // Run stats (extendedGameData / achievements).
@@ -195,8 +217,14 @@ export class DungeonCrawlGame extends BaseGame {
   private activeQuest: QuestDef | null = null;
   private questsCompleted = 0;
   private goldBanked = 0;
+  private sagasCompleted = 0;
+  private secretsFound = 0;
+  private nestsCleared = 0;
   private victoryTimer = 0;
-  private victoryRows: Array<[string, string]> = [];
+  private victoryLedger: VictoryLedger | null = null;
+  // v4 Wave C — saga interlude staged by openVictory, shown after the overlay.
+  private pendingInterlude: { sagaName: string; title: string; text: string } | null = null;
+  private interludeTimer = 0;
   private recapStats: RecapStats | null = null;
   private recapTimer = 0;
   private shopDeniedFlash = 0;
@@ -212,6 +240,8 @@ export class DungeonCrawlGame extends BaseGame {
   private confirmWas = false;
   private navLeftWas = false;
   private navRightWas = false;
+  private navUpWas = false;
+  private navDownWas = false;
 
   // Audio bookkeeping.
   private musicIntensity = -1;
@@ -278,6 +308,11 @@ export class DungeonCrawlGame extends BaseGame {
     this.activeQuest = null;
     this.questsCompleted = 0;
     this.goldBanked = 0;
+    this.sagasCompleted = 0;
+    this.secretsFound = 0;
+    this.nestsCleared = 0;
+    this.pendingInterlude = null;
+    this.interludeTimer = 0;
     this.victoryTimer = 0;
     this.state = 'classSelect';
 
@@ -300,6 +335,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.merchant = null;
     this.projectiles = [];
     this.combat.reset();
+    this.secretRooms.resetFor([]);
     this.boss = null;
     this.stairsLocked = false;
     this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
@@ -316,6 +352,7 @@ export class DungeonCrawlGame extends BaseGame {
     return (
       this.state === 'town' ||
       this.state === 'victory' ||
+      this.state === 'interlude' ||
       this.state === 'classSelect' ||
       (this.state === 'levelUp' && this.boonReturnState === 'town')
     );
@@ -346,12 +383,14 @@ export class DungeonCrawlGame extends BaseGame {
     this.merchant = this.plan.shop?.merchant ?? null;
     this.projectiles = [];
     this.combat.reset();
+    this.secretRooms.resetFor(this.plan.secrets);
     this.activeShopItem = null;
     this.boss = this.plan.isBossFloor && this.plan.bossSpawn
       ? new Boss(
           this.plan.bossSpawn.x,
           this.plan.bossSpawn.y,
           isFinal ? quest!.bossTier : Math.max(1, Math.floor(this.floor / 3)),
+          isFinal && quest!.bossKitId ? bossKitById(quest!.bossKitId) : undefined,
         )
       : null;
     this.stairsLocked = this.plan.isBossFloor;
@@ -407,6 +446,9 @@ export class DungeonCrawlGame extends BaseGame {
       case 'victory':
         this.updateVictory(dt);
         break;
+      case 'interlude':
+        this.updateInterlude(dt);
+        break;
       case 'recap':
         this.updateRecap(dt);
         break;
@@ -430,6 +472,8 @@ export class DungeonCrawlGame extends BaseGame {
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     this.navLeftWas = input.isLeftPressed();
     this.navRightWas = input.isRightPressed();
+    this.navUpWas = input.isUpPressed();
+    this.navDownWas = input.isDownPressed();
   }
 
   /** Shared ←/→/digit navigation for every draft overlay (edge-detected). */
@@ -496,6 +540,8 @@ export class DungeonCrawlGame extends BaseGame {
         confirmWas: this.confirmWas,
         navLeftWas: this.navLeftWas,
         navRightWas: this.navRightWas,
+        navUpWas: this.navUpWas,
+        navDownWas: this.navDownWas,
       },
       player: this.player,
       hero: this.progression.character(),
@@ -574,12 +620,28 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackStat('quests_completed', this.questsCompleted);
     this.trackStat('gold_banked', this.goldBanked);
 
-    this.victoryRows = [
-      ['GOLD CARRIED OUT', `${this.goldBalance}`],
-      ['QUEST REWARD', `${quest.rewardGold}g · ${quest.rewardXp} XP`],
-      ['GOLD BANKED', `${banked}`],
-      ['HERO TREASURY', `${hero?.gold ?? 0}`],
-    ];
+    // v4 Wave C — a current-chapter victory advances its saga and stages the
+    // interlude (replays return null: no re-advance, no repeated story beat).
+    const sagaHit = this.progression.advanceSaga(quest.id);
+    if (sagaHit) {
+      this.pendingInterlude = {
+        sagaName: sagaHit.sagaName,
+        title: sagaHit.completed ? 'THE SAGA IS TOLD' : 'THE TALE CONTINUES',
+        text: sagaHit.interlude,
+      };
+      if (sagaHit.completed) {
+        this.sagasCompleted++;
+        this.trackStat('sagas_completed', this.sagasCompleted);
+      }
+    }
+
+    this.victoryLedger = {
+      carried: this.goldBalance,
+      rewardGold: quest.rewardGold,
+      rewardXp: quest.rewardXp,
+      banked,
+      treasury: hero?.gold ?? 0,
+    };
     this.shake.add(0.3);
     this.services?.audio?.playSound?.('success', { volume: 0.7 });
     this.services?.audio?.triggerMusicStinger?.('success');
@@ -593,11 +655,36 @@ export class DungeonCrawlGame extends BaseGame {
       : false;
     if (this.victoryTimer > 1.0 && confirm && !this.confirmWas) {
       this.enterTownWorld();
-      this.state = 'town';
-      this.showBanner('LASTLIGHT', 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT');
-      // Reward XP can cross a threshold — level up right at the gate.
-      if (this.progression.pendingLevelUp()) this.openBoonDraft('town');
+      if (this.pendingInterlude) {
+        // v4 Wave C — the story beat plays before Lastlight takes over.
+        this.state = 'interlude';
+        this.interludeTimer = 0;
+        this.services?.audio?.playSound?.('unlock', { volume: 0.4 });
+        return;
+      }
+      this.arriveInLastlight();
     }
+  }
+
+  /** v4 Wave C — dismissing the interlude lands the hero back in town. */
+  private updateInterlude(dt: number): void {
+    this.interludeTimer += dt;
+    const input = this.services?.input;
+    const confirm = input
+      ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
+      : false;
+    if (this.interludeTimer > OVERLAY.INTERLUDE_LOCKOUT && confirm && !this.confirmWas) {
+      this.pendingInterlude = null;
+      this.arriveInLastlight();
+    }
+  }
+
+  /** Post-victory landing: banner + any level-up the reward XP earned. */
+  private arriveInLastlight(): void {
+    this.state = 'town';
+    this.showBanner('LASTLIGHT', 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT');
+    // Reward XP can cross a threshold — level up right at the gate.
+    if (this.progression.pendingLevelUp()) this.openBoonDraft('town');
   }
 
   // ------------------------------------------------------------ v4 level-ups
@@ -871,6 +958,7 @@ export class DungeonCrawlGame extends BaseGame {
     // --- World interactions: locked doors, room discovery, stairs.
     this.tryOpenDoors();
     this.trackRoomDiscovery();
+    this.secretRooms.update(this.player.x, this.player.y);
     this.checkStairs();
 
     // v4 — banked XP crossing a threshold opens the level-up draft (never
@@ -1250,6 +1338,18 @@ export class DungeonCrawlGame extends BaseGame {
     }
   }
 
+  /** v4 Wave C — a player blast breaks a cracked wall open (Combat calls in). */
+  private crackWall(tx: number, ty: number): void {
+    if (this.map.get(tx, ty) !== Tile.CrackedWall) return;
+    this.map.set(tx, ty, Tile.Floor);
+    const center = this.map.tileCenter(tx, ty);
+    this.particles.burst(center.x, center.y, this.biome.wallFace, 14, 120, 0.6);
+    this.particles.burst(center.x, center.y, this.biome.floorCrack, 8, 80, 0.5);
+    this.shake.add(0.2);
+    this.services?.audio?.playSound?.('collision', { volume: 0.5 });
+    this.secretRooms.onWallCracked(tx, ty);
+  }
+
   private trackRoomDiscovery(): void {
     const ptx = this.player.x / TILE;
     const pty = this.player.y / TILE;
@@ -1450,6 +1550,10 @@ export class DungeonCrawlGame extends BaseGame {
       boons_chosen: this.progression.sessionBoons,
       quests_completed: this.questsCompleted,
       gold_banked: this.goldBanked,
+      // v4 Wave C — sagas + secret rooms.
+      sagas_completed: this.sagasCompleted,
+      secrets_found: this.secretsFound,
+      nests_cleared: this.nestsCleared,
     };
   }
 
@@ -1528,25 +1632,9 @@ export class DungeonCrawlGame extends BaseGame {
     this.lighting.render(ctx, VIEW.WIDTH, VIEW.HEIGHT, this.camX - offset.x, this.camY - offset.y, this.floor, lights);
   }
 
-  /** World-space combat FX: projectiles here, bombs/booms/waves in Combat. */
+  /** World-space combat FX: projectiles in TileRenderer, booms/waves in Combat. */
   private renderCombatEffects(ctx: CanvasRenderingContext2D): void {
-    for (const proj of this.projectiles) {
-      if (proj.kind === 'bolt') {
-        ctx.fillStyle = proj.homing > 0 ? '#c99aff' : '#78beff';
-        ctx.fillRect(Math.round(proj.x) - 3, Math.round(proj.y) - 3, 6, 6);
-        ctx.fillStyle = '#d8ecff';
-        ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
-      } else {
-        // v3 — mage mana bolts glow arcane; plain daggers stay steel.
-        ctx.fillStyle = proj.homing > 0 ? '#9ad8ff' : PALETTE.dagger;
-        ctx.fillRect(Math.round(proj.x) - 2, Math.round(proj.y) - 2, 4, 4);
-        if (proj.homing > 0) {
-          ctx.fillStyle = '#e8f6ff';
-          ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
-        }
-      }
-    }
-
+    this.tiles.drawProjectiles(ctx, this.projectiles);
     this.combat.renderEffects(ctx, this.gameTime);
   }
 
@@ -1565,22 +1653,11 @@ export class DungeonCrawlGame extends BaseGame {
       combo: this.combo,
       comboTimer: this.comboTimer,
       dashFrac: this.player.dashCooldownFrac(),
-      ability: this.chosenClass
-        ? {
-            frac: this.player.abilityCooldownFrac(),
-            icon: CLASSES[this.chosenClass].icon,
-            color: CLASSES[this.chosenClass].color,
-          }
-        : null,
-      scroll: this.player.scroll
-        ? { icon: SCROLLS[this.player.scroll].icon, color: SCROLLS[this.player.scroll].color }
-        : null,
-      hero: this.progression.character()
-        ? {
-            level: this.progression.character()!.level,
-            xpFrac: this.progression.xpFrac(),
-          }
-        : null,
+      classId: this.chosenClass,
+      abilityFrac: this.player.abilityCooldownFrac(),
+      scrollId: this.player.scroll,
+      heroLevel: this.progression.character()?.level ?? null,
+      heroXpFrac: this.progression.xpFrac(),
       buffs: this.player.buffs,
       relics: this.player.relics,
     });
@@ -1596,49 +1673,26 @@ export class DungeonCrawlGame extends BaseGame {
       this.hud.renderBossBar(ctx, this.boss.kit.name, this.boss.hp, this.boss.maxHp, this.boss.enraged);
     }
     if (this.activeShopItem && this.state === 'playing') {
-      const item = this.activeShopItem;
-      const names: Record<string, string> = {
-        heart: 'HEART',
-        daggers: 'DAGGER BUNDLE',
-        potion: 'MYSTERY POTION',
-        relic: 'MYSTERY RELIC',
-        scroll: 'MYSTERY SCROLL',
-      };
-      const price = this.hagglerPrice(item.price);
-      this.hud.renderShopPrompt(
+      const price = this.hagglerPrice(this.activeShopItem.price);
+      this.hud.renderShopItemPrompt(
         ctx,
-        `${names[item.product]} — ${price}g · press E`,
+        this.activeShopItem.product,
+        price,
         this.goldBalance >= price,
         this.shopDeniedFlash,
       );
     }
-    // v4 Wave B — town prompts + overlays.
+    // v4 Wave B — town prompts + overlays (the town routes its own overlay).
     if (this.state === 'town') {
       const prompt = this.town.promptText();
       if (prompt) this.hud.renderShopPrompt(ctx, prompt, true, 0);
-      const hero = this.progression.character();
-      if (this.town.overlay === 'quests') {
-        this.hud.renderQuestBoard(ctx, ALL_QUEST_IDS, this.town.selection, hero?.level ?? 1);
-      } else if (this.town.overlay === 'smith') {
-        this.hud.renderSmith(
-          ctx,
-          ALL_GEAR_IDS,
-          this.town.selection,
-          id => hero?.gear[id] ?? 0,
-          hero?.gold ?? 0,
-        );
-      } else if (this.town.overlay === 'alchemist') {
-        this.hud.renderAlchemist(
-          ctx,
-          ALL_PROVISION_IDS,
-          this.town.selection,
-          id => hero?.provisions.includes(id) ?? false,
-          hero?.gold ?? 0,
-        );
-      }
+      this.town.renderOverlay(ctx, this.hud, this.progression.character());
     }
-    if (this.state === 'victory' && this.activeQuest) {
-      this.hud.renderVictory(ctx, this.activeQuest.name, this.victoryRows, this.victoryTimer);
+    if (this.state === 'victory' && this.activeQuest && this.victoryLedger) {
+      this.hud.renderVictory(ctx, this.activeQuest.name, this.victoryLedger, this.victoryTimer);
+    }
+    if (this.state === 'interlude' && this.pendingInterlude) {
+      this.hud.renderInterlude(ctx, this.pendingInterlude, this.interludeTimer);
     }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
     if (this.state === 'classSelect') {
@@ -1667,31 +1721,14 @@ export class DungeonCrawlGame extends BaseGame {
       );
     }
     if (this.state === 'recap' && this.recapStats) {
-      const stats = this.recapStats;
       this.hud.renderRecap(ctx, {
-        causeLabel: CAUSE_LABELS[stats.cause],
-        causeHint: CAUSE_HINTS[stats.cause],
-        rows: [
-          ['DEPTH REACHED', `FLOOR ${stats.depth}`],
-          ['MONSTERS SLAIN', `${stats.kills}`],
-          ['XP EARNED', `${this.progression.sessionXp}`],
-          ['GOLD PLUNDERED', `${stats.gold}`],
-          ['GUARDIANS FELLED', `${stats.bosses}`],
-          ['RELICS CLAIMED', `${stats.relics}`],
-          ['BEST COMBO', `x${stats.maxCombo}`],
-          ['FINAL SCORE', `${this.score}`],
-        ],
+        stats: this.recapStats,
+        sessionXp: this.progression.sessionXp,
+        score: this.score,
         timer: this.recapTimer,
-        heroLine: this.recapRetired
-          ? 'HERO RETIRED — THE CLASS AWAITS A NEW LEGEND'
-          : this.progression.hasCharacter()
-            ? 'YOUR HERO ENDURES — XP AND BOONS ARE KEPT'
-            : undefined,
-        retireFrac: this.recapRetired
-          ? undefined
-          : this.progression.hasCharacter()
-            ? this.retireHold / PROGRESSION.RETIRE_HOLD_SECONDS
-            : undefined,
+        retired: this.recapRetired,
+        hasHero: this.progression.hasCharacter(),
+        retireHold: this.retireHold,
       });
     }
   }

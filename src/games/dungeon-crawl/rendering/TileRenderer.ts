@@ -11,6 +11,7 @@ import { Boss } from '../entities/Boss';
 import { Hazard } from '../entities/Hazard';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
+import { Projectile } from '../entities/Projectile';
 import { Urn } from '../entities/Urn';
 
 /** Deterministic per-tile hash for floor variation. */
@@ -21,6 +22,25 @@ function tileHash(tx: number, ty: number): number {
 }
 
 export class TileRenderer {
+  /** Bolts + daggers (mage mana bolts glow arcane; plain daggers stay steel). */
+  drawProjectiles(ctx: CanvasRenderingContext2D, projectiles: readonly Projectile[]): void {
+    for (const proj of projectiles) {
+      if (proj.kind === 'bolt') {
+        ctx.fillStyle = proj.homing > 0 ? '#c99aff' : '#78beff';
+        ctx.fillRect(Math.round(proj.x) - 3, Math.round(proj.y) - 3, 6, 6);
+        ctx.fillStyle = '#d8ecff';
+        ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
+      } else {
+        ctx.fillStyle = proj.homing > 0 ? '#9ad8ff' : PALETTE.dagger;
+        ctx.fillRect(Math.round(proj.x) - 2, Math.round(proj.y) - 2, 4, 4);
+        if (proj.homing > 0) {
+          ctx.fillStyle = '#e8f6ff';
+          ctx.fillRect(Math.round(proj.x) - 1, Math.round(proj.y) - 1, 2, 2);
+        }
+      }
+    }
+  }
+
   /** Draw the visible tile window. ctx is already camera-translated. */
   renderTiles(
     ctx: CanvasRenderingContext2D,
@@ -74,6 +94,25 @@ export class TileRenderer {
             ctx.fillRect(px + offset, py + 12, 2, 10);
             ctx.fillRect(px + ((offset + 14) % TILE), py + 24, 2, 8);
             if (tile === Tile.TorchWall) this.drawTorch(ctx, px, py, time, tx, ty, biome);
+            break;
+          }
+          case Tile.CrackedWall: {
+            // v4 Wave C — reads as a wall, but hairline fractures betray the
+            // hollow behind it (a player-sourced blast breaks it open).
+            ctx.fillStyle = biome.wallFace;
+            ctx.fillRect(px, py, TILE, TILE);
+            ctx.fillStyle = biome.wallTop;
+            ctx.fillRect(px, py, TILE, 10);
+            ctx.fillStyle = biome.wallEdge;
+            ctx.fillRect(px, py + 10, TILE, 2);
+            ctx.fillRect(px, py + 22, TILE, 2);
+            // Hairline cracks branching from mid-face.
+            ctx.fillStyle = biome.floorCrack;
+            ctx.fillRect(px + 14, py + 6, 2, 10);
+            ctx.fillRect(px + 10, py + 14, 6, 2);
+            ctx.fillRect(px + 16, py + 16, 2, 8);
+            ctx.fillRect(px + 18, py + 22, 6, 2);
+            ctx.fillRect(px + 8, py + 24, 2, 6);
             break;
           }
           case Tile.Door: {

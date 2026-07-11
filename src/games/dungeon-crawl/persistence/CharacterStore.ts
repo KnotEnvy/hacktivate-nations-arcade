@@ -17,6 +17,7 @@ import {
   ProvisionId,
 } from '../data/gear';
 import { LEVEL_CAP } from '../data/progression';
+import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
 
 const SAVE_PREFIX = 'dungeon-crawl-save';
 const SESSION_OWNER_KEY = 'hacktivate-session-owner';
@@ -40,6 +41,8 @@ export interface SavedHero {
   gold: number; // banked gold, safe from death
   gear: Partial<Record<GearId, number>>; // blacksmith tiers 1..MAX_TIER
   provisions: ProvisionId[]; // packed for the NEXT expedition; consumed at the gate
+  // v4 Wave C — chapters completed per saga (additive field, no version bump).
+  sagas: Partial<Record<SagaId, number>>;
 }
 
 export interface SavePayloadV2 {
@@ -97,6 +100,14 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     ? ALL_PROVISION_IDS.filter(id => (hero.provisions as unknown[]).includes(id))
     : [];
 
+  const sagas: Partial<Record<SagaId, number>> = {};
+  if (hero.sagas && typeof hero.sagas === 'object') {
+    for (const id of ALL_SAGA_IDS) {
+      const done = Math.floor(asFiniteNumber((hero.sagas as Record<string, unknown>)[id], 0));
+      if (done > 0) sagas[id] = Math.min(done, SAGAS[id].quests.length);
+    }
+  }
+
   const stats = hero.stats && typeof hero.stats === 'object' ? hero.stats : undefined;
   return {
     classId: expectedClass,
@@ -116,6 +127,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     gold: Math.max(0, Math.floor(asFiniteNumber(hero.gold, 0))),
     gear,
     provisions,
+    sagas,
   };
 }
 

@@ -47,11 +47,12 @@ export class Boss {
   private attackCycle = 0;
   fading = 0; // teleport fade animation (0..1 = how vanished)
 
-  constructor(x: number, y: number, tier: number) {
+  constructor(x: number, y: number, tier: number, kit?: BossKit) {
     this.x = x;
     this.y = y;
     this.tier = tier;
-    this.kit = bossKitForTier(tier);
+    // v4 Wave C — saga finales pin a unique kit; tier still drives HP scaling.
+    this.kit = kit ?? bossKitForTier(tier);
     this.maxHp = Math.round((BOSS.BASE_HP + BOSS.HP_PER_TIER * (tier - 1)) * this.kit.hpMult);
     this.hp = this.maxHp;
   }

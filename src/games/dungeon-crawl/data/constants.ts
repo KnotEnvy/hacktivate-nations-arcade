@@ -132,6 +132,27 @@ export const OVERLAY = {
   BANNER_FADE_OUT: 0.5,
   RECAP_INPUT_LOCKOUT: 1.2,
   RECAP_AUTO_DISMISS: 12,
+  // v4 Wave C — saga interlude: brief lockout so the prose gets a beat.
+  INTERLUDE_LOCKOUT: 1.0,
+} as const;
+
+// v4 Wave C — secret rooms behind cracked walls: counts, stock, and the nests
+// that may stir inside. The blast that opens the door should pay for itself.
+export const SECRETS = {
+  MAX_PER_FLOOR: 2, // rng.int(0, MAX) rooms per floor
+  ROOM_MIN: 3, // interior tiles per side
+  ROOM_MAX: 4,
+  PLACE_ATTEMPTS: 24, // tries per room before giving up
+  GOLD_MIN: 3,
+  GOLD_MAX: 5,
+  URNS_MIN: 1,
+  URNS_MAX: 2,
+  SHRINE_CHANCE: 0.5, // else an unidentified scroll
+  NEST_CHANCE: 0.5,
+  NEST_PACK_MIN: 3,
+  NEST_PACK_MAX: 5,
+  NEST_REWARD_BASE: 25, // run-wallet gold on clearing a nest...
+  NEST_REWARD_PER_FLOOR: 10, // ...plus this per floor
 } as const;
 
 // Floor flavor names cycle as the player descends.

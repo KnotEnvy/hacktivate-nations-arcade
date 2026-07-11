@@ -17,6 +17,8 @@ import {
   PROGRESSION,
   xpIntoLevel,
 } from '../data/progression';
+import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
+import { QuestId } from '../data/quests';
 import { Rng } from '../dungeon/rng';
 import { CharacterStore, SavedHero, SavePayloadV2 } from '../persistence/CharacterStore';
 
@@ -71,6 +73,7 @@ export class ProgressionController {
       gold: 0,
       gear: {},
       provisions: [],
+      sagas: {},
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -138,6 +141,26 @@ export class ProgressionController {
     const hero = this.character();
     if (!hero) return { hp: 0, speed: 0, daggerCap: 0 };
     return cumulativeGains(hero.classId, hero.level);
+  }
+
+  /**
+   * v4 Wave C — a quest victory advances its saga IF it was the hero's current
+   * chapter (replays never re-advance). Returns what the game should stage:
+   * the interlude for the finished chapter, and whether the saga completed.
+   */
+  advanceSaga(questId: QuestId): { interlude: string; sagaName: string; completed: boolean } | null {
+    const hero = this.character();
+    const hit = sagaChapterForQuest(questId);
+    if (!hero || !hit) return null;
+    const done = chaptersDone(hero.sagas, hit.saga.id);
+    if (hit.chapter !== done) return null; // replay or out of order — no advance
+    hero.sagas[hit.saga.id] = done + 1;
+    this.store.save(this.payload);
+    return {
+      interlude: SAGAS[hit.saga.id].interludes[hit.chapter],
+      sagaName: hit.saga.name,
+      completed: done + 1 >= hit.saga.quests.length,
+    };
   }
 
   /** Death checkpoint — the hero endures, XP and boons are banked. */

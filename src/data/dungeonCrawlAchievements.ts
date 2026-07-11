@@ -375,4 +375,49 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 250,
     unlocked: false
   },
+  // v4 Wave C — sagas + secret rooms
+  {
+    id: 'dungeon_saga_told',
+    title: 'The Saga Is Told',
+    description: 'Complete a full saga from the Lastlight board',
+    icon: '📜',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'sagas_completed', value: 1 },
+    reward: 400,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_chronicler',
+    title: 'Chronicler of the Depths',
+    description: 'Complete both sagas in a single session',
+    icon: '🏛️',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'sagas_completed', value: 2 },
+    reward: 600,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_behind_the_cracks',
+    title: 'Behind the Cracks',
+    description: 'Blast open a secret room',
+    icon: '🧱',
+    gameId: 'dungeon-crawl',
+    category: 'gameplay',
+    requirement: { type: 'secrets_found', value: 1 },
+    reward: 150,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_nest_breaker',
+    title: 'Nest Breaker',
+    description: 'Clear a nest stirring in a secret room',
+    icon: '🕸️',
+    gameId: 'dungeon-crawl',
+    category: 'gameplay',
+    requirement: { type: 'nests_cleared', value: 1 },
+    reward: 200,
+    unlocked: false
+  },
 ];

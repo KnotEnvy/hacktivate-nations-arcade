@@ -9,11 +9,13 @@
 import { SoundName } from '@/services/AudioManager';
 import { BiomePalette } from '../data/constants';
 import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '../data/gear';
-import { ALL_QUEST_IDS, QUESTS, QuestDef } from '../data/quests';
+import { QUESTS, QuestDef, STANDALONE_QUEST_IDS } from '../data/quests';
+import { ALL_SAGA_IDS, currentChapter, SAGAS } from '../data/sagas';
 import { FloorPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Player } from '../entities/Player';
 import { SavedHero } from '../persistence/CharacterStore';
+import type { HudRenderer } from '../rendering/HudRenderer';
 
 /** Warm lamplit palette — the town is night-dark but never hostile. */
 export const TOWN_PALETTE: BiomePalette = {
@@ -48,6 +50,8 @@ export interface TownCtx {
     confirmWas: boolean;
     navLeftWas: boolean;
     navRightWas: boolean;
+    navUpWas: boolean;
+    navDownWas: boolean;
   };
   player: Player;
   hero: SavedHero | null;
@@ -64,6 +68,8 @@ export class TownController {
   readonly spots: Record<TownStation, { x: number; y: number }>;
   overlay: TownOverlay = 'none';
   selection = 0;
+  /** v4 Wave C — the board carries two pages: contracts and sagas. */
+  boardPage: 'quests' | 'sagas' = 'quests';
   private nearStation: TownStation | null = null;
 
   constructor() {
@@ -76,6 +82,7 @@ export class TownController {
   reset(): void {
     this.overlay = 'none';
     this.selection = 0;
+    this.boardPage = 'quests';
     this.nearStation = null;
   }
 
@@ -136,6 +143,7 @@ export class TownController {
     if (!interactDown || ctx.edges.interactWas || !this.nearStation) return;
 
     this.selection = 0;
+    this.boardPage = 'quests';
     ctx.playSound('click', 0.4);
     // The gate and the board both open the quest list — confirming departs.
     this.overlay = this.nearStation === 'smith' ? 'smith' : this.nearStation === 'alchemist' ? 'alchemist' : 'quests';
@@ -146,7 +154,23 @@ export class TownController {
   private updateQuestBoard(ctx: TownCtx): void {
     const { input } = ctx;
     if (!input) return;
-    const count = ALL_QUEST_IDS.length;
+
+    // v4 Wave C — Up/Down flips between the contracts page and the sagas page.
+    const flip =
+      (input.isUpPressed() && !ctx.edges.navUpWas) ||
+      (input.isDownPressed() && !ctx.edges.navDownWas);
+    if (flip) {
+      this.boardPage = this.boardPage === 'quests' ? 'sagas' : 'quests';
+      this.selection = 0;
+      ctx.playSound('click', 0.35);
+      return;
+    }
+    if (this.boardPage === 'sagas') {
+      this.updateSagaBoard(ctx);
+      return;
+    }
+
+    const count = STANDALONE_QUEST_IDS.length;
     this.navigate(ctx, count);
 
     if (this.closeRequested(ctx)) return;
@@ -154,15 +178,37 @@ export class TownController {
     const confirm =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     if (confirm && !ctx.edges.confirmWas) {
-      const quest = QUESTS[ALL_QUEST_IDS[this.selection]];
-      const hero = ctx.hero;
-      if (hero && quest.minLevel > hero.level) {
-        ctx.showBanner('THE BOARD WARNS', `RECOMMENDED LEVEL ${quest.minLevel} — COURAGE OR FOLLY?`);
-      }
-      ctx.playSound('gate_open', 0.55);
-      this.overlay = 'none';
-      ctx.depart(quest);
+      const quest = QUESTS[STANDALONE_QUEST_IDS[this.selection]];
+      this.departWithWarning(ctx, quest);
     }
+  }
+
+  /** v4 Wave C — sagas: confirm departs on the hero's CURRENT chapter. */
+  private updateSagaBoard(ctx: TownCtx): void {
+    const { input } = ctx;
+    if (!input) return;
+    this.navigate(ctx, ALL_SAGA_IDS.length);
+
+    if (this.closeRequested(ctx)) return;
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    if (!confirm || ctx.edges.confirmWas) return;
+    const saga = SAGAS[ALL_SAGA_IDS[this.selection]];
+    // A told saga's finale may be relived; progress never rewinds.
+    const chapterId =
+      currentChapter(ctx.hero?.sagas, saga.id) ?? saga.quests[saga.quests.length - 1];
+    this.departWithWarning(ctx, QUESTS[chapterId]);
+  }
+
+  private departWithWarning(ctx: TownCtx, quest: QuestDef): void {
+    const hero = ctx.hero;
+    if (hero && quest.minLevel > hero.level) {
+      ctx.showBanner('THE BOARD WARNS', `RECOMMENDED LEVEL ${quest.minLevel} — COURAGE OR FOLLY?`);
+    }
+    ctx.playSound('gate_open', 0.55);
+    this.overlay = 'none';
+    ctx.depart(quest);
   }
 
   // ---------------------------------------------------------------- shops
@@ -215,6 +261,29 @@ export class TownController {
       ctx.save();
       ctx.playSound('success', 0.5);
       ctx.showBanner(provision.name, 'PACKED — APPLIED AT THE GATE');
+    }
+  }
+
+  // ---------------------------------------------------------------- rendering
+
+  /** v4 Wave C — the town routes its own overlay to the HUD's pure views. */
+  renderOverlay(ctx: CanvasRenderingContext2D, hud: HudRenderer, hero: SavedHero | null): void {
+    if (this.overlay === 'quests') {
+      if (this.boardPage === 'sagas') {
+        hud.renderSagaBoard(ctx, ALL_SAGA_IDS, hero?.sagas ?? {}, this.selection, hero?.level ?? 1);
+      } else {
+        hud.renderQuestBoard(ctx, STANDALONE_QUEST_IDS, this.selection, hero?.level ?? 1);
+      }
+    } else if (this.overlay === 'smith') {
+      hud.renderSmith(ctx, ALL_GEAR_IDS, this.selection, id => hero?.gear[id] ?? 0, hero?.gold ?? 0);
+    } else if (this.overlay === 'alchemist') {
+      hud.renderAlchemist(
+        ctx,
+        ALL_PROVISION_IDS,
+        this.selection,
+        id => hero?.provisions.includes(id) ?? false,
+        hero?.gold ?? 0,
+      );
     }
   }
 
@@ -317,6 +386,7 @@ function buildTown(): {
     shop: null,
     hazards: [],
     urns: [],
+    secrets: [],
   };
 
   return { plan, spots };
