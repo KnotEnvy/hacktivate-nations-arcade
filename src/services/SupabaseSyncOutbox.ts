@@ -5,6 +5,7 @@ import type {
   TrustedChallengeSyncInput,
   TrustedSessionMetrics,
 } from '@/services/SupabaseArcadeService';
+import { TrustedProgressionRequestError } from '@/services/SupabaseArcadeService';
 
 const OUTBOX_STORAGE_KEY = 'hacktivate-supabase-sync-outbox-v1';
 
@@ -59,6 +60,7 @@ type OutboxOperation =
     };
 
 export type StoredOutboxOperation = OutboxOperation & {
+  ownerId: string;
   id: string;
   createdAt: string;
   updatedAt: string;
@@ -95,6 +97,14 @@ export class SupabaseSyncOutbox {
   private listeners: Array<(queue: StoredOutboxOperation[]) => void> = [];
   private loaded = false;
 
+  constructor(private ownerId: string | null = null) {}
+
+  setOwner(ownerId: string | null) {
+    this.ensureLoaded();
+    this.ownerId = ownerId;
+    this.notify();
+  }
+
   private ensureLoaded() {
     if (this.loaded || typeof window === 'undefined') {
       return;
@@ -114,7 +124,10 @@ export class SupabaseSyncOutbox {
         return;
       }
 
-      this.queue = parsed.filter(isRecord).map(entry => entry as StoredOutboxOperation);
+      this.queue = parsed
+        .filter(isRecord)
+        .filter(entry => typeof entry.ownerId === 'string')
+        .map(entry => entry as StoredOutboxOperation);
     } catch (error) {
       console.warn('Failed to load Supabase sync outbox:', error);
       this.queue = [];
@@ -136,25 +149,28 @@ export class SupabaseSyncOutbox {
 
   getItems(): StoredOutboxOperation[] {
     this.ensureLoaded();
-    return [...this.queue];
+    return this.ownerId
+      ? this.queue.filter(entry => entry.ownerId === this.ownerId)
+      : [];
   }
 
   getPendingCount(): number {
     this.ensureLoaded();
-    return this.queue.length;
+    return this.getItems().length;
   }
 
   getDiagnostics(): SyncOutboxDiagnostics {
     this.ensureLoaded();
-    const failedEntries = this.queue.filter(entry => Boolean(entry.lastError));
+    const ownedQueue = this.getItems();
+    const failedEntries = ownedQueue.filter(entry => Boolean(entry.lastError));
     const latestFailedEntry = [...failedEntries].sort((left, right) =>
       right.updatedAt.localeCompare(left.updatedAt)
     )[0];
 
     return {
-      pendingCount: this.queue.length,
+      pendingCount: ownedQueue.length,
       failedCount: failedEntries.length,
-      highestRetryCount: this.queue.reduce(
+      highestRetryCount: ownedQueue.reduce(
         (highest, entry) => Math.max(highest, entry.retryCount),
         0
       ),
@@ -178,6 +194,9 @@ export class SupabaseSyncOutbox {
 
   enqueue(operation: OutboxOperation): StoredOutboxOperation {
     this.ensureLoaded();
+    if (!this.ownerId) {
+      throw new Error('Cannot queue a Supabase sync operation without an account owner.');
+    }
     const timestamp = new Date().toISOString();
     const existingIndex = this.findMergeCandidateIndex(operation);
 
@@ -191,6 +210,7 @@ export class SupabaseSyncOutbox {
 
     const entry: StoredOutboxOperation = {
       ...operation,
+      ownerId: this.ownerId,
       id: createOperationId(),
       createdAt: timestamp,
       updatedAt: timestamp,
@@ -204,6 +224,9 @@ export class SupabaseSyncOutbox {
 
   private findMergeCandidateIndex(operation: OutboxOperation): number {
     return this.queue.findIndex(entry => {
+      if (entry.ownerId !== this.ownerId) {
+        return false;
+      }
       if (entry.kind !== operation.kind) {
         return false;
       }
@@ -345,7 +368,11 @@ export class SupabaseSyncOutbox {
     this.ensureLoaded();
     let processed = 0;
 
-    for (const entry of [...this.queue]) {
+    if (!this.ownerId) {
+      return { processed: 0, remaining: 0 };
+    }
+
+    for (const entry of this.queue.filter(item => item.ownerId === this.ownerId)) {
       try {
         switch (entry.kind) {
           case 'profile-sync':
@@ -408,6 +435,14 @@ export class SupabaseSyncOutbox {
         processed += 1;
         this.remove(entry.id);
       } catch (error) {
+        if (
+          error instanceof TrustedProgressionRequestError &&
+          [400, 404, 409, 422].includes(error.status)
+        ) {
+          console.warn('Discarding permanently rejected Supabase sync operation:', error);
+          this.remove(entry.id);
+          continue;
+        }
         this.markFailure(entry.id, error);
         break;
       }
@@ -415,7 +450,7 @@ export class SupabaseSyncOutbox {
 
     return {
       processed,
-      remaining: this.queue.length,
+      remaining: this.getPendingCount(),
     };
   }
 }

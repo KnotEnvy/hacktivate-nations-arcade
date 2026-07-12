@@ -140,6 +140,8 @@ export function GameCarousel({
 
             <div className="relative">
               <button
+                type="button"
+                aria-label={`Scroll Tier ${tier} games left`}
                 className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full border border-white/10 backdrop-blur"
                 onClick={() =>
                   listRefs.current[tier]?.scrollBy({ left: -300, behavior: 'smooth' })
@@ -148,6 +150,8 @@ export function GameCarousel({
                 {'<'}
               </button>
               <button
+                type="button"
+                aria-label={`Scroll Tier ${tier} games right`}
                 className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-black/40 hover:bg-black/60 text-white p-2 rounded-full border border-white/10 backdrop-blur"
                 onClick={() =>
                   listRefs.current[tier]?.scrollBy({ left: 300, behavior: 'smooth' })

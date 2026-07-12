@@ -1,4 +1,4 @@
-import { ACHIEVEMENTS } from '@/data/achievements';
+import { ACHIEVEMENTS } from '@/data/Achievements';
 import { ECONOMY } from '@/lib/constants';
 import {
   applyChallengeProgress,
@@ -14,8 +14,9 @@ import { UserService, type UserStats } from '@/services/UserServices';
 const MAX_TRUSTED_SCORE = 100000000;
 const MAX_TRUSTED_PICKUPS = 1000000;
 const MAX_TRUSTED_PROGRESS = 1000000;
-const MAX_TRUSTED_TIME_PLAYED_MS = 24 * 60 * 60 * 1000;
+const MAX_TRUSTED_TIME_PLAYED_MS = 4 * 60 * 60 * 1000;
 const MAX_TRUSTED_SESSION_METRIC = 100000000;
+export const MAX_TRUSTED_REWARD_PER_SESSION = 5000;
 
 const DEFAULT_USER_STATS: UserStats = {
   totalDistance: 0,
@@ -301,7 +302,10 @@ export const calculateTrustedGameReward = (params: {
       : 1
   );
 
-  return currencyService.calculateGameReward(params.score, params.pickups);
+  return Math.min(
+    currencyService.calculateGameReward(params.score, params.pickups),
+    MAX_TRUSTED_REWARD_PER_SESSION
+  );
 };
 
 export const getAchievementDefinition = (achievementId: string) =>

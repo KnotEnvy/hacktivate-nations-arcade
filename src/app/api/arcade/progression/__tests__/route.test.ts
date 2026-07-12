@@ -299,6 +299,7 @@ describe('POST /api/arcade/progression', () => {
         score: 1000,
         pickups: 1,
         timePlayedMs: 5000,
+        clientMutationId: 'rpc-failure-1',
       })
     );
 

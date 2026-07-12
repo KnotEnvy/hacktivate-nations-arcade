@@ -59,7 +59,7 @@ describe('SupabaseSyncOutbox', () => {
   });
 
   test('merges replaceable operations and preserves queued rich session records', () => {
-    const outbox = new SupabaseSyncOutbox();
+    const outbox = new SupabaseSyncOutbox('user-1');
 
     outbox.enqueue({
       kind: 'profile-sync',
@@ -140,7 +140,7 @@ describe('SupabaseSyncOutbox', () => {
   });
 
   test('replaces richer trusted session retries using the mutation id', () => {
-    const outbox = new SupabaseSyncOutbox();
+    const outbox = new SupabaseSyncOutbox('user-1');
 
     const first = makeRichTrustedSessionRecord({
       score: 100,
@@ -175,7 +175,7 @@ describe('SupabaseSyncOutbox', () => {
   });
 
   test('flush replays queued operations and reconciles balances/unlocks', async () => {
-    const outbox = new SupabaseSyncOutbox();
+    const outbox = new SupabaseSyncOutbox('user-1');
     const service = makeServiceMock();
     const balances: number[] = [];
     const unlocks: Array<{ tiers: number[]; games: string[] }> = [];
@@ -211,7 +211,7 @@ describe('SupabaseSyncOutbox', () => {
   });
 
   test('flush stops at the first failure and leaves the failed item queued', async () => {
-    const outbox = new SupabaseSyncOutbox();
+    const outbox = new SupabaseSyncOutbox('user-1');
     const service = makeServiceMock();
     service.recordTrustedGameSession.mockRejectedValueOnce(
       new Error('network down')
@@ -240,7 +240,7 @@ describe('SupabaseSyncOutbox', () => {
   });
 
   test('reports diagnostics for queued failures', async () => {
-    const outbox = new SupabaseSyncOutbox();
+    const outbox = new SupabaseSyncOutbox('user-1');
     const service = makeServiceMock();
     service.recordTrustedGameSession.mockRejectedValueOnce(
       new Error('timeout while replaying session')
@@ -267,5 +267,23 @@ describe('SupabaseSyncOutbox', () => {
       lastError: expect.stringContaining('timeout while replaying session'),
     });
     expect(outbox.getDiagnostics().lastErrorAt).toEqual(expect.any(String));
+  });
+
+  test('never exposes or replays operations queued by another account', async () => {
+    const firstAccount = new SupabaseSyncOutbox('user-1');
+    firstAccount.enqueue(makeRichTrustedSessionRecord());
+
+    const secondAccount = new SupabaseSyncOutbox('user-2');
+    const service = makeServiceMock();
+
+    expect(secondAccount.getItems()).toEqual([]);
+    await expect(secondAccount.flush(service, 'token-2')).resolves.toEqual({
+      processed: 0,
+      remaining: 0,
+    });
+    expect(service.recordTrustedGameSession).not.toHaveBeenCalled();
+
+    secondAccount.setOwner('user-1');
+    expect(secondAccount.getPendingCount()).toBe(1);
   });
 });

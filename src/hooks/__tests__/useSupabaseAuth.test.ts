@@ -98,4 +98,44 @@ describe('useSupabaseAuth', () => {
     expect(result.current.session).toBeNull();
     expect(result.current.profile).toBeNull();
   });
+
+  it('keeps the local session when Supabase sign out fails', async () => {
+    const session = createSession();
+    const profileRow = {
+      id: session.user.id,
+      username: 'ServerPlayer',
+      avatar: null,
+      created_at: '2026-01-01T00:00:00.000Z',
+      updated_at: '2026-04-15T00:00:00.000Z',
+    };
+    const profileQuery = {
+      select: jest.fn().mockReturnThis(),
+      eq: jest.fn().mockReturnThis(),
+      single: jest.fn().mockResolvedValue({ data: profileRow, error: null }),
+    };
+    const supabase = {
+      auth: {
+        getSession: jest.fn().mockResolvedValue({ data: { session }, error: null }),
+        onAuthStateChange: jest.fn(() => ({
+          data: { subscription: { unsubscribe: jest.fn() } },
+        })),
+        signOut: jest.fn().mockResolvedValue({
+          error: { message: 'Network request failed' },
+        }),
+      },
+      from: jest.fn(() => profileQuery),
+    };
+
+    mockedGetSupabaseBrowserClient.mockReturnValue(supabase as never);
+    const { result } = renderHook(() => useSupabaseAuth());
+
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.signOut();
+    });
+
+    expect(result.current.session?.user.id).toBe(session.user.id);
+    expect(result.current.profile?.username).toBe('ServerPlayer');
+    expect(result.current.error).toBe('Network request failed');
+  });
 });

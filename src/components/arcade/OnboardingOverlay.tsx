@@ -1,14 +1,20 @@
 'use client';
 
+import { AccessibleDialog } from '@/components/ui/AccessibleDialog';
+
 interface OnboardingOverlayProps {
   onClose: () => void;
 }
 
 export function OnboardingOverlay({ onClose }: OnboardingOverlayProps) {
   return (
-    <div className="fixed inset-0 z-50 bg-black bg-opacity-75 flex items-center justify-center p-4" data-testid="onboarding-overlay">
-      <div className="bg-gray-900 p-6 rounded-lg max-w-sm text-center space-y-4 overflow-y-auto max-h-[80vh]">
-        <h2 className="text-xl font-bold text-white">Welcome to Hacktivate Nations Retro Arcade!</h2>
+    <AccessibleDialog
+      titleId="onboarding-title"
+      onClose={onClose}
+      testId="onboarding-overlay"
+      className="bg-gray-900 p-6 rounded-lg max-w-sm w-full text-center space-y-4 overflow-y-auto max-h-[80vh] border border-purple-500"
+    >
+        <h2 id="onboarding-title" className="text-xl font-bold text-white">Welcome to Hacktivate Nations Retro Arcade!</h2>
         <p className="text-gray-300 text-sm">
           Earn <span className="text-yellow-400 font-bold">coins</span> by playing games. Use them to unlock new tiers,
           then unlock games within each tier. Track your progress in the{' '}
@@ -24,7 +30,6 @@ export function OnboardingOverlay({ onClose }: OnboardingOverlayProps) {
         </ul>
         <a href="/instructions" className="text-purple-300 underline text-sm hover:text-purple-200 block">View full instructions</a>
         <button onClick={onClose} className="arcade-button w-full text-sm" data-testid="onboarding-finish">Got it!</button>
-      </div>
-    </div>
+    </AccessibleDialog>
   );
 }

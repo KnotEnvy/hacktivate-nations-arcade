@@ -64,7 +64,14 @@ export function DailyChallenges({ challengeService }: DailyChallengesProps) {
             </div>
             
             {/* Progress bar */}
-            <div className="w-full bg-gray-700 rounded-full h-2 mb-2">
+            <div
+              className="w-full bg-gray-700 rounded-full h-2 mb-2"
+              role="progressbar"
+              aria-label={`${challenge.title} progress`}
+              aria-valuemin={0}
+              aria-valuemax={challenge.target}
+              aria-valuenow={Math.min(challenge.progress, challenge.target)}
+            >
               <div
                 className={`h-2 rounded-full transition-all duration-300 ${
                   challenge.completed ? 'bg-green-500' : 'bg-blue-500'

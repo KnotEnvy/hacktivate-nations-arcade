@@ -52,6 +52,7 @@ describe('trustedProgression helpers', () => {
         gameId: 'runner',
         score: -1,
         pickups: 1,
+        clientMutationId: 'invalid-score',
       } as TrustedGameSessionInput)
     ).toThrow('score must be a non-negative number.');
 
@@ -60,6 +61,7 @@ describe('trustedProgression helpers', () => {
         gameId: 'runner',
         score: 10,
         pickups: Number.POSITIVE_INFINITY,
+        clientMutationId: 'invalid-pickups',
       } as TrustedGameSessionInput)
     ).toThrow('pickups must be a non-negative number.');
   });
@@ -72,6 +74,17 @@ describe('trustedProgression helpers', () => {
         pickups: 1,
       })
     ).toThrow('Game is not registered for trusted progression writes.');
+  });
+
+  test('calculateTrustedGameReward caps a single session payout', () => {
+    expect(
+      calculateTrustedGameReward({
+        level: 100,
+        score: 100_000_000,
+        pickups: 1_000_000,
+        dailyChallengeMultiplierActive: true,
+      })
+    ).toBe(5000);
   });
 
   test('calculateTrustedGameReward applies level perks and daily multiplier', () => {
@@ -210,6 +223,7 @@ describe('trustedProgression helpers', () => {
         score: 1500,
         pickups: 8,
         timePlayedMs: 32_000,
+        clientMutationId: 'session-progression-state',
         metrics: {
           distance: 900,
           speed: 3.5,
@@ -249,6 +263,7 @@ describe('trustedProgression helpers', () => {
       score: 1500,
       pickups: 3,
       timePlayedMs: 20_000,
+      clientMutationId: 'session-achievements',
       metrics: {
         jumps: 1,
       },
@@ -304,6 +319,7 @@ describe('trustedProgression helpers', () => {
         score: 5000,
         pickups: 4,
         timePlayedMs: 61_000,
+        clientMutationId: 'session-challenge-progress',
       }),
       rewardAwarded: 75,
     });

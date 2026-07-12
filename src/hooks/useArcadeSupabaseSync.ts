@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Session } from '@supabase/supabase-js';
-import type { Json } from '@/lib/supabase.types';
 import { getChallengeTemplate } from '@/lib/challenges';
 import { DEFAULT_UNLOCKED_GAME_IDS } from '@/lib/unlocks';
 import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
@@ -89,6 +88,12 @@ export function useArcadeSupabaseSync({
   const hasHydratedRef = useRef(false);
 
   useEffect(() => {
+    syncOutbox.setOwner(session?.user.id ?? null);
+    setPendingSyncCount(syncOutbox.getPendingCount());
+    setSyncDiagnostics(syncOutbox.getDiagnostics());
+  }, [session?.user.id, syncOutbox]);
+
+  useEffect(() => {
     saveUnlockStateRef.current = saveUnlockState;
   }, [saveUnlockState]);
 
@@ -112,6 +117,9 @@ export function useArcadeSupabaseSync({
 
   const schedulePlayerSync = useCallback(
     (overrides?: UnlockSyncOverrides) => {
+      // Unlock writes are authoritative route mutations; this callback now
+      // schedules profile metadata only while preserving the hook contract.
+      void overrides;
       if (!supabaseService || !session) return;
       const accessToken = session.access_token;
       if (!accessToken || isHydratingRef.current) return;
@@ -122,13 +130,6 @@ export function useArcadeSupabaseSync({
 
       syncTimeoutRef.current = window.setTimeout(() => {
         const profileData = userService.getProfile();
-        const stats = userService.getStats();
-        const lastActiveAt =
-          profileData.lastActiveAt && profileData.lastActiveAt.getTime() > 0
-            ? profileData.lastActiveAt.toISOString()
-            : null;
-        const nextUnlockedTiers = overrides?.unlockedTiers ?? unlocksRef.current.tiers;
-        const nextUnlockedGames = overrides?.unlockedGames ?? unlocksRef.current.games;
 
         void supabaseService
           .upsertProfile(
@@ -151,41 +152,9 @@ export function useArcadeSupabaseSync({
             });
           });
 
-        void supabaseService
-          .upsertPlayerState(
-            {
-              userId: session.user.id,
-              level: profileData.level,
-              experience: profileData.experience,
-              totalPlayTime: profileData.totalPlayTime,
-              gamesPlayed: stats.gamesPlayed,
-              lastActiveAt,
-              unlockedTiers: nextUnlockedTiers,
-              unlockedGames: nextUnlockedGames,
-              stats: stats as unknown as Json,
-            },
-            { accessToken }
-          )
-          .catch(error => {
-            console.warn('Supabase player state sync failed:', error);
-            enqueueSyncOnly({
-              kind: 'player-state-sync',
-              payload: {
-                userId: session.user.id,
-                level: profileData.level,
-                experience: profileData.experience,
-                totalPlayTime: profileData.totalPlayTime,
-                gamesPlayed: stats.gamesPlayed,
-                lastActiveAt,
-                unlockedTiers: nextUnlockedTiers,
-                unlockedGames: nextUnlockedGames,
-                stats: stats as unknown as Json,
-              },
-            });
-          });
       }, 600);
     },
-    [enqueueSyncOnly, session, supabaseService, unlocksRef, userService]
+    [enqueueSyncOnly, session, supabaseService, userService]
   );
 
   const reconcileTrustedBalance = useCallback(
@@ -413,8 +382,7 @@ export function useArcadeSupabaseSync({
         const userId = session.user.id;
         const fallbackUsername =
           session.user.user_metadata?.preferred_username ||
-          session.user.email?.split('@')[0] ||
-          'Player';
+          `Player-${session.user.id.slice(0, 6)}`;
         const [
           profileRow,
           playerStateRow,
@@ -458,71 +426,46 @@ export function useArcadeSupabaseSync({
           );
         }
 
-        if (playerStateRow) {
+        let hydratedPlayerState = playerStateRow;
+        let hydratedWallet = walletRow;
+        if (!hydratedPlayerState || !hydratedWallet) {
+          const bootstrap = await supabaseService.bootstrapTrusted({ accessToken });
+          hydratedPlayerState = bootstrap.playerState;
+          hydratedWallet = bootstrap.wallet;
+        }
+
+        if (hydratedPlayerState) {
           const statsPayload =
-            playerStateRow.stats && typeof playerStateRow.stats === 'object'
-              ? (playerStateRow.stats as Partial<UserStats>)
+            hydratedPlayerState.stats && typeof hydratedPlayerState.stats === 'object'
+              ? (hydratedPlayerState.stats as Partial<UserStats>)
               : {};
 
           nextStats = {
             ...nextStats,
             ...statsPayload,
-            gamesPlayed: playerStateRow.games_played,
+            gamesPlayed: hydratedPlayerState.games_played,
           };
 
           nextProfile = {
             ...nextProfile,
-            level: playerStateRow.level,
-            experience: playerStateRow.experience,
-            totalPlayTime: playerStateRow.total_play_time,
-            gamesPlayed: playerStateRow.games_played,
-            lastActiveAt: playerStateRow.last_active_at
-              ? new Date(playerStateRow.last_active_at)
+            level: hydratedPlayerState.level,
+            experience: hydratedPlayerState.experience,
+            totalPlayTime: hydratedPlayerState.total_play_time,
+            gamesPlayed: hydratedPlayerState.games_played,
+            lastActiveAt: hydratedPlayerState.last_active_at
+              ? new Date(hydratedPlayerState.last_active_at)
               : nextProfile.lastActiveAt,
           };
 
-          const tiers = Array.from(new Set([0, ...(playerStateRow.unlocked_tiers ?? [])]));
+          const tiers = Array.from(new Set([0, ...(hydratedPlayerState.unlocked_tiers ?? [])]));
           const games = Array.from(
-            new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...(playerStateRow.unlocked_games ?? [])])
+            new Set([...DEFAULT_UNLOCKED_GAME_IDS, ...(hydratedPlayerState.unlocked_games ?? [])])
           );
           saveUnlockState(tiers, games, { sync: false });
-        } else {
-          const defaultUnlockedGames = Array.from(DEFAULT_UNLOCKED_GAME_IDS);
-          saveUnlockState([0], defaultUnlockedGames, { sync: false });
-          await supabaseService.upsertPlayerState(
-            {
-              userId,
-              level: nextProfile.level,
-              experience: nextProfile.experience,
-              totalPlayTime: nextProfile.totalPlayTime,
-              gamesPlayed: nextStats.gamesPlayed,
-              lastActiveAt:
-                nextProfile.lastActiveAt && nextProfile.lastActiveAt.getTime() > 0
-                  ? nextProfile.lastActiveAt.toISOString()
-                  : null,
-              unlockedTiers: [0],
-              unlockedGames: defaultUnlockedGames,
-              stats: nextStats as unknown as Json,
-            },
-            { accessToken }
-          );
         }
 
-        if (walletRow) {
-          currencyService.setBalance(walletRow.balance);
-          nextProfile = { ...nextProfile, totalCoins: walletRow.balance };
-        } else {
-          currencyService.setBalance(0);
-          nextProfile = { ...nextProfile, totalCoins: 0 };
-          await supabaseService.upsertWallet(
-            {
-              userId,
-              balance: 0,
-              lifetimeEarned: 0,
-            },
-            { accessToken }
-          );
-        }
+        currencyService.setBalance(hydratedWallet.balance);
+        nextProfile = { ...nextProfile, totalCoins: hydratedWallet.balance };
 
         if (achievementRows.length > 0) {
           achievementService.setUnlockedAchievements(
@@ -562,19 +505,11 @@ export function useArcadeSupabaseSync({
           challengeService.init();
           const localChallenges = challengeService.getChallenges();
           if (localChallenges.length > 0) {
-            await supabaseService.upsertChallenges(
+            await supabaseService.syncChallengesTrusted(
               localChallenges.map(challenge => ({
-                userId,
                 challengeId: challenge.id,
-                title: challenge.title,
-                description: challenge.description,
-                type: challenge.type,
-                gameId: challenge.gameId ?? null,
-                target: challenge.target,
                 progress: challenge.progress,
-                reward: challenge.reward,
-                completedAt: challenge.completed ? new Date().toISOString() : null,
-                expiresAt: challenge.expiresAt.toISOString(),
+                completed: challenge.completed,
               })),
               { accessToken }
             );

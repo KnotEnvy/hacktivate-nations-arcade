@@ -144,6 +144,11 @@ interface GameEndData {
   boons_chosen?: number;
   quests_completed?: number;
   gold_banked?: number;
+  sagas_completed?: number;
+  secrets_found?: number;
+  nests_cleared?: number;
+  spells_learned?: number;
+  spells_cast?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

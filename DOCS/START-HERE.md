@@ -1,8 +1,20 @@
 # Start Here
 
-Last updated: May 28, 2026
+Last updated: July 12, 2026
 
 This is the minimal handoff set for the next team. The production-hardening pass, Speed Racer implementation, procedural audio pass, and startup-performance pass are complete. The remaining work before public launch is deployment-readiness review, signed-in browser smoke testing, and final production operations.
+
+## July 12 Platform Hardening Update
+
+- Deployment target is Vercel, not GitHub Pages; the trusted API requires a server runtime.
+- Next.js is on the patched 15.5 maintenance line and CI audits production dependencies for high/critical findings.
+- Linux/Vercel import casing is aligned with the tracked `src/data/Achievements.ts` filename.
+- Authoritative progression tables are browser read-only; trusted RPC execution is service-role-only.
+- Achievement claims are session-derived, challenge claims and unlock purchases are atomic, and queued mutations are account-bound.
+- Public signup, auth callback credential cleanup, explicit sign-out failures, security headers, and accessible account/onboarding/audio dialogs are implemented.
+- Existing Supabase projects must apply `supabase/003_lock_down_progression.sql` before deployment. Never run the destructive `001_init.sql` against the live project.
+- Platform verification passes: type-check, lint, focused non-game tests, and the 10-test release approval suite.
+- Production build verification is still required after the current local dev server is stopped or in the Vercel preview build.
 
 ## Read Order
 

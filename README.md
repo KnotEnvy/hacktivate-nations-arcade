@@ -43,9 +43,10 @@ Required files and services:
 - `src/lib/supabase.types.ts` contains generated database typings
 - `src/services/SupabaseArcadeService.ts` centralizes profile, wallet, achievement, challenge, and leaderboard calls
 - `src/hooks/useSupabaseAuth.ts` owns auth bootstrap and auth actions
-- `supabase/001_init.sql` provisions the expected schema, views, RPCs, and RLS policies
+- `supabase/001_init.sql` provisions a new clean database
+- `supabase/003_lock_down_progression.sql` hardens an existing database for public launch
 
-After any SQL change, apply `supabase/001_init.sql` to the target project and regenerate `src/lib/supabase.types.ts`.
+Never run `supabase/001_init.sql` against an existing project with data; it drops and rebuilds the arcade schema. Existing projects must apply the numbered migration required by the change. For the current launch candidate, apply `supabase/003_lock_down_progression.sql`, then regenerate `src/lib/supabase.types.ts` after any future schema change.
 
 If Supabase env vars are absent or broken, auth is unavailable and the app remains behind the sign-in gate.
 
@@ -86,12 +87,14 @@ npm.cmd test -- --runInBand
 npm.cmd run build
 ```
 
-GitHub Actions runs that same required gate on push and pull request. The Jest step is intentionally small and data-driven; use `npm run test:dev` while actively changing a subsystem. Playwright is kept as a manual browser-smoke job because it checks the current signed-in access boundary, not a full signed-in gameplay session.
+GitHub Actions runs a production dependency audit before that required gate. The Jest step is intentionally small and data-driven; use `npm run test:dev` while actively changing a subsystem. Playwright is kept as a manual browser-smoke job because it checks the current signed-in access boundary, not a full signed-in gameplay session.
 
 ## Production Notes
 
 - Do not commit populated `.env` files
 - Keep `SUPABASE_SERVICE_ROLE_KEY` out of the client bundle and deployment logs
+- Deploy the full app to Vercel or another Next.js server host; GitHub Pages cannot serve the trusted API route
+- Apply `supabase/003_lock_down_progression.sql` to the existing Supabase project before public deployment
 - Treat `src/games/registry.ts` as the source of truth for what is actually playable
 - Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned
 - Use `DOCS/VERCEL-PRODUCTION-RUNBOOK.md` and `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` before promoting a preview to production

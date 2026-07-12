@@ -5,6 +5,13 @@ import { createSupabaseAccessTokenClient } from '@/lib/supabase';
 type DbClient = SupabaseClient<Database>;
 type LeaderboardPeriod = Database['public']['Enums']['leaderboard_period'];
 
+export class TrustedProgressionRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'TrustedProgressionRequestError';
+  }
+}
+
 export interface ProfileUpsertInput {
   id: string;
   username?: string | null;
@@ -363,12 +370,20 @@ export class SupabaseArcadeService {
       | { error?: string }
       | null;
     if (!response.ok) {
-      throw new Error(
-        body?.error || `[Trusted progression] request failed with ${response.status}`
+      throw new TrustedProgressionRequestError(
+        body?.error || `[Trusted progression] request failed with ${response.status}`,
+        response.status
       );
     }
 
     return body as TResponse;
+  }
+
+  async bootstrapTrusted(options?: SupabaseRequestOptions) {
+    return this.postTrustedProgression<{
+      playerState: Database['public']['Tables']['player_state']['Row'];
+      wallet: Database['public']['Tables']['wallets']['Row'];
+    }>({ action: 'bootstrap' }, options);
   }
 
   async recordTrustedGameSession(

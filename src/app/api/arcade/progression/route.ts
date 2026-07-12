@@ -14,7 +14,6 @@ import {
   validateAchievementIds,
   validateTrustedChallengeSync,
   validateTrustedGameSession,
-  getAchievementDefinition,
   getTrustedProgressionSettings,
   getTrustedSessionAchievementIds,
 } from '@/lib/trustedProgression';
@@ -30,6 +29,9 @@ import { UserService } from '@/services/UserServices';
 export const dynamic = 'force-dynamic';
 
 type ProgressionAction =
+  | {
+      action: 'bootstrap';
+    }
   | {
       action: 'record-session';
       gameId: string;
@@ -69,13 +71,13 @@ const jsonError = (message: string, status: number) =>
   NextResponse.json({ error: message }, { status });
 
 const getDisplayName = (user: {
+  id: string;
   email?: string;
   user_metadata?: { preferred_username?: string; username?: string };
 }) =>
   user.user_metadata?.preferred_username ||
   user.user_metadata?.username ||
-  user.email?.split('@')[0] ||
-  'Player';
+  `Player-${user.id.slice(0, 6)}`;
 
 const parseBearerToken = (request: Request): string | null => {
   const header = request.headers.get('authorization');
@@ -223,62 +225,6 @@ const ensureUserRows = async (
   return { playerState, wallet };
 };
 
-const upsertWalletBalance = async (
-  client: ReturnType<typeof createSupabaseServerClient>,
-  userId: string,
-  balance: number,
-  lifetimeEarned: number
-) => {
-  const { data, error } = await client
-    .from('wallets')
-    .upsert(
-      {
-        user_id: userId,
-        balance,
-        lifetime_earned: lifetimeEarned,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to update wallet: ${error.message}`);
-  }
-
-  return data;
-};
-
-const updateUnlockState = async (
-  client: ReturnType<typeof createSupabaseServerClient>,
-  userId: string,
-  currentPlayerState: Awaited<ReturnType<typeof ensurePlayerStateRow>>,
-  unlockedTiers: number[],
-  unlockedGames: string[]
-) => {
-  const { data, error } = await client
-    .from('player_state')
-    .upsert(
-      {
-        ...currentPlayerState,
-        user_id: userId,
-        unlocked_tiers: unlockedTiers,
-        unlocked_games: unlockedGames,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'user_id' }
-    )
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Failed to update unlock state: ${error.message}`);
-  }
-
-  return data;
-};
-
 const isDailyChallengeMultiplierActive = (
   challenges: Array<{ type: string; progress: number; target: number; completed_at: string | null }>
 ) => {
@@ -319,9 +265,14 @@ export async function POST(request: Request) {
     const { playerState, wallet } = await ensureUserRows(privilegedClient, user);
 
     switch (payload.action) {
+      case 'bootstrap':
+        return NextResponse.json({ playerState, wallet });
       case 'record-session': {
         const session = validateTrustedGameSession(payload);
         const mutationId = session.clientMutationId ?? null;
+        if (!mutationId || mutationId.length > 128) {
+          return jsonError('A valid client mutation id is required.', 400);
+        }
 
         const { data: challengeRows, error: challengeError } = await privilegedClient
           .from('challenge_assignments')
@@ -466,76 +417,11 @@ export async function POST(request: Request) {
         });
       }
       case 'claim-achievements': {
-        const achievementIds = validateAchievementIds(payload.achievementIds);
-        if (achievementIds.length === 0) {
-          return NextResponse.json({
-            achievementIds: [],
-            balance: wallet.balance,
-            rewardAwarded: 0,
-          });
-        }
-
-        const { data: existingRows, error: existingError } = await privilegedClient
-          .from('achievements')
-          .select('achievement_id')
-          .eq('user_id', user.id)
-          .in('achievement_id', achievementIds);
-
-        if (existingError) {
-          throw new Error(`Failed to load achievements: ${existingError.message}`);
-        }
-
-        const existingIds = new Set(
-          (existingRows ?? []).map(row => row.achievement_id)
+        validateAchievementIds(payload.achievementIds);
+        return jsonError(
+          'Achievement eligibility must be established by a recorded game session.',
+          409
         );
-        const newIds = achievementIds.filter(id => !existingIds.has(id));
-
-        if (newIds.length === 0) {
-          return NextResponse.json({
-            achievementIds: [],
-            balance: wallet.balance,
-            rewardAwarded: 0,
-          });
-        }
-
-        const now = new Date().toISOString();
-        const rewardAwarded = newIds.reduce((total, achievementId) => {
-          const achievement = getAchievementDefinition(achievementId);
-          return total + (achievement?.reward ?? 0);
-        }, 0);
-
-        const { error: upsertError } = await privilegedClient
-          .from('achievements')
-          .upsert(
-            newIds.map(achievementId => {
-              const achievement = getAchievementDefinition(achievementId);
-              return {
-                user_id: user.id,
-                achievement_id: achievementId,
-                progress: achievement?.requirement.value ?? null,
-                unlocked_at: now,
-                updated_at: now,
-              };
-            }),
-            { onConflict: 'user_id,achievement_id' }
-          );
-
-        if (upsertError) {
-          throw new Error(`Failed to upsert achievements: ${upsertError.message}`);
-        }
-
-        const updatedWallet = await upsertWalletBalance(
-          privilegedClient,
-          user.id,
-          wallet.balance + rewardAwarded,
-          wallet.lifetime_earned + rewardAwarded
-        );
-
-        return NextResponse.json({
-          achievementIds: newIds,
-          balance: updatedWallet.balance,
-          rewardAwarded,
-        });
       }
       case 'sync-challenges': {
         const validatedChallenges = validateTrustedChallengeSync(payload.challenges);
@@ -571,7 +457,8 @@ export async function POST(request: Request) {
                 type: challenge.type,
                 game_id: challenge.gameId,
                 target: challenge.target,
-                progress: Math.max(existing?.progress ?? 0, challenge.progress),
+                // Assignment sync is metadata-only. Progress is derived from sessions.
+                progress: existing?.progress ?? 0,
                 reward: challenge.reward,
                 completed_at: existing?.completed_at ?? null,
                 expires_at: challenge.expiresAt,
@@ -607,62 +494,28 @@ export async function POST(request: Request) {
           throw new Error(`Failed to load challenge: ${existingError.message}`);
         }
 
-        const nextProgress = Math.max(
-          existingRow?.progress ?? 0,
-          validatedChallenge.progress
-        );
+        const nextProgress = existingRow?.progress ?? 0;
         if (nextProgress < validatedChallenge.target) {
           return jsonError('Challenge progress has not met the target yet.', 409);
         }
 
-        const alreadyClaimed = Boolean(existingRow?.completed_at);
-        const rewardAwarded = alreadyClaimed
-          ? 0
-          : Math.floor(
+        const rewardAwarded = Math.floor(
               validatedChallenge.reward *
                 UserService.getPerkModifiersForLevel(playerState.level)
                   .challengeRewardMultiplier
             );
-
-        const completedAt = existingRow?.completed_at ?? new Date().toISOString();
-        const { error: challengeError } = await privilegedClient
-          .from('challenge_assignments')
-          .upsert(
-            {
-              user_id: user.id,
-              challenge_id: validatedChallenge.challengeId,
-              title: validatedChallenge.title,
-              description: validatedChallenge.description,
-              type: validatedChallenge.type,
-              game_id: validatedChallenge.gameId,
-              target: validatedChallenge.target,
-              progress: nextProgress,
-              reward: validatedChallenge.reward,
-              completed_at: completedAt,
-              expires_at: validatedChallenge.expiresAt,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: 'user_id,challenge_id' }
-          );
-
-        if (challengeError) {
-          throw new Error(`Failed to claim challenge: ${challengeError.message}`);
-        }
-
-        const updatedWallet =
-          rewardAwarded > 0
-            ? await upsertWalletBalance(
-                privilegedClient,
-                user.id,
-                wallet.balance + rewardAwarded,
-                wallet.lifetime_earned + rewardAwarded
-              )
-            : wallet;
+        const { data: claimData, error: claimError } = await privilegedClient.rpc(
+          'claim_trusted_challenge',
+          { _user_id: user.id, _challenge_id: validatedChallenge.challengeId, _reward: rewardAwarded }
+        );
+        if (claimError) throw new Error(`Failed to claim challenge atomically: ${claimError.message}`);
+        const claimResult = getRpcRow(claimData);
+        if (!claimResult) throw new Error('Challenge claim did not return a result row.');
 
         return NextResponse.json({
-          alreadyClaimed,
-          balance: updatedWallet.balance,
-          rewardAwarded,
+          alreadyClaimed: claimResult.already_claimed,
+          balance: claimResult.balance,
+          rewardAwarded: claimResult.reward_awarded,
         });
       }
       case 'unlock-tier': {
@@ -691,24 +544,19 @@ export async function POST(request: Request) {
         const nextUnlockedTiers = [...unlockedTiers, tier].sort(
           (left, right) => left - right
         );
-        await updateUnlockState(
-          privilegedClient,
-          user.id,
-          playerState,
-          nextUnlockedTiers,
-          sanitizeUnlockedGameIds(playerState.unlocked_games ?? [])
+        const unlockedGames = sanitizeUnlockedGameIds(playerState.unlocked_games ?? []);
+        const { data: purchaseData, error: purchaseError } = await privilegedClient.rpc(
+          'apply_trusted_unlock_purchase',
+          { _user_id: user.id, _cost: cost, _unlocked_tiers: nextUnlockedTiers, _unlocked_games: unlockedGames }
         );
-        const updatedWallet = await upsertWalletBalance(
-          privilegedClient,
-          user.id,
-          wallet.balance - cost,
-          wallet.lifetime_earned
-        );
+        if (purchaseError) throw new Error(`Failed to unlock tier atomically: ${purchaseError.message}`);
+        const purchase = getRpcRow(purchaseData);
+        if (!purchase) throw new Error('Tier purchase did not return a result row.');
 
         return NextResponse.json({
-          balance: updatedWallet.balance,
-          unlockedGames: sanitizeUnlockedGameIds(playerState.unlocked_games ?? []),
-          unlockedTiers: nextUnlockedTiers,
+          balance: purchase.balance,
+          unlockedGames: purchase.unlocked_games,
+          unlockedTiers: purchase.unlocked_tiers,
         });
       }
       case 'unlock-game': {
@@ -750,24 +598,19 @@ export async function POST(request: Request) {
           ...currentUnlockedGames,
           game.id,
         ]);
-        await updateUnlockState(
-          privilegedClient,
-          user.id,
-          playerState,
-          unlockedTiers.sort((left, right) => left - right),
-          nextUnlockedGames
+        const nextUnlockedTiers = unlockedTiers.sort((left, right) => left - right);
+        const { data: purchaseData, error: purchaseError } = await privilegedClient.rpc(
+          'apply_trusted_unlock_purchase',
+          { _user_id: user.id, _cost: cost, _unlocked_tiers: nextUnlockedTiers, _unlocked_games: nextUnlockedGames }
         );
-        const updatedWallet = await upsertWalletBalance(
-          privilegedClient,
-          user.id,
-          wallet.balance - cost,
-          wallet.lifetime_earned
-        );
+        if (purchaseError) throw new Error(`Failed to unlock game atomically: ${purchaseError.message}`);
+        const purchase = getRpcRow(purchaseData);
+        if (!purchase) throw new Error('Game purchase did not return a result row.');
 
         return NextResponse.json({
-          balance: updatedWallet.balance,
-          unlockedGames: nextUnlockedGames,
-          unlockedTiers: unlockedTiers.sort((left, right) => left - right),
+          balance: purchase.balance,
+          unlockedGames: purchase.unlocked_games,
+          unlockedTiers: purchase.unlocked_tiers,
         });
       }
       default:

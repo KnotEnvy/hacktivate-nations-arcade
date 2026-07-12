@@ -239,6 +239,23 @@ export interface Database {
           achievement_ids: string[];
         }[];
       };
+      claim_trusted_challenge: {
+        Args: { _user_id: string; _challenge_id: string; _reward: number };
+        Returns: {
+          balance: number;
+          reward_awarded: number;
+          already_claimed: boolean;
+        }[];
+      };
+      apply_trusted_unlock_purchase: {
+        Args: {
+          _user_id: string;
+          _cost: number;
+          _unlocked_tiers: number[];
+          _unlocked_games: string[];
+        };
+        Returns: { balance: number; unlocked_tiers: number[]; unlocked_games: string[] }[];
+      };
       record_leaderboard_score: {
         Args: {
           game_id: string;

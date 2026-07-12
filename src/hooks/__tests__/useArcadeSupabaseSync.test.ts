@@ -225,6 +225,29 @@ describe('useArcadeSupabaseSync', () => {
       .spyOn(SupabaseArcadeService.prototype, 'upsertWallet')
       .mockResolvedValue({ user_id: 'user-1' } as never);
     jest
+      .spyOn(SupabaseArcadeService.prototype, 'bootstrapTrusted')
+      .mockResolvedValue({
+        playerState: {
+          user_id: 'user-1',
+          level: 1,
+          experience: 0,
+          total_play_time: 0,
+          games_played: 0,
+          last_active_at: null,
+          unlocked_tiers: [0],
+          unlocked_games: ['runner'],
+          stats: {},
+          settings: {},
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+        wallet: {
+          user_id: 'user-1',
+          balance: 0,
+          lifetime_earned: 0,
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      } as never);
+    jest
       .spyOn(SupabaseArcadeService.prototype, 'unlockGameTrusted')
       .mockResolvedValue({
         balance: 77,
@@ -238,14 +261,11 @@ describe('useArcadeSupabaseSync', () => {
     jest.useRealTimers();
   });
 
-  it('queues profile and player-state sync writes when debounced sync fails', async () => {
+  it('queues a profile sync when the permitted debounced write fails', async () => {
     jest.useFakeTimers();
     jest
       .spyOn(SupabaseArcadeService.prototype, 'upsertProfile')
       .mockRejectedValue(new Error('profile write failed'));
-    jest
-      .spyOn(SupabaseArcadeService.prototype, 'upsertPlayerState')
-      .mockRejectedValue(new Error('state write failed'));
 
     const { result } = renderSupabaseSyncHook();
 
@@ -261,16 +281,13 @@ describe('useArcadeSupabaseSync', () => {
     await flushEffects();
 
     await waitFor(() => {
-      expect(result.current.pendingSyncCount).toBe(2);
+      expect(result.current.pendingSyncCount).toBe(1);
     });
 
     const queued = JSON.parse(localStorage.getItem(OUTBOX_STORAGE_KEY) ?? '[]') as Array<{
       kind: string;
     }>;
-    expect(queued.map(entry => entry.kind)).toEqual([
-      'profile-sync',
-      'player-state-sync',
-    ]);
+    expect(queued.map(entry => entry.kind)).toEqual(['profile-sync']);
   });
 
   it('flushes queued trusted unlocks and reconciles balance plus unlock state', async () => {
@@ -410,6 +427,10 @@ describe('useArcadeSupabaseSync', () => {
   });
 
   it('hydrates a first-time signed-in account with clean defaults instead of local guest stats', async () => {
+    const directChallengeWrite = jest.spyOn(
+      SupabaseArcadeService.prototype,
+      'upsertChallenges'
+    );
     jest
       .spyOn(SupabaseArcadeService.prototype, 'fetchProfile')
       .mockResolvedValue(null as never);
@@ -444,6 +465,9 @@ describe('useArcadeSupabaseSync', () => {
         powerupsUsed: 99,
       },
     });
+    services.challengeService.getChallenges.mockReturnValue([
+      { id: 'daily-games', progress: 0, completed: false },
+    ] as never);
     const saveUnlockState = jest.fn();
 
     const { result } = renderSupabaseSyncHook({
@@ -460,27 +484,18 @@ describe('useArcadeSupabaseSync', () => {
     });
 
     await waitFor(() => {
-      expect(SupabaseArcadeService.prototype.upsertPlayerState).toHaveBeenCalledWith(
-        expect.objectContaining({
-          level: 1,
-          experience: 0,
-          totalPlayTime: 0,
-          gamesPlayed: 0,
-        }),
-        { accessToken: 'token-123' }
-      );
+      expect(SupabaseArcadeService.prototype.bootstrapTrusted).toHaveBeenCalledWith({
+        accessToken: 'token-123',
+      });
     });
-
-    expect(SupabaseArcadeService.prototype.upsertWallet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        balance: 0,
-        lifetimeEarned: 0,
-      }),
+    expect(SupabaseArcadeService.prototype.syncChallengesTrusted).toHaveBeenCalledWith(
+      expect.any(Array),
       { accessToken: 'token-123' }
     );
+    expect(directChallengeWrite).not.toHaveBeenCalled();
     expect(services.userService.setProfile).toHaveBeenCalledWith(
       expect.objectContaining({
-        username: 'player',
+        username: 'Player-user-1',
         level: 1,
         experience: 0,
         totalCoins: 0,

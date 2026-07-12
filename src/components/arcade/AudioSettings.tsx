@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { PLAYABLE_GAME_CATALOG } from '@/lib/gameCatalog';
 import { AudioManager } from '@/services/AudioManager';
 import { AchievementService } from '@/services/AchievementService';
+import { AccessibleDialog } from '@/components/ui/AccessibleDialog';
 
 interface AudioSettingsProps {
   audioManager: AudioManager;
@@ -863,12 +864,13 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
   const currentTrackInfo = currentTrack ? getTrackInfo(currentTrack) : null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm" data-testid="audio-settings-modal">
+    <AccessibleDialog titleId="audio-settings-title" onClose={onClose} overlayClassName="backdrop-blur-sm" testId="audio-settings-modal">
       <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-xl p-6 max-w-lg w-full mx-4 border border-purple-500/50 shadow-2xl shadow-purple-500/20 max-h-[90vh] overflow-hidden flex flex-col">
 
         {/* Header */}
         <div className="flex justify-between items-center mb-4">
           <h3
+            id="audio-settings-title"
             className="text-xl font-bold text-white cursor-pointer select-none hover:text-purple-300 transition-colors"
             onClick={handleTitleClick}
             title={labUnlocked ? "Music Laboratory Unlocked!" : undefined}
@@ -882,6 +884,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
           </h3>
           <button
             onClick={onClose}
+            aria-label="Close audio settings"
             className="text-gray-400 hover:text-white text-xl transition-colors"
           >
             ✕
@@ -900,9 +903,11 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
         )}
 
         {/* Tab Navigation */}
-        <div className="flex gap-2 mb-4 border-b border-gray-700 pb-2">
+        <div className="flex gap-2 mb-4 border-b border-gray-700 pb-2 overflow-x-auto" role="tablist" aria-label="Audio settings sections">
           <button
             onClick={() => setActiveTab('volume')}
+            role="tab"
+            aria-selected={activeTab === 'volume'}
             className={`px-4 py-2 rounded-t-lg font-medium transition-all ${
               activeTab === 'volume'
                 ? 'bg-purple-600 text-white'
@@ -913,6 +918,8 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
           </button>
           <button
             onClick={() => setActiveTab('tracks')}
+            role="tab"
+            aria-selected={activeTab === 'tracks'}
             className={`px-4 py-2 rounded-t-lg font-medium transition-all ${
               activeTab === 'tracks'
                 ? 'bg-purple-600 text-white'
@@ -924,6 +931,8 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
           {labUnlocked && (
             <button
               onClick={() => setActiveTab('lab')}
+              role="tab"
+              aria-selected={activeTab === 'lab'}
               className={`px-4 py-2 rounded-t-lg font-medium transition-all ${
                 activeTab === 'lab'
                   ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white'
@@ -943,6 +952,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 {/* Pause/Play Button */}
                 <button
                   onClick={handlePauseToggle}
+                  aria-label={isPaused ? 'Resume music' : 'Pause music'}
                   className={`w-10 h-10 rounded-lg flex items-center justify-center transition-all transform hover:scale-105 ${
                     isPaused
                       ? 'bg-green-600 hover:bg-green-500'
@@ -1014,6 +1024,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 </div>
                 <input
                   data-testid="master-volume-slider"
+                  aria-label="Master volume"
                   type="range"
                   min="0"
                   max="1"
@@ -1032,6 +1043,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 </div>
                 <input
                   data-testid="sfx-volume-slider"
+                  aria-label="Sound effects volume"
                   type="range"
                   min="0"
                   max="1"
@@ -1050,6 +1062,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 </div>
                 <input
                   data-testid="music-volume-slider"
+                  aria-label="Background music volume"
                   type="range"
                   min="0"
                   max="1"
@@ -1274,6 +1287,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                         <span className="text-xs text-cyan-400 font-medium whitespace-nowrap">Live BPM:</span>
                         <input
                           type="range"
+                          aria-label="Live track tempo"
                           min="60"
                           max="200"
                           step="5"
@@ -1425,6 +1439,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 </div>
                 <input
                   type="range"
+                  aria-label="Custom track tempo"
                   min="60"
                   max="180"
                   step="5"
@@ -1449,6 +1464,7 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
                 </div>
                 <input
                   type="range"
+                  aria-label="Custom track intensity"
                   min="0.1"
                   max="1"
                   step="0.1"
@@ -2063,6 +2079,6 @@ export function AudioSettings({ audioManager, isOpen, onClose, achievementServic
           animation: gradient 3s ease infinite;
         }
       `}</style>
-    </div>
+    </AccessibleDialog>
   );
 }

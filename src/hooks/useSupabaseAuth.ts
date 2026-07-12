@@ -130,8 +130,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           activeUserIdRef.current = user.id;
           const fallback =
             user.user_metadata?.preferred_username ||
-            user.email?.split('@')[0] ||
-            'Player';
+            `Player-${user.id.slice(0, 6)}`;
           void loadProfile(user.id, fallback, nextSession.access_token);
         };
 
@@ -249,7 +248,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           activeUserIdRef.current = data.session.user.id;
           const fallback =
             data.session.user.user_metadata?.preferred_username ||
-            data.session.user.email?.split('@')[0];
+            `Player-${data.session.user.id.slice(0, 6)}`;
           await loadProfile(data.session.user.id, fallback, data.session.access_token);
         }
       }
@@ -300,7 +299,7 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
           activeUserIdRef.current = data.session.user.id;
           const fallback =
             data.session.user.user_metadata?.preferred_username ||
-            data.session.user.email?.split('@')[0];
+            `Player-${data.session.user.id.slice(0, 6)}`;
           await loadProfile(data.session.user.id, fallback, data.session.access_token);
         }
       }
@@ -381,7 +380,11 @@ export function useSupabaseAuth(): UseSupabaseAuthState {
       }
     }
     setError(null);
-    await supabase.auth.signOut();
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      setError(signOutError.message);
+      return;
+    }
     activeUserIdRef.current = null;
     setSession(null);
     setProfile(null);

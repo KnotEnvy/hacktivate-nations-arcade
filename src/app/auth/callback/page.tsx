@@ -17,13 +17,23 @@ export default function AuthCallbackPage() {
         const code = searchParams.get('code');
         const hash = typeof window !== 'undefined' ? window.location.hash : '';
 
+        const clearCallbackCredentials = () => {
+          if (typeof window === 'undefined') return;
+          const url = new URL(window.location.href);
+          url.hash = '';
+          url.searchParams.delete('code');
+          window.history.replaceState(null, '', `${url.pathname}${url.search}`);
+        };
+
         if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
+          clearCallbackCredentials();
         } else if (hash.startsWith('#')) {
           const params = new URLSearchParams(hash.slice(1));
           const access_token = params.get('access_token');
           const refresh_token = params.get('refresh_token');
+          clearCallbackCredentials();
           if (access_token && refresh_token) {
             const { error } = await supabase.auth.setSession({
               access_token,
@@ -41,7 +51,7 @@ export default function AuthCallbackPage() {
 
         setMessage('Signed in! Redirecting...');
         setStatus('success');
-        setTimeout(() => router.push('/'), 800);
+        setTimeout(() => router.replace('/'), 800);
       } catch (err) {
         const text = err instanceof Error ? err.message : 'Unable to complete sign in.';
         setMessage(text);
@@ -59,7 +69,7 @@ export default function AuthCallbackPage() {
         <p className="text-sm text-gray-200">{message}</p>
         {status === 'error' && (
           <button
-            onClick={() => router.push('/')}
+            onClick={() => router.replace('/')}
             className="mt-4 w-full rounded-lg bg-white text-gray-900 font-semibold py-2 hover:bg-gray-100 transition-colors"
           >
             Return to Arcade

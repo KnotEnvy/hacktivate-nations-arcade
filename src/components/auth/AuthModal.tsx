@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AccessibleDialog } from '@/components/ui/AccessibleDialog';
 
 interface AuthModalProps {
   open: boolean;
@@ -29,10 +30,10 @@ export function AuthModal({
   emailSentMode,
   pendingEmail,
 }: AuthModalProps) {
-  void onPasswordSignUp;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [mode, setMode] = useState<'magic' | 'signin'>('signin');
+  const [username, setUsername] = useState('');
+  const [mode, setMode] = useState<'magic' | 'signin' | 'signup'>('signin');
   const [localError, setLocalError] = useState<string | null>(null);
 
   if (!open) return null;
@@ -52,12 +53,16 @@ export function AuthModal({
       return;
     }
 
-    await onPasswordSignIn(email, password);
+    if (mode === 'signup') {
+      await onPasswordSignUp(email, password, username.trim() || undefined);
+    } else {
+      await onPasswordSignIn(email, password);
+    }
   };
 
   const activeEmail = pendingEmail || email;
   const showEmailScreen = !!emailSentMode;
-  const handleModeChange = (nextMode: 'magic' | 'signin') => {
+  const handleModeChange = (nextMode: 'magic' | 'signin' | 'signup') => {
     setMode(nextMode);
     setLocalError(null);
     if (emailSentMode) {
@@ -67,27 +72,33 @@ export function AuthModal({
   const handleBackFromEmail = (nextMode: 'magic' | 'signin' | 'signup') => {
     onClearMessages();
     setLocalError(null);
-    setMode(nextMode === 'signup' ? 'signin' : nextMode);
+    setMode(nextMode);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-gray-900 border border-purple-700 rounded-xl shadow-2xl p-6 space-y-4">
+    <AccessibleDialog
+      titleId="auth-dialog-title"
+      onClose={onClose}
+      overlayClassName="backdrop-blur-sm"
+      className="w-full max-w-md bg-gray-900 border border-purple-700 rounded-xl shadow-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto"
+    >
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-xl font-bold text-white">
+            <h2 id="auth-dialog-title" className="text-xl font-bold text-white">
               {showEmailScreen
                 ? emailSentMode === 'magic'
                   ? 'Check your email'
-                  : 'Sign in required'
-                : 'Sign in to Hacktivate Arcade'}
+                  : 'Confirm your account'
+                : mode === 'signup' ? 'Create your arcade account' : 'Sign in to Hacktivate Arcade'}
             </h2>
             <p className="text-sm text-gray-300 mt-1">
               {showEmailScreen
                 ? emailSentMode === 'magic'
                   ? 'We sent a magic link to finish signing you in.'
-                  : 'Use the link to finish signing in with your approved account.'
-                : 'Use a magic link or email/password to access the arcade and sync your progress.'}
+                  : 'Use the link to confirm your new account, then start playing.'
+                : mode === 'signup'
+                  ? 'Join the arcade to save coins, achievements, and leaderboard scores.'
+                  : 'Use a magic link or email/password to access the arcade and sync your progress.'}
             </p>
           </div>
           <button
@@ -144,10 +155,12 @@ export function AuthModal({
           </div>
         ) : (
           <>
-            <div className="flex gap-2 text-sm text-white">
+            <div className="grid grid-cols-3 gap-2 text-sm text-white" role="tablist" aria-label="Account access method">
               <button
                 type="button"
                 onClick={() => handleModeChange('magic')}
+                role="tab"
+                aria-selected={mode === 'magic'}
                 className={`flex-1 rounded-lg px-3 py-2 border ${
                   mode === 'magic'
                     ? 'border-purple-500 bg-purple-900/60'
@@ -159,6 +172,8 @@ export function AuthModal({
               <button
                 type="button"
                 onClick={() => handleModeChange('signin')}
+                role="tab"
+                aria-selected={mode === 'signin'}
                 className={`flex-1 rounded-lg px-3 py-2 border ${
                   mode === 'signin'
                     ? 'border-purple-500 bg-purple-900/60'
@@ -167,6 +182,19 @@ export function AuthModal({
               >
                 Sign in
               </button>
+              <button
+                type="button"
+                onClick={() => handleModeChange('signup')}
+                role="tab"
+                aria-selected={mode === 'signup'}
+                className={`rounded-lg px-3 py-2 border ${
+                  mode === 'signup'
+                    ? 'border-purple-500 bg-purple-900/60'
+                    : 'border-gray-700 bg-gray-800'
+                }`}
+              >
+                Sign up
+              </button>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-3">
@@ -174,6 +202,7 @@ export function AuthModal({
                 Email
                 <input
                   type="email"
+                  autoFocus
                   value={email}
                   onChange={event => setEmail(event.target.value)}
                   autoComplete="email"
@@ -185,13 +214,26 @@ export function AuthModal({
               </label>
               {mode !== 'magic' && (
                 <>
+                  {mode === 'signup' && (
+                    <label className="block text-sm text-gray-200 font-medium">
+                      Username <span className="font-normal text-gray-400">(optional)</span>
+                      <input
+                        type="text"
+                        value={username}
+                        onChange={event => setUsername(event.target.value)}
+                        autoComplete="username"
+                        maxLength={32}
+                        className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </label>
+                  )}
                   <label className="block text-sm text-gray-200 font-medium">
                     Password
                     <input
                       type="password"
                       value={password}
                       onChange={event => setPassword(event.target.value)}
-                      autoComplete="current-password"
+                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
                       className="mt-1 w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                       placeholder="Enter password"
                       required
@@ -208,12 +250,12 @@ export function AuthModal({
                   ? 'Working...'
                   : mode === 'magic'
                     ? 'Send magic link'
-                    : 'Sign in'}
+                    : mode === 'signup' ? 'Create account' : 'Sign in'}
               </button>
             </form>
 
             {(localError || error) && (
-              <div className="rounded-lg bg-red-900/60 border border-red-700 px-3 py-2 text-red-200 text-sm">
+              <div role="alert" className="rounded-lg bg-red-900/60 border border-red-700 px-3 py-2 text-red-200 text-sm">
                 {localError || error}
               </div>
             )}
@@ -223,8 +265,7 @@ export function AuthModal({
             </div>
           </>
         )}
-      </div>
-    </div>
+    </AccessibleDialog>
   );
 }
 

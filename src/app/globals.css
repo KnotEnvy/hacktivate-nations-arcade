@@ -135,3 +135,21 @@ body {
   background-color: #8B5CF6;
   border-radius: 4px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .arcade-button,
+  .game-card,
+  .game-card:hover,
+  .game-card:hover .aspect-square img {
+    transform: none !important;
+  }
+}

@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   quality:
-    name: TypeScript, lint, unit tests, build
+    name: Audit, TypeScript, lint, tests, build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -41,6 +41,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: Type check
         run: npm run type-check
