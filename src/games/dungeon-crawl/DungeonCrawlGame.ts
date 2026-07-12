@@ -12,7 +12,6 @@ import {
   biomeForFloor,
   COMBAT,
   FLOOR_NAMES,
-  HAZARDS,
   OVERLAY,
   PALETTE,
   PICKUPS,
@@ -22,7 +21,7 @@ import {
   TILE,
   VIEW,
 } from './data/constants';
-import { BOON_TUNING, BOONS, BoonId } from './data/boons';
+import { BOON_TUNING, BOONS } from './data/boons';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
 import { PROVISION_TUNING } from './data/gear';
@@ -31,7 +30,8 @@ import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
 import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
-import { ProgressionController } from './progression/ProgressionController';
+import { SPELLS, SpellId } from './data/spells';
+import { DraftPick, ProgressionController } from './progression/ProgressionController';
 import { TOWN_PALETTE, TownController } from './town/TownController';
 import {
   FloorPlan,
@@ -65,6 +65,7 @@ type GameState =
   | 'levelUp'
   | 'victory'
   | 'interlude'
+  | 'sheet'
   | 'recap';
 
 // v2 — live shop item (plan + sold state).
@@ -125,7 +126,11 @@ export class DungeonCrawlGame extends BaseGame {
     addEnemy: enemy => this.enemies.push(enemy),
     addPickup: pickup => this.pickupItems.push(pickup),
     addProjectile: projectile => this.projectiles.push(projectile),
-    findOpenSpotNear: (x, y) => this.findOpenSpotNear(x, y),
+    findOpenSpotNear: (x, y) =>
+      this.map.findOpenSpotNear(x, y) ?? { x: this.player.x, y: this.player.y },
+    hazards: () => this.hazards,
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    grantRelic: id => this.grantRelic(id),
     levelPressure: () => this.progression.levelPressure(),
     revealMap: () => this.minimap.revealAll(this.map),
     crackWall: (tx, ty) => this.crackWall(tx, ty),
@@ -207,7 +212,7 @@ export class DungeonCrawlGame extends BaseGame {
   private classIndex = 0;
   // v4 — the persistent hero + level-up draft + retire affordance.
   private progression = new ProgressionController();
-  private boonChoices: BoonId[] = [];
+  private boonChoices: DraftPick[] = [];
   private boonIndex = 0;
   private boonReturnState: 'playing' | 'town' = 'playing';
   private retireHold = 0;
@@ -220,6 +225,9 @@ export class DungeonCrawlGame extends BaseGame {
   private sagasCompleted = 0;
   private secretsFound = 0;
   private nestsCleared = 0;
+  private spellsCast = 0;
+  private activeSpellIndex = 0;
+  private sheetReturn: 'playing' | 'town' = 'playing';
   private victoryTimer = 0;
   private victoryLedger: VictoryLedger | null = null;
   // v4 Wave C — saga interlude staged by openVictory, shown after the overlay.
@@ -242,6 +250,9 @@ export class DungeonCrawlGame extends BaseGame {
   private navRightWas = false;
   private navUpWas = false;
   private navDownWas = false;
+  private spellWas = false;
+  private spellCycleWas = false;
+  private sheetWas = false;
 
   // Audio bookkeeping.
   private musicIntensity = -1;
@@ -311,6 +322,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.sagasCompleted = 0;
     this.secretsFound = 0;
     this.nestsCleared = 0;
+    this.spellsCast = 0;
+    this.activeSpellIndex = 0;
     this.pendingInterlude = null;
     this.interludeTimer = 0;
     this.victoryTimer = 0;
@@ -354,7 +367,8 @@ export class DungeonCrawlGame extends BaseGame {
       this.state === 'victory' ||
       this.state === 'interlude' ||
       this.state === 'classSelect' ||
-      (this.state === 'levelUp' && this.boonReturnState === 'town')
+      (this.state === 'levelUp' && this.boonReturnState === 'town') ||
+      (this.state === 'sheet' && this.sheetReturn === 'town')
     );
   }
 
@@ -427,6 +441,20 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.bannerTimer > 0) this.bannerTimer = Math.max(0, this.bannerTimer - dt);
     if (this.shopDeniedFlash > 0) this.shopDeniedFlash = Math.max(0, this.shopDeniedFlash - dt);
 
+    // v4 Wave D — Tab flips the character sheet open from play or town (and
+    // closed again); the world holds its breath underneath.
+    const tabDown = this.services?.input?.isKeyPressed('Tab') ?? false;
+    if (tabDown && !this.sheetWas && this.progression.hasCharacter()) {
+      if (this.state === 'playing' || this.state === 'town') {
+        this.sheetReturn = this.state;
+        this.state = 'sheet';
+        this.services?.audio?.playSound?.('click', { volume: 0.4 });
+      } else if (this.state === 'sheet') {
+        this.state = this.sheetReturn;
+        this.services?.audio?.playSound?.('click', { volume: 0.35 });
+      }
+    }
+
     switch (this.state) {
       case 'classSelect':
         this.updateClassSelect();
@@ -437,6 +465,8 @@ export class DungeonCrawlGame extends BaseGame {
       case 'playing':
         this.updatePlaying(dt);
         break;
+      case 'sheet':
+        break; // frozen under the character sheet
       case 'relic':
         this.updateRelicChoice();
         break;
@@ -474,6 +504,9 @@ export class DungeonCrawlGame extends BaseGame {
     this.navRightWas = input.isRightPressed();
     this.navUpWas = input.isUpPressed();
     this.navDownWas = input.isDownPressed();
+    this.spellWas = input.isKeyPressed('KeyV');
+    this.spellCycleWas = input.isKeyPressed('KeyG');
+    this.sheetWas = input.isKeyPressed('Tab');
   }
 
   /** Shared ←/→/digit navigation for every draft overlay (edge-detected). */
@@ -689,10 +722,10 @@ export class DungeonCrawlGame extends BaseGame {
 
   // ------------------------------------------------------------ v4 level-ups
 
-  /** Open the boon draft for a pending level (or auto-level when maxed out). */
+  /** Open the level-up draft for a pending level (or auto-level when maxed). */
   private openBoonDraft(returnTo: 'playing' | 'town' = 'playing'): void {
     this.boonReturnState = returnTo;
-    this.boonChoices = this.progression.boonChoices(this.rng);
+    this.boonChoices = this.progression.draftChoices(this.rng);
     this.boonIndex = 0;
     if (this.boonChoices.length === 0) {
       // Every training maxed — the level still lands.
@@ -719,13 +752,21 @@ export class DungeonCrawlGame extends BaseGame {
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     const directPick = this.boonChoices.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
     if ((confirm && !this.confirmWas) || directPick) {
-      const boon = this.boonChoices[this.boonIndex];
-      const { level, gain } = this.progression.confirmLevelUp(boon);
-      this.player.gainBoon(boon);
+      const pick = this.boonChoices[this.boonIndex];
+      const { level, gain } = this.progression.confirmLevelUp(pick);
+      if (pick.kind === 'boon') {
+        this.player.gainBoon(pick.id);
+        this.particles.burst(this.player.x, this.player.y, BOONS[pick.id].color, 18, 130, 0.8);
+        this.showBanner(`LEVEL ${level}!`, BOONS[pick.id].name);
+      } else {
+        // v4 Wave D — a spell joins the grimoire and readies itself at once.
+        this.activeSpellIndex = Math.max(0, (this.progression.character()?.spells.length ?? 1) - 1);
+        this.particles.burst(this.player.x, this.player.y, SPELLS[pick.id].color, 18, 130, 0.8);
+        this.showBanner(`LEVEL ${level}!`, `${SPELLS[pick.id].name} — V TO CAST`);
+        this.trackStat('spells_learned', this.progression.sessionSpellsLearned);
+      }
       this.player.gainLevelBenefits(gain);
       this.services?.audio?.playSound?.('powerup', { volume: 0.6 });
-      this.particles.burst(this.player.x, this.player.y, BOONS[boon].color, 18, 130, 0.8);
-      this.showBanner(`LEVEL ${level}!`, BOONS[boon].name);
       this.syncProgressionStats();
       // Boss XP can cross two thresholds — draft again if another level waits.
       if (this.progression.pendingLevelUp()) this.openBoonDraft(this.boonReturnState);
@@ -799,23 +840,7 @@ export class DungeonCrawlGame extends BaseGame {
     if (abilityDown && !this.abilityWas && this.chosenClass && this.player.tryAbility()) {
       this.abilitiesUsed++;
       this.trackStat('abilities_used', this.abilitiesUsed);
-      switch (this.player.kit.abilityId) {
-        case 'cleave':
-          this.player.swingAnim = 0.22; // visual swing tail for the spin
-          this.combat.cleave();
-          break;
-        case 'shadow-hide':
-          this.player.startHide();
-          this.services?.audio?.playSound?.('whoosh', { volume: 0.5 });
-          this.particles.burst(this.player.x, this.player.y, '#9a7bff', 16, 120, 0.5);
-          break;
-        case 'turn-undead':
-          this.combat.turnUndead();
-          break;
-        case 'fireball':
-          this.combat.spawnFireball();
-          break;
-      }
+      this.combat.castAbility(this.player.kit.abilityId);
     }
 
     // v3 wave 3 — read the held scroll (F / O).
@@ -826,6 +851,10 @@ export class DungeonCrawlGame extends BaseGame {
       this.scrollsUsed++;
       this.trackStat('scrolls_used', this.scrollsUsed);
     }
+
+    // v4 Wave D — the grimoire: V casts the active spell, G readies the next.
+    if ((input?.isKeyPressed('KeyV') ?? false) && !this.spellWas) this.castActiveSpell();
+    if ((input?.isKeyPressed('KeyG') ?? false) && !this.spellCycleWas) this.cycleActiveSpell();
 
     // --- Sword swing resolution (enemies, boss, urns).
     if (this.player.swing) {
@@ -852,8 +881,10 @@ export class DungeonCrawlGame extends BaseGame {
       playerY: this.player.y,
       map: this.map,
       rng: this.rng,
-      fireBolt: (x, y, dirX, dirY, speed) => {
-        this.projectiles.push(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1));
+      fireBolt: (x, y, dirX, dirY, speed, cause) => {
+        const bolt = new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1);
+        bolt.cause = cause;
+        this.projectiles.push(bolt);
       },
       throwBomb: (x, y, targetX, targetY) => this.combat.throwBomb(x, y, targetX, targetY),
       onMimicWake: enemy => this.onMimicWake(enemy),
@@ -881,7 +912,7 @@ export class DungeonCrawlGame extends BaseGame {
     // home on the nearest living monster instead.
     for (const proj of this.projectiles) {
       if (proj.kind === 'dagger' && proj.homing > 0) {
-        const target = this.nearestEnemyTo(proj.x, proj.y);
+        const target = this.combat.nearestEnemyTo(proj.x, proj.y);
         proj.update(dt, this.map, target?.x, target?.y);
       } else {
         proj.update(dt, this.map, this.player.x, this.player.y);
@@ -891,7 +922,10 @@ export class DungeonCrawlGame extends BaseGame {
         const reach = proj.radius + this.player.size / 2;
         if (Math.hypot(proj.x - this.player.x, proj.y - this.player.y) < reach) {
           proj.alive = false;
-          this.damagePlayer(proj.damage, this.boss?.alive ? 'boss_bolt' : 'sorcerer_bolt');
+          this.damagePlayer(
+            proj.damage,
+            proj.cause ?? (this.boss?.alive ? 'boss_bolt' : 'sorcerer_bolt'),
+          );
         }
       } else {
         // Player dagger vs monsters, urns and boss. Daggers ignore knight armor.
@@ -931,7 +965,7 @@ export class DungeonCrawlGame extends BaseGame {
 
     // --- v2: bombs in flight -> staged explosions -> booms; shockwaves; hazards.
     this.combat.update(dt);
-    this.updateHazards(dt);
+    this.combat.updateHazards(dt);
 
     // --- Pickups.
     for (const pickup of this.pickupItems) {
@@ -985,15 +1019,34 @@ export class DungeonCrawlGame extends BaseGame {
     this.combat.castScroll(id, this.scholarMult());
   }
 
-  private updateHazards(dt: number): void {
-    for (const hazard of this.hazards) {
-      hazard.update(dt);
-      if (!hazard.dangerous) continue;
-      const reach = HAZARDS.RADIUS + this.player.size / 2;
-      if (Math.hypot(hazard.x - this.player.x, hazard.y - this.player.y) < reach) {
-        this.damagePlayer(HAZARDS.DAMAGE, 'hazard');
-      }
+  // ------------------------------------------------------------ v4 the grimoire
+
+  /** The hero's readied spell (null before any is learned). */
+  private activeSpell(): SpellId | null {
+    const spells = this.progression.character()?.spells;
+    if (!spells || spells.length === 0) return null;
+    return spells[this.activeSpellIndex % spells.length];
+  }
+
+  private castActiveSpell(): void {
+    const id = this.activeSpell();
+    if (!id) return;
+    if (this.player.spellCooldown(id) > 0) {
+      this.services?.audio?.playSound?.('error', { volume: 0.3 });
+      return;
     }
+    this.player.startSpellCooldown(id, SPELLS[id].cooldown);
+    this.combat.castSpell(id, this.scholarMult());
+    this.spellsCast++;
+    this.trackStat('spells_cast', this.spellsCast);
+  }
+
+  private cycleActiveSpell(): void {
+    const spells = this.progression.character()?.spells;
+    if (!spells || spells.length < 2) return;
+    this.activeSpellIndex = (this.activeSpellIndex + 1) % spells.length;
+    this.services?.audio?.playSound?.('click', { volume: 0.35 });
+    this.showBanner(SPELLS[spells[this.activeSpellIndex]].name, 'READIED — V TO CAST');
   }
 
   private updateShop(interactDown: boolean): void {
@@ -1019,35 +1072,13 @@ export class DungeonCrawlGame extends BaseGame {
       return;
     }
 
-    // Purchase.
+    // Purchase (product effects resolve in Combat).
     this.goldBalance -= price;
     this.goldSpent += price;
     this.itemsBought++;
     best.sold = true;
-    switch (best.product) {
-      case 'heart':
-        this.player.heal(PICKUPS.HEART_HEAL + this.player.heartHealBonus());
-        break;
-      case 'daggers':
-        this.player.daggers = Math.min(this.player.daggerCap(), this.player.daggers + PICKUPS.DAGGER_BUNDLE + 2);
-        break;
-      case 'potion': {
-        const buffs: PotionBuff[] = ['haste', 'strength', 'stoneskin'];
-        this.player.addBuff(this.rng.pick(buffs));
-        this.potionsUsed++;
-        break;
-      }
-      case 'relic':
-        this.grantRelic(this.rng.pick(ALL_RELIC_IDS));
-        break;
-      case 'scroll': {
-        // v3 — you paid for it: a bought scroll replaces whatever was held.
-        const id = this.rng.pick(ALL_SCROLL_IDS);
-        this.player.scroll = id;
-        this.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
-        break;
-      }
-    }
+    this.combat.applyShopPurchase(best.product);
+    if (best.product === 'potion') this.potionsUsed++;
     this.services?.audio?.playSound?.('success', { volume: 0.5 });
     this.particles.burst(best.x, best.y, PALETTE.gold, 12, 100, 0.6);
     this.trackStat('items_bought', this.itemsBought);
@@ -1066,35 +1097,6 @@ export class DungeonCrawlGame extends BaseGame {
     return this.player.boonCount('scholar') > 0 ? BOON_TUNING.SCHOLAR_MULT : 1;
   }
 
-  /** Closest living, non-dormant monster (boss as fallback) — mana bolt target. */
-  private nearestEnemyTo(x: number, y: number): { x: number; y: number } | null {
-    let best: { x: number; y: number } | null = null;
-    let bestDist = Infinity;
-    for (const enemy of this.enemies) {
-      if (!enemy.alive || enemy.dormant) continue;
-      const dist = Math.hypot(enemy.x - x, enemy.y - y);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { x: enemy.x, y: enemy.y };
-      }
-    }
-    if (!best && this.boss?.alive) best = { x: this.boss.x, y: this.boss.y };
-    return best;
-  }
-
-  private findOpenSpotNear(x: number, y: number): { x: number; y: number } {
-    const { tx, ty } = this.map.tileAtWorld(x, y);
-    for (let radius = 0; radius < 4; radius++) {
-      for (let dy = -radius; dy <= radius; dy++) {
-        for (let dx = -radius; dx <= radius; dx++) {
-          if (!this.map.isSolidAt(tx + dx, ty + dy)) {
-            return this.map.tileCenter(tx + dx, ty + dy);
-          }
-        }
-      }
-    }
-    return { x: this.player.x, y: this.player.y };
-  }
 
   // ------------------------------------------------------------ combat
 
@@ -1273,19 +1275,9 @@ export class DungeonCrawlGame extends BaseGame {
         this.particles.burst(pickup.x, pickup.y, PALETTE.keyGold, 8, 80, 0.5);
         break;
       }
-      case 'scroll': {
-        // v3 — the satchel holds one; a full satchel leaves the find in place.
-        if (this.player.scroll) {
-          pickup.alive = true;
-          return;
-        }
-        const id = this.rng.pick(ALL_SCROLL_IDS);
-        this.player.scroll = id;
-        this.services?.audio?.playSound?.('unlock', { volume: 0.5 });
-        this.particles.burst(pickup.x, pickup.y, SCROLLS[id].color, 10, 90, 0.5);
-        this.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
+      case 'scroll':
+        this.combat.collectScroll(pickup);
         break;
-      }
       case 'relic-shrine': {
         const relic = this.rng.pick(ALL_RELIC_IDS);
         this.grantRelic(relic);
@@ -1554,6 +1546,9 @@ export class DungeonCrawlGame extends BaseGame {
       sagas_completed: this.sagasCompleted,
       secrets_found: this.secretsFound,
       nests_cleared: this.nestsCleared,
+      // v4 Wave D — the grimoire.
+      spells_learned: this.progression.sessionSpellsLearned,
+      spells_cast: this.spellsCast,
     };
   }
 
@@ -1639,6 +1634,7 @@ export class DungeonCrawlGame extends BaseGame {
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
+    const readiedSpell = this.activeSpell();
     this.hud.renderHud(ctx, {
       score: this.score,
       // In Lastlight the ledger shows the hero's banked treasury.
@@ -1656,6 +1652,11 @@ export class DungeonCrawlGame extends BaseGame {
       classId: this.chosenClass,
       abilityFrac: this.player.abilityCooldownFrac(),
       scrollId: this.player.scroll,
+      spellId: readiedSpell,
+      spellFrac: readiedSpell
+        ? this.player.spellCooldown(readiedSpell) / SPELLS[readiedSpell].cooldown
+        : 0,
+      spellCount: this.progression.character()?.spells.length ?? 0,
       heroLevel: this.progression.character()?.level ?? null,
       heroXpFrac: this.progression.xpFrac(),
       buffs: this.player.buffs,
@@ -1693,6 +1694,12 @@ export class DungeonCrawlGame extends BaseGame {
     }
     if (this.state === 'interlude' && this.pendingInterlude) {
       this.hud.renderInterlude(ctx, this.pendingInterlude, this.interludeTimer);
+    }
+    if (this.state === 'sheet') {
+      const hero = this.progression.character();
+      if (hero) {
+        this.hud.renderCharacterSheet(ctx, hero, this.activeSpell(), this.progression.xpFrac());
+      }
     }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
     if (this.state === 'classSelect') {

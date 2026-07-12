@@ -14,6 +14,7 @@ import {
 } from '../data/enemies';
 import { Rng } from '../dungeon/rng';
 import { TileMap } from '../dungeon/TileMap';
+import type { DeathCause } from '../systems/Combat';
 
 let nextEnemyId = 1;
 
@@ -23,7 +24,14 @@ export interface EnemyUpdateContext {
   map: TileMap;
   rng: Rng;
   /** Spawn a hostile bolt toward a direction (unit vector supplied). */
-  fireBolt: (x: number, y: number, dirX: number, dirY: number, speed: number) => void;
+  fireBolt: (
+    x: number,
+    y: number,
+    dirX: number,
+    dirY: number,
+    speed: number,
+    cause?: DeathCause, // v4 Wave D — recap flavor per shooter (default sorcery)
+  ) => void;
   /** v2 — lob an arcing bomb that lands at the target point. */
   throwBomb: (x: number, y: number, targetX: number, targetY: number) => void;
   /** Mimic woke up this frame. */
@@ -224,7 +232,7 @@ export class Enemy {
           }
         }
         if (this.windup > 0 && this.windup - dt <= 0) {
-          ctx.fireBolt(this.x, this.y, dirX, dirY, SORCERER.BOLT_SPEED);
+          ctx.fireBolt(this.x, this.y, dirX, dirY, SORCERER.BOLT_SPEED, this.config.boltCause);
         }
       } else if (!ctx.playerHidden && dist < this.config.aggroRange) {
         this.aggro = ctx.map.hasLineOfSight(this.x, this.y, ctx.playerX, ctx.playerY);

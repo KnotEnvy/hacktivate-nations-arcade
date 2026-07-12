@@ -18,9 +18,13 @@ import {
   xpIntoLevel,
 } from '../data/progression';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
+import { SpellId, spellsForClass } from '../data/spells';
 import { QuestId } from '../data/quests';
 import { Rng } from '../dungeon/rng';
 import { CharacterStore, SavedHero, SavePayloadV2 } from '../persistence/CharacterStore';
+
+/** v4 Wave D — one level-up card: a proficiency boon or a class spell. */
+export type DraftPick = { kind: 'boon'; id: BoonId } | { kind: 'spell'; id: SpellId };
 
 export class ProgressionController {
   private store = new CharacterStore();
@@ -31,6 +35,7 @@ export class ProgressionController {
   sessionXp = 0;
   sessionLevels = 0;
   sessionBoons = 0;
+  sessionSpellsLearned = 0;
 
   load(): void {
     this.payload = this.store.load();
@@ -42,6 +47,7 @@ export class ProgressionController {
     this.sessionXp = 0;
     this.sessionLevels = 0;
     this.sessionBoons = 0;
+    this.sessionSpellsLearned = 0;
   }
 
   /** The roster entry for a class (null = not yet forged). */
@@ -74,6 +80,7 @@ export class ProgressionController {
       gear: {},
       provisions: [],
       sagas: {},
+      spells: [],
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -104,24 +111,36 @@ export class ProgressionController {
     return hero.level < LEVEL_CAP && levelForXp(hero.xp) > hero.level;
   }
 
-  /** Up to 3 unmaxed boons for the level-up draft (seeded shuffle). */
-  boonChoices(rng: Rng): BoonId[] {
+  /**
+   * Up to 3 cards for the level-up draft (seeded shuffle): unmaxed boons,
+   * plus — v4 Wave D — the caster classes' unlearned spells.
+   */
+  draftChoices(rng: Rng): DraftPick[] {
     const hero = this.character();
     if (!hero) return [];
-    const open = ALL_BOON_IDS.filter(id => (hero.boons[id] ?? 0) < BOONS[id].maxStacks);
-    return rng.shuffle(open).slice(0, 3);
+    const pool: DraftPick[] = ALL_BOON_IDS.filter(
+      id => (hero.boons[id] ?? 0) < BOONS[id].maxStacks,
+    ).map(id => ({ kind: 'boon' as const, id }));
+    for (const id of spellsForClass(hero.classId)) {
+      if (!hero.spells.includes(id)) pool.push({ kind: 'spell', id });
+    }
+    return rng.shuffle(pool).slice(0, 3);
   }
 
   /**
-   * Commit the level-up with the chosen boon. Returns the new level and the
-   * class's gain row for it so the game can apply the benefits live.
+   * Commit the level-up with the chosen card (boon stack or learned spell).
+   * Returns the new level and the class's gain row for it so the game can
+   * apply the benefits live.
    */
-  confirmLevelUp(boon: BoonId | null): { level: number; gain: LevelGain } {
+  confirmLevelUp(pick: DraftPick | null): { level: number; gain: LevelGain } {
     const hero = this.character()!;
     hero.level++;
-    if (boon) {
-      hero.boons[boon] = Math.min(BOONS[boon].maxStacks, (hero.boons[boon] ?? 0) + 1);
+    if (pick?.kind === 'boon') {
+      hero.boons[pick.id] = Math.min(BOONS[pick.id].maxStacks, (hero.boons[pick.id] ?? 0) + 1);
       this.sessionBoons++;
+    } else if (pick?.kind === 'spell' && !hero.spells.includes(pick.id)) {
+      hero.spells.push(pick.id);
+      this.sessionSpellsLearned++;
     }
     this.sessionLevels++;
     this.store.save(this.payload);

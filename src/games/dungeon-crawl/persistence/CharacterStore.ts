@@ -18,6 +18,7 @@ import {
 } from '../data/gear';
 import { LEVEL_CAP } from '../data/progression';
 import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
+import { SpellId, spellsForClass } from '../data/spells';
 
 const SAVE_PREFIX = 'dungeon-crawl-save';
 const SESSION_OWNER_KEY = 'hacktivate-session-owner';
@@ -43,6 +44,8 @@ export interface SavedHero {
   provisions: ProvisionId[]; // packed for the NEXT expedition; consumed at the gate
   // v4 Wave C — chapters completed per saga (additive field, no version bump).
   sagas: Partial<Record<SagaId, number>>;
+  // v4 Wave D — the grimoire: spells learned at level-up (class-legal only).
+  spells: SpellId[];
 }
 
 export interface SavePayloadV2 {
@@ -108,6 +111,11 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     }
   }
 
+  // Only real, class-legal spells survive (and each at most once).
+  const spells: SpellId[] = Array.isArray(hero.spells)
+    ? spellsForClass(expectedClass).filter(id => (hero.spells as unknown[]).includes(id))
+    : [];
+
   const stats = hero.stats && typeof hero.stats === 'object' ? hero.stats : undefined;
   return {
     classId: expectedClass,
@@ -128,6 +136,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     gear,
     provisions,
     sagas,
+    spells,
   };
 }
 

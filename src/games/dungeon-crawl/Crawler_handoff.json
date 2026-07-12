@@ -2,8 +2,8 @@
   "handoff": {
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
-    "lastUpdated": "2026-07-11",
-    "status": "v3 + v4 Waves A/A.1/B playtested clean. Wave C (SAGAS: two authored arcs with interludes + unique finale bosses on a second board page; SECRET ROOMS: cracked walls opened by player booms, stocked hoards, nest miniquests) shipped 2026-07-11 — dungeon-crawl gates green (type-check, lint, 9 suites / 105 tests), awaiting playtest. CAVEAT: an UNRELATED unfinished platform change set (Supabase hardening + BaseGame gameTime/destroy semantics, ~40 uncommitted files, not Wave C's) fails the release suite 2/10 and OOMs the full one-process dev run — see knownStateAndOpenItems.parallelWipWarning.",
+    "lastUpdated": "2026-07-12",
+    "status": "v3 + v4 Waves A through C playtested clean (sagas approved 2026-07-12). Wave D (THE GRIMOIRE: six class-gated spells learned at level-up, V/G casting; THE MANUAL: five new monsters incl. the deep gargoyle; THE SHEET: Tab character sheet) shipped 2026-07-12 — dungeon-crawl gates green (type-check, lint, 10 suites / 113 tests), awaiting playtest. Supabase save promotion DEFERRED until the parallel platform WIP lands (its gameplay-file edits were reverted to HEAD by the owner 2026-07-11; its Supabase/service edits remain uncommitted and still fail the release suite 2/10 — see knownStateAndOpenItems.parallelWipWarning).",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
@@ -16,7 +16,7 @@
   },
 
   "nextTeamOnboarding": {
-    "youAreHere": "v3 (classes/bestiary/loot) and v4 waves A/A.1/B/C (roster + Lastlight + quests + SAGAS & SECRET ROOMS) are shipped; Wave C awaits the owner's playtest. Your job: fold in Wave C playtest knob turns, then Wave D (Depth & Roaming — spec below). Also read knownStateAndOpenItems.parallelWipWarning before trusting the full-suite gates.",
+    "youAreHere": "v3 and v4 waves A through D are shipped (C playtested clean; D awaits playtest). Your job: fold in Wave D playtest knob turns, then continue layering AD&D toward the tabletop: Supabase save promotion (waveD_spec below — UNBLOCK by landing/reconciling the parallel platform WIP first), more sagas/spells/monsters/biomes, per-hero leaderboards. Read knownStateAndOpenItems.parallelWipWarning before trusting the full-suite gates.",
     "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
     "waveProcess": [
       "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
@@ -42,12 +42,13 @@
       "Local save becomes the offline cache; reconcile on sign-in (server wins on newer updated_at). Solve the guest caveat here: offer a one-time guest->account migration when a signed-in user has no server save but a :guest local save exists.",
       "Rewards STILL ride trusted session metrics — the save table is state, never currency."
     ],
-    "spellPicks": "Mage/cleric level-ups can offer SPELLS alongside boons (data/spells.ts; a second active slot or Q-cycling). The scroll effects in Combat.castScroll are the natural effect library to generalize.",
-    "alsoOnTheList": "More sagas/quests/biomes; Monstrous Manual monsters (follow the bestiary recipe below); a character-sheet overlay (Tab) showing hero stats/gear/boons; per-hero leaderboard surfacing."
+    "spellPicks": "SHIPPED 2026-07-12 (see v4_waveD versionHistory).",
+    "alsoOnTheList": "More sagas/quests/biomes; more Monstrous Manual monsters (recipe below — Wave D added five, incl. per-config bolt causes for ranged types); per-hero leaderboard surfacing; more spells (newSpell recipe below)."
   },
 
   "extensionRecipes": {
-    "newMonster": "data/enemies.ts (EnemyTypeId + config with xp; reuse a behavior verb; undead/splitsInto tags as fit) -> spawnWeightsForFloor biome row -> TileRenderer.drawEnemy case (or config-colored existing path) -> DeathCause + causes.ts labels/hints + causeForEnemy (TS forces these) -> floor-1/biome gating tests if gated.",
+    "newMonster": "data/enemies.ts (EnemyTypeId + config with xp; reuse a behavior verb; undead/splitsInto tags as fit; boltCause for ranged types so the recap names the killer) -> spawnWeightsForFloor biome row -> TileRenderer.drawEnemy case (or config-colored existing path — Wave D's five all rode free) -> DeathCause + causes.ts labels/hints + causeForEnemy (TS forces these) -> bestiary.test conscious updates (undead set, homes table, gates).",
+    "newSpell": "data/spells.ts (id + def with classId/cooldown + SPELL_TUNING) -> Combat.castSpell case (reuse the scroll-effect library / host callbacks). Learning, casting (V/G), HUD pip, sheet listing and persistence are already generic.",
     "newRelic": "data/relics.ts (id + def + RELIC_TUNING) -> read relicCount() at the matching funnel in Player/Combat/game. Draft + HUD auto-include.",
     "newBoon": "data/boons.ts (id + def + maxStacks + tuning) -> fold into a Player getter or a game call site -> progression.test boon-contract count.",
     "newScroll": "data/scrolls.ts (id + def + tuning) -> Combat.castScroll case. Acquisition (pickup/shop/provision) is already generic.",
@@ -73,6 +74,10 @@
   },
 
   "versionHistory": {
+    "v4_waveD_grimoire_manual_sheet": {
+      "date": "2026-07-12",
+      "summary": "GRIMOIRE: data/spells.ts — six class-gated spells (mage: burning-hands short player blast / frost-ray radius stun / blink teleport+i-frames via host.findOpenSpotNear; cleric: cure-wounds heal / bless haste+1hp / sanctuary stoneskin+invuln; scholar boon deepens cure+sanctuary). Caster level-up drafts mix unlearned spells among boon cards via ProgressionController.DraftPick (draftChoices/confirmLevelUp replaced boonChoices; martial drafts unchanged); learned spells persist as additive SavedHero.spells (class-legal sanitize). V casts the readied spell, G cycles (banner), per-spell cooldowns tick on Player (spellCooldown/startSpellCooldown); HUD spell pip; effects in Combat.castSpell reuse the scroll library (frostNova parameterized). MANUAL: five monsters on existing behavior verbs — salamander (ember 5+, ranged), bone-archer (bone 4+, ranged, undead), drowned-one (sunken 5+, chase, undead), ember-wight (ash 6+, armored — blocks frontal free via behavior, undead), gargoyle (core row ALL biomes 8+, flit). Ranged configs carry boltCause -> Projectile.cause so recaps name the shooter (EnemyUpdateContext.fireBolt += cause); 5 DeathCauses + original labels/hints; undead set now 8. SHEET: Tab toggles a 'sheet' state from playing/town (world frozen; InputManager preventDefaults keydown so Tab is safe); HudRenderer.renderCharacterSheet = identity/XP/record/treasury/gear/sagas/training/grimoire. Guardrail valve: findOpenSpotNear -> TileMap (nullable, host binding keeps the player-pos fallback); ability dispatch (castAbility), hazard damage (updateHazards), nearestEnemyTo, shop product effects (applyShopPurchase) and scroll pickup (collectScroll) -> Combat (CombatHost += hazards/showBanner/grantRelic). Metrics spells_learned/spells_cast (34->36); 2 achievements (32 total); suites 9->10 (+spells.test 7, +1 bestiary gate; monkey keys += KeyV/KeyG/Tab) = 113 dungeon tests."
+    },
     "v4_waveC_sagas_and_secrets": {
       "date": "2026-07-11",
       "summary": "SAGAS: data/sagas.ts — THE PALE PROCESSION (3 bone chapters, unique finale THE GRAVE WARDEN) + THE UNDYING EMBER (4 chapters ember->sunken->ash, unique finale THE CINDER REGENT with the game's largest payouts 800g/1000xp). Chapters = saga-flagged QuestDef entries (QUESTS grew 5->12; STANDALONE_QUEST_IDS keeps the classic board at 5); board gains an Up/Down SAGA page (progress pips, departs on the hero's current chapter; finales relivable, progress never rewinds). Unique kits live in UNIQUE_BOSS_KITS BESIDE the rotation (bossKitById; QuestDef.bossKitId -> Boss ctor override) so classic tiers roll unchanged. Interludes (<60 words, original) play via a new 'interlude' state between victory and town; epilogue caps the arc. Per-hero `sagas` chapter map = additive SavedHero field (sanitize clamp, no version bump); ProgressionController.advanceSaga is replay-proof. SECRET ROOMS: generator carves 0-2 sealed pockets into untouched rock per floor (kind 'secret', kept OFF plan.rooms so all room passes + stairs/key BFS invariants hold by construction), sealed by Tile.CrackedWall (solid via the one isSolidTile line; cracked-wall TileRenderer case; minimap free). ONLY player-sourced booms crack seals (Combat blast scan -> host.crackWall; bomber bombs stay 'enemy'). Stock: gold x3-5 + urns + shrine-or-scroll; ~half host a NEST (floor/biome-gated pack pre-rolled in FloorPlan.secrets, spawned by the GAME on entry so level pressure stays out of dungeon/; clear pays run-wallet gold 25+10/floor). systems/SecretRooms.ts tracks reveal/trigger/clear behind a narrow host. Guardrail extraction: recap/victory row assembly + shop-item naming + slim HudState -> HudRenderer; town overlay routing -> TownController.renderOverlay; projectile drawing -> TileRenderer.drawProjectiles (orchestrator back under 1500). Metrics sagas_completed/secrets_found/nests_cleared (31->34 keys); 4 achievements (30 total); suites 7->9 (sagas.test 5, secrets.test 2, +2 generator, +1 store clamp) = 105 dungeon tests."
@@ -115,6 +120,7 @@
       "data/constants.ts": "ALL tuning: player/dash, combat/combo, pickups, shop prices, hazard cycle, explosion fuses, shockwave, lighting, overlay timing, BIOMES palette table + biomeForFloor().",
       "data/classes.ts": "v3 — ClassId/ClassKit/ClassDef, CLASSES (4 kits incl. tunic/trim sprite colors + ability blurbs), DEFAULT_KIT (reproduces the pre-v3 hero exactly; active until the pick), CLASS_TUNING (ability numbers).",
       "data/sagas.ts": "v4 Wave C — SagaId/SagaDef/SAGAS (2 arcs: chapters = ordered QuestIds, interludes 1:1 with chapters, last = epilogue) + pure helpers sagaChapterForQuest/chaptersDone/currentChapter. Module-load guard pins interlude pairing + saga flags.",
+      "data/spells.ts": "v4 Wave D — SpellId/SpellDef/SPELLS (6, class-gated via classId: 3 mage + 3 cleric) + spellsForClass + SPELL_TUNING. Pure data; effects in Combat.castSpell; learning rides the level-up draft; V casts / G cycles.",
       "systems/SecretRooms.ts": "v4 Wave C — runtime secret-room state (revealed/nest triggered/cleared) behind SecretRoomsHost (spawnNest/showBanner/playSound/grantNestReward/onSecretFound/onNestCleared). resetFor(plan.secrets) per floor; update(playerX, playerY) each playing frame.",
       "data/enemies.ts": "17 enemy configs (data-driven AI params, undead + splitsInto tags), elite trait table + spawn-chance ramp, spawnWeightsForFloor(floor, biomeId) = common core with v2 floor gates + per-biome family rows, per-room enemy budget, BOSS baseline.",
       "data/bosses.ts": "The three rotating Guardian kits + bossKitForTier(), PLUS UNIQUE_BOSS_KITS (grave-warden, cinder-regent) outside the rotation + bossKitById() — saga finales pin theirs via QuestDef.bossKitId (Boss ctor optional kit override).",
@@ -147,7 +153,7 @@
     "music": "GAME_TRACK_MAPPING: primary epic_tension, secondary epic_heroic. Game drives setMusicIntensity (explore 0.5 / combat 0.7 / boss 0.85 / enrage 0.95) + stingers.",
     "sounds": "Existing procedural SoundName palette ONLY — v3 added no new sounds (class confirm=powerup, cleave=sword_swing+collision, turn undead=unlock, fireball=whoosh+explosion, hide=whoosh).",
     "gameEndData": "src/components/arcade/ArcadeHub.tsx GameEndData lists all 24 dungeon metric keys as optional numbers.",
-    "achievements": "src/data/dungeonCrawlAchievements.ts — 30 dungeon-crawl achievements (extracted from achievements.ts, which spreads them in). requirement.type strings MUST exactly match extendedGameData keys.",
+    "achievements": "src/data/dungeonCrawlAchievements.ts — 32 dungeon-crawl achievements (extracted from achievements.ts, which spreads them in). requirement.type strings MUST exactly match extendedGameData keys.",
     "trustedProgression": "No custom server work: src/lib/trustedProgression.ts derives unlocks from session metrics."
   },
 
@@ -162,7 +168,8 @@
       "undead_slain", "unique_slain", "scrolls_used",
       "character_level", "xp_earned", "levels_gained", "boons_chosen",
       "quests_completed", "gold_banked",
-      "sagas_completed", "secrets_found", "nests_cleared"
+      "sagas_completed", "secrets_found", "nests_cleared",
+      "spells_learned", "spells_cast"
     ],
     "v3Semantics": "<class>_depth = floor reached this run IF that class was picked, else 0 (enables 'reach floor N as X' achievements through the plain threshold path). unique_slain = distinct monster config ids killed this run."
   },
@@ -181,6 +188,9 @@
       "retireHero": "hold R for 1.5s on the death recap (past the input lockout)",
       "town": "walk with move keys; E opens the board/smith/alchemist in reach (E again closes); on the board SPACE departs at once; Up/Down flips CONTRACTS <-> SAGAS pages; the gate also opens the board",
       "interludeDismiss": "Space/Enter after a 1.0s lockout (OVERLAY.INTERLUDE_LOCKOUT)",
+      "castSpell": "V (readied spell; per-spell cooldown pip on the HUD)",
+      "cycleSpell": "G (readies the next learned spell; banner confirms)",
+      "characterSheet": "Tab (from play or town; world freezes; Tab closes)",
       "relicDraft": "Left/Right + Space, or 1/2/3 direct",
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
@@ -230,14 +240,15 @@
     "relics": "data/relics.ts RELIC_TUNING",
     "atmosphere": "data/constants.ts LIGHTING + BIOMES palettes",
     "sagas": "data/sagas.ts (arcs/prose) + the chapter QuestDefs in data/quests.ts (floors/minLevel/rewards/bossTier/bossKitId) + UNIQUE_BOSS_KITS numbers in data/bosses.ts",
-    "secretRooms": "data/constants.ts SECRETS (count, room size, stock, shrine/nest chances, nest pack size + reward)"
+    "secretRooms": "data/constants.ts SECRETS (count, room size, stock, shrine/nest chances, nest pack size + reward)",
+    "spells": "data/spells.ts (per-spell cooldowns in SpellDef, effect numbers in SPELL_TUNING; scholar boon multiplies cure/sanctuary)"
   },
 
   "testing": {
     "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "suites": "9 suites / 105 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence + Wave C secret-room seals/stock/nest-gating), characterization (manifest, 34-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16), bestiary (9), scrolls (9), progression (20: roster save v2, v1 migration, per-class independence, owner scoping, saga-progress clamp), town (10), sagas (5: data contract, chapter-walk helpers, board page, victory advance + replay-proofing, unique finale), secrets (2: player-boom-only cracking + metric, nest stir/clear/reward). jest.setup.ts clears localStorage per test — saves cannot leak."
+      "suites": "10 suites / 113 tests — Wave D added spells.test.ts (7: data contract + class gating, sanitize, caster draft mixing, learn-once persistence, V-cast heal/metric/cooldown, empty-grimoire safety, Tab sheet toggle) and a bestiary gargoyle-gate test; the monkey key list consciously gained KeyV/KeyG/Tab. Prior coverage: 9 suites / 105 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence + Wave C secret-room seals/stock/nest-gating), characterization (manifest, 34-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16), bestiary (9), scrolls (9), progression (20: roster save v2, v1 migration, per-class independence, owner scoping, saga-progress clamp), town (10), sagas (5: data contract, chapter-walk helpers, board page, victory advance + replay-proofing, unique finale), secrets (2: player-boom-only cracking + metric, nest stir/clear/reward). jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
     "fullDevSuite": "As of 2026-07-11 the full one-process dev run FAILS for reasons OUTSIDE dungeon-crawl: an unfinished uncommitted platform change set (see knownStateAndOpenItems.parallelWipWarning) breaks trustedProgression/route/sync-outbox tests and the release suite (2/10), and the single --runInBand process now exhausts the JS heap partway through. All 9 dungeon-crawl suites (105 tests) pass in their own run.",
@@ -245,14 +256,15 @@
   },
 
   "knownStateAndOpenItems": {
-    "parallelWipWarning": "CRITICAL CONTEXT (2026-07-11): the working tree carries a large UNCOMMITTED platform change set that is NOT part of Wave C and was NOT authored by the dungeon-crawl team — Supabase/trusted-progression hardening (clientMutationId requirement in trustedProgression.ts, supabase/003_lock_down_progression.sql, sync outbox/auth/service edits) plus BaseGame semantics changes (gameTime now accumulates MILLISECONDS instead of seconds; destroy() no longer routes through endGame). It is unfinished: trustedProgression/route/sync-outbox dev tests fail, the release suite fails 2/10 (releaseApproval calls validateTrustedGameSession without a clientMutationId), and the full one-process dev run OOMs. The BaseGame gameTime unit change distorts every game's time-driven visuals (dungeon torch flicker/stairs pulse) until its author sweeps consumers. The owner chose to leave it in place for its author — do NOT mistake these failures for dungeon-crawl regressions, and do not 'fix' that change set without the owner's direction.",
+    "parallelWipWarning": "CRITICAL CONTEXT: the working tree carries an UNCOMMITTED platform change set NOT authored by the dungeon-crawl team — Supabase/trusted-progression hardening (clientMutationId requirement in trustedProgression.ts, supabase/003_lock_down_progression.sql, sync outbox/auth/service/UI edits). 2026-07-11 the owner had its GAMEPLAY-affecting edits reverted to HEAD (BaseGame, InputManager, AudioManager, useGameModule, ThemedGameCanvas, four other games) so games play exactly as committed; the Supabase/service/UI remainder is still uncommitted and unfinished: trustedProgression/route/sync-outbox dev tests fail and the release suite fails 2/10 (releaseApproval calls validateTrustedGameSession without a clientMutationId). Do NOT mistake these failures for dungeon-crawl regressions, and do not 'fix' or revert that remainder without the owner's direction. Landing it properly is the prerequisite for the Supabase save promotion wave.",
     "awaitingPlaytest": [
-      "v4-C: saga pacing + interlude prose, finale difficulty (Grave Warden t3 x1.15hp, Cinder Regent t5 x1.25hp), secret-room frequency vs fireball/flame-scroll access (non-mages need a flame scroll), nest pack difficulty + reward (25+10/floor), saga-page discoverability (Up/Down hint)",
-      "Carried from v4-A.1/B: quest pacing, gear prices vs rewards, provision value",
-      "Carried from v3/v4-A: level pressure at L5+, scroll drop rate, bone-biome pressure, dungeon-merchant pricing"
+      "v4-D: spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution (spells crowding boon cards), new monster pressure (bone-archer sightlines, gargoyle speed at depth 8+, ember-wight frontal block), character-sheet readability, V/G/Tab hand-feel",
+      "Carried from v4-C (playtest passed; knobs still open): secret-room loot vs blast cost, nest reward curve",
+      "Carried from v3-v4B: level pressure at L5+, gear prices vs rewards, dungeon-merchant pricing"
     ],
     "nextWaves": [
-      "v4-D — Supabase save promotion (cross-device roaming of dungeon-crawl-save payloads), mage/cleric spell picks on level-up, more sagas/monsters from the Monstrous Manual (waveD_spec above)"
+      "Supabase save promotion (waveD_spec above) — FIRST reconcile/land the parallel platform WIP that owns the schema/service files",
+      "More AD&D layers toward the tabletop: additional sagas + saga-aware town flavor, more PHB spells (newSpell recipe), more Monstrous Manual monsters/biomes (newMonster recipe), per-hero leaderboard surfacing"
     ],
     "v4Notes": {
       "saveArchitecture": "Save v2 = { version: 2, characters: Partial<Record<ClassId, SavedHero>> }; SavedHero carries level/xp/boons/stats/gold/gear/provisions. v1 saves migrate on load; invalid heroes drop individually; unknown fields ignored (additive evolution). Reward-bearing state rides trusted session metrics ONLY — the local save carries no coins/unlocks.",
@@ -268,6 +280,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "No known dungeon-crawl defects: all 9 dungeon-crawl suites (105 tests), type-check and lint pass as of lastUpdated. The failing release/dev gates belong entirely to the parallel platform WIP described in parallelWipWarning."
+    "noKnownBugs": "No known dungeon-crawl defects: all 10 dungeon-crawl suites (113 tests), type-check and lint pass as of lastUpdated. The failing release/dev gates belong entirely to the parallel platform WIP described in parallelWipWarning."
   }
 }

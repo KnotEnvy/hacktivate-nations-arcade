@@ -420,4 +420,27 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 200,
     unlocked: false
   },
+  // v4 Wave D — the grimoire
+  {
+    id: 'dungeon_first_page',
+    title: 'The First Page',
+    description: 'Learn a spell at level-up',
+    icon: '📖',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'spells_learned', value: 1 },
+    reward: 200,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_spellslinger',
+    title: 'Spellslinger',
+    description: 'Cast 10 spells in a single session',
+    icon: '✨',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'spells_cast', value: 10 },
+    reward: 300,
+    unlocked: false
+  },
 ];

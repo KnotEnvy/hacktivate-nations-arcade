@@ -7,13 +7,16 @@ import { BOONS, BoonId } from '../data/boons';
 import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
-import { GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
+import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
 import { PROGRESSION } from '../data/progression';
 import { QUESTS, QuestId } from '../data/quests';
-import { chaptersDone, currentChapter, SagaId, SAGAS } from '../data/sagas';
+import { ALL_SAGA_IDS, chaptersDone, currentChapter, SagaId, SAGAS } from '../data/sagas';
 import { RELICS, RelicId } from '../data/relics';
 import { SCROLLS, ScrollId } from '../data/scrolls';
+import { SPELLS, SpellId } from '../data/spells';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
+import type { SavedHero } from '../persistence/CharacterStore';
+import type { DraftPick } from '../progression/ProgressionController';
 import type { DeathCause } from '../systems/Combat';
 
 export interface HudState {
@@ -32,6 +35,10 @@ export interface HudState {
   abilityFrac: number;
   // v3 wave 3 — held scroll (one satchel slot); null when empty.
   scrollId: ScrollId | null;
+  // v4 Wave D — the readied spell (V casts, G cycles); null before learning.
+  spellId: SpellId | null;
+  spellFrac: number;
+  spellCount: number;
   // v4 — the persistent hero's level + progress to the next; null pre-pick.
   heroLevel: number | null;
   heroXpFrac: number;
@@ -147,6 +154,19 @@ export class HudRenderer {
       ctx.fillStyle = SCROLLS[s.scrollId].color;
       ctx.font = 'bold 14px monospace';
       ctx.fillText(`F ${SCROLLS[s.scrollId].icon}`, 216, 96);
+    }
+
+    // v4 Wave D — readied spell pip (V casts; + marks more in the grimoire).
+    if (s.spellId) {
+      const spell = SPELLS[s.spellId];
+      const ready = s.spellFrac <= 0;
+      ctx.fillStyle = ready ? spell.color : '#3d3652';
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`V ${spell.icon}${s.spellCount > 1 ? '+' : ''}`, 170, 92);
+      ctx.fillStyle = '#241d38';
+      ctx.fillRect(216, 82, 34, 8);
+      ctx.fillStyle = spell.color;
+      ctx.fillRect(216, 82, 34 * (1 - Math.max(0, Math.min(1, s.spellFrac))), 8);
     }
 
     // Combo meter.
@@ -714,10 +734,101 @@ export class HudRenderer {
     }
   }
 
-  /** v4 — level-up boon draft: same card language as the relic draft. */
+  /** v4 Wave D — the character sheet (Tab): the whole hero on one page. */
+  renderCharacterSheet(
+    ctx: CanvasRenderingContext2D,
+    hero: SavedHero,
+    activeSpell: SpellId | null,
+    xpFrac: number,
+  ): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.9)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+
+    const classDef = CLASSES[hero.classId];
+    ctx.textAlign = 'center';
+    ctx.fillStyle = classDef.color;
+    ctx.font = 'bold 30px monospace';
+    ctx.fillText(hero.name, VIEW.WIDTH / 2, 84);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = 'bold 14px monospace';
+    ctx.fillText(`${classDef.icon} ${classDef.name} · LEVEL ${hero.level}`, VIEW.WIDTH / 2, 110);
+
+    // XP bar to the next level.
+    ctx.fillStyle = '#241d38';
+    ctx.fillRect(VIEW.WIDTH / 2 - 120, 122, 240, 8);
+    ctx.fillStyle = classDef.color;
+    ctx.fillRect(VIEW.WIDTH / 2 - 120, 122, 240 * Math.max(0, Math.min(1, xpFrac)), 8);
+    ctx.strokeStyle = PALETTE.hudBorder;
+    ctx.strokeRect(VIEW.WIDTH / 2 - 119.5, 121.5, 240, 8);
+
+    const leftX = VIEW.WIDTH / 2 - 250;
+    const rightX = VIEW.WIDTH / 2 + 30;
+    const header = (text: string, x: number, y: number): number => {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = PALETTE.emberBright;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(text, x, y);
+      return y + 22;
+    };
+    const row = (text: string, x: number, y: number, color: string = PALETTE.textWarm): number => {
+      ctx.fillStyle = color;
+      ctx.font = '13px monospace';
+      ctx.fillText(text, x, y);
+      return y + 19;
+    };
+
+    // Left column: the record, the treasury, the smithy's work.
+    let y = header('THE RECORD', leftX, 170);
+    y = row(`Expeditions   ${hero.stats.expeditions}`, leftX, y);
+    y = row(`Victories     ${hero.stats.victories}`, leftX, y);
+    y = row(`Falls         ${hero.stats.deaths}`, leftX, y);
+    y = row(`Treasury      ${hero.gold}g`, leftX, y, PALETTE.gold);
+    y = header('GEAR', leftX, y + 16);
+    for (const id of ALL_GEAR_IDS) {
+      const tier = hero.gear[id] ?? 0;
+      const marks = '◆'.repeat(tier) + '◇'.repeat(GEAR_TUNING.MAX_TIER - tier);
+      y = row(`${GEAR[id].name}  ${marks}`, leftX, y, tier > 0 ? PALETTE.textWarm : PALETTE.textDim);
+    }
+    y = header('SAGAS', leftX, y + 16);
+    for (const id of ALL_SAGA_IDS) {
+      const done = chaptersDone(hero.sagas, id);
+      const total = SAGAS[id].quests.length;
+      const label = done >= total ? 'TOLD' : `${done}/${total}`;
+      y = row(`${SAGAS[id].name}  ${label}`, leftX, y, done > 0 ? PALETTE.textWarm : PALETTE.textDim);
+    }
+
+    // Right column: training and the grimoire.
+    y = header('TRAINING', rightX, 170);
+    const trained = Object.entries(hero.boons).filter(([, count]) => (count ?? 0) > 0);
+    if (trained.length === 0) y = row('— none yet —', rightX, y, PALETTE.textDim);
+    for (const [id, count] of trained) {
+      const boon = BOONS[id as BoonId];
+      y = row(`${boon.icon} ${boon.name}${(count ?? 0) > 1 ? ` ×${count}` : ''}`, rightX, y, boon.color);
+    }
+    y = header('GRIMOIRE', rightX, y + 16);
+    if (hero.spells.length === 0) {
+      const line =
+        classDef.id === 'mage' || classDef.id === 'cleric'
+          ? '— level up to learn spells —'
+          : '— the blade is spell enough —';
+      y = row(line, rightX, y, PALETTE.textDim);
+    }
+    for (const id of hero.spells) {
+      const spell = SPELLS[id];
+      const readied = id === activeSpell ? ' ▶' : '';
+      y = row(`${spell.icon} ${spell.name}${readied}`, rightX, y, spell.color);
+    }
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText('TAB TO CLOSE · G READIES THE NEXT SPELL', VIEW.WIDTH / 2, VIEW.HEIGHT - 60);
+  }
+
+  /** v4 — level-up draft: boons and (Wave D) class spells, one card language. */
   renderBoonDraft(
     ctx: CanvasRenderingContext2D,
-    choices: readonly BoonId[],
+    choices: readonly DraftPick[],
     selectedIndex: number,
     ownedCount: (id: BoonId) => number,
     newLevel: number,
@@ -738,34 +849,43 @@ export class HudRenderer {
     const gap = 30;
     const startX = (VIEW.WIDTH - cardW * choices.length - gap * (choices.length - 1)) / 2;
     for (let i = 0; i < choices.length; i++) {
-      const boon = BOONS[choices[i]];
+      const pick = choices[i];
+      const def = pick.kind === 'boon' ? BOONS[pick.id] : SPELLS[pick.id];
       const x = startX + i * (cardW + gap);
       const y = 200;
       const selected = i === selectedIndex;
 
       ctx.fillStyle = selected ? 'rgba(45, 25, 10, 0.95)' : 'rgba(18, 12, 8, 0.95)';
       ctx.fillRect(x, y, cardW, cardH);
-      ctx.strokeStyle = selected ? boon.color : '#4d4238';
+      ctx.strokeStyle = selected ? def.color : '#4d4238';
       ctx.lineWidth = selected ? 3 : 1;
       ctx.strokeRect(x + 0.5, y + 0.5, cardW, cardH);
       ctx.lineWidth = 1;
 
-      ctx.fillStyle = boon.color;
+      ctx.fillStyle = def.color;
       ctx.font = 'bold 44px monospace';
-      ctx.fillText(boon.icon, x + cardW / 2, y + 84);
+      ctx.fillText(def.icon, x + cardW / 2, y + 84);
       ctx.font = 'bold 15px monospace';
-      this.wrapText(ctx, boon.name, x + cardW / 2, y + 124, cardW - 20, 18);
+      this.wrapText(ctx, def.name, x + cardW / 2, y + 124, cardW - 20, 18);
       ctx.fillStyle = PALETTE.textWarm;
       ctx.font = '13px monospace';
-      this.wrapText(ctx, boon.blurb, x + cardW / 2, y + 162, cardW - 24, 17);
+      this.wrapText(ctx, def.blurb, x + cardW / 2, y + 162, cardW - 24, 17);
 
-      const owned = ownedCount(boon.id);
       ctx.fillStyle = PALETTE.textDim;
       ctx.font = '12px monospace';
-      if (owned > 0) {
-        ctx.fillText(`trained ×${owned} of ${boon.maxStacks}`, x + cardW / 2, y + cardH - 14);
+      if (pick.kind === 'boon') {
+        const owned = ownedCount(pick.id);
+        if (owned > 0) {
+          ctx.fillText(
+            `trained ×${owned} of ${BOONS[pick.id].maxStacks}`,
+            x + cardW / 2,
+            y + cardH - 14,
+          );
+        }
+      } else {
+        ctx.fillText('SPELL — cast with V', x + cardW / 2, y + cardH - 14);
       }
-      ctx.fillStyle = selected ? boon.color : PALETTE.textDim;
+      ctx.fillStyle = selected ? def.color : PALETTE.textDim;
       ctx.font = 'bold 14px monospace';
       ctx.fillText(`[${i + 1}]`, x + cardW / 2, y - 10);
     }

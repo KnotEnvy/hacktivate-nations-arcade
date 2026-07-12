@@ -6,15 +6,18 @@
 // orchestrator behind the host callbacks.
 
 import { SoundName } from '@/services/AudioManager';
-import { CLASS_TUNING } from '../data/classes';
-import { EXPLOSIONS, PALETTE, SHOCKWAVE, TILE } from '../data/constants';
-import { SCROLL_TUNING, ScrollId } from '../data/scrolls';
+import { AbilityId, CLASS_TUNING } from '../data/classes';
+import { EXPLOSIONS, HAZARDS, PALETTE, PICKUPS, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
+import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
+import { SPELL_TUNING, SpellId } from '../data/spells';
 import { BOSS } from '../data/enemies';
-import { RELIC_TUNING } from '../data/relics';
+import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from '../data/relics';
+import type { ShopProduct } from '../dungeon/DungeonGenerator';
 import { Rng } from '../dungeon/rng';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Boss } from '../entities/Boss';
 import { Enemy, EnemyUpdateContext } from '../entities/Enemy';
+import { Hazard } from '../entities/Hazard';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -38,6 +41,12 @@ export type DeathCause =
   | 'lizardman'
   | 'shade'
   | 'hound'
+  // v4 Wave D — Monstrous Manual additions
+  | 'salamander'
+  | 'bone_arrow'
+  | 'drowned'
+  | 'wight'
+  | 'gargoyle'
   | 'hazard'
   | 'explosion'
   | 'shockwave'
@@ -116,6 +125,16 @@ export function causeForEnemy(enemy: Enemy): DeathCause {
       return 'shade';
     case 'cinder-hound':
       return 'hound';
+    case 'salamander':
+      return 'salamander';
+    case 'bone-archer':
+      return 'bone_arrow';
+    case 'drowned-one':
+      return 'drowned';
+    case 'ember-wight':
+      return 'wight';
+    case 'gargoyle':
+      return 'gargoyle';
   }
 }
 
@@ -133,6 +152,9 @@ export interface CombatHost {
   addPickup(pickup: Pickup): void;
   addProjectile(projectile: Projectile): void;
   findOpenSpotNear(x: number, y: number): { x: number; y: number };
+  hazards(): Hazard[]; // v4 Wave D — trap damage resolves here too
+  showBanner(text: string, sub: string): void; // v4 Wave D — shop scroll flavor
+  grantRelic(id: RelicId): void; // v4 Wave D — shop relic purchases
   levelPressure(): number; // v4 — hero-level hp multiplier for spawned monsters
   revealMap(): void; // Scroll of Revelation — fog-of-war lifts
   crackWall(tx: number, ty: number): void; // v4 Wave C — a CrackedWall gives way
@@ -497,17 +519,171 @@ export class Combat {
     this.host.playSound('whoosh', 0.5);
   }
 
-  /** v3 — Scroll of Frost: every living monster in sight freezes mid-step. */
-  frostNova(): void {
+  /** v3 — Scroll of Frost (and v4 Frost Ray): monsters in range freeze mid-step. */
+  frostNova(
+    radius: number = SCROLL_TUNING.FROST_RADIUS,
+    stun: number = SCROLL_TUNING.FROST_STUN,
+  ): void {
     const player = this.host.player();
     this.host.playSound('whoosh', 0.55);
     this.host.shake.add(0.2);
     this.host.particles.burst(player.x, player.y, '#9ad8ff', 30, 220, 0.7);
     for (const enemy of this.host.enemies()) {
       if (!enemy.alive || enemy.dormant) continue;
-      if (Math.hypot(enemy.x - player.x, enemy.y - player.y) > SCROLL_TUNING.FROST_RADIUS) continue;
-      enemy.stunned = Math.max(enemy.stunned, SCROLL_TUNING.FROST_STUN);
+      if (Math.hypot(enemy.x - player.x, enemy.y - player.y) > radius) continue;
+      enemy.stunned = Math.max(enemy.stunned, stun);
       this.host.particles.burst(enemy.x, enemy.y, '#d8ecff', 6, 70, 0.4);
+    }
+  }
+
+  /** v3 — signature class ability effects (the game gates cooldown + stats). */
+  castAbility(id: AbilityId): void {
+    const player = this.host.player();
+    switch (id) {
+      case 'cleave':
+        player.swingAnim = 0.22; // visual swing tail for the spin
+        this.cleave();
+        break;
+      case 'shadow-hide':
+        player.startHide();
+        this.host.playSound('whoosh', 0.5);
+        this.host.particles.burst(player.x, player.y, '#9a7bff', 16, 120, 0.5);
+        break;
+      case 'turn-undead':
+        this.turnUndead();
+        break;
+      case 'fireball':
+        this.spawnFireball();
+        break;
+    }
+  }
+
+  /** v2 — cycling trap damage (the game already gates state to 'playing'). */
+  updateHazards(dt: number): void {
+    const player = this.host.player();
+    for (const hazard of this.host.hazards()) {
+      hazard.update(dt);
+      if (!hazard.dangerous) continue;
+      const reach = HAZARDS.RADIUS + player.size / 2;
+      if (Math.hypot(hazard.x - player.x, hazard.y - player.y) < reach) {
+        this.host.damagePlayer(HAZARDS.DAMAGE, 'hazard');
+      }
+    }
+  }
+
+  /** Closest living, non-dormant monster (boss as fallback) — mana bolt target. */
+  nearestEnemyTo(x: number, y: number): { x: number; y: number } | null {
+    let best: { x: number; y: number } | null = null;
+    let bestDist = Infinity;
+    for (const enemy of this.host.enemies()) {
+      if (!enemy.alive || enemy.dormant) continue;
+      const dist = Math.hypot(enemy.x - x, enemy.y - y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { x: enemy.x, y: enemy.y };
+      }
+    }
+    const boss = this.host.boss();
+    if (!best && boss?.alive) best = { x: boss.x, y: boss.y };
+    return best;
+  }
+
+  /** v2/v3 — dungeon-merchant product effects (the game owns the gold ledger). */
+  applyShopPurchase(product: ShopProduct): void {
+    const player = this.host.player();
+    switch (product) {
+      case 'heart':
+        player.heal(PICKUPS.HEART_HEAL + player.heartHealBonus());
+        break;
+      case 'daggers':
+        player.daggers = Math.min(player.daggerCap(), player.daggers + PICKUPS.DAGGER_BUNDLE + 2);
+        break;
+      case 'potion': {
+        const buffs: PotionBuff[] = ['haste', 'strength', 'stoneskin'];
+        player.addBuff(this.host.rng().pick(buffs));
+        break;
+      }
+      case 'relic':
+        this.host.grantRelic(this.host.rng().pick(ALL_RELIC_IDS));
+        break;
+      case 'scroll': {
+        // v3 — you paid for it: a bought scroll replaces whatever was held.
+        const id = this.host.rng().pick(ALL_SCROLL_IDS);
+        player.scroll = id;
+        this.host.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
+        break;
+      }
+    }
+  }
+
+  /** v3 — scroll pickup: identity rolls at collection; a full satchel passes. */
+  collectScroll(pickup: Pickup): void {
+    const player = this.host.player();
+    if (player.scroll) {
+      pickup.alive = true; // the satchel holds one; leave the find in place
+      return;
+    }
+    const id = this.host.rng().pick(ALL_SCROLL_IDS);
+    player.scroll = id;
+    this.host.playSound('unlock', 0.5);
+    this.host.particles.burst(pickup.x, pickup.y, SCROLLS[id].color, 10, 90, 0.5);
+    this.host.showBanner(SCROLLS[id].name, `${SCROLLS[id].blurb} — press F`);
+  }
+
+  /** v4 Wave D — grimoire effects: the scroll library, parameterized by spell. */
+  castSpell(id: SpellId, scholarMult: number): void {
+    const player = this.host.player();
+    switch (id) {
+      case 'burning-hands':
+        this.bombs.push({
+          fromX: player.x,
+          fromY: player.y,
+          toX: player.x + player.faceX * SPELL_TUNING.BURNING_HANDS_LOB_DIST,
+          toY: player.y + player.faceY * SPELL_TUNING.BURNING_HANDS_LOB_DIST,
+          t: 0,
+          flight: SPELL_TUNING.BURNING_HANDS_FLIGHT,
+          source: 'player',
+          boom: {
+            fuse: SPELL_TUNING.BURNING_HANDS_FUSE,
+            radius: SPELL_TUNING.BURNING_HANDS_RADIUS,
+            damage: SPELL_TUNING.BURNING_HANDS_DAMAGE,
+          },
+        });
+        this.host.playSound('whoosh', 0.5);
+        break;
+      case 'frost-ray':
+        this.frostNova(SPELL_TUNING.FROST_RAY_RADIUS, SPELL_TUNING.FROST_RAY_STUN);
+        break;
+      case 'blink': {
+        // A short step between heartbeats — lands on the nearest open tile.
+        this.host.particles.burst(player.x, player.y, '#c99aff', 12, 100, 0.5);
+        const spot = this.host.findOpenSpotNear(
+          player.x + player.faceX * SPELL_TUNING.BLINK_DIST,
+          player.y + player.faceY * SPELL_TUNING.BLINK_DIST,
+        );
+        player.placeAt(spot.x, spot.y);
+        player.invuln = Math.max(player.invuln, SPELL_TUNING.BLINK_INVULN);
+        this.host.particles.burst(spot.x, spot.y, '#c99aff', 12, 100, 0.5);
+        this.host.playSound('whoosh', 0.55);
+        break;
+      }
+      case 'cure-wounds':
+        player.heal(Math.ceil(SPELL_TUNING.CURE_HP * scholarMult));
+        this.host.playSound('extraLife', 0.5);
+        this.host.particles.burst(player.x, player.y, PALETTE.heart, 14, 110, 0.6);
+        break;
+      case 'bless':
+        player.addBuff('haste');
+        player.heal(SPELL_TUNING.BLESS_HP);
+        this.host.playSound('powerup', 0.5);
+        this.host.particles.burst(player.x, player.y, '#ffe08a', 14, 110, 0.6);
+        break;
+      case 'sanctuary':
+        player.addBuff('stoneskin');
+        player.invuln = Math.max(player.invuln, SPELL_TUNING.SANCTUARY_INVULN * scholarMult);
+        this.host.playSound('powerup', 0.5);
+        this.host.particles.burst(player.x, player.y, '#9aa5b5', 14, 110, 0.6);
+        break;
     }
   }
 

@@ -3,6 +3,7 @@
 // flight, dies on walls; DungeonCrawlGame owns hit resolution.
 
 import { TileMap } from '../dungeon/TileMap';
+import type { DeathCause } from '../systems/Combat';
 
 export type ProjectileKind = 'bolt' | 'dagger';
 
@@ -19,6 +20,8 @@ export class Projectile {
   hitIds = new Set<number>(); // enemies already hit (piercing daggers)
   // v2 — homing turn rate in radians/sec (0 = straight; Hollow King bolts).
   homing = 0;
+  // v4 Wave D — recap cause when this hostile bolt lands (default: sorcery).
+  cause?: DeathCause;
 
   constructor(
     kind: ProjectileKind,

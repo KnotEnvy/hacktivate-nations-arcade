@@ -2,6 +2,8 @@
 // Data-driven enemy archetypes. Enemy.ts interprets `behavior`; everything
 // numeric lives here so balance is a data edit, not a code edit.
 
+import type { DeathCause } from '../systems/Combat';
+
 export type EnemyTypeId =
   | 'slime'
   | 'slime-mini'
@@ -20,7 +22,13 @@ export type EnemyTypeId =
   | 'ooze-mini'
   | 'lizardman'
   | 'shade'
-  | 'cinder-hound';
+  | 'cinder-hound'
+  // v4 Wave D — Monstrous Manual additions (existing behavior verbs only)
+  | 'salamander'
+  | 'bone-archer'
+  | 'drowned-one'
+  | 'ember-wight'
+  | 'gargoyle';
 
 export type EnemyBehavior =
   | 'wander'
@@ -111,6 +119,7 @@ export interface EnemyConfig {
   accent: string; // eyes / trim
   undead?: boolean; // v3 — seared + stunned by the cleric's Turn Undead
   splitsInto?: EnemyTypeId; // v3 — divides into two of these on death
+  boltCause?: DeathCause; // v4 Wave D — recap cause for a ranged type's bolts
 }
 
 export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
@@ -360,6 +369,82 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#8a3a2a',
     accent: '#ffd24a',
   },
+  // ===== v4 Wave D — Monstrous Manual additions =====
+  salamander: {
+    id: 'salamander',
+    behavior: 'ranged',
+    hp: 3,
+    speed: 60,
+    size: 22,
+    touchDamage: 1,
+    score: 55,
+    xp: 30,
+    goldDrop: [1, 3],
+    aggroRange: 300,
+    color: '#d84a1a',
+    accent: '#ffd24a',
+    boltCause: 'salamander',
+  },
+  'bone-archer': {
+    id: 'bone-archer',
+    behavior: 'ranged',
+    hp: 2,
+    speed: 58,
+    size: 20,
+    touchDamage: 1,
+    score: 50,
+    xp: 26,
+    goldDrop: [1, 2],
+    aggroRange: 320,
+    color: '#cfc7b0',
+    accent: '#8a2f2f',
+    undead: true,
+    boltCause: 'bone_arrow',
+  },
+  'drowned-one': {
+    id: 'drowned-one',
+    behavior: 'chase',
+    hp: 4,
+    speed: 40,
+    size: 22,
+    touchDamage: 1,
+    score: 40,
+    xp: 22,
+    goldDrop: [1, 3],
+    aggroRange: 200,
+    color: '#5a7a6a',
+    accent: '#bfe8d8',
+    undead: true,
+  },
+  'ember-wight': {
+    id: 'ember-wight',
+    behavior: 'armored',
+    hp: 4,
+    speed: 48,
+    size: 22,
+    touchDamage: 2,
+    score: 70,
+    xp: 40,
+    goldDrop: [2, 4],
+    aggroRange: 240,
+    color: '#6a4a3a',
+    accent: '#ff9a3d',
+    undead: true,
+  },
+  gargoyle: {
+    id: 'gargoyle',
+    behavior: 'flit',
+    hp: 4,
+    speed: 110,
+    size: 20,
+    touchDamage: 2,
+    score: 75,
+    xp: 42,
+    goldDrop: [1, 3],
+    aggroRange: 280,
+    color: '#8a8a92',
+    accent: '#c9c9d2',
+  },
 };
 
 // Ranged-enemy tuning shared by Enemy.ts.
@@ -399,24 +484,30 @@ export function spawnWeightsForFloor(floor: number, biomeId: string): SpawnWeigh
     { type: 'knight', weight: floor >= 3 ? 1 + Math.min(5, floor - 2) : 0 },
     { type: 'wraith', weight: floor >= 4 ? 1 + Math.min(3, floor - 4) : 0 },
     { type: 'mimic', weight: floor >= 4 ? 1 : 0 },
+    // v4 Wave D — the deep terror: stone wings stir below floor 8.
+    { type: 'gargoyle', weight: floor >= 8 ? 2 + Math.min(3, floor - 8) : 0 },
   ];
 
   // v3 — biome family: a heavy local presence, absent everywhere else.
   switch (biomeId) {
     case 'ember':
       rows.push({ type: 'fire-beetle', weight: 4 + Math.min(3, floor) });
+      rows.push({ type: 'salamander', weight: floor >= 5 ? 3 : 0 });
       break;
     case 'bone':
       rows.push({ type: 'zombie', weight: 5 });
       rows.push({ type: 'ghoul', weight: floor >= 5 ? 4 : 0 });
+      rows.push({ type: 'bone-archer', weight: floor >= 4 ? 3 : 0 });
       break;
     case 'sunken':
       rows.push({ type: 'deep-ooze', weight: 5 });
       rows.push({ type: 'lizardman', weight: floor >= 3 ? 3 + Math.min(3, floor - 3) : 0 });
+      rows.push({ type: 'drowned-one', weight: floor >= 5 ? 4 : 0 });
       break;
     case 'ash':
       rows.push({ type: 'shade', weight: floor >= 4 ? 4 : 0 });
       rows.push({ type: 'cinder-hound', weight: floor >= 4 ? 4 : 0 });
+      rows.push({ type: 'ember-wight', weight: floor >= 6 ? 3 : 0 });
       break;
   }
   return rows;

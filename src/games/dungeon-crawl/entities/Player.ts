@@ -10,6 +10,7 @@ import { LevelGain } from '../data/progression';
 import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
 import { ScrollId } from '../data/scrolls';
+import { SpellId } from '../data/spells';
 import { TileMap } from '../dungeon/TileMap';
 
 export interface SwordSwing {
@@ -59,6 +60,9 @@ export class Player {
   scroll: ScrollId | null = null;
   private hpRegenTimer = 0;
 
+  // v4 Wave D — grimoire cooldowns: seconds remaining per learned spell.
+  private spellCds = new Map<SpellId, number>();
+
   // v4 — persistent hero training, re-applied from the save each run.
   boons = new Map<BoonId, number>();
   levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
@@ -106,6 +110,16 @@ export class Player {
     this.dashTimer = 0;
     this.dashCooldown = 0;
     this.phoenixUsed = 0;
+    this.spellCds.clear();
+  }
+
+  // v4 Wave D — grimoire cooldown plumbing (ticked in update).
+  spellCooldown(id: SpellId): number {
+    return this.spellCds.get(id) ?? 0;
+  }
+
+  startSpellCooldown(id: SpellId, seconds: number): void {
+    this.spellCds.set(id, seconds);
   }
 
   /** Move to a new floor: position resets, run state (relics, hp) persists. */
@@ -354,6 +368,9 @@ export class Player {
     if (this.abilityCooldown > 0) this.abilityCooldown = Math.max(0, this.abilityCooldown - dt);
     if (this.hiddenTimer > 0) this.hiddenTimer = Math.max(0, this.hiddenTimer - dt);
     if (this.swingAnim > 0) this.swingAnim = Math.max(0, this.swingAnim - dt);
+    for (const [id, cd] of this.spellCds) {
+      if (cd > 0) this.spellCds.set(id, Math.max(0, cd - dt));
+    }
     // v3 — dagger regen: mage kit and/or Bottomless Quiver (fastest wins).
     const quiver = this.relicCount('bottomless-quiver');
     const quiverInterval = quiver > 0 ? RELIC_TUNING.QUIVER_REGEN_INTERVAL / quiver : 0;

@@ -57,6 +57,21 @@ export class TileMap {
     return TileMap.isSolidTile(this.get(tx, ty));
   }
 
+  /** Nearest open tile center within a small ring search, or null if walled in. */
+  findOpenSpotNear(x: number, y: number): { x: number; y: number } | null {
+    const { tx, ty } = this.tileAtWorld(x, y);
+    for (let radius = 0; radius < 4; radius++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+          if (!this.isSolidAt(tx + dx, ty + dy)) {
+            return this.tileCenter(tx + dx, ty + dy);
+          }
+        }
+      }
+    }
+    return null;
+  }
+
   /** True when the AABB (world px, centered coords NOT assumed) overlaps any solid tile. */
   rectCollides(rect: TileRect): boolean {
     const x0 = Math.floor(rect.x / TILE);
