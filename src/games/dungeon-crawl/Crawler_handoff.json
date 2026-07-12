@@ -3,7 +3,7 @@
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
     "lastUpdated": "2026-07-12",
-    "status": "v3 + v4 Waves A through C playtested clean (sagas approved 2026-07-12). Wave D (THE GRIMOIRE: six class-gated spells learned at level-up, V/G casting; THE MANUAL: five new monsters incl. the deep gargoyle; THE SHEET: Tab character sheet) shipped 2026-07-12 — dungeon-crawl gates green (type-check, lint, 10 suites / 113 tests), awaiting playtest. Supabase save promotion DEFERRED until the parallel platform WIP lands (its gameplay-file edits were reverted to HEAD by the owner 2026-07-11; its Supabase/service edits remain uncommitted and still fail the release suite 2/10 — see knownStateAndOpenItems.parallelWipWarning).",
+    "status": "v3 + v4 Waves A through D ALL PLAYTESTED CLEAN (Wave D approved 2026-07-12). Everything is committed and every gate is green: type-check, lint, 10 dungeon suites / 113 tests, FULL dev suite 440/440, release suite 10/10 — on top of the platform hardening pass (eb3f974) that also unblocked Supabase work. You inherit a clean start: pick up the roadToTheTabletop layers below, starting with the Supabase save promotion (waveD_spec).",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
@@ -16,7 +16,7 @@
   },
 
   "nextTeamOnboarding": {
-    "youAreHere": "v3 and v4 waves A through D are shipped (C playtested clean; D awaits playtest). Your job: fold in Wave D playtest knob turns, then continue layering AD&D toward the tabletop: Supabase save promotion (waveD_spec below — UNBLOCK by landing/reconciling the parallel platform WIP first), more sagas/spells/monsters/biomes, per-hero leaderboards. Read knownStateAndOpenItems.parallelWipWarning before trusting the full-suite gates.",
+    "youAreHere": "v3 and v4 waves A through D are shipped and PLAYTESTED CLEAN; every gate is green and the tree is fully committed — a clean start. Your job: continue layering AD&D toward the tabletop along roadToTheTabletop — the Supabase save promotion (waveD_spec below, now unblocked by the landed hardening pass), then lineages, the fuller grimoire, thief skills, morale, and onward to the planes.",
     "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
     "waveProcess": [
       "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
@@ -268,12 +268,12 @@
       "suites": "10 suites / 113 tests — Wave D added spells.test.ts (7: data contract + class gating, sanitize, caster draft mixing, learn-once persistence, V-cast heal/metric/cooldown, empty-grimoire safety, Tab sheet toggle) and a bestiary gargoyle-gate test; the monkey key list consciously gained KeyV/KeyG/Tab. Prior coverage: 9 suites / 105 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence + Wave C secret-room seals/stock/nest-gating), characterization (manifest, 34-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16), bestiary (9), scrolls (9), progression (20: roster save v2, v1 migration, per-class independence, owner scoping, saga-progress clamp), town (10), sagas (5: data contract, chapter-walk helpers, board page, victory advance + replay-proofing, unique finale), secrets (2: player-boom-only cracking + metric, nest stir/clear/reward). jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
-    "fullDevSuite": "As of 2026-07-11 the full one-process dev run FAILS for reasons OUTSIDE dungeon-crawl: an unfinished uncommitted platform change set (see knownStateAndOpenItems.parallelWipWarning) breaks trustedProgression/route/sync-outbox tests and the release suite (2/10), and the single --runInBand process now exhausts the JS heap partway through. All 9 dungeon-crawl suites (105 tests) pass in their own run.",
+    "fullDevSuite": "440 tests / 46 suites as of 2026-07-12, all green in one --runInBand process (the WIP-era heap exhaustion is gone since the hardening landed).",
     "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
-    "parallelWipWarning": "CRITICAL CONTEXT: the working tree carries an UNCOMMITTED platform change set NOT authored by the dungeon-crawl team — Supabase/trusted-progression hardening (clientMutationId requirement in trustedProgression.ts, supabase/003_lock_down_progression.sql, sync outbox/auth/service/UI edits). 2026-07-11 the owner had its GAMEPLAY-affecting edits reverted to HEAD (BaseGame, InputManager, AudioManager, useGameModule, ThemedGameCanvas, four other games) so games play exactly as committed; the Supabase/service/UI remainder is still uncommitted and unfinished: trustedProgression/route/sync-outbox dev tests fail and the release suite fails 2/10 (releaseApproval calls validateTrustedGameSession without a clientMutationId). Do NOT mistake these failures for dungeon-crawl regressions, and do not 'fix' or revert that remainder without the owner's direction. Landing it properly is the prerequisite for the Supabase save promotion wave.",
+    "parallelWipWarning": "RESOLVED 2026-07-12: the platform hardening pass landed properly as commit eb3f974 ('Harden arcade platform for production launch' — trusted-progression clientMutationId, supabase/003_lock_down_progression.sql, sync outbox/auth/service updates, with its own tests fixed and NO game-file changes). All gates are green again, including the full one-process dev run (440/440 — the old OOM is gone). History note for archaeology: during Waves C/D this work sat half-finished and uncommitted in the tree, briefly including BaseGame gameTime/destroy edits the owner had reverted; if you ever see release-gate failures mentioning clientMutationId, start at eb3f974. The Supabase save promotion wave is now UNBLOCKED — follow DOCS/SUPABASE-PRODUCTION-RUNBOOK.md and keep live schema + supabase/*.sql + src/lib/supabase.types.ts aligned.",
     "awaitingPlaytest": [
       "v4-D: spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution (spells crowding boon cards), new monster pressure (bone-archer sightlines, gargoyle speed at depth 8+, ember-wight frontal block), character-sheet readability, V/G/Tab hand-feel",
       "Carried from v4-C (playtest passed; knobs still open): secret-room loot vs blast cost, nest reward curve",
@@ -297,6 +297,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "No known dungeon-crawl defects: all 10 dungeon-crawl suites (113 tests), type-check and lint pass as of lastUpdated. The failing release/dev gates belong entirely to the parallel platform WIP described in parallelWipWarning."
+    "noKnownBugs": "No known defects anywhere: all 10 dungeon-crawl suites (113 tests), the full dev suite (440), the release suite (10), type-check and lint pass as of lastUpdated, and every shipped wave is owner-playtested."
   }
 }
