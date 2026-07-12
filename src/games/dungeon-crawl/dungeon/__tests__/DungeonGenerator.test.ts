@@ -15,7 +15,7 @@ import {
   type FloorPlan,
 } from '@/games/dungeon-crawl/dungeon/DungeonGenerator';
 import { Tile, TileMap } from '@/games/dungeon-crawl/dungeon/TileMap';
-import { TILE } from '@/games/dungeon-crawl/data/constants';
+import { SECRETS, TILE } from '@/games/dungeon-crawl/data/constants';
 
 const SEEDS = [1, 42, 1337, 987654321, 0xdeadbeef];
 
@@ -45,6 +45,8 @@ describe('DungeonGenerator', () => {
       expect(a.shop).toEqual(b.shop);
       expect(a.hazards).toEqual(b.hazards);
       expect(a.urns).toEqual(b.urns);
+      // v4 Wave C — secret rooms (and their nests) are deterministic too.
+      expect(a.secrets).toEqual(b.secrets);
     }
   });
 
@@ -221,5 +223,78 @@ describe('DungeonGenerator', () => {
     expect(plan.shop).toBeNull();
     expect(plan.hazards).toHaveLength(0);
     expect(plan.urns).toHaveLength(0);
+  });
+
+  // ---------------------------------------------------------------- v4 Wave C
+
+  test('secret rooms are sealed cracked-wall pockets off the graph', () => {
+    let secretsSeen = 0;
+    for (const seed of SEEDS) {
+      for (let floor = 1; floor <= 6; floor++) {
+        if (isBossFloor(floor)) continue;
+        const plan = generateFloor(seed, floor);
+        expect(plan.secrets.length).toBeLessThanOrEqual(SECRETS.MAX_PER_FLOOR);
+        const start = tileOfWorld(plan, plan.playerStart.x, plan.playerStart.y);
+        for (const secret of plan.secrets) {
+          secretsSeen++;
+          const room = secret.room;
+          expect(room.kind).toBe('secret');
+          // Off the graph: never listed among the floor's rooms.
+          expect(plan.rooms).not.toContain(room);
+          // One cracked-wall seal; the interior is carved floor.
+          expect(plan.map.get(secret.seal.tx, secret.seal.ty)).toBe(Tile.CrackedWall);
+          const center = {
+            tx: room.tx + Math.floor(room.w / 2),
+            ty: room.ty + Math.floor(room.h / 2),
+          };
+          expect(plan.map.get(center.tx, center.ty)).toBe(Tile.Floor);
+          // Sealed: unreachable until the seal breaks — then reachable.
+          expect(isReachable(plan.map, start, center)).toBe(false);
+          plan.map.set(secret.seal.tx, secret.seal.ty, Tile.Floor);
+          expect(isReachable(plan.map, start, center)).toBe(true);
+          // Stairs stayed reachable throughout (the room is never on the path).
+          expect(isReachable(plan.map, start, plan.stairsTile)).toBe(true);
+        }
+      }
+    }
+    // 0-2 per floor across 5 seeds × 4 floors — statistically certain.
+    expect(secretsSeen).toBeGreaterThan(0);
+  });
+
+  test('secret stock stands inside the room; nests respect floor gating', () => {
+    const inRoom = (x: number, y: number, room: { tx: number; ty: number; w: number; h: number }) => {
+      const tx = Math.floor(x / TILE);
+      const ty = Math.floor(y / TILE);
+      return tx >= room.tx && tx < room.tx + room.w && ty >= room.ty && ty < room.ty + room.h;
+    };
+    let nestsSeen = 0;
+    for (const seed of SEEDS) {
+      for (let floor = 1; floor <= 6; floor++) {
+        if (isBossFloor(floor)) continue;
+        const plan = generateFloor(seed, floor);
+        for (const secret of plan.secrets) {
+          // Generous stock: gold plus a shrine or a scroll, all inside.
+          const inside = plan.pickups.filter(p => inRoom(p.x, p.y, secret.room));
+          expect(inside.filter(p => p.kind === 'gold').length).toBeGreaterThanOrEqual(1);
+          expect(
+            inside.filter(p => p.kind === 'relic-shrine' || p.kind === 'scroll').length,
+          ).toBeGreaterThanOrEqual(1);
+          if (secret.nest) {
+            nestsSeen++;
+            expect(secret.nest.rewardGold).toBeGreaterThan(0);
+            expect(secret.nest.spawns.length).toBeGreaterThanOrEqual(SECRETS.NEST_PACK_MIN);
+            for (const spawn of secret.nest.spawns) {
+              expect(inRoom(spawn.x, spawn.y, secret.room)).toBe(true);
+              expect(spawn.elite).toBeNull();
+              if (floor === 1) {
+                // Floor 1 stays gentle even behind cracked walls.
+                expect(['slime', 'skeleton', 'fire-beetle']).toContain(spawn.type);
+              }
+            }
+          }
+        }
+      }
+    }
+    expect(nestsSeen).toBeGreaterThan(0);
   });
 });

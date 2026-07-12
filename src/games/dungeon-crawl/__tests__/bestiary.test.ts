@@ -49,7 +49,19 @@ describe('enemy config contract', () => {
 
   test('the restless dead are tagged for Turn Undead', () => {
     const undead = ALL_TYPE_IDS.filter(id => ENEMY_CONFIGS[id].undead);
-    expect(new Set(undead)).toEqual(new Set(['skeleton', 'wraith', 'zombie', 'ghoul', 'shade']));
+    // v4 Wave D consciously added: bone-archer, drowned-one, ember-wight.
+    expect(new Set(undead)).toEqual(
+      new Set([
+        'skeleton',
+        'wraith',
+        'zombie',
+        'ghoul',
+        'shade',
+        'bone-archer',
+        'drowned-one',
+        'ember-wight',
+      ]),
+    );
   });
 
   test('every monster maps to a death cause', () => {
@@ -64,10 +76,10 @@ describe('per-biome spawn tables', () => {
   test('biome families stay home', () => {
     // Probe deep enough that every gate is open (floor 13+ = all gates passed).
     const homes: Array<[string, EnemyTypeId[]]> = [
-      ['ember', ['fire-beetle']],
-      ['bone', ['zombie', 'ghoul']],
-      ['sunken', ['deep-ooze', 'lizardman']],
-      ['ash', ['shade', 'cinder-hound']],
+      ['ember', ['fire-beetle', 'salamander']],
+      ['bone', ['zombie', 'ghoul', 'bone-archer']],
+      ['sunken', ['deep-ooze', 'lizardman', 'drowned-one']],
+      ['ash', ['shade', 'cinder-hound', 'ember-wight']],
     ];
     for (const [home, family] of homes) {
       for (const biome of BIOMES) {
@@ -91,6 +103,13 @@ describe('per-biome spawn tables', () => {
       expect(spawnableTypes(3, biome.id).has('wraith')).toBe(false);
       expect(spawnableTypes(4, biome.id).has('knight')).toBe(true);
       expect(spawnableTypes(4, biome.id).has('mimic')).toBe(true);
+    }
+  });
+
+  test('v4 Wave D — the gargoyle stirs everywhere, but only below floor 8', () => {
+    for (const biome of BIOMES) {
+      expect(spawnableTypes(7, biome.id).has('gargoyle')).toBe(false);
+      expect(spawnableTypes(8, biome.id).has('gargoyle')).toBe(true);
     }
   });
 

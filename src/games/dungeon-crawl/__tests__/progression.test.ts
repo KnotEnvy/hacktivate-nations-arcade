@@ -24,6 +24,7 @@ import {
   SavePayloadV2,
 } from '@/games/dungeon-crawl/persistence/CharacterStore';
 import { ProgressionController } from '@/games/dungeon-crawl/progression/ProgressionController';
+import { SAGAS } from '@/games/dungeon-crawl/data/sagas';
 import { initGame, type Harness } from '@/games/shared/gameTestHarness';
 
 let randomSpy: jest.SpyInstance;
@@ -46,6 +47,8 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     gold: 0,
     gear: {},
     provisions: [],
+    sagas: {},
+    spells: [],
     ...overrides,
   };
 }
@@ -202,6 +205,26 @@ describe('CharacterStore (roster v2)', () => {
     expect(boons['not-a-boon']).toBeUndefined();
     expect(boons.toughness).toBe(BOONS.toughness.maxStacks);
   });
+
+  // v4 Wave C — saga progress rides the same additive-clamp discipline.
+  test('clamps unknown/overgrown saga progress; heroes without it default empty', () => {
+    const store = new CharacterStore();
+    const payload = rosterSave([hero({ sagas: { 'pale-procession': 2 } })]);
+    (payload.characters.fighter!.sagas as Record<string, number>)['not-a-saga'] = 5;
+    (payload.characters.fighter!.sagas as Record<string, number>)['undying-ember'] = 99;
+    store.save(payload);
+    const loaded = store.load();
+    const sagas = loaded.characters.fighter!.sagas as Record<string, number>;
+    expect(sagas['pale-procession']).toBe(2);
+    expect(sagas['not-a-saga']).toBeUndefined();
+    expect(sagas['undying-ember']).toBe(SAGAS['undying-ember'].quests.length);
+
+    // A pre-Wave-C hero record (no sagas field) sanitizes to an empty map.
+    const legacy = rosterSave([hero({ classId: 'mage', name: 'ELDRIN' })]);
+    delete (legacy.characters.mage as unknown as Record<string, unknown>).sagas;
+    store.save(legacy);
+    expect(store.load().characters.mage!.sagas).toEqual({});
+  });
 });
 
 describe('ProgressionController (roster)', () => {
@@ -216,8 +239,10 @@ describe('ProgressionController (roster)', () => {
 
     controller.grantXp(LEVEL_CURVE[2]);
     expect(controller.pendingLevelUp()).toBe(true);
-    const choices = controller.boonChoices(new Rng(7));
+    const choices = controller.draftChoices(new Rng(7));
     expect(choices.length).toBe(3);
+    // A thief's draft is training only — spells belong to the casters.
+    expect(choices.every(pick => pick.kind === 'boon')).toBe(true);
     const { level, gain } = controller.confirmLevelUp(choices[0]);
     expect(level).toBe(2);
     expect(gain).toBeDefined();
@@ -248,7 +273,7 @@ describe('ProgressionController (roster)', () => {
     expect(controller.heroFor('mage')?.xp).toBe(1400);
   });
 
-  test('boonChoices never offers a maxed boon', () => {
+  test('draftChoices never offers a maxed boon', () => {
     const controller = new ProgressionController();
     controller.create('fighter', new Rng(3));
     const store = new CharacterStore();
@@ -259,8 +284,8 @@ describe('ProgressionController (roster)', () => {
     controller.load();
     controller.selectHero('fighter');
     for (let i = 0; i < 10; i++) {
-      const choices = controller.boonChoices(new Rng(i));
-      expect(choices).toEqual(['herbalism']);
+      const choices = controller.draftChoices(new Rng(i));
+      expect(choices).toEqual([{ kind: 'boon', id: 'herbalism' }]);
     }
   });
 

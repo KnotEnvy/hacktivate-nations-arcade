@@ -4,7 +4,7 @@
 // steering would be impractical).
 
 import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '@/games/dungeon-crawl/data/gear';
-import { ALL_QUEST_IDS, QUESTS } from '@/games/dungeon-crawl/data/quests';
+import { ALL_QUEST_IDS, QUESTS, STANDALONE_QUEST_IDS } from '@/games/dungeon-crawl/data/quests';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { generateFloor, isReachable } from '@/games/dungeon-crawl/dungeon/DungeonGenerator';
 import { Tile } from '@/games/dungeon-crawl/dungeon/TileMap';
@@ -57,10 +57,15 @@ function metrics(h: Harness): Record<string, number> {
 }
 
 describe('quest data contract', () => {
-  test('five authored quests, endless included', () => {
-    expect(ALL_QUEST_IDS).toHaveLength(5);
-    expect(new Set(ALL_QUEST_IDS).size).toBe(5);
+  test('five standalone quests on the classic board, endless included', () => {
+    // v4 Wave C — saga chapters joined QUESTS but stay OFF the classic page.
+    expect(STANDALONE_QUEST_IDS).toHaveLength(5);
+    expect(ALL_QUEST_IDS).toHaveLength(12);
+    expect(new Set(ALL_QUEST_IDS).size).toBe(12);
     expect(QUESTS.endless.floors).toBe(0);
+    for (const id of STANDALONE_QUEST_IDS) {
+      expect(QUESTS[id].saga).toBeUndefined();
+    }
     for (const id of ALL_QUEST_IDS) {
       const quest = QUESTS[id];
       expect(quest.id).toBe(id);

@@ -99,6 +99,13 @@ describe('DungeonCrawlGame characterization', () => {
           boons_chosen: 0,
           quests_completed: 0,
           gold_banked: 0,
+          // v4 Wave C metric contract (sagas + secret rooms)
+          sagas_completed: 0,
+          secrets_found: 0,
+          nests_cleared: 0,
+          // v4 Wave D metric contract (the grimoire)
+          spells_learned: 0,
+          spells_cast: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');
@@ -180,6 +187,9 @@ describe('DungeonCrawlGame characterization', () => {
         'KeyQ', // v3 class ability
         'KeyF', // v3 read scroll
         'KeyO', // v3 read scroll alt
+        'KeyV', // v4 Wave D cast spell
+        'KeyG', // v4 Wave D cycle spell
+        'Tab', // v4 Wave D character sheet toggle
       ];
       expect(() => {
         for (let frame = 0; frame < 3000; frame++) {
