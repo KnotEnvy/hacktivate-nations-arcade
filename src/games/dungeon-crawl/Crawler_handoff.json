@@ -35,6 +35,23 @@
     "playtestKnobsLive": "Everything numeric is data: data/constants.ts (feel), data/enemies.ts (bestiary + spawn weights), data/classes.ts + data/progression.ts + data/boons.ts (hero), data/relics.ts + data/scrolls.ts (run loot), data/quests.ts + data/gear.ts (town economy). Expect the owner to request knob turns after each playtest — those are one-line data edits."
   },
 
+  "roadToTheTabletop": {
+    "mission": "The owner's standing direction: keep adding AD&D 2e layers until the game plays like the tabletop brought to an arcade — inspiration from the DOCS library, fast combat untouched, no dice math on screen, every layer data-driven behind the existing recipes. Ordered by likely value; the owner's playtests set the actual order. Each is a wave: spec in tasks/todo.md, ship end-to-end, playtest, knob-turn.",
+    "layers": [
+      "1. Supabase save promotion (waveD_spec below) — one persistent world per account, cross-device. PREREQUISITE: land/reconcile the parallel platform WIP that owns the schema/service files.",
+      "2. Lineages (PHB demihumans): dwarf/elf/halfling/human chosen when a hero is forged — one stat nudge + one passive each (e.g. dwarf trap-sense, elf +bolt affinity, halfling luck reroll); roster card reads 'ELDRIN · ELF MAGE'. Additive SavedHero field; sanitize like sagas/spells.",
+      "3. The fuller grimoire: more PHB spells per caster (newSpell recipe is one data entry + one Combat case), gated by hero level bands so deep heroes draft deeper magic; consider a fighter/thief 'techniques' analog so martial drafts grow too.",
+      "4. Thief skills: locked chests + disarmable traps (E-interact on a hazard with a thief = disarm chance) leaning on the existing hazard/urn/key systems; picks the thief identity up beyond backstab.",
+      "5. Reaction & morale (DMG): broken packs flee — a morale flag on EnemyConfig; monsters below pack strength or vs a leveled hero break and run (new behavior nuance, not a new verb: reuse wander-away).",
+      "6. Rest & wandering monsters (DMG): camp at a cleared floor's stairs to heal — but time feeds a wandering-spawn roll; risk/reward knob the tabletop lives on.",
+      "7. Town layers: TEMPLE (bless provision, curse removal, identify), INN (rumors — data-driven quest hooks + next-chapter teasers), and a single HIRELING follower (one companion, kit-driven like a boss summon but friendly).",
+      "8. Cursed & unidentified relics (Encyclopedia Magica): shrine relics may be unidentified with a curse risk; the temple identifies — pairs with layer 7.",
+      "9. A saga per biome + saga-aware town dressing (banners/palette shift while an arc is live); more Monstrous Compendium families per biome (newMonster recipe).",
+      "10. The planes endgame (Outer Planes appendix INSPIRATION): post-level-cap 'planar' quests — new biome palettes + families, tier-6 unique kits, the arcade's final frontier."
+    ],
+    "discipline": "Every layer obeys the charter: original text only, generic archetypes, generator pure, metric keys in all four places, files under 1500 logical lines (extract along ownership seams — HudRenderer/Combat/TownController/TileMap precedents), existing SoundName palette, owner playtest as the gate."
+  },
+
   "waveD_spec": {
     "goal": "Depth & Roaming — priority order set by the owner's playtests.",
     "supabaseSavePromotion": [
