@@ -21,7 +21,7 @@ import {
   TILE,
   VIEW,
 } from './data/constants';
-import { BOON_TUNING, BOONS } from './data/boons';
+import { BOON_TUNING } from './data/boons';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
 import { PROVISION_TUNING } from './data/gear';
@@ -31,7 +31,9 @@ import { QuestDef } from './data/quests';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
 import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
 import { SPELLS, SpellId } from './data/spells';
-import { DraftPick, ProgressionController } from './progression/ProgressionController';
+import { STAT_TUNING } from './data/stats';
+import { DraftFlow } from './progression/DraftFlow';
+import { ProgressionController } from './progression/ProgressionController';
 import { TOWN_PALETTE, TownController } from './town/TownController';
 import {
   FloorPlan,
@@ -209,12 +211,29 @@ export class DungeonCrawlGame extends BaseGame {
   private relicIndex = 0;
   // v3 — run-start class draft.
   private chosenClass: ClassId | null = null;
-  private classIndex = 0;
-  // v4 — the persistent hero + level-up draft + retire affordance.
+  // v4 — the persistent hero + retire affordance.
   private progression = new ProgressionController();
-  private boonChoices: DraftPick[] = [];
-  private boonIndex = 0;
-  private boonReturnState: 'playing' | 'town' = 'playing';
+  // v5 Wave E — class + level-up drafts (extracted); the host closes over
+  // live run state (rng is reassigned per expedition).
+  private draftFlow = new DraftFlow({
+    input: () => this.services?.input,
+    rng: () => this.rng,
+    floor: () => this.floor,
+    progression: () => this.progression,
+    player: () => this.player,
+    particles: () => this.particles,
+    confirmWas: () => this.confirmWas,
+    draftNav: (index, count) => this.draftNav(index, count),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    trackStat: (key, value) => this.trackStat(key, value),
+    setChosenClass: id => {
+      this.chosenClass = id;
+    },
+    setActiveSpellIndex: index => {
+      this.activeSpellIndex = index;
+    },
+  });
   private retireHold = 0;
   private recapRetired = false;
   // v4 Wave B — Lastlight + quest expeditions.
@@ -303,7 +322,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.killChain = 0;
     this.comboTimer = 0;
     this.chosenClass = null;
-    this.classIndex = 0;
+    this.draftFlow.reset();
     this.recapStats = null;
     this.player.reset(0, 0);
     this.shake.reset();
@@ -367,7 +386,7 @@ export class DungeonCrawlGame extends BaseGame {
       this.state === 'victory' ||
       this.state === 'interlude' ||
       this.state === 'classSelect' ||
-      (this.state === 'levelUp' && this.boonReturnState === 'town') ||
+      (this.state === 'levelUp' && this.draftFlow.returnState === 'town') ||
       (this.state === 'sheet' && this.sheetReturn === 'town')
     );
   }
@@ -456,9 +475,11 @@ export class DungeonCrawlGame extends BaseGame {
     }
 
     switch (this.state) {
-      case 'classSelect':
-        this.updateClassSelect();
+      case 'classSelect': {
+        const next = this.draftFlow.updateClassSelect();
+        if (next) this.state = next;
         break;
+      }
       case 'town':
         this.updateTown(dt);
         break;
@@ -470,9 +491,11 @@ export class DungeonCrawlGame extends BaseGame {
       case 'relic':
         this.updateRelicChoice();
         break;
-      case 'levelUp':
-        this.updateBoonChoice();
+      case 'levelUp': {
+        const next = this.draftFlow.updateBoonChoice();
+        if (next) this.state = next;
         break;
+      }
       case 'victory':
         this.updateVictory(dt);
         break;
@@ -528,39 +551,6 @@ export class DungeonCrawlGame extends BaseGame {
     return next;
   }
 
-  /** v3 — run-start class draft. Mirrors the relic draft's input handling. */
-  private updateClassSelect(): void {
-    const input = this.services?.input;
-    if (!input) return;
-
-    this.classIndex = this.draftNav(this.classIndex, ALL_CLASS_IDS.length);
-
-    const confirm =
-      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
-    const directPick = ALL_CLASS_IDS.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
-    if ((confirm && !this.confirmWas) || directPick) {
-      const def = CLASSES[ALL_CLASS_IDS[this.classIndex]];
-      // v4.1 — resume this class's hero, or forge one for an empty slot.
-      const existing = this.progression.heroFor(def.id);
-      const hero = existing
-        ? this.progression.selectHero(def.id)
-        : this.progression.create(def.id, this.rng);
-      this.player.applyKit(def);
-      this.player.applyProgression(this.progression.gains(), hero.boons);
-      this.chosenClass = def.id;
-      this.trackStat(`${def.id}_depth`, this.floor);
-      this.trackStat('character_level', hero.level);
-      this.services?.audio?.playSound?.('powerup', { volume: 0.55 });
-      this.showBanner(
-        hero.name,
-        existing
-          ? `LEVEL ${hero.level} ${def.name} — WELCOME TO LASTLIGHT`
-          : `${def.name} — THE QUEST BOARD AWAITS`,
-      );
-      this.state = 'town';
-    }
-  }
-
   // ------------------------------------------------------------ v4 the town
 
   private updateTown(dt: number): void {
@@ -611,7 +601,12 @@ export class DungeonCrawlGame extends BaseGame {
     if (hero) {
       this.player.reset(0, 0);
       this.player.applyKit(CLASSES[hero.classId]);
-      this.player.applyProgression(this.progression.gains(), hero.boons, hero.gear);
+      this.player.applyProgression(
+        this.progression.gains(),
+        hero.boons,
+        hero.gear,
+        this.progression.statDeltas(),
+      );
       for (const provision of hero.provisions) {
         if (provision === 'field-scroll') {
           this.player.scroll = this.rng.pick(ALL_SCROLL_IDS);
@@ -640,7 +635,11 @@ export class DungeonCrawlGame extends BaseGame {
     this.state = 'victory';
     this.victoryTimer = 0;
 
-    const banked = this.goldBalance + quest.rewardGold;
+    // v5 Wave E — Presence talks the reward up (per CHA delta point).
+    const rewardGold = Math.round(
+      quest.rewardGold * (1 + STAT_TUNING.CHA_QUEST_GOLD * this.player.statMods.cha),
+    );
+    const banked = this.goldBalance + rewardGold;
     if (hero) {
       hero.gold += banked;
       hero.stats.victories++;
@@ -670,7 +669,7 @@ export class DungeonCrawlGame extends BaseGame {
 
     this.victoryLedger = {
       carried: this.goldBalance,
-      rewardGold: quest.rewardGold,
+      rewardGold,
       rewardXp: quest.rewardXp,
       banked,
       treasury: hero?.gold ?? 0,
@@ -722,63 +721,10 @@ export class DungeonCrawlGame extends BaseGame {
 
   // ------------------------------------------------------------ v4 level-ups
 
-  /** Open the level-up draft for a pending level (or auto-level when maxed). */
+  /** Open the level-up draft (DraftFlow owns it; null = auto-leveled). */
   private openBoonDraft(returnTo: 'playing' | 'town' = 'playing'): void {
-    this.boonReturnState = returnTo;
-    this.boonChoices = this.progression.draftChoices(this.rng);
-    this.boonIndex = 0;
-    if (this.boonChoices.length === 0) {
-      // Every training maxed — the level still lands.
-      while (this.progression.pendingLevelUp()) {
-        const { level, gain } = this.progression.confirmLevelUp(null);
-        this.player.gainLevelBenefits(gain);
-        this.showBanner(`LEVEL ${level}!`, 'YOUR LEGEND GROWS');
-      }
-      this.syncProgressionStats();
-      return;
-    }
-    this.state = 'levelUp';
-    this.services?.audio?.playSound?.('success', { volume: 0.5 });
-  }
-
-  /** Level-up draft input — mirrors the relic draft. */
-  private updateBoonChoice(): void {
-    const input = this.services?.input;
-    if (!input) return;
-
-    this.boonIndex = this.draftNav(this.boonIndex, this.boonChoices.length);
-
-    const confirm =
-      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
-    const directPick = this.boonChoices.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
-    if ((confirm && !this.confirmWas) || directPick) {
-      const pick = this.boonChoices[this.boonIndex];
-      const { level, gain } = this.progression.confirmLevelUp(pick);
-      if (pick.kind === 'boon') {
-        this.player.gainBoon(pick.id);
-        this.particles.burst(this.player.x, this.player.y, BOONS[pick.id].color, 18, 130, 0.8);
-        this.showBanner(`LEVEL ${level}!`, BOONS[pick.id].name);
-      } else {
-        // v4 Wave D — a spell joins the grimoire and readies itself at once.
-        this.activeSpellIndex = Math.max(0, (this.progression.character()?.spells.length ?? 1) - 1);
-        this.particles.burst(this.player.x, this.player.y, SPELLS[pick.id].color, 18, 130, 0.8);
-        this.showBanner(`LEVEL ${level}!`, `${SPELLS[pick.id].name} — V TO CAST`);
-        this.trackStat('spells_learned', this.progression.sessionSpellsLearned);
-      }
-      this.player.gainLevelBenefits(gain);
-      this.services?.audio?.playSound?.('powerup', { volume: 0.6 });
-      this.syncProgressionStats();
-      // Boss XP can cross two thresholds — draft again if another level waits.
-      if (this.progression.pendingLevelUp()) this.openBoonDraft(this.boonReturnState);
-      else this.state = this.boonReturnState;
-    }
-  }
-
-  private syncProgressionStats(): void {
-    const hero = this.progression.character();
-    if (hero) this.trackStat('character_level', hero.level);
-    this.trackStat('levels_gained', this.progression.sessionLevels);
-    this.trackStat('boons_chosen', this.progression.sessionBoons);
+    const next = this.draftFlow.openBoonDraft(returnTo);
+    if (next) this.state = next;
   }
 
   private updatePlaying(dt: number): void {
@@ -1085,11 +1031,13 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackStat('gold_spent', this.goldSpent);
   }
 
-  /** v4 — Haggler training talks merchants down (never below 1 gold). */
+  /** v4 — Haggler training (+ v5 Presence) talks merchants down, never below 1 gold. */
   private hagglerPrice(base: number): number {
-    const haggler = this.player.boonCount('haggler');
-    if (haggler === 0) return base;
-    return Math.max(1, Math.round(base * (1 - haggler * BOON_TUNING.HAGGLER_DISCOUNT)));
+    const discount =
+      this.player.boonCount('haggler') * BOON_TUNING.HAGGLER_DISCOUNT +
+      this.player.statMods.cha * STAT_TUNING.CHA_SHOP_DISCOUNT;
+    if (discount === 0) return base;
+    return Math.max(1, Math.round(base * (1 - discount)));
   }
 
   /** v4 — Scholar training deepens scroll magic where it sensibly can. */
@@ -1654,7 +1602,8 @@ export class DungeonCrawlGame extends BaseGame {
       scrollId: this.player.scroll,
       spellId: readiedSpell,
       spellFrac: readiedSpell
-        ? this.player.spellCooldown(readiedSpell) / SPELLS[readiedSpell].cooldown
+        ? this.player.spellCooldown(readiedSpell) /
+          this.player.spellCooldownFull(SPELLS[readiedSpell].cooldown)
         : 0,
       spellCount: this.progression.character()?.spells.length ?? 0,
       heroLevel: this.progression.character()?.level ?? null,
@@ -1706,7 +1655,7 @@ export class DungeonCrawlGame extends BaseGame {
       this.hud.renderClassSelect(
         ctx,
         ALL_CLASS_IDS,
-        this.classIndex,
+        this.draftFlow.classIndex,
         'CHOOSE YOUR HERO',
         'your heroes persist and grow · ← → · SPACE · 1-4',
         id => {
@@ -1721,8 +1670,8 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.state === 'levelUp') {
       this.hud.renderBoonDraft(
         ctx,
-        this.boonChoices,
-        this.boonIndex,
+        this.draftFlow.choices,
+        this.draftFlow.index,
         id => this.player.boonCount(id),
         (this.progression.character()?.level ?? 1) + 1,
       );

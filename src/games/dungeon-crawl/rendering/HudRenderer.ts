@@ -14,6 +14,7 @@ import { ALL_SAGA_IDS, chaptersDone, currentChapter, SagaId, SAGAS } from '../da
 import { RELICS, RelicId } from '../data/relics';
 import { SCROLLS, ScrollId } from '../data/scrolls';
 import { SPELLS, SpellId } from '../data/spells';
+import { ALL_STAT_IDS, STAT_FAVORED, statMod, STATS } from '../data/stats';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
 import type { SavedHero } from '../persistence/CharacterStore';
 import type { DraftPick } from '../progression/ProgressionController';
@@ -761,6 +762,24 @@ export class HudRenderer {
     ctx.strokeStyle = PALETTE.hudBorder;
     ctx.strokeRect(VIEW.WIDTH / 2 - 119.5, 121.5, 240, 8);
 
+    // v5 Wave E — the six scores in a strip under the XP bar; the class's
+    // favored pair wears the class color.
+    const cellW = 78;
+    const stripX = VIEW.WIDTH / 2 - (cellW * ALL_STAT_IDS.length) / 2;
+    for (let i = 0; i < ALL_STAT_IDS.length; i++) {
+      const id = ALL_STAT_IDS[i];
+      const score = hero.scores[id];
+      const mod = statMod(score);
+      const favored = STAT_FAVORED[hero.classId].includes(id);
+      const cx = stripX + i * cellW + cellW / 2;
+      ctx.fillStyle = favored ? classDef.color : PALETTE.textWarm;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`${STATS[id].abbr} ${score}`, cx, 152);
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '11px monospace';
+      ctx.fillText(`(${mod >= 0 ? `+${mod}` : mod})`, cx, 168);
+    }
+
     const leftX = VIEW.WIDTH / 2 - 250;
     const rightX = VIEW.WIDTH / 2 + 30;
     const header = (text: string, x: number, y: number): number => {
@@ -778,7 +797,7 @@ export class HudRenderer {
     };
 
     // Left column: the record, the treasury, the smithy's work.
-    let y = header('THE RECORD', leftX, 170);
+    let y = header('THE RECORD', leftX, 196);
     y = row(`Expeditions   ${hero.stats.expeditions}`, leftX, y);
     y = row(`Victories     ${hero.stats.victories}`, leftX, y);
     y = row(`Falls         ${hero.stats.deaths}`, leftX, y);
@@ -798,7 +817,7 @@ export class HudRenderer {
     }
 
     // Right column: training and the grimoire.
-    y = header('TRAINING', rightX, 170);
+    y = header('TRAINING', rightX, 196);
     const trained = Object.entries(hero.boons).filter(([, count]) => (count ?? 0) > 0);
     if (trained.length === 0) y = row('— none yet —', rightX, y, PALETTE.textDim);
     for (const [id, count] of trained) {
@@ -850,7 +869,12 @@ export class HudRenderer {
     const startX = (VIEW.WIDTH - cardW * choices.length - gap * (choices.length - 1)) / 2;
     for (let i = 0; i < choices.length; i++) {
       const pick = choices[i];
-      const def = pick.kind === 'boon' ? BOONS[pick.id] : SPELLS[pick.id];
+      const def =
+        pick.kind === 'boon'
+          ? BOONS[pick.id]
+          : pick.kind === 'spell'
+            ? SPELLS[pick.id]
+            : STATS[pick.id];
       const x = startX + i * (cardW + gap);
       const y = 200;
       const selected = i === selectedIndex;
@@ -882,8 +906,11 @@ export class HudRenderer {
             y + cardH - 14,
           );
         }
-      } else {
+      } else if (pick.kind === 'spell') {
         ctx.fillText('SPELL — cast with V', x + cardW / 2, y + cardH - 14);
+      } else {
+        // v5 Wave E — a milestone favored-score bump.
+        ctx.fillText(`+1 ${STATS[pick.id].abbr} — the score rises`, x + cardW / 2, y + cardH - 14);
       }
       ctx.fillStyle = selected ? def.color : PALETTE.textDim;
       ctx.font = 'bold 14px monospace';

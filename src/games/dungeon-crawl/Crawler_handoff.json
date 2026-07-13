@@ -2,8 +2,8 @@
   "handoff": {
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
-    "lastUpdated": "2026-07-12",
-    "status": "v3 + v4 Waves A through D ALL PLAYTESTED CLEAN (Wave D approved 2026-07-12). Everything is committed and every gate is green: type-check, lint, 10 dungeon suites / 113 tests, FULL dev suite 440/440, release suite 10/10 — on top of the platform hardening pass (eb3f974) that also unblocked Supabase work. You inherit a clean start: pick up the roadToTheTabletop layers below, starting with the Supabase save promotion (waveD_spec).",
+    "lastUpdated": "2026-07-13",
+    "status": "v3 + v4 Waves A-D playtested clean; v5 Wave E (THE SIX SCORES — AD&D ability scores) SHIPPED 2026-07-13, AWAITING OWNER PLAYTEST. Every gate green: type-check, lint (orchestrator back under the guardrail via the DraftFlow extraction), 11 dungeon suites / 135 tests, full dev suite 462/462 (47 suites), release suite 10/10. Owner's current arc (overrides the roadToTheTabletop order): v5 = Stats (E, shipped) -> Items/inventory (F) -> Story/NPCs/villain meta-arc (G), each playtest-gated; the Supabase save promotion resumes after.",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
@@ -16,7 +16,7 @@
   },
 
   "nextTeamOnboarding": {
-    "youAreHere": "v3 and v4 waves A through D are shipped and PLAYTESTED CLEAN; every gate is green and the tree is fully committed — a clean start. Your job: continue layering AD&D toward the tabletop along roadToTheTabletop — the Supabase save promotion (waveD_spec below, now unblocked by the landed hardening pass), then lineages, the fuller grimoire, thief skills, morale, and onward to the planes.",
+    "youAreHere": "v5 Wave E (ability scores) is shipped and awaits the owner's playtest. The owner's standing v5 arc: E stats (done) -> F items/magic items/equipment/inventory (three equip slots beside blacksmith gear; finds persist ONLY on quest victory; KeyI inventory; new data/items.ts + systems/PickupResolver extraction valve; ONE new metric items_found) -> G story (data/npcs.ts + Inn dialogue, QuestDef.intro DM briefings, THE LAST PAGE meta-saga unmasking THE UNDERSCRIBE once both sagas are told; QuestDirector extraction valve). Full wave designs live in the approved master plan mirrored in tasks/todo.md context. After G, resume roadToTheTabletop (Supabase save promotion first — still unblocked).",
     "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
     "waveProcess": [
       "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
@@ -84,13 +84,20 @@
       "v4-A.1. The Roster (a persistent hero PER CLASS, picked every run; v1 saves migrate) — SHIPPED 2026-07-08",
       "v4-B. The Town of LASTLIGHT (quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) — SHIPPED 2026-07-08",
       "v4-C. Sagas & Stories (two authored arcs + interludes + unique finale bosses, board saga page) + secret cracked-wall rooms with nest miniquests — SHIPPED 2026-07-11",
-      "v4-D. Depth & Roaming (Supabase save promotion for cross-device, spell picks on level-up, more sagas/monsters) — NEXT"
+      "v4-D. The Grimoire, the Manual & the Sheet (spell picks on level-up, five Monstrous Manual monsters, Tab character sheet) — SHIPPED 2026-07-12 (playtested)",
+      "v5-E. The Six Scores (AD&D ability scores: class base arrays + forge variance, delta folds, milestone stat cards, sheet strip) — SHIPPED 2026-07-13 (awaiting playtest)",
+      "v5-F. Vaults & Reliquaries (findable items/magic items, equip slots + inventory, victory banking) — NEXT",
+      "v5-G. The DM Wave (NPCs + Inn dialogue, quest briefings, THE LAST PAGE villain meta-arc) — AFTER F"
     ],
     "v4Vision": "One large resumable world per account. The town is the save anchor; expeditions stay seeded roguelite runs; death returns the enduring hero to safety. The remaining roadmap + specs live in nextTeamOnboarding / waveC_spec / waveD_spec in this file.",
     "libraryRules": "Mine the books by eye — OCR scrambles multi-column stat blocks, never build a parser. All in-game text must be ORIGINAL (no verbatim book text). Generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly)."
   },
 
   "versionHistory": {
+    "v5_waveE_the_six_scores": {
+      "date": "2026-07-13",
+      "summary": "SCORES: data/stats.ts — StatId str/dex/con/int/wis/cha, STAT_BASES per class (2e-flavored arrays, each sums 72; favored pair deliberately ODD so the first milestone bump crosses a modifier boundary), STAT_FAVORED, STAT_TUNING (every magnitude), statMod = floor((score-10)/2), statModDeltas (gameplay reads the DELTA vs class base — flat base = zero deltas = the pre-stats game EXACTLY; deltas floor at 0), rollStatScores (base + 2 seeded variance points at forge, AFTER the name pick so name rng order is pinned), isStatMilestone (3/6/9). PERSISTENCE: SavedHero.scores (additive, no version bump; sanitize clamps [classBase, 18], absent field -> flat base so veterans keep their playtested feel; field is `scores`, NEVER confuse with hero.stats the record). FOLDS: Player.statMods + applyProgression 4th arg + setStatMods (mid-run bump heals the CON delta) — STR->swordDamage+meleeKnockback, DEX->speed+dashCooldownFull (new helper, both dash sites), CON->maxHp (CON_HP 2), WIS->heartHealBonus; Player.spellCooldownFull applies INT inside startSpellCooldown (HUD pip divides by it); Combat: INT damage on burning-hands/fireball, WIS on cure/bless; ProgressionController.grantXp x(1+0.05·wis); game: hagglerPrice += cha·0.05, openVictory rewardGold x(1+0.05·cha) (ledger shows the talked-up number). DRAFT: DraftPick += {kind:'stat'}; milestone levels lead draftChoices with favored cards (<18) before the shuffled pool; confirmLevelUp +1 clamp 18, NO session counter (boons_chosen stays boons); renderBoonDraft three-way def lookup. SHEET: six-cell score strip (score + modifier, favored in class color) under the XP bar; columns shifted 170->196. GUARDRAIL VALVE: progression/DraftFlow.ts extracted FIRST (class select + level-up draft flow behind a narrow host; proven pure — all 113 pre-wave tests green with zero edits) putting DungeonCrawlGame back under 1500. ZERO new metric keys/inputs/sounds — characterization contract + monkey untouched. Suites 10->11 (+stats.test.ts 22: data contract, modifier table, delta floor, seeded forge roll, milestones, sanitize clamps, round-trip, draft cards, Player fold siblings of the UNCHANGED maxHp===18 zero-delta pin, WIS xp) = 135 dungeon tests; town victory test consciously derives reward gold from the forged hero's CHA delta (forge roll is live rng there)."
+    },
     "v4_waveD_grimoire_manual_sheet": {
       "date": "2026-07-12",
       "summary": "GRIMOIRE: data/spells.ts — six class-gated spells (mage: burning-hands short player blast / frost-ray radius stun / blink teleport+i-frames via host.findOpenSpotNear; cleric: cure-wounds heal / bless haste+1hp / sanctuary stoneskin+invuln; scholar boon deepens cure+sanctuary). Caster level-up drafts mix unlearned spells among boon cards via ProgressionController.DraftPick (draftChoices/confirmLevelUp replaced boonChoices; martial drafts unchanged); learned spells persist as additive SavedHero.spells (class-legal sanitize). V casts the readied spell, G cycles (banner), per-spell cooldowns tick on Player (spellCooldown/startSpellCooldown); HUD spell pip; effects in Combat.castSpell reuse the scroll library (frostNova parameterized). MANUAL: five monsters on existing behavior verbs — salamander (ember 5+, ranged), bone-archer (bone 4+, ranged, undead), drowned-one (sunken 5+, chase, undead), ember-wight (ash 6+, armored — blocks frontal free via behavior, undead), gargoyle (core row ALL biomes 8+, flit). Ranged configs carry boltCause -> Projectile.cause so recaps name the shooter (EnemyUpdateContext.fireBolt += cause); 5 DeathCauses + original labels/hints; undead set now 8. SHEET: Tab toggles a 'sheet' state from playing/town (world frozen; InputManager preventDefaults keydown so Tab is safe); HudRenderer.renderCharacterSheet = identity/XP/record/treasury/gear/sagas/training/grimoire. Guardrail valve: findOpenSpotNear -> TileMap (nullable, host binding keeps the player-pos fallback); ability dispatch (castAbility), hazard damage (updateHazards), nearestEnemyTo, shop product effects (applyShopPurchase) and scroll pickup (collectScroll) -> Combat (CombatHost += hazards/showBanner/grantRelic). Metrics spells_learned/spells_cast (34->36); 2 achievements (32 total); suites 9->10 (+spells.test 7, +1 bestiary gate; monkey keys += KeyV/KeyG/Tab) = 113 dungeon tests."
@@ -138,6 +145,8 @@
       "data/classes.ts": "v3 — ClassId/ClassKit/ClassDef, CLASSES (4 kits incl. tunic/trim sprite colors + ability blurbs), DEFAULT_KIT (reproduces the pre-v3 hero exactly; active until the pick), CLASS_TUNING (ability numbers).",
       "data/sagas.ts": "v4 Wave C — SagaId/SagaDef/SAGAS (2 arcs: chapters = ordered QuestIds, interludes 1:1 with chapters, last = epilogue) + pure helpers sagaChapterForQuest/chaptersDone/currentChapter. Module-load guard pins interlude pairing + saga flags.",
       "data/spells.ts": "v4 Wave D — SpellId/SpellDef/SPELLS (6, class-gated via classId: 3 mage + 3 cleric) + spellsForClass + SPELL_TUNING. Pure data; effects in Combat.castSpell; learning rides the level-up draft; V casts / G cycles.",
+      "data/stats.ts": "v5 Wave E — the six ability scores: StatId/StatDef/STATS, STAT_BASES per class + STAT_FAVORED + STAT_TUNING, and the pure functions statMod/zeroStatMods/statModDeltas (deltas vs class base, floored at 0)/rollStatScores (seeded forge variance)/isStatMilestone. Gameplay folds read DELTAS so the flat base reproduces the pre-stats game exactly.",
+      "progression/DraftFlow.ts": "v5 Wave E — the run-start class/hero select and the level-up card draft (boons/spells/milestone stat bumps), extracted from the orchestrator behind DraftFlowHost. Owns classIndex/choices/index/returnState (HUD renders from them); update methods return the next GameState or null and the game assigns.",
       "systems/SecretRooms.ts": "v4 Wave C — runtime secret-room state (revealed/nest triggered/cleared) behind SecretRoomsHost (spawnNest/showBanner/playSound/grantNestReward/onSecretFound/onNestCleared). resetFor(plan.secrets) per floor; update(playerX, playerY) each playing frame.",
       "data/enemies.ts": "17 enemy configs (data-driven AI params, undead + splitsInto tags), elite trait table + spawn-chance ramp, spawnWeightsForFloor(floor, biomeId) = common core with v2 floor gates + per-biome family rows, per-room enemy budget, BOSS baseline.",
       "data/bosses.ts": "The three rotating Guardian kits + bossKitForTier(), PLUS UNIQUE_BOSS_KITS (grave-warden, cinder-regent) outside the rotation + bossKitById() — saga finales pin theirs via QuestDef.bossKitId (Boss ctor optional kit override).",
@@ -212,6 +221,7 @@
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
     "classes": "fighter (4 hearts, 120° arc, Cleave 6s) / thief (+14% speed, 8 daggers, +25% gold, 2x backstab from behind or shadows, Hide 1.5s per 10s) / cleric (mace +1dmg slow heavy, hearts heal +1, Turn Undead 8s: 2dmg+1s stun to undead in 140px, shoves the living) / mage (2 hearts, weak staff, homing bolts cap 6 regen 1/4s, Fireball 8s: player-sourced 56px boom). All tuning in data/classes.ts.",
+    "abilityScores": "v5 Wave E — STR/DEX/CON/INT/WIS/CHA on every hero: class base array (fighter STR17/CON15, thief DEX17/CHA13, cleric WIS17/CON13, mage INT17/DEX13; each sums 72) + 2 seeded variance points at forge. Gameplay reads modifier DELTAS vs the base (flat base = today's feel; veterans default to it). Folds per delta point: STR +1 dmg/+20 knockback, DEX +3% speed/dash cd x0.92, CON +2 hp, INT spell cd x0.9/+1 spell dmg, WIS +1 heal/xp x1.05, CHA shop -5%/quest gold +5%. Milestone levels 3/6/9 lead the level-up draft with the favored pair (odd bases — first bump always crosses a mod boundary). Sheet strip shows score + modifier.",
     "bestiary": "Biome families on top of the shared core: ember=fire-beetle (emits LightSource r70), bone=zombie (slow hp5) + ghoul (fast, floor 5+), sunken=deep-ooze (splits to 2 minis) + lizardman (floor 3+), ash=shade (through walls, undead) + cinder-hound (speed 105) (floor 4+). Undead set for Turn Undead: skeleton, wraith, zombie, ghoul, shade. Biome ambient floors in the 4-cycle with bosses every 3rd: ember 1/5, bone 2/10, sunken 7/11, ash 4/8.",
     "scrolls": "One satchel slot; found unidentified (floor ~50%, urn loot band, shop 35g); identity rolls from the LIVE rng at pickup + banner; F/O reads it. flame=player blast r72 dmg3 / frost=stun all in 380px for 2.5s / healing=4hp / shielding=stoneskin+1s invuln / revelation=reveal minimap. Full satchel leaves floor scrolls in place; a bought scroll replaces the held one.",
     "sagas": "Two arcs on the board's saga page: PALE PROCESSION (bone, chapters minLevel 2/3/4, finale GRAVE WARDEN t3 x1.15hp) and UNDYING EMBER (ember->sunken->ash, minLevel 6-9, finale CINDER REGENT t5 x1.25hp, biggest payouts). Chapter N+1 unlocks when N completes for THAT hero; interlude after each chapter victory, epilogue after the finale; completed sagas may relive the finale (progress frozen).",
@@ -242,7 +252,11 @@
       "Saga progress only advances when the completed quest IS the hero's current chapter (ProgressionController.advanceSaga returns null otherwise) — replays must never re-advance, re-reward the metric, or replay interludes.",
       "Unique saga boss kits live in UNIQUE_BOSS_KITS, never in BOSS_KITS — the classic tier rotation must not shift.",
       "New undead-flavored monsters get `undead: true` so Turn Undead scales for free; new splitters use `splitsInto` (never hardcode ids in Combat).",
-      "Floor 1 stays gentle: slime/skeleton/fire-beetle only (pinned by generator + bestiary tests)."
+      "Floor 1 stays gentle: slime/skeleton/fire-beetle only (pinned by generator + bestiary tests).",
+      "v5 Wave E — gameplay reads ability-score DELTAS vs the class base (statModDeltas, floored at 0): a flat-base hero must play bit-for-bit like the pre-stats game (the progression.test maxHp===18 pin is that contract — never 'fix' it by passing deltas).",
+      "v5 Wave E — SavedHero.scores clamp to [class base, 18] in sanitize; the field is `scores`, never to be confused with hero.stats (the expedition record).",
+      "v5 Wave E — create() rolls scores AFTER the name pick; never reorder the rng stream.",
+      "v5 Wave E — stat picks never increment sessionBoons (boons_chosen stays semantically boons); milestone stat cards appear only when REACHING levels 3/6/9 (tests that draft at level 2 stay all-boon/spell)."
     ]
   },
 
@@ -258,30 +272,33 @@
     "atmosphere": "data/constants.ts LIGHTING + BIOMES palettes",
     "sagas": "data/sagas.ts (arcs/prose) + the chapter QuestDefs in data/quests.ts (floors/minLevel/rewards/bossTier/bossKitId) + UNIQUE_BOSS_KITS numbers in data/bosses.ts",
     "secretRooms": "data/constants.ts SECRETS (count, room size, stock, shrine/nest chances, nest pack size + reward)",
-    "spells": "data/spells.ts (per-spell cooldowns in SpellDef, effect numbers in SPELL_TUNING; scholar boon multiplies cure/sanctuary)"
+    "spells": "data/spells.ts (per-spell cooldowns in SpellDef, effect numbers in SPELL_TUNING; scholar boon multiplies cure/sanctuary)",
+    "abilityScores": "data/stats.ts — STAT_BASES per class (each row must keep summing 72 for the balance pin), STAT_FAVORED, STAT_TUNING (every fold magnitude, forge variance points, milestone levels)"
   },
 
   "testing": {
     "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "suites": "10 suites / 113 tests — Wave D added spells.test.ts (7: data contract + class gating, sanitize, caster draft mixing, learn-once persistence, V-cast heal/metric/cooldown, empty-grimoire safety, Tab sheet toggle) and a bestiary gargoyle-gate test; the monkey key list consciously gained KeyV/KeyG/Tab. Prior coverage: 9 suites / 105 tests: DungeonGenerator (determinism incl. omitted-FloorOpts equivalence + Wave C secret-room seals/stock/nest-gating), characterization (manifest, 34-key metric contract, 3000-frame monkey — KeyR deliberately NOT in the monkey set so it can't retire mid-test), classes (16), bestiary (9), scrolls (9), progression (20: roster save v2, v1 migration, per-class independence, owner scoping, saga-progress clamp), town (10), sagas (5: data contract, chapter-walk helpers, board page, victory advance + replay-proofing, unique finale), secrets (2: player-boom-only cracking + metric, nest stir/clear/reward). jest.setup.ts clears localStorage per test — saves cannot leak."
+      "suites": "11 suites / 135 tests — Wave E added stats.test.ts (22: data contract incl. the sum-72 balance pin, statMod boundary table, zero-delta legacy contract, delta floor, seeded forge roll determinism + variance, milestone schedule, sanitize clamps + absent-field default, forge round-trip, milestone draft cards + cap exclusion + confirm/clamp/persist, Player fold siblings of the UNCHANGED maxHp===18 pin, WIS xp rounding); town's victory test now derives reward gold from the forged hero's CHA delta. Wave D had added spells.test.ts (7) and a bestiary gargoyle gate; monkey keys include KeyV/KeyG/Tab (KeyR deliberately NOT in the monkey set so it can't retire mid-test). Prior coverage: DungeonGenerator determinism + secret rooms, characterization (manifest, 36-key metric contract, 3000-frame monkey), classes (16), bestiary, scrolls, progression (roster v2, v1 migration, owner scoping, clamps), town, sagas, secrets. jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
-    "fullDevSuite": "440 tests / 46 suites as of 2026-07-12, all green in one --runInBand process (the WIP-era heap exhaustion is gone since the hardening landed).",
+    "fullDevSuite": "462 tests / 47 suites as of 2026-07-13, all green in one --runInBand process.",
     "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
     "parallelWipWarning": "RESOLVED 2026-07-12: the platform hardening pass landed properly as commit eb3f974 ('Harden arcade platform for production launch' — trusted-progression clientMutationId, supabase/003_lock_down_progression.sql, sync outbox/auth/service updates, with its own tests fixed and NO game-file changes). All gates are green again, including the full one-process dev run (440/440 — the old OOM is gone). History note for archaeology: during Waves C/D this work sat half-finished and uncommitted in the tree, briefly including BaseGame gameTime/destroy edits the owner had reverted; if you ever see release-gate failures mentioning clientMutationId, start at eb3f974. The Supabase save promotion wave is now UNBLOCKED — follow DOCS/SUPABASE-PRODUCTION-RUNBOOK.md and keep live schema + supabase/*.sql + src/lib/supabase.types.ts aligned.",
     "awaitingPlaytest": [
-      "v4-D: spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution (spells crowding boon cards), new monster pressure (bone-archer sightlines, gargoyle speed at depth 8+, ember-wight frontal block), character-sheet readability, V/G/Tab hand-feel",
-      "Carried from v4-C (playtest passed; knobs still open): secret-room loot vs blast cost, nest reward curve",
+      "v5-E (SHIPPED 2026-07-13, playtest pending): forge variance feel (two fresh forges should differ; veterans identical to before), milestone stat cards vs boons/spells at levels 3/6/9, CON heart swing (CON_HP=2 — one-knob drop to 1 if too loud), CHA price/reward visibility, WIS XP pace at L5+, sheet score-strip readability",
+      "Carried from v4-D (playtest passed; knobs still open): spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution, monster pressure (bone-archer sightlines, gargoyle at 8+, ember-wight block)",
+      "Carried from v4-C: secret-room loot vs blast cost, nest reward curve",
       "Carried from v3-v4B: level pressure at L5+, gear prices vs rewards, dungeon-merchant pricing"
     ],
     "nextWaves": [
-      "Supabase save promotion (waveD_spec above) — FIRST reconcile/land the parallel platform WIP that owns the schema/service files",
-      "More AD&D layers toward the tabletop: additional sagas + saga-aware town flavor, more PHB spells (newSpell recipe), more Monstrous Manual monsters/biomes (newMonster recipe), per-hero leaderboard surfacing"
+      "v5-F Vaults & Reliquaries: data/items.ts (~12 items, 3 slots weapon/armor/trinket, rarities, ItemEffects incl. statBonus trinkets completing the odd favored bases), PickupKind 'item' drops (boss always, elites ~12%, treasure/secret ~35% — rolls at Combat/game level, generator pure), run satchel cap 6, KeyI 'inventory' state (Tab-sheet clone), SavedHero.equipment + stash (cap 10) written ONLY at victory (dupes -> gold 25/75/200 into banked BEFORE the ledger), extraction valve FIRST: systems/PickupResolver.ts (collectPickup/grantRelic/door helpers), ONE new metric items_found in all four places + monkey KeyI",
+      "v5-G The DM Wave: extraction valve FIRST: progression/QuestDirector.ts (departOnQuest/openVictory/updateVictory/updateInterlude/arriveInLastlight — preserve the arm->provisions->clear->save->loadFloor order); QuestDef.intro DM briefings via the interlude overlay (onDismiss 'descend'|'town'); data/npcs.ts (5 named originals, stage-keyed rumor pools via pure storyStage(hero) — stateless); Inn becomes the 5th station; THE LAST PAGE meta-saga (unlocks when both sagas TOLD, finale = THE UNDERSCRIBE unique kit) riding the existing sagas map",
+      "Then resume roadToTheTabletop: Supabase save promotion (waveD_spec above) first"
     ],
     "v4Notes": {
       "saveArchitecture": "Save v2 = { version: 2, characters: Partial<Record<ClassId, SavedHero>> }; SavedHero carries level/xp/boons/stats/gold/gear/provisions. v1 saves migrate on load; invalid heroes drop individually; unknown fields ignored (additive evolution). Reward-bearing state rides trusted session metrics ONLY — the local save carries no coins/unlocks.",
@@ -297,6 +314,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "No known defects anywhere: all 10 dungeon-crawl suites (113 tests), the full dev suite (440), the release suite (10), type-check and lint pass as of lastUpdated, and every shipped wave is owner-playtested."
+    "noKnownBugs": "No known defects anywhere: all 11 dungeon-crawl suites (135 tests), the full dev suite (462/47), the release suite (10), type-check and lint pass as of lastUpdated. Waves through v4-D are owner-playtested; v5-E awaits its playtest."
   }
 }

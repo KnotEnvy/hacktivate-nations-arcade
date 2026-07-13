@@ -17,6 +17,7 @@ import {
   sagaChapterForQuest,
   SAGAS,
 } from '@/games/dungeon-crawl/data/sagas';
+import { STAT_BASES } from '@/games/dungeon-crawl/data/stats';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { CharacterStore } from '@/games/dungeon-crawl/persistence/CharacterStore';
 import { TownController, TownCtx } from '@/games/dungeon-crawl/town/TownController';
@@ -175,6 +176,7 @@ describe('the saga board page', () => {
         provisions: [],
         sagas,
         spells: [],
+        scores: { ...STAT_BASES.fighter },
       },
       save: () => {},
       playSound: () => {},

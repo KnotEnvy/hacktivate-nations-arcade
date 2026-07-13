@@ -10,6 +10,7 @@ import { AbilityId, CLASS_TUNING } from '../data/classes';
 import { EXPLOSIONS, HAZARDS, PALETTE, PICKUPS, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
+import { STAT_TUNING } from '../data/stats';
 import { BOSS } from '../data/enemies';
 import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from '../data/relics';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
@@ -493,7 +494,7 @@ export class Combat {
       boom: {
         fuse: CLASS_TUNING.FIREBALL_FUSE,
         radius: CLASS_TUNING.FIREBALL_RADIUS,
-        damage: CLASS_TUNING.FIREBALL_DAMAGE,
+        damage: CLASS_TUNING.FIREBALL_DAMAGE + player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE,
       },
     });
     this.host.playSound('whoosh', 0.5);
@@ -646,7 +647,9 @@ export class Combat {
           boom: {
             fuse: SPELL_TUNING.BURNING_HANDS_FUSE,
             radius: SPELL_TUNING.BURNING_HANDS_RADIUS,
-            damage: SPELL_TUNING.BURNING_HANDS_DAMAGE,
+            damage:
+              SPELL_TUNING.BURNING_HANDS_DAMAGE +
+              player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE,
           },
         });
         this.host.playSound('whoosh', 0.5);
@@ -668,13 +671,17 @@ export class Combat {
         break;
       }
       case 'cure-wounds':
-        player.heal(Math.ceil(SPELL_TUNING.CURE_HP * scholarMult));
+        player.heal(
+          Math.ceil(
+            (SPELL_TUNING.CURE_HP + player.statMods.wis * STAT_TUNING.WIS_HEAL) * scholarMult,
+          ),
+        );
         this.host.playSound('extraLife', 0.5);
         this.host.particles.burst(player.x, player.y, PALETTE.heart, 14, 110, 0.6);
         break;
       case 'bless':
         player.addBuff('haste');
-        player.heal(SPELL_TUNING.BLESS_HP);
+        player.heal(SPELL_TUNING.BLESS_HP + player.statMods.wis * STAT_TUNING.WIS_HEAL);
         this.host.playSound('powerup', 0.5);
         this.host.particles.burst(player.x, player.y, '#ffe08a', 14, 110, 0.6);
         break;

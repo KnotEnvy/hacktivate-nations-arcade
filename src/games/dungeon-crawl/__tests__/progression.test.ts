@@ -25,6 +25,7 @@ import {
 } from '@/games/dungeon-crawl/persistence/CharacterStore';
 import { ProgressionController } from '@/games/dungeon-crawl/progression/ProgressionController';
 import { SAGAS } from '@/games/dungeon-crawl/data/sagas';
+import { STAT_BASES } from '@/games/dungeon-crawl/data/stats';
 import { initGame, type Harness } from '@/games/shared/gameTestHarness';
 
 let randomSpy: jest.SpyInstance;
@@ -49,6 +50,7 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     provisions: [],
     sagas: {},
     spells: [],
+    scores: { ...STAT_BASES.fighter },
     ...overrides,
   };
 }
@@ -323,6 +325,8 @@ describe('Player progression application', () => {
     const player = new Player();
     player.reset(0, 0);
     player.applyKit(CLASSES.fighter);
+    // v5 Wave E legacy contract: no statDeltas passed = zero deltas = this
+    // exact pre-stats math. Deltas get their own tests in stats.test.ts.
     player.applyProgression(cumulativeGains('fighter', 5), { toughness: 2 });
     // fighter kit 8 + gains(L5: 2+1+1+2=6) + toughness 4 = 18
     expect(player.maxHp).toBe(18);

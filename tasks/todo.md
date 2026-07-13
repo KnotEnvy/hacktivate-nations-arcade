@@ -320,3 +320,105 @@ hardening WIP (unchanged; release suite still fails its same 2/10).
 FROST RAY vs the frost scroll), caster draft dilution (spells crowding boons),
 new monster pressure (bone-archer sightlines, gargoyle speed at depth 8+,
 wight blocking), sheet readability, V/G/Tab hand-feel.
+
+---
+
+# Dungeon Crawl v5 — Wave E: The Six Scores
+
+## Context (2026-07-13)
+
+Waves A–D playtested clean; hardening pass landed; all gates green. Owner
+direction: three waves taking the game from rough draft to a story-driven
+masterpiece — E: AD&D ability scores (STR/DEX/CON/INT/WIS/CHA), F: findable
+items/equipment/inventory, G: NPCs + DM narration + the villain meta-arc.
+Owner decisions: per-class 2e base array + 2 points rolled variance at forge;
+growth at level milestones 3/6/9 (favored-stat cards join the draft) plus
+future item bonuses; the sheet upgrades each wave.
+
+Key design: gameplay folds read the DELTA between the hero's modifier
+(floor((score−10)/2)) and the class-base modifier — a hero at the flat base
+array plays EXACTLY like today (veterans sanitize to flat base, untouched);
+variance and growth add texture, never a rebalance. Sanitize clamps scores to
+[classBase, 18]. Field is `scores` (never `stats` — that's the record). Zero
+new metric keys / inputs / sounds. DungeonCrawlGame.ts sits at ~1496/1500 —
+extraction valve FIRST.
+
+## Steps
+
+- [x] E1. Extraction valve `progression/DraftFlow.ts` (pure refactor): move
+      updateClassSelect / openBoonDraft / updateBoonChoice + classIndex /
+      boonChoices / boonIndex / boonReturnState behind a narrow host; update
+      methods return the next GameState | null. Proof: full dungeon-crawl dev
+      suite green with ZERO test edits.
+- [x] E2. `data/stats.ts` (gear/spells module convention): StatId/StatDef/
+      STATS/ALL_STAT_IDS/StatScores/STAT_BASES (fighter 17/10/15/9/10/11,
+      thief 10/17/11/12/9/13, cleric 13/9/13/10/17/10, mage 8/13/10/17/12/12 —
+      each sums 72, favored odd)/STAT_FAVORED/STAT_TUNING + statMod/
+      zeroStatMods/statModDeltas/rollStatScores/isStatMilestone. New
+      __tests__/stats.test.ts data contract.
+- [x] E3. Persistence + forge: SavedHero.scores (additive, no version bump),
+      sanitize clamp [classBase, 18] absent→flat base, create() rolls AFTER
+      the name pick, ProgressionController.statDeltas(); hero fixtures gain
+      scores (TS-forced); clamp + round-trip tests.
+- [x] E4. Player folds + wiring: statMods field + applyProgression 4th arg +
+      setStatMods (mid-run bumps heal the CON delta); folds in swordDamage /
+      meleeKnockback / speed / dash cooldown / heartHealBonus / maxHp; CHA in
+      hagglerPrice + openVictory rewardGold; WIS mult in grantXp; INT on spell
+      cooldown + burning-hands/fireball damage, WIS on cure/bless (Combat).
+      maxHp===18 pin UNCHANGED (zero-delta legacy contract); delta siblings in
+      stats.test.ts.
+- [x] E5. Milestone stat cards: DraftPick += {kind:'stat'; id}; draftChoices
+      prepends favored cards (<18) when reaching level 3/6/9; confirmLevelUp
+      +1 clamp 18, sessionBoons untouched; DraftFlow confirm branch (banner
+      "X RISES", powerup); renderBoonDraft three-way def lookup; draft tests.
+- [x] E6. Sheet: six-cell ability strip (score bold + (+mod) beneath, favored
+      tinted class color) between XP bar and columns; columns 170→196.
+- [x] E7. Gates (type-check, lint guardrail, full dev suite, release suite) +
+      Crawler_handoff.json refresh (must parse) + review here + commit.
+
+## Wave E Invariants
+
+Veterans and flat-base heroes play bit-for-bit like today (zero deltas); the
+name rng pick order in create() never moves; scores never leave [classBase,
+18]; martial level-2 drafts stay all-boon (milestones are 3/6/9); every
+magnitude lives in STAT_TUNING; generator untouched; no new metric keys.
+
+## Wave E Review (2026-07-13)
+
+**Wave E shipped.** type-check ✅ · lint ✅ (DungeonCrawlGame back under the
+1500 guardrail via the E1 DraftFlow extraction) · dungeon-crawl suites
+135/135 (11 suites; +stats.test.ts 22) · full dev suite 462/462 (47 suites) ·
+release suite 10/10.
+
+**The Six Scores:** every hero now carries STR/DEX/CON/INT/WIS/CHA. New
+heroes forge from a 2e-flavored class base array (each sums 72) + 2 points of
+seeded variance — every SIR ROWAN is a little different. Veterans (saves
+without the field) sanitize to the flat base and play EXACTLY as before: all
+gameplay folds read the modifier DELTA vs the class base (floor((score−10)/2)
+— one formula, no dice on screen). Folds: STR→sword/dagger damage +
+knockback, DEX→speed + dash recovery, CON→hearts, INT→spell damage + spell
+cooldowns, WIS→heals (hearts/cure/bless) + XP earned, CHA→dungeon-merchant
+prices + quest reward gold. Milestone levels 3/6/9 lead the level-up draft
+with the class's favored-stat cards (fighter STR/CON, thief DEX/CHA, cleric
+WIS/CON, mage INT/DEX — martial drafts finally grow), a third DraftPick kind
+beside boons/spells; favored bases are deliberately odd so the first bump
+always crosses a modifier boundary. The Tab sheet gains a six-cell score
+strip (score + modifier, favored pair in class color).
+
+**Guardrail valve:** class-select + level-up draft flow extracted to
+`progression/DraftFlow.ts` (proven pure: all 113 pre-wave tests green with
+zero edits before any feature landed).
+
+**Conscious test changes:** hero fixtures gain `scores` (TS-forced); the
+town victory test derives expected reward gold from the forged hero's CHA
+delta (the forge roll is live rng there); the maxHp===18 legacy pin is
+UNCHANGED and commented as the zero-delta contract. No new metric keys — the
+characterization contract and monkey list are untouched.
+
+**Awaiting playtest:** forge variance feel (two forges differing), milestone
+card appeal vs boons/spells, CON heart swing (CON_HP=2 — drop to 1 if loud),
+CHA discount/reward visibility, WIS XP pace at L5+, sheet strip readability.
+
+**Next (Wave F):** Vaults & Reliquaries — findable items/magic items, three
+equip slots beside blacksmith gear, run finds banked on VICTORY only,
+KeyI inventory. Then Wave G: NPCs + DM narration + the villain meta-arc.

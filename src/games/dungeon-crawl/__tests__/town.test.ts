@@ -5,6 +5,7 @@
 
 import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '@/games/dungeon-crawl/data/gear';
 import { ALL_QUEST_IDS, QUESTS, STANDALONE_QUEST_IDS } from '@/games/dungeon-crawl/data/quests';
+import { STAT_TUNING, statModDeltas } from '@/games/dungeon-crawl/data/stats';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { generateFloor, isReachable } from '@/games/dungeon-crawl/dungeon/DungeonGenerator';
 import { Tile } from '@/games/dungeon-crawl/dungeon/TileMap';
@@ -188,16 +189,25 @@ describe('expedition + victory flow', () => {
     expect(game.boss).not.toBeNull();
     expect(game.boss!.kit.id).toBe('bone-colossus');
 
-    // Victory: carried gold + reward lands in the hero's treasury.
+    // Victory: carried gold + reward lands in the hero's treasury. v5 Wave E:
+    // the reward scales with the forged hero's CHA delta (the forge roll is
+    // live rng here), so the expectation derives from the saved scores.
     game.goldBalance = 55;
     game.openVictory();
     h.game.update(1 / 60); // one frame so extendedGameData re-syncs
     const s = metrics(h);
+    const chaDelta = statModDeltas(
+      'fighter',
+      new CharacterStore().load().characters.fighter!.scores,
+    ).cha;
+    const rewardGold = Math.round(
+      QUESTS['bone-galleries'].rewardGold * (1 + STAT_TUNING.CHA_QUEST_GOLD * chaDelta),
+    );
     expect(s.quests_completed).toBe(1);
-    expect(s.gold_banked).toBe(55 + QUESTS['bone-galleries'].rewardGold);
+    expect(s.gold_banked).toBe(55 + rewardGold);
     expect(s.xp_earned).toBeGreaterThanOrEqual(QUESTS['bone-galleries'].rewardXp);
     const saved = new CharacterStore().load();
-    expect(saved.characters.fighter?.gold).toBe(55 + QUESTS['bone-galleries'].rewardGold);
+    expect(saved.characters.fighter?.gold).toBe(55 + rewardGold);
     expect(saved.characters.fighter?.stats.victories).toBe(1);
   });
 

@@ -19,12 +19,27 @@ import {
 } from '../data/progression';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
+import {
+  isStatMilestone,
+  rollStatScores,
+  STAT_FAVORED,
+  STAT_TUNING,
+  StatId,
+  statModDeltas,
+  zeroStatMods,
+} from '../data/stats';
 import { QuestId } from '../data/quests';
 import { Rng } from '../dungeon/rng';
 import { CharacterStore, SavedHero, SavePayloadV2 } from '../persistence/CharacterStore';
 
-/** v4 Wave D — one level-up card: a proficiency boon or a class spell. */
-export type DraftPick = { kind: 'boon'; id: BoonId } | { kind: 'spell'; id: SpellId };
+/**
+ * One level-up card: a proficiency boon, a class spell (v4 Wave D), or —
+ * v5 Wave E, milestone levels only — a favored ability-score bump.
+ */
+export type DraftPick =
+  | { kind: 'boon'; id: BoonId }
+  | { kind: 'spell'; id: SpellId }
+  | { kind: 'stat'; id: StatId };
 
 export class ProgressionController {
   private store = new CharacterStore();
@@ -81,6 +96,8 @@ export class ProgressionController {
       provisions: [],
       sagas: {},
       spells: [],
+      // v5 Wave E — rolled AFTER the name pick (name rng order is pinned).
+      scores: rollStatScores(classId, rng),
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -100,8 +117,10 @@ export class ProgressionController {
   grantXp(amount: number): void {
     const hero = this.character();
     if (!hero || amount <= 0) return;
-    hero.xp += amount;
-    this.sessionXp += amount;
+    // v5 Wave E — Wisdom: lessons learned faster (per delta point).
+    const earned = Math.round(amount * (1 + STAT_TUNING.WIS_XP_MULT * this.statDeltas().wis));
+    hero.xp += earned;
+    this.sessionXp += earned;
   }
 
   /** True when banked XP has crossed the next level threshold. */
@@ -113,7 +132,9 @@ export class ProgressionController {
 
   /**
    * Up to 3 cards for the level-up draft (seeded shuffle): unmaxed boons,
-   * plus — v4 Wave D — the caster classes' unlearned spells.
+   * plus — v4 Wave D — the caster classes' unlearned spells. v5 Wave E: a
+   * MILESTONE level (reaching 3/6/9) leads with the class's favored-stat
+   * bumps (skipping capped scores) before the shuffled pool fills to 3.
    */
   draftChoices(rng: Rng): DraftPick[] {
     const hero = this.character();
@@ -124,7 +145,12 @@ export class ProgressionController {
     for (const id of spellsForClass(hero.classId)) {
       if (!hero.spells.includes(id)) pool.push({ kind: 'spell', id });
     }
-    return rng.shuffle(pool).slice(0, 3);
+    const statCards: DraftPick[] = isStatMilestone(hero.level + 1)
+      ? STAT_FAVORED[hero.classId]
+          .filter(id => hero.scores[id] < STAT_TUNING.SCORE_MAX)
+          .map(id => ({ kind: 'stat' as const, id }))
+      : [];
+    return [...statCards, ...rng.shuffle(pool)].slice(0, 3);
   }
 
   /**
@@ -141,6 +167,10 @@ export class ProgressionController {
     } else if (pick?.kind === 'spell' && !hero.spells.includes(pick.id)) {
       hero.spells.push(pick.id);
       this.sessionSpellsLearned++;
+    } else if (pick?.kind === 'stat') {
+      // v5 Wave E — the score rises (no session counter: boons_chosen stays
+      // semantically "boons").
+      hero.scores[pick.id] = Math.min(STAT_TUNING.SCORE_MAX, hero.scores[pick.id] + 1);
     }
     this.sessionLevels++;
     this.store.save(this.payload);
@@ -160,6 +190,17 @@ export class ProgressionController {
     const hero = this.character();
     if (!hero) return { hp: 0, speed: 0, daggerCap: 0 };
     return cumulativeGains(hero.classId, hero.level);
+  }
+
+  /**
+   * v5 Wave E — the active hero's ability-score modifier DELTAS vs the class
+   * base (what the gameplay folds read). All zero before the roster pick and
+   * for a hero still on the flat base array.
+   */
+  statDeltas(): Record<StatId, number> {
+    const hero = this.character();
+    if (!hero) return zeroStatMods();
+    return statModDeltas(hero.classId, hero.scores);
   }
 
   /**

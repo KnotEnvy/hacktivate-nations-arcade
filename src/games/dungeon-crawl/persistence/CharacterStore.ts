@@ -19,6 +19,7 @@ import {
 import { LEVEL_CAP } from '../data/progression';
 import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
+import { ALL_STAT_IDS, STAT_BASES, STAT_TUNING, StatScores } from '../data/stats';
 
 const SAVE_PREFIX = 'dungeon-crawl-save';
 const SESSION_OWNER_KEY = 'hacktivate-session-owner';
@@ -46,6 +47,10 @@ export interface SavedHero {
   sagas: Partial<Record<SagaId, number>>;
   // v4 Wave D — the grimoire: spells learned at level-up (class-legal only).
   spells: SpellId[];
+  // v5 Wave E — the six ability SCORES (str/dex/con/int/wis/cha). NOT to be
+  // confused with `stats` above (the expedition record). Additive field, no
+  // version bump: absent on old saves → sanitize fills the flat class base.
+  scores: StatScores;
 }
 
 export interface SavePayloadV2 {
@@ -116,6 +121,18 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     ? spellsForClass(expectedClass).filter(id => (hero.spells as unknown[]).includes(id))
     : [];
 
+  // Ability scores clamp to [class base, cap] — veterans without the field
+  // land exactly on the flat base (zero deltas = their playtested feel).
+  const scores = { ...STAT_BASES[expectedClass] };
+  if (hero.scores && typeof hero.scores === 'object') {
+    for (const id of ALL_STAT_IDS) {
+      const value = Math.floor(
+        asFiniteNumber((hero.scores as Record<string, unknown>)[id], scores[id]),
+      );
+      scores[id] = Math.min(STAT_TUNING.SCORE_MAX, Math.max(scores[id], value));
+    }
+  }
+
   const stats = hero.stats && typeof hero.stats === 'object' ? hero.stats : undefined;
   return {
     classId: expectedClass,
@@ -137,6 +154,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     provisions,
     sagas,
     spells,
+    scores,
   };
 }
 

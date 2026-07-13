@@ -11,6 +11,7 @@ import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
 import { ScrollId } from '../data/scrolls';
 import { SpellId } from '../data/spells';
+import { STAT_TUNING, StatId, zeroStatMods } from '../data/stats';
 import { TileMap } from '../dungeon/TileMap';
 
 export interface SwordSwing {
@@ -66,6 +67,9 @@ export class Player {
   // v4 — persistent hero training, re-applied from the save each run.
   boons = new Map<BoonId, number>();
   levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
+  // v5 Wave E — ability-score modifier DELTAS vs the class base (all zero =
+  // the pre-stats game). Folded into the derived-stat getters below.
+  statMods: Record<StatId, number> = zeroStatMods();
   survivorUsed = false;
   // v4 Wave B — blacksmith gear tiers + the alchemist's candle.
   gear = new Map<GearId, number>();
@@ -89,6 +93,7 @@ export class Player {
     this.hpRegenTimer = 0;
     this.boons.clear();
     this.levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
+    this.statMods = zeroStatMods();
     this.survivorUsed = false;
     this.gear.clear();
     this.provisionTorch = 0;
@@ -118,8 +123,13 @@ export class Player {
     return this.spellCds.get(id) ?? 0;
   }
 
+  /** v5 Wave E — Intelligence returns spells sooner (per delta point). */
+  spellCooldownFull(baseSeconds: number): number {
+    return baseSeconds * Math.pow(STAT_TUNING.INT_SPELL_CD_MULT, this.statMods.int);
+  }
+
   startSpellCooldown(id: SpellId, seconds: number): void {
-    this.spellCds.set(id, seconds);
+    this.spellCds.set(id, this.spellCooldownFull(seconds));
   }
 
   /** Move to a new floor: position resets, run state (relics, hp) persists. */
@@ -160,8 +170,10 @@ export class Player {
     gains: { hp: number; speed: number; daggerCap: number },
     boons: Partial<Record<BoonId, number>>,
     gear: Partial<Record<GearId, number>> = {},
+    statDeltas: Record<StatId, number> = zeroStatMods(),
   ): void {
     this.levelBonus = { ...gains };
+    this.statMods = { ...statDeltas };
     this.boons.clear();
     for (const [id, count] of Object.entries(boons)) {
       if (typeof count === 'number' && count > 0) this.boons.set(id as BoonId, count);
@@ -176,7 +188,8 @@ export class Player {
       this.kit.maxHp +
         gains.hp +
         this.boonCount('toughness') * BOON_TUNING.TOUGHNESS_HP +
-        this.gearTier('armor') * GEAR_TUNING.ARMOR_HP,
+        this.gearTier('armor') * GEAR_TUNING.ARMOR_HP +
+        this.statMods.con * STAT_TUNING.CON_HP,
     );
     this.hp = this.maxHp;
     this.daggers = Math.min(
@@ -193,6 +206,19 @@ export class Player {
     if (gain.hp) {
       this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + gain.hp);
       this.hp = Math.min(this.maxHp, this.hp + gain.hp);
+    }
+  }
+
+  /**
+   * v5 Wave E — a milestone stat bump (or any mid-run score change) lands its
+   * new deltas; a CON rise grants its hearts on the spot like Toughness does.
+   */
+  setStatMods(mods: Record<StatId, number>): void {
+    const conGain = (mods.con - this.statMods.con) * STAT_TUNING.CON_HP;
+    this.statMods = { ...mods };
+    if (conGain > 0) {
+      this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + conGain);
+      this.hp = Math.min(this.maxHp, this.hp + conGain);
     }
   }
 
@@ -240,7 +266,8 @@ export class Player {
       1 +
       this.levelBonus.speed +
       this.boonCount('fleet-foot') * BOON_TUNING.FLEET_FOOT_SPEED +
-      this.gearTier('boots') * GEAR_TUNING.BOOTS_SPEED;
+      this.gearTier('boots') * GEAR_TUNING.BOOTS_SPEED +
+      this.statMods.dex * STAT_TUNING.DEX_SPEED;
     return PLAYER.SPEED * this.kit.speedMult * training * mult;
   }
 
@@ -254,7 +281,8 @@ export class Player {
 
   meleeKnockback(): number {
     const ogre = this.relicCount('ogre-gauntlets');
-    return this.kit.meleeKnockback * (1 + ogre * RELIC_TUNING.OGRE_KNOCKBACK_MULT);
+    const base = this.kit.meleeKnockback + this.statMods.str * STAT_TUNING.STR_KNOCKBACK;
+    return base * (1 + ogre * RELIC_TUNING.OGRE_KNOCKBACK_MULT);
   }
 
   swordDamage(): number {
@@ -263,7 +291,8 @@ export class Player {
       this.kit.meleeDamageBonus +
       this.boonCount('weapon-specialization') * BOON_TUNING.WEAPON_SPEC_DAMAGE +
       this.gearTier('blade') * GEAR_TUNING.BLADE_DAMAGE +
-      this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE;
+      this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE +
+      this.statMods.str * STAT_TUNING.STR_DAMAGE;
     if (this.buffs.has('strength')) dmg += 1;
     if (
       this.relicCount('berserker-rage') > 0 &&
@@ -279,9 +308,13 @@ export class Player {
     return this.swordDamage() + this.boonCount('marksman') * BOON_TUNING.MARKSMAN_DAMAGE;
   }
 
-  /** Heart pickups: kit bonus (cleric) + Herbalism training. */
+  /** Heart pickups: kit bonus (cleric) + Herbalism training + Wisdom. */
   heartHealBonus(): number {
-    return this.kit.healBonus + this.boonCount('herbalism') * BOON_TUNING.HERBALISM_HEAL;
+    return (
+      this.kit.healBonus +
+      this.boonCount('herbalism') * BOON_TUNING.HERBALISM_HEAL +
+      this.statMods.wis * STAT_TUNING.WIS_HEAL
+    );
   }
 
   torchBonus(): number {
@@ -459,8 +492,7 @@ export class Player {
     this.faceY = this.dashDirY;
     this.dashTimer = PLAYER.DASH_DURATION;
     const cloak = this.relicCount('shadow-cloak');
-    this.dashCooldown =
-      PLAYER.DASH_COOLDOWN * Math.pow(RELIC_TUNING.SHADOW_CLOAK_COOLDOWN_MULT, cloak);
+    this.dashCooldown = this.dashCooldownFull();
     // Dash grants i-frames through the burst plus a small tail.
     const iframes =
       PLAYER.DASH_DURATION +
@@ -470,10 +502,19 @@ export class Player {
     return true;
   }
 
+  /** Full dash cooldown after relic discounts + Dexterity. */
+  dashCooldownFull(): number {
+    const cloak = this.relicCount('shadow-cloak');
+    return (
+      PLAYER.DASH_COOLDOWN *
+      Math.pow(RELIC_TUNING.SHADOW_CLOAK_COOLDOWN_MULT, cloak) *
+      Math.pow(STAT_TUNING.DEX_DASH_CD_MULT, this.statMods.dex)
+    );
+  }
+
   /** Fraction of dash cooldown remaining (1 = just used, 0 = ready). */
   dashCooldownFrac(): number {
-    const cloak = this.relicCount('shadow-cloak');
-    const full = PLAYER.DASH_COOLDOWN * Math.pow(RELIC_TUNING.SHADOW_CLOAK_COOLDOWN_MULT, cloak);
+    const full = this.dashCooldownFull();
     return full > 0 ? this.dashCooldown / full : 0;
   }
 
