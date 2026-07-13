@@ -4,6 +4,7 @@
 
 import { CLASSES } from '../data/classes';
 import { BiomePalette, PALETTE, TILE } from '../data/constants';
+import { ITEMS } from '../data/items';
 import { ShopItemPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Enemy } from '../entities/Enemy';
@@ -784,6 +785,20 @@ export class TileRenderer {
           ctx.fillStyle = 'rgba(255, 224, 138, 0.5)';
           ctx.fillRect(px - 7, py - 5, 2, 2);
         }
+        break;
+      }
+      case 'item': {
+        // v5 Wave F — a banded strongbox, its clasp glowing the find's color.
+        const glow = pickup.itemId ? ITEMS[pickup.itemId].color : PALETTE.gold;
+        ctx.fillStyle = '#5a3a22';
+        ctx.fillRect(px - 7, py - 4, 14, 10);
+        ctx.fillStyle = '#3a2414';
+        ctx.fillRect(px - 7, py - 1, 14, 2);
+        const pulse = 0.5 + 0.5 * Math.sin(time * 5 + pickup.bobPhase);
+        ctx.globalAlpha = 0.6 + 0.4 * pulse;
+        ctx.fillStyle = glow;
+        ctx.fillRect(px - 2, py - 3, 4, 5);
+        ctx.globalAlpha = 1;
         break;
       }
     }

@@ -422,3 +422,113 @@ CHA discount/reward visibility, WIS XP pace at L5+, sheet strip readability.
 **Next (Wave F):** Vaults & Reliquaries — findable items/magic items, three
 equip slots beside blacksmith gear, run finds banked on VICTORY only,
 KeyI inventory. Then Wave G: NPCs + DM narration + the villain meta-arc.
+
+**PLAYTESTED 2026-07-13: clean — "playing really nicely." Wave F begins.**
+
+---
+
+# Dungeon Crawl v5 — Wave F: Vaults & Reliquaries
+
+## Context (2026-07-13)
+
+Wave E playtested clean. Owner decision (locked at planning): findable
+items/magic items occupy THREE new equip slots (weapon/armor/trinket) BESIDE
+the untouched blacksmith gear tracks; finds are run-carried and become
+permanent ONLY on quest VICTORY (death loses unbanked finds, like carried
+gold). Inventory on KeyI (verified free). All item text original, generic
+archetypes.
+
+Key design: hero.equipment/hero.stash are written ONLY at victory (and by
+town inventory edits) — the death path needs zero revert logic, and a banked
+item unequipped mid-run can never be lost to a death. Duplicates and stash
+overflow convert to gold at victory (25/75/200 by rarity), folded into
+`banked` BEFORE the ledger renders. Equipment statBonus feeds live effective
+scores with no cap (statMod flooring self-limits: 18→19 changes nothing,
+19→20 crosses). ONE new metric: items_found (all four places + monkey KeyI).
+
+## Steps
+
+- [x] F1. Extraction valve `systems/PickupResolver.ts` (pure refactor): move
+      the game's collectPickup switch + grantRelic + tryOpenDoors/
+      openConnectedLockedDoors behind a narrow host. Proof: all dungeon-crawl
+      suites green with ZERO test edits.
+- [x] F2. `data/items.ts`: EquipSlot/Rarity/ItemId (12: 4 per slot)/ItemDef
+      {id,name,blurb,icon,color,slot,rarity,effects}/ItemEffects {damage?,
+      hp?,speed?,knockback?,daggerCap?,statBonus?}/ITEMS/ALL_ITEM_IDS/
+      ITEM_TUNING + mergeItemEffects + itemsOfRarity/rollItemDrop/
+      bossItemWeights. New __tests__/items.test.ts data contract.
+- [x] F3. Persistence: SavedHero.equipment (slot-legality sanitize) +
+      SavedHero.stash (whitelist, dedup, cap 10) — additive, no version bump;
+      hero fixtures gain both (TS-forced); clamp tests.
+- [x] F4. Player folds: itemEffects bag + applyEquipment(effects) folding
+      damage/hp/speed/knockback/daggerCap beside gear/boons/statMods;
+      statBonus rides effective scores via withStatBonus +
+      ProgressionController.equippedStatDeltas; DraftFlowHost.refreshStatMods
+      keeps milestone bumps equipment-aware. Fold tests + one pinned
+      composition (kit+boon+gear+stat+item = 5 sword damage).
+- [x] F5. Drops: PickupKind 'item' + Pickup.itemId payload + TileRenderer
+      strongbox case; killBoss always drops (rarity by quest tier, classic
+      floors fall back to floor/3), elite kills 12%, treasure-room key
+      opening + secret-room reveal 35% (live rng at game level via
+      dropItemInRoom; SecretRoomsHost.onSecretFound now carries the room
+      rect — generator untouched); items_found metric in syncExtendedData +
+      GameEndData + achievement (33 total) + characterization contract;
+      monkey keys += KeyI CONSCIOUSLY.
+- [x] F6. `systems/Inventory.ts`: runItems satchel (cap 6; full leaves finds
+      on the floor — scroll precedent), equipped seeded from hero.equipment
+      at depart (before provisions so dagger caps see items), equip/swap
+      returns the displaced piece whence the new one came; TOWN mode edits
+      hero.equipment/hero.stash directly + saves. New 'inventory' GameState
+      on KeyI (Tab-sheet freeze clone, inventoryReturn, case dispatch,
+      inTownWorld clause); HudRenderer.renderInventory (three slot boxes +
+      browse list + blurb + banking-rules footer). HUD satchel count pip.
+- [x] F7. Victory banking: openVictory persists equipped -> hero.equipment,
+      satchel -> stash; dupes + overflow -> gold BEFORE the ledger (ledger
+      gains FINDS KEPT / DUPLICATES SOLD rows); recap gains a FINDS LOST TO
+      THE DEEP row (RecapStats.itemsLost — death writes NOTHING); character
+      sheet gains a compact Worn line under GEAR.
+- [x] F8. Gates (type-check, lint guardrail, dungeon suites, full dev suite,
+      release suite) + Crawler_handoff.json refresh (must parse) + review
+      here + commit.
+
+## Wave F Invariants
+
+hero.equipment/stash written ONLY at victory + town inventory (death path
+writes nothing); generator stays pure (all item rolls on the live rng at
+Combat/game level); blacksmith gear tracks and their folds untouched; relics
+stay run-scoped and separate; satchel full leaves finds on the floor; every
+magnitude in ITEM_TUNING; existing SoundName palette only; items_found in all
+four places same commit; every file under 1500 logical lines.
+
+## Wave F Review (2026-07-13)
+
+**Wave F shipped.** type-check ✅ · lint ✅ (orchestrator under the guardrail
+after the F1 PickupResolver extraction) · dungeon-crawl suites 150/150 (12
+suites; +items.test.ts 15) · full dev suite 477/477 (48 suites) · release
+suite 10/10.
+
+**Vaults & Reliquaries:** twelve original finds across three hero slots
+(weapon/armor/trinket, one common/two rares/one legendary per slot) in
+data/items.ts — from the SOLDIER'S EDGE to the PHILOSOPHER'S RING. Guardians
+always drop one (rarer at deeper quest tiers), elites sometimes (12%), keyed
+treasure rooms and secret hoards often (35%). Finds ride a six-slot run
+satchel; I opens THE PACK (world frozen, Tab-sheet pattern) to wear them —
+swaps return the displaced piece to the satchel. Trinket stat bonuses feed
+Wave E's effective-score deltas live (the GIRDLE OF THE OX turns a fighter's
+17 STR into 18). VICTORY is the only banking moment: worn pieces persist,
+satchel joins the ten-slot stash, duplicates and overflow convert to banked
+gold (25/75/200 by rarity) shown as their own ledger rows. Death writes
+nothing — the recap counts FINDS LOST TO THE DEEP; in town the pack edits the
+saved hero directly.
+
+**Conscious test changes:** hero fixtures gain equipment/stash (TS-forced);
+characterization gains the items_found contract row and the monkey now
+presses KeyI; SecretRoomsHost.onSecretFound carries the revealed room's rect.
+
+**Awaiting playtest:** drop rates (boss-always vs elite 12% vs vault 35%),
+dupe-gold values, satchel/stash caps, pack navigation hand-feel, item power
+vs blacksmith gear (esp. DAWNSLIVER +2 damage stacking), HUD satchel pip
+visibility.
+
+**Next (Wave G):** The DM Wave — named NPCs + Inn dialogue, DM quest
+briefings, and THE LAST PAGE meta-saga unmasking THE UNDERSCRIBE.

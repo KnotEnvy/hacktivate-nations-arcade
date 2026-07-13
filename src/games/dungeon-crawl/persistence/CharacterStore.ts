@@ -16,6 +16,14 @@ import {
   GearId,
   ProvisionId,
 } from '../data/gear';
+import {
+  ALL_EQUIP_SLOTS,
+  ALL_ITEM_IDS,
+  EquipSlot,
+  ITEM_TUNING,
+  ITEMS,
+  ItemId,
+} from '../data/items';
 import { LEVEL_CAP } from '../data/progression';
 import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
@@ -51,6 +59,11 @@ export interface SavedHero {
   // confused with `stats` above (the expedition record). Additive field, no
   // version bump: absent on old saves → sanitize fills the flat class base.
   scores: StatScores;
+  // v5 Wave F — found equipment: the worn piece per slot + the banked stash.
+  // Written ONLY at quest victory and by town inventory edits — the death
+  // path never touches them (unbanked finds are simply lost).
+  equipment: Partial<Record<EquipSlot, ItemId>>;
+  stash: ItemId[];
 }
 
 export interface SavePayloadV2 {
@@ -133,6 +146,28 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     }
   }
 
+  // Found equipment: only real item ids survive, and a worn piece must match
+  // its slot; the stash whitelist naturally dedups and caps.
+  const equipment: Partial<Record<EquipSlot, ItemId>> = {};
+  if (hero.equipment && typeof hero.equipment === 'object') {
+    for (const slot of ALL_EQUIP_SLOTS) {
+      const id = (hero.equipment as Record<string, unknown>)[slot];
+      if (
+        typeof id === 'string' &&
+        (ALL_ITEM_IDS as string[]).includes(id) &&
+        ITEMS[id as ItemId].slot === slot
+      ) {
+        equipment[slot] = id as ItemId;
+      }
+    }
+  }
+  const stash: ItemId[] = Array.isArray(hero.stash)
+    ? ALL_ITEM_IDS.filter(id => (hero.stash as unknown[]).includes(id)).slice(
+        0,
+        ITEM_TUNING.STASH_MAX,
+      )
+    : [];
+
   const stats = hero.stats && typeof hero.stats === 'object' ? hero.stats : undefined;
   return {
     classId: expectedClass,
@@ -155,6 +190,8 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     sagas,
     spells,
     scores,
+    equipment,
+    stash,
   };
 }
 

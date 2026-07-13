@@ -139,6 +139,19 @@ export function statModDeltas(classId: ClassId, scores: StatScores): Record<Stat
   return out;
 }
 
+/**
+ * v5 Wave F — scores with live equipment bonuses laid on top. No cap: the
+ * modifier flooring self-limits (18→19 changes nothing, 19→20 crosses).
+ */
+export function withStatBonus(
+  scores: StatScores,
+  bonus: Partial<Record<StatId, number>>,
+): StatScores {
+  const out = { ...scores };
+  for (const id of ALL_STAT_IDS) out[id] += bonus[id] ?? 0;
+  return out;
+}
+
 /** Forge roll: the class base plus FORGE_VARIANCE_POINTS scattered by rng. */
 export function rollStatScores(classId: ClassId, rng: Rng): StatScores {
   const scores: StatScores = { ...STAT_BASES[classId] };

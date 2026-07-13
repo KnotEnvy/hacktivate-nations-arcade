@@ -51,6 +51,8 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     sagas: {},
     spells: [],
     scores: { ...STAT_BASES.fighter },
+    equipment: {},
+    stash: [],
     ...overrides,
   };
 }

@@ -17,7 +17,8 @@ export interface SecretRoomsHost {
   showBanner(text: string, sub: string): void;
   playSound(name: SoundName, volume: number): void;
   grantNestReward(gold: number): void;
-  onSecretFound(): void;
+  /** v5 Wave F — the revealed room's rect rides along for loot placement. */
+  onSecretFound(room: SecretRoomPlan['room']): void;
   onNestCleared(): void;
 }
 
@@ -50,7 +51,7 @@ export class SecretRooms {
     for (const s of this.states) {
       if (s.revealed || s.plan.seal.tx !== tx || s.plan.seal.ty !== ty) continue;
       s.revealed = true;
-      this.host.onSecretFound();
+      this.host.onSecretFound(s.plan.room);
       this.host.showBanner(
         'A SECRET ROOM',
         s.plan.nest ? 'SOMETHING STIRS IN THE DARK' : 'ITS HOARD LIES UNGUARDED',

@@ -3,7 +3,7 @@
     "game": "Dungeon Crawl — The Ember Depths",
     "gameId": "dungeon-crawl",
     "lastUpdated": "2026-07-13",
-    "status": "v3 + v4 Waves A-D playtested clean; v5 Wave E (THE SIX SCORES — AD&D ability scores) SHIPPED 2026-07-13, AWAITING OWNER PLAYTEST. Every gate green: type-check, lint (orchestrator back under the guardrail via the DraftFlow extraction), 11 dungeon suites / 135 tests, full dev suite 462/462 (47 suites), release suite 10/10. Owner's current arc (overrides the roadToTheTabletop order): v5 = Stats (E, shipped) -> Items/inventory (F) -> Story/NPCs/villain meta-arc (G), each playtest-gated; the Supabase save promotion resumes after.",
+    "status": "v3 + v4 Waves A-D and v5 Wave E ALL PLAYTESTED CLEAN (E approved 2026-07-13: 'playing really nicely'). v5 Wave F (VAULTS & RELIQUARIES — findable equipment, THE PACK on KeyI, victory banking) SHIPPED 2026-07-13, AWAITING OWNER PLAYTEST. Every gate green: type-check, lint (orchestrator under the guardrail via the PickupResolver extraction), 12 dungeon suites / 150 tests, full dev suite 477/477 (48 suites), release suite 10/10. Owner's v5 arc: Stats (E, playtested) -> Items (F, shipped) -> Story/NPCs/villain meta-arc (G, next); the Supabase save promotion resumes after.",
     "tier": 3,
     "significance": "First Tier 3 game in the arcade, now mid-transformation into the AD&D 2e flagship: playable classes, per-biome monster families, with loot and dungeon-room waves still to come.",
     "readFirst": [
@@ -16,7 +16,7 @@
   },
 
   "nextTeamOnboarding": {
-    "youAreHere": "v5 Wave E (ability scores) is shipped and awaits the owner's playtest. The owner's standing v5 arc: E stats (done) -> F items/magic items/equipment/inventory (three equip slots beside blacksmith gear; finds persist ONLY on quest victory; KeyI inventory; new data/items.ts + systems/PickupResolver extraction valve; ONE new metric items_found) -> G story (data/npcs.ts + Inn dialogue, QuestDef.intro DM briefings, THE LAST PAGE meta-saga unmasking THE UNDERSCRIBE once both sagas are told; QuestDirector extraction valve). Full wave designs live in the approved master plan mirrored in tasks/todo.md context. After G, resume roadToTheTabletop (Supabase save promotion first — still unblocked).",
+    "youAreHere": "v5 Waves E (ability scores, playtested clean) and F (findable equipment + THE PACK, awaiting playtest) are shipped. Next: Wave G, the DM wave — data/npcs.ts (5 named originals, stage-keyed rumor pools via a pure storyStage(hero) — stateless), the Inn as a 5th town station with dialogue, QuestDef.intro DM briefings shown through the interlude overlay at departure (onDismiss 'descend'|'town'), and THE LAST PAGE meta-saga (unlocks when both sagas are TOLD; finale = THE UNDERSCRIBE unique kit) riding the existing sagas map. MANDATORY G valve: extract progression/QuestDirector.ts (departOnQuest/openVictory/updateVictory/updateInterlude/arriveInLastlight — preserve the arm->provisions->clear->save->loadFloor order). After G, resume roadToTheTabletop (Supabase save promotion first — still unblocked).",
     "theLibraryIsLocalOnly": "CRITICAL LOGISTICS: DOCS/ADD2ndEdition/ (the AD&D 2e reference library, ~120 OCR'd books + 4 core-book PDFs) is GITIGNORED — a fresh clone will NOT have it. Get the copies from the project owner and place them at DOCS/ADD2ndEdition/. Usage rules: mine the books BY EYE for design (OCR scrambles multi-column stat tables — never build a parser); every line of in-game text must be ORIGINAL; generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly).",
     "waveProcess": [
       "1. Spec the wave in tasks/todo.md (checkable steps sized as commit-able chunks) before writing code.",
@@ -85,15 +85,19 @@
       "v4-B. The Town of LASTLIGHT (quest board/blacksmith/alchemist/gate, quest expeditions, VICTORY + gold banking) — SHIPPED 2026-07-08",
       "v4-C. Sagas & Stories (two authored arcs + interludes + unique finale bosses, board saga page) + secret cracked-wall rooms with nest miniquests — SHIPPED 2026-07-11",
       "v4-D. The Grimoire, the Manual & the Sheet (spell picks on level-up, five Monstrous Manual monsters, Tab character sheet) — SHIPPED 2026-07-12 (playtested)",
-      "v5-E. The Six Scores (AD&D ability scores: class base arrays + forge variance, delta folds, milestone stat cards, sheet strip) — SHIPPED 2026-07-13 (awaiting playtest)",
-      "v5-F. Vaults & Reliquaries (findable items/magic items, equip slots + inventory, victory banking) — NEXT",
-      "v5-G. The DM Wave (NPCs + Inn dialogue, quest briefings, THE LAST PAGE villain meta-arc) — AFTER F"
+      "v5-E. The Six Scores (AD&D ability scores: class base arrays + forge variance, delta folds, milestone stat cards, sheet strip) — SHIPPED 2026-07-13 (playtested clean same day)",
+      "v5-F. Vaults & Reliquaries (12 findable items, 3 equip slots, THE PACK on KeyI, victory-only banking, dupes to gold) — SHIPPED 2026-07-13 (awaiting playtest)",
+      "v5-G. The DM Wave (NPCs + Inn dialogue, quest briefings, THE LAST PAGE villain meta-arc) — NEXT"
     ],
     "v4Vision": "One large resumable world per account. The town is the save anchor; expeditions stay seeded roguelite runs; death returns the enduring hero to safety. The remaining roadmap + specs live in nextTeamOnboarding / waveC_spec / waveD_spec in this file.",
     "libraryRules": "Mine the books by eye — OCR scrambles multi-column stat blocks, never build a parser. All in-game text must be ORIGINAL (no verbatim book text). Generic archetypes only, no TSR/WotC product-identity names (the arcade deploys publicly)."
   },
 
   "versionHistory": {
+    "v5_waveF_vaults_and_reliquaries": {
+      "date": "2026-07-13",
+      "summary": "ITEMS: data/items.ts — 12 original finds across EquipSlot weapon/armor/trinket (per slot: 1 common / 2 rare / 1 legendary), ItemDef.effects = flat additive bag {damage,hp,speed,knockback,daggerCap,statBonus}; trinket statBonus feeds Wave E effective scores live via stats.withStatBonus + ProgressionController.equippedStatDeltas (no cap — statMod flooring self-limits); ITEM_TUNING holds every knob (satchel 6, stash 10, DUPE_GOLD 25/75/200, drop chances/weights); helpers itemsOfRarity/rollItemDrop/bossItemWeights/mergeItemEffects. DROPS (generator untouched — live rng at game level): killBoss ALWAYS drops one (rarity by quest bossTier, classic floors fall back to floor/3), elite kills 12%, treasure-room key opening + secret-room reveal 35% via game.dropItemInRoom (SecretRoomsHost.onSecretFound now passes the revealed room's rect); PickupKind += 'item' carrying Pickup.itemId; TileRenderer strongbox with the find's glow. THE PACK: systems/Inventory.ts behind InventoryHost — run satchel (full = the find stays lying, scroll precedent; banner + I-to-equip hint), equipped worn set seeded from hero.equipment at depart (BEFORE provisions so dagger caps see items), wear/swap returns the displaced piece whence the new came; KeyI flips GameState 'inventory' (Tab-sheet freeze clone: inventoryReturn, case dispatch, inTownWorld clause, monkey key). TOWN MODE edits the SAVED hero directly (equipment/stash + save). Player.applyEquipment folds the merged bag beside gear/boons/statMods (hp moves the ceiling by delta, floor 2/1 safety); DraftFlowHost.refreshStatMods keeps milestone bumps equipment-aware. BANKING: SavedHero.equipment (slot-legality sanitize) + stash (whitelist/dedup/cap) — additive, no version bump, written ONLY at victory + town edits (death path writes NOTHING); openVictory banks worn + satchel->stash, dupes/overflow -> gold folded into banked BEFORE the ledger (rows FINDS KEPT / DUPLICATES SOLD); recap row FINDS LOST TO THE DEEP (RecapStats.itemsLost); sheet gains a compact Worn line; HUD satchel pip. GUARDRAIL VALVE: systems/PickupResolver.ts extracted FIRST (collect switch + grantRelic + keyed doors behind a host; counters/metrics stay in the game callbacks; proven pure — all 135 pre-wave tests green with zero edits). ONE new metric items_found in all four places + 1 achievement (33 total; 37 metric keys); monkey += KeyI. Suites 11->12 (+items.test.ts 15: data contract, merging, weighted drops, satchel cap, victory banking + dupe gold, death-writes-nothing + lostCount, town-mode swap, sanitize, Player folds incl. the pinned 5-damage composition, equippedStatDeltas boundaries) = 150 dungeon tests."
+    },
     "v5_waveE_the_six_scores": {
       "date": "2026-07-13",
       "summary": "SCORES: data/stats.ts — StatId str/dex/con/int/wis/cha, STAT_BASES per class (2e-flavored arrays, each sums 72; favored pair deliberately ODD so the first milestone bump crosses a modifier boundary), STAT_FAVORED, STAT_TUNING (every magnitude), statMod = floor((score-10)/2), statModDeltas (gameplay reads the DELTA vs class base — flat base = zero deltas = the pre-stats game EXACTLY; deltas floor at 0), rollStatScores (base + 2 seeded variance points at forge, AFTER the name pick so name rng order is pinned), isStatMilestone (3/6/9). PERSISTENCE: SavedHero.scores (additive, no version bump; sanitize clamps [classBase, 18], absent field -> flat base so veterans keep their playtested feel; field is `scores`, NEVER confuse with hero.stats the record). FOLDS: Player.statMods + applyProgression 4th arg + setStatMods (mid-run bump heals the CON delta) — STR->swordDamage+meleeKnockback, DEX->speed+dashCooldownFull (new helper, both dash sites), CON->maxHp (CON_HP 2), WIS->heartHealBonus; Player.spellCooldownFull applies INT inside startSpellCooldown (HUD pip divides by it); Combat: INT damage on burning-hands/fireball, WIS on cure/bless; ProgressionController.grantXp x(1+0.05·wis); game: hagglerPrice += cha·0.05, openVictory rewardGold x(1+0.05·cha) (ledger shows the talked-up number). DRAFT: DraftPick += {kind:'stat'}; milestone levels lead draftChoices with favored cards (<18) before the shuffled pool; confirmLevelUp +1 clamp 18, NO session counter (boons_chosen stays boons); renderBoonDraft three-way def lookup. SHEET: six-cell score strip (score + modifier, favored in class color) under the XP bar; columns shifted 170->196. GUARDRAIL VALVE: progression/DraftFlow.ts extracted FIRST (class select + level-up draft flow behind a narrow host; proven pure — all 113 pre-wave tests green with zero edits) putting DungeonCrawlGame back under 1500. ZERO new metric keys/inputs/sounds — characterization contract + monkey untouched. Suites 10->11 (+stats.test.ts 22: data contract, modifier table, delta floor, seeded forge roll, milestones, sanitize clamps, round-trip, draft cards, Player fold siblings of the UNCHANGED maxHp===18 zero-delta pin, WIS xp) = 135 dungeon tests; town victory test consciously derives reward gold from the forged hero's CHA delta (forge roll is live rng there)."
@@ -145,7 +149,10 @@
       "data/classes.ts": "v3 — ClassId/ClassKit/ClassDef, CLASSES (4 kits incl. tunic/trim sprite colors + ability blurbs), DEFAULT_KIT (reproduces the pre-v3 hero exactly; active until the pick), CLASS_TUNING (ability numbers).",
       "data/sagas.ts": "v4 Wave C — SagaId/SagaDef/SAGAS (2 arcs: chapters = ordered QuestIds, interludes 1:1 with chapters, last = epilogue) + pure helpers sagaChapterForQuest/chaptersDone/currentChapter. Module-load guard pins interlude pairing + saga flags.",
       "data/spells.ts": "v4 Wave D — SpellId/SpellDef/SPELLS (6, class-gated via classId: 3 mage + 3 cleric) + spellsForClass + SPELL_TUNING. Pure data; effects in Combat.castSpell; learning rides the level-up draft; V casts / G cycles.",
-      "data/stats.ts": "v5 Wave E — the six ability scores: StatId/StatDef/STATS, STAT_BASES per class + STAT_FAVORED + STAT_TUNING, and the pure functions statMod/zeroStatMods/statModDeltas (deltas vs class base, floored at 0)/rollStatScores (seeded forge variance)/isStatMilestone. Gameplay folds read DELTAS so the flat base reproduces the pre-stats game exactly.",
+      "data/stats.ts": "v5 Wave E — the six ability scores: StatId/StatDef/STATS, STAT_BASES per class + STAT_FAVORED + STAT_TUNING, and the pure functions statMod/zeroStatMods/statModDeltas (deltas vs class base, floored at 0)/rollStatScores (seeded forge variance)/isStatMilestone/withStatBonus (Wave F equipment overlay). Gameplay folds read DELTAS so the flat base reproduces the pre-stats game exactly.",
+      "data/items.ts": "v5 Wave F — 12 findable equipment pieces across weapon/armor/trinket slots with rarities and flat additive ItemEffects (+statBonus for effective scores); ITEM_TUNING (caps, dupe gold, drop chances/weights) + itemsOfRarity/rollItemDrop/bossItemWeights/mergeItemEffects.",
+      "systems/Inventory.ts": "v5 Wave F — the run satchel + worn set + banking rules behind InventoryHost: tryCollect (full leaves the find), wear/swap (town mode edits the SAVED hero directly), bankOnVictory (the ONLY moment finds persist; dupes/overflow -> gold), lostCount (recap). Browse UI state (index/list) the HUD renders from.",
+      "systems/PickupResolver.ts": "v5 Wave F — floor-loot resolution extracted from the orchestrator: the collect-pickup switch, grantRelic, and the keyed treasure-room doors. Mechanics here; counters/metrics stay in the game's host callbacks (onGold/onPotionUsed/onKeyUsed/onRelicCollected, collectScroll -> Combat, collectItem -> Inventory).",
       "progression/DraftFlow.ts": "v5 Wave E — the run-start class/hero select and the level-up card draft (boons/spells/milestone stat bumps), extracted from the orchestrator behind DraftFlowHost. Owns classIndex/choices/index/returnState (HUD renders from them); update methods return the next GameState or null and the game assigns.",
       "systems/SecretRooms.ts": "v4 Wave C — runtime secret-room state (revealed/nest triggered/cleared) behind SecretRoomsHost (spawnNest/showBanner/playSound/grantNestReward/onSecretFound/onNestCleared). resetFor(plan.secrets) per floor; update(playerX, playerY) each playing frame.",
       "data/enemies.ts": "17 enemy configs (data-driven AI params, undead + splitsInto tags), elite trait table + spawn-chance ramp, spawnWeightsForFloor(floor, biomeId) = common core with v2 floor gates + per-biome family rows, per-room enemy budget, BOSS baseline.",
@@ -195,7 +202,8 @@
       "character_level", "xp_earned", "levels_gained", "boons_chosen",
       "quests_completed", "gold_banked",
       "sagas_completed", "secrets_found", "nests_cleared",
-      "spells_learned", "spells_cast"
+      "spells_learned", "spells_cast",
+      "items_found"
     ],
     "v3Semantics": "<class>_depth = floor reached this run IF that class was picked, else 0 (enables 'reach floor N as X' achievements through the plain threshold path). unique_slain = distinct monster config ids killed this run."
   },
@@ -217,6 +225,7 @@
       "castSpell": "V (readied spell; per-spell cooldown pip on the HUD)",
       "cycleSpell": "G (readies the next learned spell; banner confirms)",
       "characterSheet": "Tab (from play or town; world freezes; Tab closes)",
+      "thePack": "I (from play or town; world freezes; ↑↓ browse, SPACE wears, I closes — town side edits the saved stash/equipment, run side the satchel)",
       "relicDraft": "Left/Right + Space, or 1/2/3 direct",
       "recapDismiss": "Space/Enter after 1.2s lockout (auto after 12s)"
     },
@@ -256,7 +265,10 @@
       "v5 Wave E — gameplay reads ability-score DELTAS vs the class base (statModDeltas, floored at 0): a flat-base hero must play bit-for-bit like the pre-stats game (the progression.test maxHp===18 pin is that contract — never 'fix' it by passing deltas).",
       "v5 Wave E — SavedHero.scores clamp to [class base, 18] in sanitize; the field is `scores`, never to be confused with hero.stats (the expedition record).",
       "v5 Wave E — create() rolls scores AFTER the name pick; never reorder the rng stream.",
-      "v5 Wave E — stat picks never increment sessionBoons (boons_chosen stays semantically boons); milestone stat cards appear only when REACHING levels 3/6/9 (tests that draft at level 2 stay all-boon/spell)."
+      "v5 Wave E — stat picks never increment sessionBoons (boons_chosen stays semantically boons); milestone stat cards appear only when REACHING levels 3/6/9 (tests that draft at level 2 stay all-boon/spell).",
+      "v5 Wave F — hero.equipment/hero.stash are written ONLY by Inventory.bankOnVictory and town-mode pack edits; the death path must never touch them (that guarantee IS the items-lost-on-death rule).",
+      "v5 Wave F — item drops roll on the LIVE rng at game level (killBoss/elite/dropItemInRoom); the generator never places 'item' pickups.",
+      "v5 Wave F — blacksmith gear tracks and found equipment compose additively and stay separate systems (gear = town-forged tiers, items = found pieces); relics stay run-scoped."
     ]
   },
 
@@ -273,31 +285,32 @@
     "sagas": "data/sagas.ts (arcs/prose) + the chapter QuestDefs in data/quests.ts (floors/minLevel/rewards/bossTier/bossKitId) + UNIQUE_BOSS_KITS numbers in data/bosses.ts",
     "secretRooms": "data/constants.ts SECRETS (count, room size, stock, shrine/nest chances, nest pack size + reward)",
     "spells": "data/spells.ts (per-spell cooldowns in SpellDef, effect numbers in SPELL_TUNING; scholar boon multiplies cure/sanctuary)",
-    "abilityScores": "data/stats.ts — STAT_BASES per class (each row must keep summing 72 for the balance pin), STAT_FAVORED, STAT_TUNING (every fold magnitude, forge variance points, milestone levels)"
+    "abilityScores": "data/stats.ts — STAT_BASES per class (each row must keep summing 72 for the balance pin), STAT_FAVORED, STAT_TUNING (every fold magnitude, forge variance points, milestone levels)",
+    "foundEquipment": "data/items.ts — per-item effects + ITEM_TUNING (satchel/stash caps, DUPE_GOLD by rarity, ELITE/TREASURE/SECRET drop chances, rarity weight tables incl. bossItemWeights tiers)"
   },
 
   "testing": {
     "philosophy": "Dev tests run while BUILDING; the production CI gate stays lean (type-check, lint, 10-test release suite, build). NEVER add the dev suite to CI. No build for game waves — user playtests the live dev build.",
     "devTests": {
       "run": "npm.cmd run test:dev -- --runInBand --testPathPatterns dungeon-crawl",
-      "suites": "11 suites / 135 tests — Wave E added stats.test.ts (22: data contract incl. the sum-72 balance pin, statMod boundary table, zero-delta legacy contract, delta floor, seeded forge roll determinism + variance, milestone schedule, sanitize clamps + absent-field default, forge round-trip, milestone draft cards + cap exclusion + confirm/clamp/persist, Player fold siblings of the UNCHANGED maxHp===18 pin, WIS xp rounding); town's victory test now derives reward gold from the forged hero's CHA delta. Wave D had added spells.test.ts (7) and a bestiary gargoyle gate; monkey keys include KeyV/KeyG/Tab (KeyR deliberately NOT in the monkey set so it can't retire mid-test). Prior coverage: DungeonGenerator determinism + secret rooms, characterization (manifest, 36-key metric contract, 3000-frame monkey), classes (16), bestiary, scrolls, progression (roster v2, v1 migration, owner scoping, clamps), town, sagas, secrets. jest.setup.ts clears localStorage per test — saves cannot leak."
+      "suites": "12 suites / 150 tests — Wave F added items.test.ts (15: data contract, effect merging, weighted drops, satchel cap, victory banking + dupe gold, death-writes-nothing + lostCount, town-mode swap, equipment/stash sanitize, Player folds incl. a pinned kit+boon+gear+stat+item composition, equippedStatDeltas boundaries); characterization gained the items_found row + monkey KeyI. Wave E had added stats.test.ts (22: sum-72 balance pin, statMod boundary table, zero-delta legacy contract, seeded forge roll, milestone draft, sanitize clamps; the maxHp===18 pin stays as the zero-delta contract); town's victory test derives reward gold from the forged hero's CHA delta. Monkey keys include KeyV/KeyG/Tab/KeyI (KeyR deliberately NOT in the monkey set so it can't retire mid-test). Prior coverage: DungeonGenerator determinism + secret rooms, characterization (manifest, 37-key metric contract, 3000-frame monkey), classes, bestiary, scrolls, progression, town, sagas, secrets, spells. jest.setup.ts clears localStorage per test — saves cannot leak."
     },
     "releaseGate": "npm.cmd run type-check && npm.cmd run lint && npm.cmd test -- --runInBand (+ build before deploys). Release suite pins 18 playable / 9 coming-soon.",
-    "fullDevSuite": "462 tests / 47 suites as of 2026-07-13, all green in one --runInBand process.",
+    "fullDevSuite": "477 tests / 48 suites as of 2026-07-13, all green in one --runInBand process.",
     "manualQA": "Gameplay/balance validated by user playtest of the live build — do not write manual QA scripts."
   },
 
   "knownStateAndOpenItems": {
     "parallelWipWarning": "RESOLVED 2026-07-12: the platform hardening pass landed properly as commit eb3f974 ('Harden arcade platform for production launch' — trusted-progression clientMutationId, supabase/003_lock_down_progression.sql, sync outbox/auth/service updates, with its own tests fixed and NO game-file changes). All gates are green again, including the full one-process dev run (440/440 — the old OOM is gone). History note for archaeology: during Waves C/D this work sat half-finished and uncommitted in the tree, briefly including BaseGame gameTime/destroy edits the owner had reverted; if you ever see release-gate failures mentioning clientMutationId, start at eb3f974. The Supabase save promotion wave is now UNBLOCKED — follow DOCS/SUPABASE-PRODUCTION-RUNBOOK.md and keep live schema + supabase/*.sql + src/lib/supabase.types.ts aligned.",
     "awaitingPlaytest": [
-      "v5-E (SHIPPED 2026-07-13, playtest pending): forge variance feel (two fresh forges should differ; veterans identical to before), milestone stat cards vs boons/spells at levels 3/6/9, CON heart swing (CON_HP=2 — one-knob drop to 1 if too loud), CHA price/reward visibility, WIS XP pace at L5+, sheet score-strip readability",
-      "Carried from v4-D (playtest passed; knobs still open): spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution, monster pressure (bone-archer sightlines, gargoyle at 8+, ember-wight block)",
+      "v5-F (SHIPPED 2026-07-13, playtest pending): drop rates (boss-always vs elite 12% vs vault/secret 35%), dupe-gold values (25/75/200), satchel 6 / stash 10 caps, pack navigation hand-feel (I / ↑↓ / SPACE), item power vs blacksmith gear (esp. DAWNSLIVER +2 damage stacking with blade tiers), HUD satchel pip visibility",
+      "Carried from v5-E (playtest passed; knobs still open): CON heart swing (CON_HP=2), CHA price/reward visibility, WIS XP pace at L5+",
+      "Carried from v4-D: spell power vs cooldowns (BLINK escape value, FROST RAY vs the frost scroll), caster draft dilution, monster pressure (bone-archer sightlines, gargoyle at 8+, ember-wight block)",
       "Carried from v4-C: secret-room loot vs blast cost, nest reward curve",
       "Carried from v3-v4B: level pressure at L5+, gear prices vs rewards, dungeon-merchant pricing"
     ],
     "nextWaves": [
-      "v5-F Vaults & Reliquaries: data/items.ts (~12 items, 3 slots weapon/armor/trinket, rarities, ItemEffects incl. statBonus trinkets completing the odd favored bases), PickupKind 'item' drops (boss always, elites ~12%, treasure/secret ~35% — rolls at Combat/game level, generator pure), run satchel cap 6, KeyI 'inventory' state (Tab-sheet clone), SavedHero.equipment + stash (cap 10) written ONLY at victory (dupes -> gold 25/75/200 into banked BEFORE the ledger), extraction valve FIRST: systems/PickupResolver.ts (collectPickup/grantRelic/door helpers), ONE new metric items_found in all four places + monkey KeyI",
-      "v5-G The DM Wave: extraction valve FIRST: progression/QuestDirector.ts (departOnQuest/openVictory/updateVictory/updateInterlude/arriveInLastlight — preserve the arm->provisions->clear->save->loadFloor order); QuestDef.intro DM briefings via the interlude overlay (onDismiss 'descend'|'town'); data/npcs.ts (5 named originals, stage-keyed rumor pools via pure storyStage(hero) — stateless); Inn becomes the 5th station; THE LAST PAGE meta-saga (unlocks when both sagas TOLD, finale = THE UNDERSCRIBE unique kit) riding the existing sagas map",
+      "v5-G The DM Wave: extraction valve FIRST: progression/QuestDirector.ts (departOnQuest/openVictory/updateVictory/updateInterlude/arriveInLastlight — preserve the arm->provisions->clear->save->loadFloor order); QuestDef.intro DM briefings via the interlude overlay (onDismiss 'descend'|'town'); data/npcs.ts (5 named originals, stage-keyed rumor pools via pure storyStage(hero) — stateless, no new save field); Inn becomes the 5th station with dialogue; THE LAST PAGE meta-saga (unlocks on the board only when both sagas are TOLD via pure metaUnlocked(sagas); 3 chapters, finale = THE UNDERSCRIBE unique kit in UNIQUE_BOSS_KITS) riding the existing sagas map — sanitize/replay-proofing/sheet all work free; check sagas_completed achievement thresholds consciously (max becomes 3)",
       "Then resume roadToTheTabletop: Supabase save promotion (waveD_spec above) first"
     ],
     "v4Notes": {
@@ -314,6 +327,6 @@
       "Gamepad support (InputManager tracks gamepads; manifest keyboard-only)",
       "Ghoul paralysis flavor (2e: numbing claws) as a brief slow debuff — needs a player debuff concept"
     ],
-    "noKnownBugs": "No known defects anywhere: all 11 dungeon-crawl suites (135 tests), the full dev suite (462/47), the release suite (10), type-check and lint pass as of lastUpdated. Waves through v4-D are owner-playtested; v5-E awaits its playtest."
+    "noKnownBugs": "No known defects anywhere: all 12 dungeon-crawl suites (150 tests), the full dev suite (477/48), the release suite (10), type-check and lint pass as of lastUpdated. Waves through v5-E are owner-playtested; v5-F awaits its playtest."
   }
 }

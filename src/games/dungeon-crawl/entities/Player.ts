@@ -6,6 +6,7 @@
 import { BoonId, BOON_TUNING } from '../data/boons';
 import { ClassDef, ClassId, ClassKit, CLASS_TUNING, DEFAULT_KIT } from '../data/classes';
 import { GEAR_TUNING, GearId } from '../data/gear';
+import { ItemEffects } from '../data/items';
 import { LevelGain } from '../data/progression';
 import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
@@ -70,6 +71,9 @@ export class Player {
   // v5 Wave E — ability-score modifier DELTAS vs the class base (all zero =
   // the pre-stats game). Folded into the derived-stat getters below.
   statMods: Record<StatId, number> = zeroStatMods();
+  // v5 Wave F — merged flat effects of worn equipment (statBonus rides
+  // statMods upstream; this bag is everything else).
+  itemEffects = { damage: 0, hp: 0, speed: 0, knockback: 0, daggerCap: 0 };
   survivorUsed = false;
   // v4 Wave B — blacksmith gear tiers + the alchemist's candle.
   gear = new Map<GearId, number>();
@@ -94,6 +98,7 @@ export class Player {
     this.boons.clear();
     this.levelBonus = { hp: 0, speed: 0, daggerCap: 0 };
     this.statMods = zeroStatMods();
+    this.itemEffects = { damage: 0, hp: 0, speed: 0, knockback: 0, daggerCap: 0 };
     this.survivorUsed = false;
     this.gear.clear();
     this.provisionTorch = 0;
@@ -174,6 +179,8 @@ export class Player {
   ): void {
     this.levelBonus = { ...gains };
     this.statMods = { ...statDeltas };
+    // Equipment re-arms separately (applyEquipment) — start from bare.
+    this.itemEffects = { damage: 0, hp: 0, speed: 0, knockback: 0, daggerCap: 0 };
     this.boons.clear();
     for (const [id, count] of Object.entries(boons)) {
       if (typeof count === 'number' && count > 0) this.boons.set(id as BoonId, count);
@@ -207,6 +214,27 @@ export class Player {
       this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + gain.hp);
       this.hp = Math.min(this.maxHp, this.hp + gain.hp);
     }
+  }
+
+  /**
+   * v5 Wave F — worn equipment's merged flat effects land (or re-land after
+   * a swap): hp moves the ceiling by its delta, everything else folds live
+   * through the getters. statBonus is handled upstream via setStatMods.
+   */
+  applyEquipment(effects: Required<Omit<ItemEffects, 'statBonus'>>): void {
+    const hpGain = effects.hp - this.itemEffects.hp;
+    this.itemEffects = {
+      damage: effects.damage,
+      hp: effects.hp,
+      speed: effects.speed,
+      knockback: effects.knockback,
+      daggerCap: effects.daggerCap,
+    };
+    if (hpGain !== 0) {
+      this.maxHp = Math.max(2, Math.min(PLAYER.HP_CAP, this.maxHp + hpGain));
+      this.hp = Math.max(1, Math.min(this.maxHp, this.hp + Math.max(0, hpGain)));
+    }
+    this.daggers = Math.min(this.daggerCap(), this.daggers);
   }
 
   /**
@@ -251,7 +279,8 @@ export class Player {
       this.kit.daggerCap +
       this.levelBonus.daggerCap +
       this.gearTier('quiver') * GEAR_TUNING.QUIVER_CAP +
-      this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS
+      this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS +
+      this.itemEffects.daggerCap
     );
   }
 
@@ -267,7 +296,8 @@ export class Player {
       this.levelBonus.speed +
       this.boonCount('fleet-foot') * BOON_TUNING.FLEET_FOOT_SPEED +
       this.gearTier('boots') * GEAR_TUNING.BOOTS_SPEED +
-      this.statMods.dex * STAT_TUNING.DEX_SPEED;
+      this.statMods.dex * STAT_TUNING.DEX_SPEED +
+      this.itemEffects.speed;
     return PLAYER.SPEED * this.kit.speedMult * training * mult;
   }
 
@@ -281,7 +311,10 @@ export class Player {
 
   meleeKnockback(): number {
     const ogre = this.relicCount('ogre-gauntlets');
-    const base = this.kit.meleeKnockback + this.statMods.str * STAT_TUNING.STR_KNOCKBACK;
+    const base =
+      this.kit.meleeKnockback +
+      this.statMods.str * STAT_TUNING.STR_KNOCKBACK +
+      this.itemEffects.knockback;
     return base * (1 + ogre * RELIC_TUNING.OGRE_KNOCKBACK_MULT);
   }
 
@@ -292,7 +325,8 @@ export class Player {
       this.boonCount('weapon-specialization') * BOON_TUNING.WEAPON_SPEC_DAMAGE +
       this.gearTier('blade') * GEAR_TUNING.BLADE_DAMAGE +
       this.relicCount('ember-blade') * RELIC_TUNING.EMBER_BLADE_DAMAGE +
-      this.statMods.str * STAT_TUNING.STR_DAMAGE;
+      this.statMods.str * STAT_TUNING.STR_DAMAGE +
+      this.itemEffects.damage;
     if (this.buffs.has('strength')) dmg += 1;
     if (
       this.relicCount('berserker-rage') > 0 &&

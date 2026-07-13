@@ -3,6 +3,7 @@
 // waits to be walked over. DungeonCrawlGame applies effects on collection.
 
 import { PICKUPS } from '../data/constants';
+import { ItemId } from '../data/items';
 import { PickupKind } from '../dungeon/DungeonGenerator';
 
 export class Pickup {
@@ -11,12 +12,15 @@ export class Pickup {
   x: number;
   y: number;
   bobPhase: number;
+  /** v5 Wave F — which equipment piece an 'item' pickup carries. */
+  itemId: ItemId | null;
 
-  constructor(kind: PickupKind, x: number, y: number) {
+  constructor(kind: PickupKind, x: number, y: number, itemId: ItemId | null = null) {
     this.kind = kind;
     this.x = x;
     this.y = y;
     this.bobPhase = Math.random() * Math.PI * 2;
+    this.itemId = itemId;
   }
 
   get radius(): number {

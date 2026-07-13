@@ -19,6 +19,7 @@ import {
 } from '../data/progression';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
+import { ItemId, mergeItemEffects } from '../data/items';
 import {
   isStatMilestone,
   rollStatScores,
@@ -26,6 +27,7 @@ import {
   STAT_TUNING,
   StatId,
   statModDeltas,
+  withStatBonus,
   zeroStatMods,
 } from '../data/stats';
 import { QuestId } from '../data/quests';
@@ -98,6 +100,8 @@ export class ProgressionController {
       spells: [],
       // v5 Wave E — rolled AFTER the name pick (name rng order is pinned).
       scores: rollStatScores(classId, rng),
+      equipment: {},
+      stash: [],
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -201,6 +205,19 @@ export class ProgressionController {
     const hero = this.character();
     if (!hero) return zeroStatMods();
     return statModDeltas(hero.classId, hero.scores);
+  }
+
+  /**
+   * v5 Wave F — deltas with worn equipment's stat bonuses laid over the
+   * hero's scores (the caller passes what is actually equipped right now).
+   */
+  equippedStatDeltas(equipped: Iterable<ItemId>): Record<StatId, number> {
+    const hero = this.character();
+    if (!hero) return zeroStatMods();
+    return statModDeltas(
+      hero.classId,
+      withStatBonus(hero.scores, mergeItemEffects(equipped).statBonus),
+    );
   }
 
   /**

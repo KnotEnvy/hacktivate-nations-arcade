@@ -25,7 +25,18 @@ export interface Room {
   kind: RoomKind;
 }
 
-export type PickupKind = 'gold' | 'heart' | 'dagger' | 'potion' | 'key' | 'relic-shrine' | 'scroll';
+// 'item' is v5 Wave F equipment — never placed by the generator (identity
+// rolls on the live rng at Combat/game level); it rides the union for the
+// shared Pickup plumbing.
+export type PickupKind =
+  | 'gold'
+  | 'heart'
+  | 'dagger'
+  | 'potion'
+  | 'key'
+  | 'relic-shrine'
+  | 'scroll'
+  | 'item';
 
 export interface EnemySpawnPlan {
   type: EnemyTypeId;

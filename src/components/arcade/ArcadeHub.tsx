@@ -149,6 +149,7 @@ interface GameEndData {
   nests_cleared?: number;
   spells_learned?: number;
   spells_cast?: number;
+  items_found?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

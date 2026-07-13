@@ -37,6 +37,8 @@ export interface DraftFlowHost {
   trackStat(key: string, value: number): void;
   setChosenClass(id: ClassId): void;
   setActiveSpellIndex(index: number): void;
+  /** v5 Wave F — re-fold effective scores (equipment-aware) into the player. */
+  refreshStatMods(): void;
 }
 
 export class DraftFlow {
@@ -142,8 +144,9 @@ export class DraftFlow {
         this.host.showBanner(`LEVEL ${level}!`, `${SPELLS[pick.id].name} — V TO CAST`);
         this.host.trackStat('spells_learned', progression.sessionSpellsLearned);
       } else {
-        // v5 Wave E — a favored score rises; its new deltas land on the spot.
-        player.setStatMods(progression.statDeltas());
+        // v5 Wave E — a favored score rises; its new deltas land on the spot
+        // (equipment-aware since Wave F).
+        this.host.refreshStatMods();
         this.host.particles().burst(player.x, player.y, STATS[pick.id].color, 18, 130, 0.8);
         this.host.showBanner(`LEVEL ${level}!`, `${STATS[pick.id].name} RISES`);
       }

@@ -12,6 +12,13 @@ import { PROGRESSION } from '../data/progression';
 import { QUESTS, QuestId } from '../data/quests';
 import { ALL_SAGA_IDS, chaptersDone, currentChapter, SagaId, SAGAS } from '../data/sagas';
 import { RELICS, RelicId } from '../data/relics';
+import {
+  ALL_EQUIP_SLOTS,
+  EquipSlot,
+  ITEM_TUNING,
+  ITEMS,
+  ItemId,
+} from '../data/items';
 import { SCROLLS, ScrollId } from '../data/scrolls';
 import { SPELLS, SpellId } from '../data/spells';
 import { ALL_STAT_IDS, STAT_FAVORED, statMod, STATS } from '../data/stats';
@@ -45,6 +52,8 @@ export interface HudState {
   heroXpFrac: number;
   buffs: ReadonlyMap<PotionBuff, number>;
   relics: ReadonlyMap<RelicId, number>;
+  // v5 Wave F — run finds carried in the satchel (I opens the pack).
+  itemCount: number;
 }
 
 /** v4 — frozen at death; the renderer assembles the recap rows from it. */
@@ -57,6 +66,8 @@ export interface RecapStats {
   relics: number;
   maxCombo: number;
   timeMs: number;
+  // v5 Wave F — run finds that died unbanked.
+  itemsLost: number;
 }
 
 export interface RecapView {
@@ -77,6 +88,18 @@ export interface VictoryLedger {
   rewardXp: number;
   banked: number;
   treasury: number;
+  // v5 Wave F — finds banked at this victory + gold from duplicates/overflow.
+  bankedFinds: number;
+  dupeGold: number;
+}
+
+/** v5 Wave F — view state for the pack screen (KeyI). */
+export interface InventoryView {
+  equipped: Partial<Record<EquipSlot, ItemId>>;
+  list: readonly ItemId[];
+  index: number;
+  inTown: boolean;
+  satchelCount: number;
 }
 
 export class HudRenderer {
@@ -155,6 +178,13 @@ export class HudRenderer {
       ctx.fillStyle = SCROLLS[s.scrollId].color;
       ctx.font = 'bold 14px monospace';
       ctx.fillText(`F ${SCROLLS[s.scrollId].icon}`, 216, 96);
+    }
+
+    // v5 Wave F — carried finds (I opens the pack).
+    if (s.itemCount > 0) {
+      ctx.fillStyle = PALETTE.gold;
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(`I ▤${s.itemCount}`, 170, 108);
     }
 
     // v4 Wave D — readied spell pip (V casts; + marks more in the grimoire).
@@ -673,6 +703,9 @@ export class HudRenderer {
       ['GOLD BANKED', `${ledger.banked}`],
       ['HERO TREASURY', `${ledger.treasury}`],
     ];
+    // v5 Wave F — the finds ledger, only when there is something to say.
+    if (ledger.bankedFinds > 0) rows.push(['FINDS KEPT', `${ledger.bankedFinds}`]);
+    if (ledger.dupeGold > 0) rows.push(['DUPLICATES SOLD', `+${ledger.dupeGold}g`]);
     ctx.fillStyle = 'rgba(5, 3, 8, 0.88)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
 
@@ -808,6 +841,18 @@ export class HudRenderer {
       const marks = '◆'.repeat(tier) + '◇'.repeat(GEAR_TUNING.MAX_TIER - tier);
       y = row(`${GEAR[id].name}  ${marks}`, leftX, y, tier > 0 ? PALETTE.textWarm : PALETTE.textDim);
     }
+    // v5 Wave F — worn finds at a glance (the pack on I has the full story).
+    const worn = ALL_EQUIP_SLOTS.map(slot => hero.equipment[slot]).filter(
+      (id): id is ItemId => !!id,
+    );
+    y = row(
+      worn.length > 0
+        ? `Worn  ${worn.map(id => ITEMS[id].icon).join(' ')}  (I for the pack)`
+        : 'Worn  — nothing found yet —',
+      leftX,
+      y,
+      worn.length > 0 ? PALETTE.textWarm : PALETTE.textDim,
+    );
     y = header('SAGAS', leftX, y + 16);
     for (const id of ALL_SAGA_IDS) {
       const done = chaptersDone(hero.sagas, id);
@@ -842,6 +887,110 @@ export class HudRenderer {
     ctx.fillStyle = PALETTE.textDim;
     ctx.font = 'bold 13px monospace';
     ctx.fillText('TAB TO CLOSE · G READIES THE NEXT SPELL', VIEW.WIDTH / 2, VIEW.HEIGHT - 60);
+  }
+
+  /** v5 Wave F — the pack (KeyI): worn slots on top, the browse list below. */
+  renderInventory(ctx: CanvasRenderingContext2D, view: InventoryView): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.9)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.font = 'bold 30px monospace';
+    ctx.fillText('THE PACK', VIEW.WIDTH / 2, 84);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '14px monospace';
+    ctx.fillText('↑ ↓ browse · SPACE wears · I closes', VIEW.WIDTH / 2, 110);
+
+    // Worn slots.
+    const boxW = 200;
+    const boxH = 84;
+    const gap = 20;
+    const startX = (VIEW.WIDTH - boxW * 3 - gap * 2) / 2;
+    for (let i = 0; i < ALL_EQUIP_SLOTS.length; i++) {
+      const slot = ALL_EQUIP_SLOTS[i];
+      const id = view.equipped[slot] ?? null;
+      const x = startX + i * (boxW + gap);
+      const y = 136;
+      ctx.fillStyle = 'rgba(18, 12, 8, 0.95)';
+      ctx.fillRect(x, y, boxW, boxH);
+      ctx.strokeStyle = id ? ITEMS[id].color : '#4d4238';
+      ctx.strokeRect(x + 0.5, y + 0.5, boxW, boxH);
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(slot.toUpperCase(), x + boxW / 2, y + 18);
+      if (id) {
+        ctx.fillStyle = ITEMS[id].color;
+        ctx.font = 'bold 22px monospace';
+        ctx.fillText(ITEMS[id].icon, x + boxW / 2, y + 46);
+        ctx.font = 'bold 12px monospace';
+        this.wrapText(ctx, ITEMS[id].name, x + boxW / 2, y + 66, boxW - 16, 14);
+      } else {
+        ctx.fillStyle = PALETTE.textDim;
+        ctx.font = '13px monospace';
+        ctx.fillText('— empty —', x + boxW / 2, y + 52);
+      }
+    }
+
+    // The browse list: run satchel below ground, the stash in Lastlight.
+    const listTop = 258;
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'left';
+    const listX = VIEW.WIDTH / 2 - 220;
+    ctx.fillText(
+      view.inTown
+        ? `THE STASH  ${view.list.length}/${ITEM_TUNING.STASH_MAX}`
+        : `THE SATCHEL  ${view.satchelCount}/${ITEM_TUNING.SATCHEL_MAX}`,
+      listX,
+      listTop,
+    );
+    if (view.list.length === 0) {
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '13px monospace';
+      ctx.fillText(
+        view.inTown ? '— nothing banked yet —' : '— nothing found yet —',
+        listX,
+        listTop + 26,
+      );
+    }
+    for (let i = 0; i < view.list.length; i++) {
+      const id = view.list[i];
+      const def = ITEMS[id];
+      const selected = i === view.index;
+      const y = listTop + 26 + i * 22;
+      ctx.fillStyle = selected ? def.color : PALETTE.textWarm;
+      ctx.font = selected ? 'bold 13px monospace' : '13px monospace';
+      ctx.fillText(`${selected ? '▶ ' : '  '}${def.icon} ${def.name}`, listX, y);
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '11px monospace';
+      ctx.fillText(`${def.rarity} ${def.slot}`, listX + 300, y);
+    }
+    // The selected find's one-liner.
+    const picked = view.list[view.index];
+    if (picked) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '13px monospace';
+      this.wrapText(
+        ctx,
+        ITEMS[picked].blurb,
+        VIEW.WIDTH / 2,
+        VIEW.HEIGHT - 88,
+        VIEW.WIDTH - 200,
+        17,
+      );
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(
+      view.inTown
+        ? 'FINDS BANK ON VICTORY · THE STASH IS SAFE FROM DEATH'
+        : 'DIE AND UNBANKED FINDS ARE LOST — VICTORY KEEPS THEM',
+      VIEW.WIDTH / 2,
+      VIEW.HEIGHT - 60,
+    );
   }
 
   /** v4 — level-up draft: boons and (Wave D) class spells, one card language. */
@@ -982,6 +1131,10 @@ export class HudRenderer {
       ['GOLD PLUNDERED', `${recap.stats.gold}`],
       ['GUARDIANS FELLED', `${recap.stats.bosses}`],
       ['RELICS CLAIMED', `${recap.stats.relics}`],
+      // v5 Wave F — the deep keeps what wasn't banked.
+      ...(recap.stats.itemsLost > 0
+        ? ([['FINDS LOST TO THE DEEP', `${recap.stats.itemsLost}`]] as Array<[string, string]>)
+        : []),
       ['BEST COMBO', `x${recap.stats.maxCombo}`],
       ['FINAL SCORE', `${recap.score}`],
     ];

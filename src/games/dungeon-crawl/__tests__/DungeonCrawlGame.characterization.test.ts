@@ -106,6 +106,8 @@ describe('DungeonCrawlGame characterization', () => {
           // v4 Wave D metric contract (the grimoire)
           spells_learned: 0,
           spells_cast: 0,
+          // v5 Wave F metric contract (vaults & reliquaries)
+          items_found: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');
@@ -190,6 +192,7 @@ describe('DungeonCrawlGame characterization', () => {
         'KeyV', // v4 Wave D cast spell
         'KeyG', // v4 Wave D cycle spell
         'Tab', // v4 Wave D character sheet toggle
+        'KeyI', // v5 Wave F pack toggle
       ];
       expect(() => {
         for (let frame = 0; frame < 3000; frame++) {

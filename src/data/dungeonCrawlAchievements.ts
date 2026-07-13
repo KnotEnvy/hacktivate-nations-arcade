@@ -443,4 +443,16 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 300,
     unlocked: false
   },
+  // v5 Wave F — vaults & reliquaries
+  {
+    id: 'dungeon_first_find',
+    title: 'A Find Worth Keeping',
+    description: 'Pick up a piece of equipment in the depths',
+    icon: '🎒',
+    gameId: 'dungeon-crawl',
+    category: 'gameplay',
+    requirement: { type: 'items_found', value: 1 },
+    reward: 200,
+    unlocked: false
+  },
 ];

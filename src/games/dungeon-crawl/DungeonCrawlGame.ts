@@ -16,7 +16,6 @@ import {
   PALETTE,
   PICKUPS,
   PLAYER,
-  PotionBuff,
   SHOP,
   TILE,
   VIEW,
@@ -28,8 +27,9 @@ import { PROVISION_TUNING } from './data/gear';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
-import { ALL_RELIC_IDS, RELIC_TUNING, RELICS, RelicId } from './data/relics';
+import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from './data/relics';
 import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
+import { bossItemWeights, ITEM_TUNING, rollItemDrop } from './data/items';
 import { SPELLS, SpellId } from './data/spells';
 import { STAT_TUNING } from './data/stats';
 import { DraftFlow } from './progression/DraftFlow';
@@ -53,7 +53,9 @@ import { Urn } from './entities/Urn';
 import { causeForEnemy, Combat, DeathCause } from './systems/Combat';
 import { Lighting, LightSource } from './systems/Lighting';
 import { Minimap } from './systems/Minimap';
+import { Inventory } from './systems/Inventory';
 import { ParticleSystem } from './systems/ParticleSystem';
+import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
 import { HudRenderer, RecapStats, VictoryLedger } from './rendering/HudRenderer';
@@ -68,6 +70,7 @@ type GameState =
   | 'victory'
   | 'interlude'
   | 'sheet'
+  | 'inventory'
   | 'recap';
 
 // v2 — live shop item (plan + sold state).
@@ -132,7 +135,7 @@ export class DungeonCrawlGame extends BaseGame {
       this.map.findOpenSpotNear(x, y) ?? { x: this.player.x, y: this.player.y },
     hazards: () => this.hazards,
     showBanner: (text, sub) => this.showBanner(text, sub),
-    grantRelic: id => this.grantRelic(id),
+    grantRelic: id => this.pickupResolver.grantRelic(id),
     levelPressure: () => this.progression.levelPressure(),
     revealMap: () => this.minimap.revealAll(this.map),
     crackWall: (tx, ty) => this.crackWall(tx, ty),
@@ -142,6 +145,59 @@ export class DungeonCrawlGame extends BaseGame {
     onEnemySlain: enemy => this.onEnemySlain(enemy),
     onBossSlain: boss => this.onBossSlain(boss),
     onMimicWake: enemy => this.onMimicWake(enemy),
+  });
+
+  // v5 Wave F — floor-loot resolution (collect switch, relics, keyed doors);
+  // mechanics live there, counters/metrics stay here in the callbacks.
+  private pickupResolver = new PickupResolver({
+    player: () => this.player,
+    rng: () => this.rng,
+    map: () => this.map,
+    particles: this.particles,
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    shake: amount => this.shake.add(amount),
+    collectScroll: pickup => this.combat.collectScroll(pickup),
+    collectItem: pickup => {
+      // Full satchel leaves the find lying (the scroll precedent).
+      if (pickup.itemId && !this.inventory.tryCollect(pickup.itemId)) pickup.alive = true;
+    },
+    onGold: () => {
+      this.goldCollected++;
+      this.goldBalance++;
+      this.pickups += PICKUPS.GOLD_VALUE;
+      this.score += PICKUPS.GOLD_SCORE;
+      this.trackStat('gold_collected', this.goldCollected);
+    },
+    onPotionUsed: () => {
+      this.potionsUsed++;
+    },
+    onKeyUsed: () => {
+      this.keysUsed++;
+      // v5 Wave F — the vault sometimes hides a keepable find.
+      if (this.rng.chance(ITEM_TUNING.TREASURE_DROP_CHANCE)) {
+        const room = this.plan.rooms.find(r => r.kind === 'treasure');
+        if (room) this.dropItemInRoom(room, ITEM_TUNING.TREASURE_WEIGHTS);
+      }
+    },
+    onRelicCollected: () => {
+      this.relicsCollected++;
+      this.trackStat('relics_collected', this.relicsCollected);
+    },
+  });
+
+  // v5 Wave F — the found-equipment satchel/worn set behind its own host.
+  private inventory = new Inventory({
+    hero: () => this.progression.character(),
+    inTown: () => this.inTownWorld(),
+    save: () => this.progression.saveCheckpoint(),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    refreshFolds: () => this.refreshItemFolds(),
+    onItemFound: () => {
+      this.itemsFound++;
+      this.trackStat('items_found', this.itemsFound);
+    },
   });
 
   // v4 Wave C — secret-room reveal/nest tracking behind its own narrow host.
@@ -157,9 +213,13 @@ export class DungeonCrawlGame extends BaseGame {
     grantNestReward: gold => {
       this.goldBalance += gold; // run wallet only — arcade coins untouched
     },
-    onSecretFound: () => {
+    onSecretFound: room => {
       this.secretsFound++;
       this.trackStat('secrets_found', this.secretsFound);
+      // v5 Wave F — some hoards hide a keepable find.
+      if (this.rng.chance(ITEM_TUNING.SECRET_DROP_CHANCE)) {
+        this.dropItemInRoom(room, ITEM_TUNING.TREASURE_WEIGHTS);
+      }
     },
     onNestCleared: () => {
       this.nestsCleared++;
@@ -192,6 +252,8 @@ export class DungeonCrawlGame extends BaseGame {
   private scrollsUsed = 0;
   private uniqueBossKits = new Set<string>();
   private goldBalance = 0; // spendable; `pickups` stays cumulative for the arcade
+  // v5 Wave F
+  private itemsFound = 0;
 
   // Combo chain.
   private combo = 1;
@@ -233,6 +295,7 @@ export class DungeonCrawlGame extends BaseGame {
     setActiveSpellIndex: index => {
       this.activeSpellIndex = index;
     },
+    refreshStatMods: () => this.refreshItemFolds(),
   });
   private retireHold = 0;
   private recapRetired = false;
@@ -247,6 +310,7 @@ export class DungeonCrawlGame extends BaseGame {
   private spellsCast = 0;
   private activeSpellIndex = 0;
   private sheetReturn: 'playing' | 'town' = 'playing';
+  private inventoryReturn: 'playing' | 'town' = 'playing';
   private victoryTimer = 0;
   private victoryLedger: VictoryLedger | null = null;
   // v4 Wave C — saga interlude staged by openVictory, shown after the overlay.
@@ -272,6 +336,7 @@ export class DungeonCrawlGame extends BaseGame {
   private spellWas = false;
   private spellCycleWas = false;
   private sheetWas = false;
+  private invWas = false;
 
   // Audio bookkeeping.
   private musicIntensity = -1;
@@ -318,6 +383,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.scrollsUsed = 0;
     this.uniqueBossKits.clear();
     this.goldBalance = 0;
+    this.itemsFound = 0;
+    this.inventory.reset();
     this.combo = 1;
     this.killChain = 0;
     this.comboTimer = 0;
@@ -387,6 +454,7 @@ export class DungeonCrawlGame extends BaseGame {
       this.state === 'interlude' ||
       this.state === 'classSelect' ||
       (this.state === 'levelUp' && this.draftFlow.returnState === 'town') ||
+      (this.state === 'inventory' && this.inventoryReturn === 'town') ||
       (this.state === 'sheet' && this.sheetReturn === 'town')
     );
   }
@@ -474,6 +542,19 @@ export class DungeonCrawlGame extends BaseGame {
       }
     }
 
+    // v5 Wave F — I flips the pack open the same way (world frozen beneath).
+    const invDown = this.services?.input?.isKeyPressed('KeyI') ?? false;
+    if (invDown && !this.invWas && this.progression.hasCharacter()) {
+      if (this.state === 'playing' || this.state === 'town') {
+        this.inventoryReturn = this.state;
+        this.state = 'inventory';
+        this.services?.audio?.playSound?.('click', { volume: 0.4 });
+      } else if (this.state === 'inventory') {
+        this.state = this.inventoryReturn;
+        this.services?.audio?.playSound?.('click', { volume: 0.35 });
+      }
+    }
+
     switch (this.state) {
       case 'classSelect': {
         const next = this.draftFlow.updateClassSelect();
@@ -488,6 +569,13 @@ export class DungeonCrawlGame extends BaseGame {
         break;
       case 'sheet':
         break; // frozen under the character sheet
+      case 'inventory':
+        this.inventory.update(this.services?.input, {
+          navUpWas: this.navUpWas,
+          navDownWas: this.navDownWas,
+          confirmWas: this.confirmWas,
+        });
+        break;
       case 'relic':
         this.updateRelicChoice();
         break;
@@ -530,6 +618,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.spellWas = input.isKeyPressed('KeyV');
     this.spellCycleWas = input.isKeyPressed('KeyG');
     this.sheetWas = input.isKeyPressed('Tab');
+    this.invWas = input.isKeyPressed('KeyI');
   }
 
   /** Shared ←/→/digit navigation for every draft overlay (edge-detected). */
@@ -607,6 +696,10 @@ export class DungeonCrawlGame extends BaseGame {
         hero.gear,
         this.progression.statDeltas(),
       );
+      // v5 Wave F — wear the saved equipment (folds + effective scores) so
+      // provisions below see the right dagger caps.
+      this.inventory.armFromHero(hero);
+      this.refreshItemFolds();
       for (const provision of hero.provisions) {
         if (provision === 'field-scroll') {
           this.player.scroll = this.rng.pick(ALL_SCROLL_IDS);
@@ -639,7 +732,12 @@ export class DungeonCrawlGame extends BaseGame {
     const rewardGold = Math.round(
       quest.rewardGold * (1 + STAT_TUNING.CHA_QUEST_GOLD * this.player.statMods.cha),
     );
-    const banked = this.goldBalance + rewardGold;
+    // v5 Wave F — the ONLY moment run finds become permanent; duplicates and
+    // stash overflow convert to gold, folded into banked BEFORE the ledger.
+    const finds = hero
+      ? this.inventory.bankOnVictory(hero)
+      : { bankedCount: 0, dupeGold: 0 };
+    const banked = this.goldBalance + rewardGold + finds.dupeGold;
     if (hero) {
       hero.gold += banked;
       hero.stats.victories++;
@@ -673,6 +771,8 @@ export class DungeonCrawlGame extends BaseGame {
       rewardXp: quest.rewardXp,
       banked,
       treasury: hero?.gold ?? 0,
+      bankedFinds: finds.bankedCount,
+      dupeGold: finds.dupeGold,
     };
     this.shake.add(0.3);
     this.services?.audio?.playSound?.('success', { volume: 0.7 });
@@ -918,7 +1018,7 @@ export class DungeonCrawlGame extends BaseGame {
       pickup.update(dt, this.player.x, this.player.y, this.player.hasCoinMagnet());
       const reach = pickup.collectRadius + this.player.size / 2;
       if (Math.hypot(pickup.x - this.player.x, pickup.y - this.player.y) < reach) {
-        this.collectPickup(pickup);
+        this.pickupResolver.collectPickup(pickup);
       }
     }
     this.pickupItems = this.pickupItems.filter(p => p.alive);
@@ -936,7 +1036,7 @@ export class DungeonCrawlGame extends BaseGame {
     }
 
     // --- World interactions: locked doors, room discovery, stairs.
-    this.tryOpenDoors();
+    this.pickupResolver.tryOpenDoors();
     this.trackRoomDiscovery();
     this.secretRooms.update(this.player.x, this.player.y);
     this.checkStairs();
@@ -1031,6 +1131,24 @@ export class DungeonCrawlGame extends BaseGame {
     this.trackStat('gold_spent', this.goldSpent);
   }
 
+  /** v5 Wave F — re-fold worn equipment + effective scores into the player. */
+  private refreshItemFolds(): void {
+    this.player.applyEquipment(this.inventory.mergedEffects());
+    this.player.setStatMods(this.progression.equippedStatDeltas(this.inventory.equippedIds()));
+  }
+
+  /** v5 Wave F — drop a rolled find at a room's center (live rng only). */
+  private dropItemInRoom(
+    room: { tx: number; ty: number; w: number; h: number },
+    weights: Parameters<typeof rollItemDrop>[1],
+  ): void {
+    const center = this.map.tileCenter(
+      room.tx + Math.floor(room.w / 2),
+      room.ty + Math.floor(room.h / 2),
+    );
+    this.pickupItems.push(new Pickup('item', center.x, center.y, rollItemDrop(this.rng, weights)));
+  }
+
   /** v4 — Haggler training (+ v5 Presence) talks merchants down, never below 1 gold. */
   private hagglerPrice(base: number): number {
     const discount =
@@ -1067,6 +1185,12 @@ export class DungeonCrawlGame extends BaseGame {
     if (enemy.elite) {
       this.elitesSlain++;
       this.trackStat('elites_slain', this.elitesSlain);
+      // v5 Wave F — elites sometimes carry a find worth keeping.
+      if (this.rng.chance(ITEM_TUNING.ELITE_DROP_CHANCE)) {
+        this.pickupItems.push(
+          new Pickup('item', enemy.x, enemy.y, rollItemDrop(this.rng, ITEM_TUNING.ELITE_WEIGHTS)),
+        );
+      }
     }
     // v3 — bestiary stats: the restless dead + the menagerie tally.
     if (enemy.config.undead) {
@@ -1091,6 +1215,15 @@ export class DungeonCrawlGame extends BaseGame {
     this.registerKill(BOSS.SCORE);
     this.score += COMBAT.BOSS_BONUS;
     this.services?.audio?.triggerMusicStinger?.('success');
+
+    // v5 Wave F — a Guardian always yields a find; deeper tiers pay rarer.
+    const tier =
+      this.activeQuest && this.activeQuest.bossTier > 0
+        ? this.activeQuest.bossTier
+        : Math.max(1, Math.floor(this.floor / 3));
+    this.pickupItems.push(
+      new Pickup('item', boss.x, boss.y, rollItemDrop(this.rng, bossItemWeights(tier))),
+    );
 
     // Unlock the way down.
     this.stairsLocked = false;
@@ -1185,99 +1318,6 @@ export class DungeonCrawlGame extends BaseGame {
 
   // ------------------------------------------------------------ pickups + world
 
-  private collectPickup(pickup: Pickup): void {
-    pickup.alive = false;
-    switch (pickup.kind) {
-      case 'gold': {
-        this.goldCollected++;
-        this.goldBalance++;
-        this.pickups += PICKUPS.GOLD_VALUE;
-        this.score += PICKUPS.GOLD_SCORE;
-        this.services?.audio?.playSound?.('coin', { volume: 0.25 });
-        this.particles.burst(pickup.x, pickup.y, PALETTE.gold, 5, 70, 0.35);
-        this.trackStat('gold_collected', this.goldCollected);
-        break;
-      }
-      case 'heart': {
-        this.player.heal(PICKUPS.HEART_HEAL + this.player.heartHealBonus());
-        this.services?.audio?.playSound?.('extraLife', { volume: 0.4 });
-        this.particles.burst(pickup.x, pickup.y, PALETTE.heart, 8, 80, 0.5);
-        break;
-      }
-      case 'dagger': {
-        this.player.daggers = Math.min(this.player.daggerCap(), this.player.daggers + PICKUPS.DAGGER_BUNDLE);
-        this.services?.audio?.playSound?.('click', { volume: 0.4 });
-        break;
-      }
-      case 'potion': {
-        const buffs: PotionBuff[] = ['haste', 'strength', 'stoneskin'];
-        this.player.addBuff(this.rng.pick(buffs));
-        this.potionsUsed++;
-        this.services?.audio?.playSound?.('powerup', { volume: 0.45 });
-        this.particles.burst(pickup.x, pickup.y, PALETTE.potion, 10, 90, 0.5);
-        break;
-      }
-      case 'key': {
-        this.player.keys++;
-        this.services?.audio?.playSound?.('unlock', { volume: 0.5 });
-        this.particles.burst(pickup.x, pickup.y, PALETTE.keyGold, 8, 80, 0.5);
-        break;
-      }
-      case 'scroll':
-        this.combat.collectScroll(pickup);
-        break;
-      case 'relic-shrine': {
-        const relic = this.rng.pick(ALL_RELIC_IDS);
-        this.grantRelic(relic);
-        break;
-      }
-    }
-  }
-
-  private grantRelic(id: RelicId): void {
-    this.player.addRelic(id);
-    this.relicsCollected++;
-    this.services?.audio?.playSound?.('unlock', { volume: 0.6 });
-    this.particles.burst(this.player.x, this.player.y, RELICS[id].color, 16, 120, 0.8);
-    this.showBanner(RELICS[id].name, RELICS[id].blurb);
-    this.trackStat('relics_collected', this.relicsCollected);
-  }
-
-  /** Locked doors open on contact when the player holds a key. */
-  private tryOpenDoors(): void {
-    if (this.player.keys <= 0) return;
-    const { tx, ty } = this.map.tileAtWorld(this.player.x, this.player.y);
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        if (this.map.get(tx + dx, ty + dy) !== Tile.LockedDoor) continue;
-        const center = this.map.tileCenter(tx + dx, ty + dy);
-        if (Math.hypot(center.x - this.player.x, center.y - this.player.y) > TILE * 1.2) continue;
-        // One key opens every door of the treasure room ring (they're one lock).
-        this.openConnectedLockedDoors(tx + dx, ty + dy);
-        this.player.keys--;
-        this.keysUsed++;
-        this.services?.audio?.playSound?.('gate_open', { volume: 0.6 });
-        this.shake.add(0.15);
-        return;
-      }
-    }
-  }
-
-  private openConnectedLockedDoors(tx: number, ty: number): void {
-    // Flood over the contiguous locked-door ring so one key = one room.
-    const queue = [{ tx, ty }];
-    while (queue.length > 0) {
-      const pos = queue.pop()!;
-      if (this.map.get(pos.tx, pos.ty) !== Tile.LockedDoor) continue;
-      this.map.set(pos.tx, pos.ty, Tile.Door);
-      const center = this.map.tileCenter(pos.tx, pos.ty);
-      this.particles.burst(center.x, center.y, PALETTE.keyGold, 6, 60, 0.4);
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
-        queue.push({ tx: pos.tx + dx, ty: pos.ty + dy });
-      }
-    }
-  }
-
   /** v4 Wave C — a player blast breaks a cracked wall open (Combat calls in). */
   private crackWall(tx: number, ty: number): void {
     if (this.map.get(tx, ty) !== Tile.CrackedWall) return;
@@ -1338,7 +1378,7 @@ export class DungeonCrawlGame extends BaseGame {
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     const directPick = [0, 1, 2].some(i => input.isKeyPressed(`Digit${i + 1}`));
     if ((confirm && !this.confirmWas) || directPick) {
-      this.grantRelic(this.relicChoices[this.relicIndex]);
+      this.pickupResolver.grantRelic(this.relicChoices[this.relicIndex]);
       this.descend();
     }
   }
@@ -1378,6 +1418,8 @@ export class DungeonCrawlGame extends BaseGame {
       relics: this.relicsCollected,
       maxCombo: this.maxCombo,
       timeMs: Date.now() - this.startTime,
+      // v5 Wave F — run finds that died unbanked.
+      itemsLost: this.inventory.lostCount(this.progression.character()),
     };
     this.shake.add(0.6);
     this.syncExtendedData();
@@ -1497,6 +1539,8 @@ export class DungeonCrawlGame extends BaseGame {
       // v4 Wave D — the grimoire.
       spells_learned: this.progression.sessionSpellsLearned,
       spells_cast: this.spellsCast,
+      // v5 Wave F — vaults & reliquaries.
+      items_found: this.itemsFound,
     };
   }
 
@@ -1610,6 +1654,7 @@ export class DungeonCrawlGame extends BaseGame {
       heroXpFrac: this.progression.xpFrac(),
       buffs: this.player.buffs,
       relics: this.player.relics,
+      itemCount: this.inventory.satchel.length,
     });
     this.minimap.render(
       ctx,
@@ -1649,6 +1694,15 @@ export class DungeonCrawlGame extends BaseGame {
       if (hero) {
         this.hud.renderCharacterSheet(ctx, hero, this.activeSpell(), this.progression.xpFrac());
       }
+    }
+    if (this.state === 'inventory') {
+      this.hud.renderInventory(ctx, {
+        equipped: this.inventory.wornMap(),
+        list: this.inventory.browseList(),
+        index: this.inventory.index,
+        inTown: this.inTownWorld(),
+        satchelCount: this.inventory.satchel.length,
+      });
     }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
     if (this.state === 'classSelect') {

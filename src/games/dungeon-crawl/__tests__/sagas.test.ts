@@ -177,6 +177,8 @@ describe('the saga board page', () => {
         sagas,
         spells: [],
         scores: { ...STAT_BASES.fighter },
+        equipment: {},
+        stash: [],
       },
       save: () => {},
       playSound: () => {},
