@@ -21,19 +21,19 @@ import {
   VIEW,
 } from './data/constants';
 import { BOON_TUNING } from './data/boons';
-import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
+import { ALL_CLASS_IDS, ClassId } from './data/classes';
 import { BOSS } from './data/enemies';
-import { PROVISION_TUNING } from './data/gear';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
 import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from './data/relics';
-import { ALL_SCROLL_IDS, SCROLLS, ScrollId } from './data/scrolls';
+import { SCROLLS, ScrollId } from './data/scrolls';
 import { bossItemWeights, ITEM_TUNING, rollItemDrop } from './data/items';
 import { SPELLS, SpellId } from './data/spells';
 import { STAT_TUNING } from './data/stats';
 import { DraftFlow } from './progression/DraftFlow';
 import { ProgressionController } from './progression/ProgressionController';
+import { QuestDirector } from './progression/QuestDirector';
 import { TOWN_PALETTE, TownController } from './town/TownController';
 import {
   FloorPlan,
@@ -58,7 +58,7 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
-import { HudRenderer, RecapStats, VictoryLedger } from './rendering/HudRenderer';
+import { HudRenderer, RecapStats } from './rendering/HudRenderer';
 import { TileRenderer } from './rendering/TileRenderer';
 
 type GameState =
@@ -299,9 +299,40 @@ export class DungeonCrawlGame extends BaseGame {
   });
   private retireHold = 0;
   private recapRetired = false;
-  // v4 Wave B — Lastlight + quest expeditions.
+  // v4 Wave B — Lastlight + quest expeditions. v5 Wave G: the expedition
+  // lifecycle (depart/victory/interlude) lives in QuestDirector; the session
+  // counters stay here in the host callbacks.
   private town = new TownController();
-  private activeQuest: QuestDef | null = null;
+  private quests = new QuestDirector({
+    input: () => this.services?.input,
+    confirmWas: () => this.confirmWas,
+    rng: () => this.rng,
+    progression: () => this.progression,
+    player: () => this.player,
+    inventory: () => this.inventory,
+    goldBalance: () => this.goldBalance,
+    resetExpedition: () => this.resetExpedition(),
+    loadFloor: () => this.loadFloor(),
+    enterTownWorld: () => this.enterTownWorld(),
+    openBoonDraft: returnTo =>
+      this.progression.pendingLevelUp() ? this.draftFlow.openBoonDraft(returnTo) : null,
+    refreshItemFolds: () => this.refreshItemFolds(),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    triggerStinger: name => this.services?.audio?.triggerMusicStinger?.(name),
+    shake: amount => this.shake.add(amount),
+    trackStat: (key, value) => this.trackStat(key, value),
+    onQuestBanked: banked => {
+      this.questsCompleted++;
+      this.goldBanked += banked;
+      this.trackStat('quests_completed', this.questsCompleted);
+      this.trackStat('gold_banked', this.goldBanked);
+    },
+    onSagaCompleted: () => {
+      this.sagasCompleted++;
+      this.trackStat('sagas_completed', this.sagasCompleted);
+    },
+  });
   private questsCompleted = 0;
   private goldBanked = 0;
   private sagasCompleted = 0;
@@ -311,11 +342,6 @@ export class DungeonCrawlGame extends BaseGame {
   private activeSpellIndex = 0;
   private sheetReturn: 'playing' | 'town' = 'playing';
   private inventoryReturn: 'playing' | 'town' = 'playing';
-  private victoryTimer = 0;
-  private victoryLedger: VictoryLedger | null = null;
-  // v4 Wave C — saga interlude staged by openVictory, shown after the overlay.
-  private pendingInterlude: { sagaName: string; title: string; text: string } | null = null;
-  private interludeTimer = 0;
   private recapStats: RecapStats | null = null;
   private recapTimer = 0;
   private shopDeniedFlash = 0;
@@ -402,7 +428,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.progression.resetSessionCounters();
     this.retireHold = 0;
     this.recapRetired = false;
-    this.activeQuest = null;
+    this.quests.reset();
     this.questsCompleted = 0;
     this.goldBanked = 0;
     this.sagasCompleted = 0;
@@ -410,9 +436,6 @@ export class DungeonCrawlGame extends BaseGame {
     this.nestsCleared = 0;
     this.spellsCast = 0;
     this.activeSpellIndex = 0;
-    this.pendingInterlude = null;
-    this.interludeTimer = 0;
-    this.victoryTimer = 0;
     this.state = 'classSelect';
 
     this.enterTownWorld();
@@ -422,7 +445,7 @@ export class DungeonCrawlGame extends BaseGame {
   /** v4 Wave B — swap the live world for Lastlight (state set by callers). */
   private enterTownWorld(): void {
     this.town.reset();
-    this.activeQuest = null;
+    this.quests.clearQuest();
     this.plan = this.town.plan;
     this.map = this.plan.map;
     this.biome = TOWN_PALETTE;
@@ -461,7 +484,7 @@ export class DungeonCrawlGame extends BaseGame {
 
   private loadFloor(): void {
     // v4 Wave B — quest shape: fixed biome, boss ONLY on the final floor.
-    const quest = this.activeQuest;
+    const quest = this.quests.activeQuest;
     const questFloors = quest && quest.floors > 0 ? quest.floors : 0;
     const isFinal = questFloors > 0 && this.floor === questFloors;
     this.plan = generateFloor(
@@ -584,12 +607,16 @@ export class DungeonCrawlGame extends BaseGame {
         if (next) this.state = next;
         break;
       }
-      case 'victory':
-        this.updateVictory(dt);
+      case 'victory': {
+        const next = this.quests.updateVictory(dt);
+        if (next) this.state = next;
         break;
-      case 'interlude':
-        this.updateInterlude(dt);
+      }
+      case 'interlude': {
+        const next = this.quests.updateInterlude(dt);
+        if (next) this.state = next;
         break;
+      }
       case 'recap':
         this.updateRecap(dt);
         break;
@@ -661,6 +688,7 @@ export class DungeonCrawlGame extends BaseGame {
       playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
       showBanner: (text, sub) => this.showBanner(text, sub),
       depart: quest => this.departOnQuest(quest),
+      pickRumor: pool => this.rng.pick(pool),
     });
     this.updateCamera();
     this.minimap.reveal(
@@ -672,12 +700,18 @@ export class DungeonCrawlGame extends BaseGame {
     this.emitTorchEmbers();
   }
 
-  /** Set out from the gate: fresh seed, quest shape, packed provisions. */
+  /** Set out from the gate (thin delegate — QuestDirector owns the flow). */
   private departOnQuest(quest: QuestDef): void {
-    const hero = this.progression.character();
-    this.activeQuest = quest;
+    this.state = this.quests.depart(quest);
+  }
 
-    // Expedition-scoped resets (session metrics keep accumulating).
+  /** The final boss fell and the stairs were taken: the quest is won. */
+  private openVictory(): void {
+    this.state = this.quests.openVictory();
+  }
+
+  /** Expedition-scoped resets (session metrics keep accumulating). */
+  private resetExpedition(): void {
     this.floor = 1;
     this.combo = 1;
     this.killChain = 0;
@@ -685,138 +719,6 @@ export class DungeonCrawlGame extends BaseGame {
     this.goldBalance = 0;
     this.runSeed = (Date.now() ^ (Math.random() * 0xffffffff)) >>> 0;
     this.rng = new Rng(this.runSeed ^ 0x51ed270b);
-
-    // Re-arm the hero: kit + training + gear, then whatever was packed.
-    if (hero) {
-      this.player.reset(0, 0);
-      this.player.applyKit(CLASSES[hero.classId]);
-      this.player.applyProgression(
-        this.progression.gains(),
-        hero.boons,
-        hero.gear,
-        this.progression.statDeltas(),
-      );
-      // v5 Wave F — wear the saved equipment (folds + effective scores) so
-      // provisions below see the right dagger caps.
-      this.inventory.armFromHero(hero);
-      this.refreshItemFolds();
-      for (const provision of hero.provisions) {
-        if (provision === 'field-scroll') {
-          this.player.scroll = this.rng.pick(ALL_SCROLL_IDS);
-        } else if (provision === 'bandolier') {
-          this.player.daggers = Math.min(
-            this.player.daggerCap(),
-            this.player.daggers + PROVISION_TUNING.BANDOLIER_DAGGERS,
-          );
-        } else if (provision === 'blessed-candle') {
-          this.player.provisionTorch = PROVISION_TUNING.CANDLE_TORCH_BONUS;
-        }
-      }
-      hero.provisions = [];
-      this.progression.saveCheckpoint();
-    }
-
-    this.state = 'playing';
-    this.loadFloor();
-    this.services?.audio?.triggerMusicStinger?.('transition');
-  }
-
-  /** The final boss fell and the stairs were taken: the quest is won. */
-  private openVictory(): void {
-    const quest = this.activeQuest!;
-    const hero = this.progression.character();
-    this.state = 'victory';
-    this.victoryTimer = 0;
-
-    // v5 Wave E — Presence talks the reward up (per CHA delta point).
-    const rewardGold = Math.round(
-      quest.rewardGold * (1 + STAT_TUNING.CHA_QUEST_GOLD * this.player.statMods.cha),
-    );
-    // v5 Wave F — the ONLY moment run finds become permanent; duplicates and
-    // stash overflow convert to gold, folded into banked BEFORE the ledger.
-    const finds = hero
-      ? this.inventory.bankOnVictory(hero)
-      : { bankedCount: 0, dupeGold: 0 };
-    const banked = this.goldBalance + rewardGold + finds.dupeGold;
-    if (hero) {
-      hero.gold += banked;
-      hero.stats.victories++;
-    }
-    this.progression.grantXp(quest.rewardXp);
-    this.trackStat('xp_earned', this.progression.sessionXp);
-    this.progression.saveCheckpoint();
-    this.questsCompleted++;
-    this.goldBanked += banked;
-    this.trackStat('quests_completed', this.questsCompleted);
-    this.trackStat('gold_banked', this.goldBanked);
-
-    // v4 Wave C — a current-chapter victory advances its saga and stages the
-    // interlude (replays return null: no re-advance, no repeated story beat).
-    const sagaHit = this.progression.advanceSaga(quest.id);
-    if (sagaHit) {
-      this.pendingInterlude = {
-        sagaName: sagaHit.sagaName,
-        title: sagaHit.completed ? 'THE SAGA IS TOLD' : 'THE TALE CONTINUES',
-        text: sagaHit.interlude,
-      };
-      if (sagaHit.completed) {
-        this.sagasCompleted++;
-        this.trackStat('sagas_completed', this.sagasCompleted);
-      }
-    }
-
-    this.victoryLedger = {
-      carried: this.goldBalance,
-      rewardGold,
-      rewardXp: quest.rewardXp,
-      banked,
-      treasury: hero?.gold ?? 0,
-      bankedFinds: finds.bankedCount,
-      dupeGold: finds.dupeGold,
-    };
-    this.shake.add(0.3);
-    this.services?.audio?.playSound?.('success', { volume: 0.7 });
-    this.services?.audio?.triggerMusicStinger?.('success');
-  }
-
-  private updateVictory(dt: number): void {
-    this.victoryTimer += dt;
-    const input = this.services?.input;
-    const confirm = input
-      ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
-      : false;
-    if (this.victoryTimer > 1.0 && confirm && !this.confirmWas) {
-      this.enterTownWorld();
-      if (this.pendingInterlude) {
-        // v4 Wave C — the story beat plays before Lastlight takes over.
-        this.state = 'interlude';
-        this.interludeTimer = 0;
-        this.services?.audio?.playSound?.('unlock', { volume: 0.4 });
-        return;
-      }
-      this.arriveInLastlight();
-    }
-  }
-
-  /** v4 Wave C — dismissing the interlude lands the hero back in town. */
-  private updateInterlude(dt: number): void {
-    this.interludeTimer += dt;
-    const input = this.services?.input;
-    const confirm = input
-      ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
-      : false;
-    if (this.interludeTimer > OVERLAY.INTERLUDE_LOCKOUT && confirm && !this.confirmWas) {
-      this.pendingInterlude = null;
-      this.arriveInLastlight();
-    }
-  }
-
-  /** Post-victory landing: banner + any level-up the reward XP earned. */
-  private arriveInLastlight(): void {
-    this.state = 'town';
-    this.showBanner('LASTLIGHT', 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT');
-    // Reward XP can cross a threshold — level up right at the gate.
-    if (this.progression.pendingLevelUp()) this.openBoonDraft('town');
   }
 
   // ------------------------------------------------------------ v4 level-ups
@@ -1217,10 +1119,9 @@ export class DungeonCrawlGame extends BaseGame {
     this.services?.audio?.triggerMusicStinger?.('success');
 
     // v5 Wave F — a Guardian always yields a find; deeper tiers pay rarer.
+    const quest = this.quests.activeQuest;
     const tier =
-      this.activeQuest && this.activeQuest.bossTier > 0
-        ? this.activeQuest.bossTier
-        : Math.max(1, Math.floor(this.floor / 3));
+      quest && quest.bossTier > 0 ? quest.bossTier : Math.max(1, Math.floor(this.floor / 3));
     this.pickupItems.push(
       new Pickup('item', boss.x, boss.y, rollItemDrop(this.rng, bossItemWeights(tier))),
     );
@@ -1349,7 +1250,7 @@ export class DungeonCrawlGame extends BaseGame {
     const { tx, ty } = this.map.tileAtWorld(this.player.x, this.player.y);
     if (tx === this.plan.stairsTile.tx && ty === this.plan.stairsTile.ty) {
       // v4 Wave B — the final floor's stairs lead home, not deeper.
-      const quest = this.activeQuest;
+      const quest = this.quests.activeQuest;
       if (quest && quest.floors > 0 && this.floor === quest.floors) {
         this.openVictory();
       } else {
@@ -1569,9 +1470,11 @@ export class DungeonCrawlGame extends BaseGame {
     }
     if (this.merchant) this.tiles.drawMerchant(ctx, this.merchant.x, this.merchant.y, this.gameTime);
     if (this.inTownWorld()) {
-      // Lastlight's fixtures: smith (soot-brown), alchemist (violet), board.
+      // Lastlight's fixtures: smith (soot-brown), alchemist (violet), board,
+      // and (v5 Wave G) the keeper of THE LAST LANTERN at the inn door.
       this.tiles.drawMerchant(ctx, this.town.spots.smith.x, this.town.spots.smith.y, this.gameTime, '#5a3a22', '#3a2414');
       this.tiles.drawMerchant(ctx, this.town.spots.alchemist.x, this.town.spots.alchemist.y, this.gameTime);
+      this.tiles.drawMerchant(ctx, this.town.spots.inn.x, this.town.spots.inn.y, this.gameTime, '#7a5a30', '#4a3418');
       this.tiles.drawQuestBoard(ctx, this.town.spots.quests.x, this.town.spots.quests.y, this.gameTime);
     }
     for (const item of this.shopItems) this.tiles.drawShopItem(ctx, item, item.sold, this.gameTime);
@@ -1611,6 +1514,7 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.inTownWorld()) {
       lights.push({ x: this.town.spots.smith.x, y: this.town.spots.smith.y, radius: 110, flicker: 0.5 });
       lights.push({ x: this.town.spots.alchemist.x, y: this.town.spots.alchemist.y, radius: 110, flicker: 0.5 });
+      lights.push({ x: this.town.spots.inn.x, y: this.town.spots.inn.y, radius: 110, flicker: 0.5 });
       lights.push({ x: this.town.spots.quests.x, y: this.town.spots.quests.y, radius: 95, flicker: 0.4 });
     }
     if (this.boss?.alive) {
@@ -1683,11 +1587,16 @@ export class DungeonCrawlGame extends BaseGame {
       if (prompt) this.hud.renderShopPrompt(ctx, prompt, true, 0);
       this.town.renderOverlay(ctx, this.hud, this.progression.character());
     }
-    if (this.state === 'victory' && this.activeQuest && this.victoryLedger) {
-      this.hud.renderVictory(ctx, this.activeQuest.name, this.victoryLedger, this.victoryTimer);
+    if (this.state === 'victory' && this.quests.activeQuest && this.quests.victoryLedger) {
+      this.hud.renderVictory(
+        ctx,
+        this.quests.activeQuest.name,
+        this.quests.victoryLedger,
+        this.quests.victoryTimer,
+      );
     }
-    if (this.state === 'interlude' && this.pendingInterlude) {
-      this.hud.renderInterlude(ctx, this.pendingInterlude, this.interludeTimer);
+    if (this.state === 'interlude' && this.quests.pendingInterlude) {
+      this.hud.renderInterlude(ctx, this.quests.pendingInterlude, this.quests.interludeTimer);
     }
     if (this.state === 'sheet') {
       const hero = this.progression.character();

@@ -197,6 +197,11 @@ describe('class-select flow (public metric contract)', () => {
     held.clear();
     // v4 Wave B — abilities live in the depths; set out through the gate.
     (h.game as unknown as { departOnQuest(q: unknown): void }).departOnQuest(QUESTS.endless);
+    // v5 Wave G — the DM briefs at the gate; Space past the lockout descends.
+    for (let i = 0; i < 70; i++) h.game.update(1 / 60);
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
     h.game.update(1 / 60); // settle input edges
     held.add('KeyQ');
     h.game.update(1 / 60);

@@ -9,8 +9,9 @@
 import { SoundName } from '@/services/AudioManager';
 import { BiomePalette } from '../data/constants';
 import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '../data/gear';
+import { ALL_NPC_IDS, NPCS, storyStage } from '../data/npcs';
 import { QUESTS, QuestDef, STANDALONE_QUEST_IDS } from '../data/quests';
-import { ALL_SAGA_IDS, currentChapter, SAGAS } from '../data/sagas';
+import { currentChapter, SAGAS, visibleSagaIds } from '../data/sagas';
 import { FloorPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Player } from '../entities/Player';
@@ -31,7 +32,7 @@ export const TOWN_PALETTE: BiomePalette = {
   hazardStyle: 'vent',
 };
 
-export type TownOverlay = 'none' | 'quests' | 'smith' | 'alchemist';
+export type TownOverlay = 'none' | 'quests' | 'smith' | 'alchemist' | 'inn';
 type TownStation = Exclude<TownOverlay, 'none'> | 'gate';
 
 export interface TownInput {
@@ -59,6 +60,8 @@ export interface TownCtx {
   playSound(name: SoundName, volume: number): void;
   showBanner(text: string, sub: string): void;
   depart(quest: QuestDef): void;
+  /** v5 Wave G — one line of bar talk from a pool (the game's live rng). */
+  pickRumor(pool: readonly string[]): string;
 }
 
 const INTERACT_RADIUS = 34;
@@ -70,6 +73,8 @@ export class TownController {
   selection = 0;
   /** v4 Wave C — the board carries two pages: contracts and sagas. */
   boardPage: 'quests' | 'sagas' = 'quests';
+  /** v5 Wave G — the line currently being told across the bar. */
+  innRumor = '';
   private nearStation: TownStation | null = null;
 
   constructor() {
@@ -83,6 +88,7 @@ export class TownController {
     this.overlay = 'none';
     this.selection = 0;
     this.boardPage = 'quests';
+    this.innRumor = '';
     this.nearStation = null;
   }
 
@@ -96,6 +102,8 @@ export class TownController {
         return 'BLACKSMITH — press E';
       case 'alchemist':
         return 'ALCHEMIST — press E';
+      case 'inn':
+        return 'THE LAST LANTERN — press E';
       case 'gate':
         return 'THE DEPTHS GATE — press E to choose a quest';
       default:
@@ -108,6 +116,8 @@ export class TownController {
       this.updateWalking(ctx);
     } else if (this.overlay === 'quests') {
       this.updateQuestBoard(ctx);
+    } else if (this.overlay === 'inn') {
+      this.updateInn(ctx);
     } else {
       this.updateShop(ctx, this.overlay);
     }
@@ -146,7 +156,41 @@ export class TownController {
     this.boardPage = 'quests';
     ctx.playSound('click', 0.4);
     // The gate and the board both open the quest list — confirming departs.
-    this.overlay = this.nearStation === 'smith' ? 'smith' : this.nearStation === 'alchemist' ? 'alchemist' : 'quests';
+    this.overlay =
+      this.nearStation === 'smith'
+        ? 'smith'
+        : this.nearStation === 'alchemist'
+          ? 'alchemist'
+          : this.nearStation === 'inn'
+            ? 'inn'
+            : 'quests';
+    if (this.overlay === 'inn') this.rollRumor(ctx);
+  }
+
+  // ---------------------------------------------------------------- the inn
+
+  /** v5 Wave G — bar talk: ←→ picks a patron, SPACE asks for another word. */
+  private updateInn(ctx: TownCtx): void {
+    const { input } = ctx;
+    if (!input) return;
+    const before = this.selection;
+    this.navigate(ctx, ALL_NPC_IDS.length);
+    if (this.selection !== before) this.rollRumor(ctx);
+
+    if (this.closeRequested(ctx)) return;
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    if (confirm && !ctx.edges.confirmWas) {
+      this.rollRumor(ctx);
+      ctx.playSound('click', 0.4);
+    }
+  }
+
+  /** A fresh line from the selected patron's pool for the hero's story stage. */
+  private rollRumor(ctx: TownCtx): void {
+    const npc = NPCS[ALL_NPC_IDS[this.selection]];
+    this.innRumor = ctx.pickRumor(npc.rumors[storyStage(ctx.hero)]);
   }
 
   // ---------------------------------------------------------------- quest board
@@ -187,14 +231,16 @@ export class TownController {
   private updateSagaBoard(ctx: TownCtx): void {
     const { input } = ctx;
     if (!input) return;
-    this.navigate(ctx, ALL_SAGA_IDS.length);
+    // v5 Wave G — locked meta arcs stay off the board until earned.
+    const visible = visibleSagaIds(ctx.hero?.sagas);
+    this.navigate(ctx, visible.length);
 
     if (this.closeRequested(ctx)) return;
 
     const confirm =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     if (!confirm || ctx.edges.confirmWas) return;
-    const saga = SAGAS[ALL_SAGA_IDS[this.selection]];
+    const saga = SAGAS[visible[this.selection]];
     // A told saga's finale may be relived; progress never rewinds.
     const chapterId =
       currentChapter(ctx.hero?.sagas, saga.id) ?? saga.quests[saga.quests.length - 1];
@@ -270,10 +316,18 @@ export class TownController {
   renderOverlay(ctx: CanvasRenderingContext2D, hud: HudRenderer, hero: SavedHero | null): void {
     if (this.overlay === 'quests') {
       if (this.boardPage === 'sagas') {
-        hud.renderSagaBoard(ctx, ALL_SAGA_IDS, hero?.sagas ?? {}, this.selection, hero?.level ?? 1);
+        hud.renderSagaBoard(
+          ctx,
+          visibleSagaIds(hero?.sagas),
+          hero?.sagas ?? {},
+          this.selection,
+          hero?.level ?? 1,
+        );
       } else {
         hud.renderQuestBoard(ctx, STANDALONE_QUEST_IDS, this.selection, hero?.level ?? 1);
       }
+    } else if (this.overlay === 'inn') {
+      hud.renderInn(ctx, ALL_NPC_IDS, this.selection, this.innRumor);
     } else if (this.overlay === 'smith') {
       hud.renderSmith(ctx, ALL_GEAR_IDS, this.selection, id => hero?.gear[id] ?? 0, hero?.gold ?? 0);
     } else if (this.overlay === 'alchemist') {
@@ -370,6 +424,8 @@ function buildTown(): {
     quests: center(13, 4),
     smith: center(20, 8),
     alchemist: center(6, 11),
+    // v5 Wave G — the keeper stands before the inn's south door.
+    inn: center(5, 6),
     gate: center(gateTile.tx, gateTile.ty),
   };
 

@@ -8,9 +8,10 @@ import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
 import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
+import { NPCS, NpcId } from '../data/npcs';
 import { PROGRESSION } from '../data/progression';
 import { QUESTS, QuestId } from '../data/quests';
-import { ALL_SAGA_IDS, chaptersDone, currentChapter, SagaId, SAGAS } from '../data/sagas';
+import { chaptersDone, currentChapter, SagaId, SAGAS, visibleSagaIds } from '../data/sagas';
 import { RELICS, RelicId } from '../data/relics';
 import {
   ALL_EQUIP_SLOTS,
@@ -648,6 +649,56 @@ export class HudRenderer {
     }
   }
 
+  /** v5 Wave G — the inn: five patrons, one line of bar talk at a time. */
+  renderInn(
+    ctx: CanvasRenderingContext2D,
+    ids: readonly NpcId[],
+    selectedIndex: number,
+    rumor: string,
+  ): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.85)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('THE LAST LANTERN', VIEW.WIDTH / 2, 104);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '13px monospace';
+    ctx.fillText('← → the patrons · SPACE asks for another word · E steps away', VIEW.WIDTH / 2, 130);
+
+    const cardW = 130;
+    const cardH = 130;
+    const gap = 14;
+    const startX = (VIEW.WIDTH - cardW * ids.length - gap * (ids.length - 1)) / 2;
+    for (let i = 0; i < ids.length; i++) {
+      const npc = NPCS[ids[i]];
+      const x = startX + i * (cardW + gap);
+      const y = 168;
+      const selected = i === selectedIndex;
+
+      this.shopCard(ctx, x, y, cardW, cardH, selected, npc.color, i);
+      ctx.fillStyle = npc.color;
+      ctx.font = 'bold 34px monospace';
+      ctx.fillText(npc.icon, x + cardW / 2, y + 56);
+      ctx.font = 'bold 12px monospace';
+      this.wrapText(ctx, npc.name, x + cardW / 2, y + 86, cardW - 12, 14);
+    }
+
+    // The selected patron speaks.
+    const speaker = NPCS[ids[selectedIndex]];
+    ctx.fillStyle = speaker.color;
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(speaker.name, VIEW.WIDTH / 2, 356);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '12px monospace';
+    ctx.fillText(speaker.title, VIEW.WIDTH / 2, 376);
+    if (rumor.length > 0) {
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '15px monospace';
+      this.wrapText(ctx, `“${rumor}”`, VIEW.WIDTH / 2, 414, Math.min(560, VIEW.WIDTH - 120), 22);
+    }
+  }
+
   private renderShopFrame(
     ctx: CanvasRenderingContext2D,
     title: string,
@@ -854,7 +905,8 @@ export class HudRenderer {
       worn.length > 0 ? PALETTE.textWarm : PALETTE.textDim,
     );
     y = header('SAGAS', leftX, y + 16);
-    for (const id of ALL_SAGA_IDS) {
+    // v5 Wave G — a locked meta arc stays off the sheet (no spoilers).
+    for (const id of visibleSagaIds(hero.sagas)) {
       const done = chaptersDone(hero.sagas, id);
       const total = SAGAS[id].quests.length;
       const label = done >= total ? 'TOLD' : `${done}/${total}`;

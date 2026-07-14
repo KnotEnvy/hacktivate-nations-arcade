@@ -15,7 +15,9 @@ export type BossKitId =
   | 'hollow-king'
   // v4 Wave C — saga finale uniques
   | 'grave-warden'
-  | 'cinder-regent';
+  | 'cinder-regent'
+  // v5 Wave G — THE LAST PAGE finale
+  | 'underscribe';
 
 export interface BossKit {
   id: BossKitId;
@@ -104,6 +106,21 @@ export const UNIQUE_BOSS_KITS: readonly BossKit[] = [
     helmColor: '#241614',
     crackColor: '#ffb347',
     eyeColor: '#ffd166',
+  },
+  // v5 Wave G — the author under the world: ink-dark, parchment-cracked,
+  // read by candlelight. The game's hardest kit (tier 6 via its quest).
+  {
+    id: 'underscribe',
+    name: 'THE UNDERSCRIBE',
+    attackCycle: ['teleport', 'summon', 'homing', 'slam'],
+    summons: ['shade', 'wraith'],
+    hpMult: 1.35,
+    speedMult: 1,
+    bodyColor: '#232030',
+    enragedColor: '#3d2b55',
+    helmColor: '#12101c',
+    crackColor: '#e8dcc0',
+    eyeColor: '#fff3c4',
   },
 ];
 

@@ -78,6 +78,9 @@ function startWithFighter(h: Harness): Set<string> {
 /** Walk the endless depths until a floor rolls a secret (optionally a nest). */
 function findSecret(game: GameInternals, wantNest: boolean): SecretRoomPlan {
   game.departOnQuest(QUESTS.endless);
+  // v5 Wave G — skip the DM briefing (this helper walks the generator, not
+  // the flow; the floor pokes below load their own maps).
+  game.state = 'playing';
   for (let floor = 1; floor <= 40; floor++) {
     if (floor % 3 === 0) continue; // classic boss arenas carry no secrets
     game.floor = floor;

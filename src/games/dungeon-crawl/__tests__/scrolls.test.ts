@@ -138,6 +138,11 @@ describe('read-scroll flow (public metric surface)', () => {
     held.clear();
     // v4 Wave B — scrolls are read in the depths; set out through the gate.
     (h.game as unknown as { departOnQuest(q: unknown): void }).departOnQuest(QUESTS.endless);
+    // v5 Wave G — the DM briefs at the gate; Space past the lockout descends.
+    for (let i = 0; i < 70; i++) h.game.update(1 / 60);
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
     h.game.update(1 / 60);
 
     // Grant a scroll directly — acquisition is rng-driven, the read flow isn't.

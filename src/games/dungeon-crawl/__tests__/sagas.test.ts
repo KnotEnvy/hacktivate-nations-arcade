@@ -87,8 +87,9 @@ function pressSpaceAfter(h: Harness, held: Set<string>, idleFrames: number): voi
 }
 
 describe('saga data contract', () => {
-  test('two authored sagas: flagged chapters, paired interludes, unique finales', () => {
-    expect(ALL_SAGA_IDS).toHaveLength(2);
+  test('three authored sagas: flagged chapters, paired interludes, unique finales', () => {
+    // v5 Wave G — THE LAST PAGE meta-saga joins the two founding arcs.
+    expect(ALL_SAGA_IDS).toHaveLength(3);
     for (const id of ALL_SAGA_IDS) {
       const saga = SAGAS[id];
       expect(saga.id).toBe(id);
@@ -117,8 +118,8 @@ describe('saga data contract', () => {
     }
     // Chapters never leak onto the classic board page.
     for (const id of STANDALONE_QUEST_IDS) expect(QUESTS[id].saga).toBeUndefined();
-    // The epic's finale pays the game's largest rewards.
-    const crown = QUESTS['the-cinder-regent'];
+    // v5 Wave G — the meta-saga's finale is the new reward crown.
+    const crown = QUESTS['the-underscribe'];
     for (const id of ALL_QUEST_IDS) {
       expect(crown.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
       expect(crown.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
@@ -184,6 +185,7 @@ describe('the saga board page', () => {
       playSound: () => {},
       showBanner: () => {},
       depart: quest => departed.push(quest),
+      pickRumor: pool => pool[0], // v5 Wave G — inn talk; unused on the board
     };
   }
 

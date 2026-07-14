@@ -390,7 +390,7 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
   {
     id: 'dungeon_chronicler',
     title: 'Chronicler of the Depths',
-    description: 'Complete both sagas in a single session',
+    description: 'Complete two sagas in a single session',
     icon: '🏛️',
     gameId: 'dungeon-crawl',
     category: 'skill',
@@ -453,6 +453,18 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     category: 'gameplay',
     requirement: { type: 'items_found', value: 1 },
     reward: 200,
+    unlocked: false
+  },
+  // v5 Wave G — the DM wave
+  {
+    id: 'dungeon_the_last_page',
+    title: 'The Last Page',
+    description: 'Tell every saga the depths hold in a single session',
+    icon: '🖋️',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'sagas_completed', value: 3 },
+    reward: 1000,
     unlocked: false
   },
 ];

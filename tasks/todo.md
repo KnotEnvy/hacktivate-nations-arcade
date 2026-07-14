@@ -532,3 +532,136 @@ visibility.
 
 **Next (Wave G):** The DM Wave — named NPCs + Inn dialogue, DM quest
 briefings, and THE LAST PAGE meta-saga unmasking THE UNDERSCRIBE.
+
+**PLAYTESTED 2026-07-14: positive — Wave F approved. Wave G begins.**
+
+---
+
+# Dungeon Crawl v5 — Wave G: The DM Wave
+
+## Context (2026-07-14)
+
+Wave F playtested positive. Wave G is the tie-it-together wave: the game gets
+a Dungeon Master's voice. Named NPCs with stage-keyed rumors at the Inn (now a
+real 5th station: THE LAST LANTERN), DM quest briefings through the interlude
+overlay at every departure, and THE LAST PAGE — a 3-chapter meta-saga that
+unlocks only when both sagas are TOLD, unmasking THE UNDERSCRIBE (the thing
+that has been writing Lastlight's story all along — both sagas already plant
+it: "its last page was never found"). All text ORIGINAL, generic archetypes.
+
+Key design: NPC rumors are STATELESS — a pure `storyStage(hero)` derives the
+narrative stage from level + saga progress (no new save field). The meta-saga
+rides the existing `sagas` map, so sanitize/replay-proofing/sheet work free.
+ZERO new metric keys / inputs / sounds — sagas_completed simply reaches 3 now
+(one new achievement at 3; the monkey list and metric contract are untouched).
+DungeonCrawlGame.ts sits at ~1492/1500 — extraction valve FIRST.
+
+## Steps
+
+- [x] G1. Extraction valve `progression/QuestDirector.ts` (pure refactor):
+      move departOnQuest / openVictory / updateVictory / updateInterlude /
+      arriveInLastlight + the quest/victory/interlude state (activeQuest,
+      victoryTimer, victoryLedger, pendingInterlude, interludeTimer) behind a
+      narrow QuestDirectorHost (DraftFlow conventions: update methods return
+      the next GameState | null; the game assigns; metric counters stay in
+      game callbacks onQuestBanked/onSagaCompleted). PRESERVE the
+      arm->provisions->clear->save->loadFloor order. The game keeps thin
+      departOnQuest/openVictory delegates (dev tests poke them). Proof: all
+      150 dungeon tests green with ZERO test edits.
+- [x] G2. `data/npcs.ts`: StoryStage ('arrival'|'delving'|'the-page'|
+      'aftermath') + pure storyStage(hero) (level + saga progress; meta told
+      => aftermath); NpcDef {id,name,title,icon,color,rumors per stage} ×5
+      named originals (innkeeper, elder, retired delver, potboy, quiet
+      scribe); every pool ≥2 original rumor lines (hints ride existing
+      systems only). sagas.ts gains `meta?` flag + pure metaUnlocked(progress)
+      + visibleSagaIds(progress). New __tests__/dm.test.ts data contracts.
+- [x] G3. The Inn (THE LAST LANTERN) as 5th town station: TownOverlay +=
+      'inn', spot by the inn door, prompt, patron browse (←→), SPACE asks
+      another rumor (TownCtx.pickRumor -> game's live rng), E steps away;
+      HudRenderer.renderInn; inn-keeper sprite + lamplight in the town
+      render. Town map + overlay flow tests.
+- [x] G4. DM quest briefings: QuestDef.intro (original, every quest) shown
+      through the interlude overlay AT DEPARTURE — pendingInterlude gains
+      onDismiss 'town'|'descend'; depart stages the briefing and returns
+      'interlude'; dismiss loads floor 1 and enters 'playing' (arm->
+      provisions->clear->save order intact; loadFloor moves to the dismiss);
+      openVictory clears any stale briefing (replays stay interlude-free).
+      Header = saga name for chapters, THE QUEST BOARD otherwise. Flow tests.
+- [x] G5. THE LAST PAGE meta-saga: 3 new QuestDefs (THE BLANK LEDGER bone/4,
+      THE INK BELOW sunken/5, THE UNDERSCRIBE ash/6 tier 6 — the new reward
+      crown 1000g/1200xp) + SagaDef {meta:true} + THE UNDERSCRIBE unique kit
+      in UNIQUE_BOSS_KITS (never the rotation); saga board + character sheet
+      list visibleSagaIds (locked meta hidden until both sagas TOLD).
+      CONSCIOUS test updates: ALL_SAGA_IDS 2->3, ALL_QUEST_IDS 12->15,
+      reward crown cinder-regent -> the-underscribe; meta gating tests.
+      +1 achievement (sagas_completed 3, 34 total; chronicler description
+      clarified to "two sagas").
+- [x] G6. Gates (type-check, lint guardrail, dungeon suites, full dev suite,
+      release suite) + Crawler_handoff.json refresh (must parse) + review
+      here + commit.
+
+## Wave G Review (2026-07-14)
+
+**Wave G shipped.** type-check ✅ · lint ✅ (DungeonCrawlGame at ~1419/1500
+after the G1 QuestDirector extraction; every file under the guardrail) ·
+dungeon-crawl suites 164/164 (13 suites; +dm.test.ts 14) · full dev suite
+491/491 (49 suites) · release suite 10/10.
+
+**The DM's voice:** every departure now opens on a briefing — QuestDef.intro
+(original, all 15 quests) through the interlude overlay; dismissing it
+descends (pendingInterlude.onDismiss 'town'|'descend'; openVictory clears any
+stale briefing so replays stay interlude-free, and the arm->provisions->
+clear->save order is intact — loadFloor simply waits for the dismiss so the
+floor banner plays).
+
+**THE LAST LANTERN:** the Inn is the 5th town station (spot at the inn door,
+keeper sprite + lamplight). Five named regulars — HOLLIS, MOTHER TALLOW,
+CASK, PIP, THE QUIET SCRIBE — each with rumor pools keyed by a pure,
+stateless storyStage(hero) ('arrival'/'delving'/'the-page'/'aftermath'; no
+new save field). ←→ picks a patron, SPACE asks another word (live rng via
+TownCtx.pickRumor), E steps away. Rumors hint at existing systems only and
+tease the next chapter.
+
+**THE LAST PAGE:** a 3-chapter meta-saga (THE BLANK LEDGER bone/4t4, THE INK
+BELOW sunken/5t5, THE UNDERSCRIBE ash/6 tier 6 — the new reward crown
+1000g/1200xp) hidden from board AND sheet until both founding sagas are TOLD
+(pure metaUnlocked/visibleSagaIds; SagaDef.meta flag). THE UNDERSCRIBE kit
+lives in UNIQUE_BOSS_KITS (ink-dark, parchment-cracked; teleport/summon/
+homing/slam, shade+wraith summons, hp ×1.35) — the classic rotation is
+untouched. Progress rides the existing sagas map: sanitize, replay-proofing
+and the sheet all worked free.
+
+**Guardrail valve:** progression/QuestDirector.ts extracted FIRST
+(depart/openVictory/updateVictory/updateInterlude/arrive behind a narrow
+host; metric counters stay in game callbacks) — proven pure, all 150
+pre-wave tests green with zero edits.
+
+**Metrics/achievements:** ZERO new metric keys, inputs, or sounds — the
+characterization contract and monkey list are untouched. +1 achievement
+(THE LAST PAGE, sagas_completed 3; 34 total; chronicler description
+clarified to "two sagas").
+
+**Conscious test changes:** ALL_SAGA_IDS 2→3 and the reward crown
+cinder-regent→the-underscribe (sagas.test); ALL_QUEST_IDS 12→15 (town.test);
+classes/scrolls flow tests dismiss the new gate briefing with Space (the
+Wave B precedent); secrets.test's generator-walking helper skips the
+briefing via a state poke; sagas.test boardCtx gained the pickRumor member.
+
+**Awaiting playtest:** briefing pacing (every departure — too chatty?),
+rumor hand-feel + stage fit, inn discoverability, meta-saga difficulty
+(UNDERSCRIBE tier 6 ×1.35 hp vs level-10 heroes), meta chapter
+rewards/minLevels, board gating reveal moment.
+
+**Next:** resume roadToTheTabletop — the Supabase save promotion
+(waveD_spec in the handoff; unblocked since eb3f974).
+
+## Wave G Invariants
+
+storyStage is pure + stateless (no new save field); meta chapters advance
+through the SAME advanceSaga path (replay-proof for free); THE UNDERSCRIBE
+lives in UNIQUE_BOSS_KITS only — the classic rotation must not shift; the
+briefing rides the existing interlude state (no new GameState); rumors pick
+from the live rng, never the generator's; STANDALONE_QUEST_IDS stays 5; zero
+new metric keys / monkey keys / sounds; every file under 1500 logical lines;
+dev tests per step: `npm.cmd run test:dev -- --runInBand --testPathPatterns
+dungeon-crawl`.

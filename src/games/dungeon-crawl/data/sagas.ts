@@ -7,7 +7,7 @@
 
 import { QuestId, QUESTS } from './quests';
 
-export type SagaId = 'pale-procession' | 'undying-ember';
+export type SagaId = 'pale-procession' | 'undying-ember' | 'the-last-page';
 
 export interface SagaDef {
   id: SagaId;
@@ -16,6 +16,9 @@ export interface SagaDef {
   quests: readonly QuestId[]; // ordered chapters; last = finale
   // interludes[i] shows after completing chapter i; the last is the epilogue.
   interludes: readonly string[];
+  // v5 Wave G — a meta arc: hidden from the board until every non-meta saga
+  // is TOLD (metaUnlocked). Progress rides the same per-hero sagas map.
+  meta?: boolean;
 }
 
 export const SAGAS: Record<SagaId, SagaDef> = {
@@ -63,6 +66,31 @@ export const SAGAS: Record<SagaId, SagaDef> = {
         'dead. But it is cold, and it is patient, and so are you.',
     ],
   },
+  // v5 Wave G — the meta-saga: hidden until both tales above are TOLD. Both
+  // arcs planted it (the Warden's unfound last page; the ember's patient
+  // author) — this is the hand beneath them, and the game's final story.
+  'the-last-page': {
+    id: 'the-last-page',
+    name: 'THE LAST PAGE',
+    blurb: 'Both tales ended a page short. Someone is still writing.',
+    quests: ['the-blank-ledger', 'the-ink-below', 'the-underscribe'],
+    meta: true,
+    interludes: [
+      'The Warden’s ledger, found at last — and it is still keeping itself. ' +
+        'Names appear in a slow, patient hand: every soul in Lastlight, in ' +
+        'order of their leaving. The last page has been torn away. The tear ' +
+        'is fresh. The ink trail leads down, and it is still wet.',
+      'Beneath the vaults a spring of black water rises through the drowned ' +
+        'dark, and the water is ink. Words form and unform in its current. ' +
+        'You saw your own name surface, half-written, and sink again. The ' +
+        'hand that owns this well writes from below the ash. Go end the ' +
+        'sentence.',
+      'The Underscribe is stopped, its pen split, its great page blank. It ' +
+        'only ever recorded what WOULD be, and it hated to be wrong. Above, ' +
+        'Lastlight’s lamps burn clean and the board hangs empty. You keep ' +
+        'the blank last page rolled in your pack. Write it yourself.',
+    ],
+  },
 };
 
 export const ALL_SAGA_IDS = Object.keys(SAGAS) as SagaId[];
@@ -95,6 +123,31 @@ export function currentChapter(
   const saga = SAGAS[sagaId];
   const done = chaptersDone(progress, sagaId);
   return done >= saga.quests.length ? null : saga.quests[done];
+}
+
+/** True when a saga is TOLD (every chapter complete) for this progress map. */
+export function sagaTold(
+  progress: Partial<Record<SagaId, number>> | undefined,
+  sagaId: SagaId,
+): boolean {
+  return chaptersDone(progress, sagaId) >= SAGAS[sagaId].quests.length;
+}
+
+/** v5 Wave G — every NON-meta saga TOLD: the hidden last page may be found. */
+export function metaUnlocked(progress: Partial<Record<SagaId, number>> | undefined): boolean {
+  return ALL_SAGA_IDS.filter(id => !SAGAS[id].meta).every(id => sagaTold(progress, id));
+}
+
+/** v5 Wave G — every saga TOLD, meta arcs included (the story is over). */
+export function allSagasTold(progress: Partial<Record<SagaId, number>> | undefined): boolean {
+  return ALL_SAGA_IDS.every(id => sagaTold(progress, id));
+}
+
+/** The sagas a hero's board (and sheet) may show — locked metas stay hidden. */
+export function visibleSagaIds(
+  progress: Partial<Record<SagaId, number>> | undefined,
+): SagaId[] {
+  return ALL_SAGA_IDS.filter(id => !SAGAS[id].meta || metaUnlocked(progress));
 }
 
 /* Sanity: every chapter id must exist in QUESTS (compile-time via QuestId,
