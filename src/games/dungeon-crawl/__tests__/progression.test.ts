@@ -251,7 +251,8 @@ describe('ProgressionController (roster)', () => {
     expect(controller.pendingLevelUp()).toBe(true);
     const choices = controller.draftChoices(new Rng(7));
     expect(choices.length).toBe(3);
-    // A thief's draft is training only — spells belong to the casters.
+    // A level-1 thief's draft is training only — techniques (Wave J) open
+    // at their minLevel bands (4+), spells belong to the casters.
     expect(choices.every(pick => pick.kind === 'boon')).toBe(true);
     const { level, gain } = controller.confirmLevelUp(choices[0]);
     expect(level).toBe(2);

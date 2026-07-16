@@ -3,7 +3,7 @@
 // through the game, and the Tab character sheet.
 
 import { ALL_BOON_IDS, BOONS } from '@/games/dungeon-crawl/data/boons';
-import { ALL_SPELL_IDS, SPELLS, spellsForClass } from '@/games/dungeon-crawl/data/spells';
+import { ALL_SPELL_IDS, SPELLS, spellNoun, spellsForClass } from '@/games/dungeon-crawl/data/spells';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
 import { Rng } from '@/games/dungeon-crawl/dungeon/rng';
 import { QUESTS } from '@/games/dungeon-crawl/data/quests';
@@ -42,6 +42,7 @@ interface GameInternals {
   state: string;
   player: { hp: number; spellCooldown(id: string): number };
   progression: { load(): void; selectHero(id: string): void };
+  projectiles: unknown[];
 }
 
 function internals(h: Harness): GameInternals {
@@ -72,20 +73,43 @@ function startWithClass(h: Harness, digit: string): Set<string> {
 }
 
 describe('spell data contract', () => {
-  test('six authored spells, class-gated to the casters', () => {
-    expect(ALL_SPELL_IDS).toHaveLength(6);
+  test('eighteen authored pages across all four classes (Wave J)', () => {
+    expect(ALL_SPELL_IDS).toHaveLength(18);
     for (const id of ALL_SPELL_IDS) {
       const spell = SPELLS[id];
       expect(spell.id).toBe(id);
       expect(spell.name.length).toBeGreaterThan(0);
       expect(spell.blurb.length).toBeGreaterThan(0);
       expect(spell.cooldown).toBeGreaterThan(0);
-      expect(['mage', 'cleric']).toContain(spell.classId);
+      expect(spell.minLevel).toBeGreaterThanOrEqual(1);
+      expect(['mage', 'cleric', 'fighter', 'thief']).toContain(spell.classId);
     }
-    expect(spellsForClass('mage')).toHaveLength(3);
-    expect(spellsForClass('cleric')).toHaveLength(3);
-    expect(spellsForClass('fighter')).toHaveLength(0);
-    expect(spellsForClass('thief')).toHaveLength(0);
+    expect(spellsForClass('mage')).toHaveLength(6);
+    expect(spellsForClass('cleric')).toHaveLength(6);
+    expect(spellsForClass('fighter')).toHaveLength(3);
+    expect(spellsForClass('thief')).toHaveLength(3);
+  });
+
+  test('level bands: casters keep three day-one pages; every martial page is banded', () => {
+    for (const classId of ['mage', 'cleric'] as const) {
+      const dayOne = spellsForClass(classId).filter(id => SPELLS[id].minLevel === 1);
+      expect(dayOne).toHaveLength(3); // the Wave D grimoire is untouched
+    }
+    for (const classId of ['fighter', 'thief'] as const) {
+      // Techniques all live at bands 4/6/8 — a fresh martial draft stays
+      // boons-only exactly as it played before Wave J.
+      const bands = spellsForClass(classId)
+        .map(id => SPELLS[id].minLevel)
+        .sort((a, b) => a - b);
+      expect(bands).toEqual([4, 6, 8]);
+    }
+  });
+
+  test('the discipline noun follows the class', () => {
+    expect(spellNoun('mage')).toBe('SPELL');
+    expect(spellNoun('cleric')).toBe('SPELL');
+    expect(spellNoun('fighter')).toBe('TECHNIQUE');
+    expect(spellNoun('thief')).toBe('TECHNIQUE');
   });
 
   test('sanitize keeps only real, class-legal spells', () => {
@@ -97,6 +121,7 @@ describe('spell data contract', () => {
     (payload.characters.cleric as unknown as { spells: string[] }).spells = [
       'cure-wounds', // legal
       'burning-hands', // mage-only — dropped
+      'smoke-bomb', // thief technique — dropped (Wave J rides the same gate)
       'wish', // not a spell — dropped
     ];
     store.save(payload);
@@ -122,6 +147,53 @@ describe('level-up draft mixing', () => {
     const choices = controller.draftChoices(new Rng(11));
     expect(choices.length).toBe(3);
     expect(choices.every(pick => pick.kind === 'spell')).toBe(true);
+  });
+
+  test('level bands gate the draft both ways (Wave J)', () => {
+    const controller = new ProgressionController();
+    controller.create('mage', new Rng(3));
+    const store = new CharacterStore();
+    const payload = store.load();
+    // Max the training and learn the three day-one pages so ONLY banded
+    // pages can appear.
+    for (const id of ALL_BOON_IDS) payload.characters.mage!.boons[id] = BOONS[id].maxStacks;
+    payload.characters.mage!.spells = ['burning-hands', 'frost-ray', 'blink'];
+    store.save(payload);
+    controller.load();
+    controller.selectHero('mage');
+
+    // Reaching level 2: every deeper page is out of band — the draft is empty.
+    expect(controller.draftChoices(new Rng(11))).toHaveLength(0);
+
+    // Reaching level 4: MAGIC MISSILE (band 4) and nothing deeper.
+    payload.characters.mage!.level = 3;
+    store.save(payload);
+    controller.load();
+    controller.selectHero('mage');
+    expect(controller.draftChoices(new Rng(11))).toEqual([
+      { kind: 'spell', id: 'magic-missile' },
+    ]);
+  });
+
+  test('martial techniques join the draft at their bands (Wave J)', () => {
+    const controller = new ProgressionController();
+    controller.create('fighter', new Rng(3));
+    const store = new CharacterStore();
+    const payload = store.load();
+    for (const id of ALL_BOON_IDS) payload.characters.fighter!.boons[id] = BOONS[id].maxStacks;
+    store.save(payload);
+    controller.load();
+    controller.selectHero('fighter');
+
+    // Reaching level 2: no technique is in band yet — pre-Wave-J feel intact.
+    expect(controller.draftChoices(new Rng(5))).toHaveLength(0);
+
+    // Reaching level 4: WAR CRY arrives, alone.
+    payload.characters.fighter!.level = 3;
+    store.save(payload);
+    controller.load();
+    controller.selectHero('fighter');
+    expect(controller.draftChoices(new Rng(5))).toEqual([{ kind: 'spell', id: 'war-cry' }]);
   });
 
   test('confirmLevelUp learns the spell once and persists it', () => {
@@ -165,9 +237,51 @@ describe('casting through the game', () => {
     expect(metrics(h).spells_cast).toBe(1);
   });
 
+  test('a martial technique casts through the same pipeline (Wave J)', () => {
+    const h = initGame(new DungeonCrawlGame());
+    startWithClass(h, 'Digit1'); // fighter
+    const game = internals(h);
+
+    // Teach the fighter SECOND WIND directly on the save.
+    const store = new CharacterStore();
+    const payload = store.load();
+    payload.characters.fighter!.spells = ['second-wind'];
+    store.save(payload);
+    game.progression.load();
+    game.progression.selectHero('fighter');
+
+    game.departOnQuest(QUESTS.endless);
+    game.player.hp = 1;
+    game.castActiveSpell();
+    h.game.update(1 / 60);
+    expect(game.player.hp).toBeGreaterThan(1);
+    expect(metrics(h).spells_cast).toBe(1);
+    expect(game.player.spellCooldown('second-wind')).toBeGreaterThan(0);
+  });
+
+  test('FAN OF KNIVES throws eight blades without spending ammo (Wave J)', () => {
+    const h = initGame(new DungeonCrawlGame());
+    startWithClass(h, 'Digit2'); // thief
+    const game = internals(h);
+
+    const store = new CharacterStore();
+    const payload = store.load();
+    payload.characters.thief!.spells = ['fan-of-knives'];
+    store.save(payload);
+    game.progression.load();
+    game.progression.selectHero('thief');
+
+    game.departOnQuest(QUESTS.endless);
+    const before = game.projectiles.length;
+    game.castActiveSpell();
+    expect(game.projectiles.length).toBe(before + 8);
+    h.game.update(1 / 60);
+    expect(metrics(h).spells_cast).toBe(1);
+  });
+
   test('an empty grimoire ignores the cast key safely', () => {
     const h = initGame(new DungeonCrawlGame());
-    const held = startWithClass(h, 'Digit1'); // fighter — no spells ever
+    const held = startWithClass(h, 'Digit1'); // fighter — nothing learned yet
     const game = internals(h);
     game.departOnQuest(QUESTS.endless);
     held.add('KeyV');

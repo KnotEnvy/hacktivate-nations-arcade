@@ -19,7 +19,7 @@ import {
 } from '../data/progression';
 import { applyLineageNudge, LINEAGE_TUNING, LineageId } from '../data/lineages';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
-import { SpellId, spellsForClass } from '../data/spells';
+import { SPELLS, SpellId, spellsForClass } from '../data/spells';
 import { ItemId, mergeItemEffects } from '../data/items';
 import {
   isStatMilestone,
@@ -158,8 +158,12 @@ export class ProgressionController {
     const pool: DraftPick[] = ALL_BOON_IDS.filter(
       id => (hero.boons[id] ?? 0) < BOONS[id].maxStacks,
     ).map(id => ({ kind: 'boon' as const, id }));
+    // v6 Wave J — level bands: a page drafts only once the level being
+    // REACHED meets its minLevel (deep heroes draft deeper magic).
     for (const id of spellsForClass(hero.classId)) {
-      if (!hero.spells.includes(id)) pool.push({ kind: 'spell', id });
+      if (!hero.spells.includes(id) && hero.level + 1 >= SPELLS[id].minLevel) {
+        pool.push({ kind: 'spell', id });
+      }
     }
     const statCards: DraftPick[] = isStatMilestone(hero.level + 1)
       ? STAT_FAVORED[hero.classId]

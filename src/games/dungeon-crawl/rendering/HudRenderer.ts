@@ -22,7 +22,7 @@ import {
   ItemId,
 } from '../data/items';
 import { SCROLLS, ScrollId } from '../data/scrolls';
-import { SPELLS, SpellId } from '../data/spells';
+import { SPELLS, SpellId, spellNoun } from '../data/spells';
 import { ALL_STAT_IDS, STAT_FAVORED, statMod, STATS } from '../data/stats';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
 import type { SavedHero } from '../persistence/CharacterStore';
@@ -1052,12 +1052,13 @@ export class HudRenderer {
       const boon = BOONS[id as BoonId];
       y = row(`${boon.icon} ${boon.name}${(count ?? 0) > 1 ? ` ×${count}` : ''}`, rightX, y, boon.color);
     }
-    y = header('GRIMOIRE', rightX, y + 16);
+    // v6 Wave J — martial classes keep a TECHNIQUES page, not a grimoire.
+    const martial = spellNoun(classDef.id) === 'TECHNIQUE';
+    y = header(martial ? 'TECHNIQUES' : 'GRIMOIRE', rightX, y + 16);
     if (hero.spells.length === 0) {
-      const line =
-        classDef.id === 'mage' || classDef.id === 'cleric'
-          ? '— level up to learn spells —'
-          : '— the blade is spell enough —';
+      const line = martial
+        ? '— level up to learn techniques —'
+        : '— level up to learn spells —';
       y = row(line, rightX, y, PALETTE.textDim);
     }
     for (const id of hero.spells) {
@@ -1239,7 +1240,12 @@ export class HudRenderer {
           );
         }
       } else if (pick.kind === 'spell') {
-        ctx.fillText('SPELL — cast with V', x + cardW / 2, y + cardH - 14);
+        // v6 Wave J — the noun follows the discipline (technique vs spell).
+        ctx.fillText(
+          `${spellNoun(SPELLS[pick.id].classId)} — press V`,
+          x + cardW / 2,
+          y + cardH - 14,
+        );
       } else {
         // v5 Wave E — a milestone favored-score bump.
         ctx.fillText(`+1 ${STATS[pick.id].abbr} — the score rises`, x + cardW / 2, y + cardH - 14);

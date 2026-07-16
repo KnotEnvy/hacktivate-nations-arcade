@@ -7,7 +7,7 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { AbilityId, CLASS_TUNING } from '../data/classes';
-import { EXPLOSIONS, HAZARDS, PALETTE, PICKUPS, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
+import { EXPLOSIONS, HAZARDS, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
 import { STAT_TUNING } from '../data/stats';
@@ -520,20 +520,30 @@ export class Combat {
     this.host.playSound('whoosh', 0.5);
   }
 
-  /** v3 — Scroll of Frost (and v4 Frost Ray): monsters in range freeze mid-step. */
+  /**
+   * v3 — Scroll of Frost (and v4 Frost Ray): monsters in range freeze
+   * mid-step. v6 Wave J generalizes the center + color so WEB roots the pack
+   * AHEAD of the player and other root effects can ride the same verb.
+   */
   frostNova(
     radius: number = SCROLL_TUNING.FROST_RADIUS,
     stun: number = SCROLL_TUNING.FROST_STUN,
+    centerX?: number,
+    centerY?: number,
+    color = '#9ad8ff',
+    sparkColor = '#d8ecff',
   ): void {
     const player = this.host.player();
+    const cx = centerX ?? player.x;
+    const cy = centerY ?? player.y;
     this.host.playSound('whoosh', 0.55);
     this.host.shake.add(0.2);
-    this.host.particles.burst(player.x, player.y, '#9ad8ff', 30, 220, 0.7);
+    this.host.particles.burst(cx, cy, color, 30, 220, 0.7);
     for (const enemy of this.host.enemies()) {
       if (!enemy.alive || enemy.dormant) continue;
-      if (Math.hypot(enemy.x - player.x, enemy.y - player.y) > radius) continue;
+      if (Math.hypot(enemy.x - cx, enemy.y - cy) > radius) continue;
       enemy.stunned = Math.max(enemy.stunned, stun);
-      this.host.particles.burst(enemy.x, enemy.y, '#d8ecff', 6, 70, 0.4);
+      this.host.particles.burst(enemy.x, enemy.y, sparkColor, 6, 70, 0.4);
     }
   }
 
@@ -690,6 +700,207 @@ export class Combat {
         player.invuln = Math.max(player.invuln, SPELL_TUNING.SANCTUARY_INVULN * scholarMult);
         this.host.playSound('powerup', 0.5);
         this.host.particles.burst(player.x, player.y, '#9aa5b5', 14, 110, 0.6);
+        break;
+
+      // ---- v6 Wave J: the deeper grimoire (mage) ----
+      case 'magic-missile': {
+        // Three unerring darts — homing player daggers fanned about facing.
+        const base = Math.atan2(player.faceY, player.faceX);
+        const dmg =
+          SPELL_TUNING.MAGIC_MISSILE_DAMAGE + player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE;
+        for (let i = 0; i < SPELL_TUNING.MAGIC_MISSILE_COUNT; i++) {
+          const a =
+            base + (i - (SPELL_TUNING.MAGIC_MISSILE_COUNT - 1) / 2) * SPELL_TUNING.MAGIC_MISSILE_SPREAD;
+          this.host.addProjectile(
+            new Projectile(
+              'dagger',
+              player.x,
+              player.y,
+              Math.cos(a) * SPELL_TUNING.MAGIC_MISSILE_SPEED,
+              Math.sin(a) * SPELL_TUNING.MAGIC_MISSILE_SPEED,
+              dmg,
+              false,
+              SPELL_TUNING.MAGIC_MISSILE_HOMING,
+            ),
+          );
+        }
+        this.host.playSound('whoosh', 0.5);
+        this.host.particles.burst(player.x, player.y, '#d29aff', 10, 90, 0.4);
+        break;
+      }
+      case 'web':
+        // Sticky strands root the pack AHEAD — the nova verb, re-centered.
+        this.frostNova(
+          SPELL_TUNING.WEB_RADIUS,
+          SPELL_TUNING.WEB_STUN,
+          player.x + player.faceX * SPELL_TUNING.WEB_DIST,
+          player.y + player.faceY * SPELL_TUNING.WEB_DIST,
+          '#e8e3d0',
+          '#f5f2e4',
+        );
+        break;
+      case 'lightning': {
+        // A crooked bolt lashes the nearest foe in range (boss as fallback).
+        const dmg =
+          SPELL_TUNING.LIGHTNING_DAMAGE + player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE;
+        let target: Enemy | null = null;
+        let bestDist: number = SPELL_TUNING.LIGHTNING_RANGE;
+        for (const enemy of this.host.enemies()) {
+          if (!enemy.alive || enemy.dormant) continue;
+          const dist = Math.hypot(enemy.x - player.x, enemy.y - player.y);
+          if (dist < bestDist) {
+            bestDist = dist;
+            target = enemy;
+          }
+        }
+        const boss = this.host.boss();
+        if (target) {
+          this.host.particles.burst(target.x, target.y, '#ffe95e', 18, 160, 0.5);
+          this.woundEnemy(target, dmg);
+        } else if (
+          boss?.alive &&
+          Math.hypot(boss.x - player.x, boss.y - player.y) < SPELL_TUNING.LIGHTNING_RANGE
+        ) {
+          this.host.particles.burst(boss.x, boss.y, '#ffe95e', 18, 160, 0.5);
+          this.hitBoss(dmg);
+        }
+        this.host.shake.add(0.25);
+        this.host.playSound('explosion', 0.35);
+        this.host.particles.burst(player.x, player.y, '#ffe95e', 10, 120, 0.4);
+        break;
+      }
+
+      // ---- v6 Wave J: the deeper prayer book (cleric) ----
+      case 'spirit-hammer': {
+        // A hammer of faith — one strong homing player projectile.
+        this.host.addProjectile(
+          new Projectile(
+            'dagger',
+            player.x,
+            player.y,
+            player.faceX * SPELL_TUNING.SPIRIT_HAMMER_SPEED,
+            player.faceY * SPELL_TUNING.SPIRIT_HAMMER_SPEED,
+            SPELL_TUNING.SPIRIT_HAMMER_DAMAGE,
+            false,
+            SPELL_TUNING.SPIRIT_HAMMER_HOMING,
+          ),
+        );
+        this.host.playSound('whoosh', 0.5);
+        this.host.particles.burst(player.x, player.y, '#ffd27a', 10, 90, 0.4);
+        break;
+      }
+      case 'prayer':
+        // The war-litany: hard skin, heavy hands.
+        player.addBuff('strength');
+        player.addBuff('stoneskin');
+        this.host.playSound('powerup', 0.5);
+        this.host.particles.burst(player.x, player.y, '#f5efdc', 16, 120, 0.6);
+        break;
+      case 'flame-strike': {
+        // A column of holy fire falls on the nearest foe (short fall ahead
+        // when none is near) — the player-sourced boom verb.
+        const target = this.nearestEnemyTo(player.x, player.y) ?? {
+          x: player.x + player.faceX * SPELL_TUNING.FLAME_STRIKE_FALLBACK_DIST,
+          y: player.y + player.faceY * SPELL_TUNING.FLAME_STRIKE_FALLBACK_DIST,
+        };
+        this.bombs.push({
+          fromX: target.x,
+          fromY: target.y,
+          toX: target.x,
+          toY: target.y,
+          t: 0,
+          flight: 0.1, // falls where it lands — no lob arc
+          source: 'player',
+          boom: {
+            fuse: SPELL_TUNING.FLAME_STRIKE_FUSE,
+            radius: SPELL_TUNING.FLAME_STRIKE_RADIUS,
+            damage:
+              SPELL_TUNING.FLAME_STRIKE_DAMAGE +
+              player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE,
+          },
+        });
+        this.host.playSound('whoosh', 0.55);
+        break;
+      }
+
+      // ---- v6 Wave J: fighter techniques ----
+      case 'war-cry':
+        // A roar staggers the room: brief stun + shove all around.
+        this.host.playSound('powerup', 0.5);
+        this.host.shake.add(0.35);
+        this.host.particles.burst(player.x, player.y, '#ff6a4d', 22, 190, 0.55);
+        for (const enemy of this.host.enemies()) {
+          if (!enemy.alive || enemy.dormant) continue;
+          const dx = enemy.x - player.x;
+          const dy = enemy.y - player.y;
+          const dist = Math.hypot(dx, dy) || 1;
+          if (dist > SPELL_TUNING.WAR_CRY_RADIUS + enemy.radius) continue;
+          enemy.stunned = Math.max(enemy.stunned, SPELL_TUNING.WAR_CRY_STUN);
+          enemy.applyKnockback(dx / dist, dy / dist, SPELL_TUNING.WAR_CRY_PUSH);
+        }
+        break;
+      case 'second-wind':
+        // Martial grit — a flat heal, no WIS fold.
+        player.heal(SPELL_TUNING.SECOND_WIND_HP);
+        this.host.playSound('extraLife', 0.5);
+        this.host.particles.burst(player.x, player.y, '#8fe08a', 14, 110, 0.6);
+        break;
+      case 'sunder':
+        // The blade flies through everything in its path (STR rides
+        // swordDamage for free).
+        this.host.addProjectile(
+          new Projectile(
+            'dagger',
+            player.x,
+            player.y,
+            player.faceX * SPELL_TUNING.SUNDER_SPEED,
+            player.faceY * SPELL_TUNING.SUNDER_SPEED,
+            player.swordDamage() + SPELL_TUNING.SUNDER_BONUS_DAMAGE,
+            true,
+          ),
+        );
+        this.host.playSound('sword_swing', 0.55);
+        this.host.particles.burst(player.x, player.y, '#d8dee8', 10, 100, 0.4);
+        break;
+
+      // ---- v6 Wave J: thief techniques ----
+      case 'smoke-bomb':
+        // Vanish in a grey bloom — the hide verb plus a beat of confusion.
+        player.startHide();
+        this.frostNova(
+          SPELL_TUNING.SMOKE_RADIUS,
+          SPELL_TUNING.SMOKE_STUN,
+          player.x,
+          player.y,
+          '#8d97a8',
+          '#b8c0cc',
+        );
+        break;
+      case 'fan-of-knives': {
+        // Eight blades leave your hands at once (no ammo cost).
+        for (let i = 0; i < SPELL_TUNING.FAN_KNIVES_COUNT; i++) {
+          const a = (i / SPELL_TUNING.FAN_KNIVES_COUNT) * Math.PI * 2;
+          this.host.addProjectile(
+            new Projectile(
+              'dagger',
+              player.x,
+              player.y,
+              Math.cos(a) * PLAYER.DAGGER_SPEED,
+              Math.sin(a) * PLAYER.DAGGER_SPEED,
+              player.daggerDamage(),
+              player.daggersPierce(),
+            ),
+          );
+        }
+        this.host.playSound('whoosh', 0.5);
+        this.host.particles.burst(player.x, player.y, '#c9d2e0', 12, 110, 0.4);
+        break;
+      }
+      case 'venom-edge':
+        // Black oil on the blade — your cuts bite deep for a while.
+        player.addBuff('strength');
+        this.host.playSound('powerup', 0.5);
+        this.host.particles.burst(player.x, player.y, '#7ddb6a', 14, 110, 0.6);
         break;
     }
   }
