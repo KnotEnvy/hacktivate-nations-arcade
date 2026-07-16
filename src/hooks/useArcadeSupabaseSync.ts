@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { getChallengeTemplate } from '@/lib/challenges';
 import { DEFAULT_UNLOCKED_GAME_IDS } from '@/lib/unlocks';
+import { GameSaveSync, type GuestSaveOffer } from '@/services/GameSaveSync';
 import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import {
   SupabaseSyncOutbox,
@@ -57,6 +58,9 @@ interface UseArcadeSupabaseSyncResult {
   queueSyncOperation: (operation: SyncOperation) => void;
   retryPendingSyncs: () => Promise<void>;
   reconcileTrustedBalance: (balance: number) => void;
+  pushGameSave: (gameId?: string) => void;
+  guestSaveOffers: GuestSaveOffer[];
+  resolveGuestSaveOffer: (gameId: string, adopt: boolean) => void;
 }
 
 export function useArcadeSupabaseSync({
@@ -86,6 +90,13 @@ export function useArcadeSupabaseSync({
   const flushOutboxInProgressRef = useRef(false);
   const isHydratingRef = useRef(false);
   const hasHydratedRef = useRef(false);
+  const [guestSaveOffers, setGuestSaveOffers] = useState<GuestSaveOffer[]>([]);
+  const lastSaveReconcileOwnerRef = useRef<string | null>(null);
+
+  const gameSaveSync = useMemo(
+    () => (session?.user.id ? new GameSaveSync(session.user.id) : null),
+    [session?.user.id]
+  );
 
   useEffect(() => {
     syncOutbox.setOwner(session?.user.id ?? null);
@@ -166,6 +177,72 @@ export function useArcadeSupabaseSync({
     },
     [currencyService, runWhileHydrating, userService]
   );
+
+  const pushGameSave = useCallback(
+    (gameId?: string) => {
+      if (!gameSaveSync || !supabaseService || !session?.access_token) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      void gameSaveSync.pushIfChanged(supabaseService, session.access_token, gameId);
+    },
+    [gameSaveSync, session?.access_token, supabaseService]
+  );
+
+  const resolveGuestSaveOffer = useCallback(
+    (gameId: string, adopt: boolean) => {
+      if (gameSaveSync) {
+        if (adopt) {
+          if (gameSaveSync.adoptGuestSave(gameId)) {
+            pushGameSave(gameId);
+          }
+        } else {
+          gameSaveSync.declineGuestSave(gameId);
+        }
+      }
+      setGuestSaveOffers(previous => previous.filter(offer => offer.gameId !== gameId));
+    },
+    [gameSaveSync, pushGameSave]
+  );
+
+  // Reconcile cloud saves once per signed-in owner, after account hydration
+  // (which also guarantees the local owner key already points at this user).
+  useEffect(() => {
+    const accessToken = session?.access_token;
+    if (!gameSaveSync || !supabaseService || !accessToken) return;
+    if (isAccountHydrating) return;
+    if (lastSaveReconcileOwnerRef.current === session.user.id) return;
+    lastSaveReconcileOwnerRef.current = session.user.id;
+
+    let active = true;
+    void gameSaveSync
+      .reconcile(supabaseService, accessToken)
+      .then(offers => {
+        if (active && offers.length > 0) {
+          setGuestSaveOffers(offers);
+        }
+      })
+      .catch(error => {
+        console.warn('Game save reconcile failed:', error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [gameSaveSync, isAccountHydrating, session, supabaseService]);
+
+  // Best-effort push when the tab is backgrounded or closed mid-session.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const accessToken = session?.access_token;
+    if (!gameSaveSync || !supabaseService || !accessToken) return;
+
+    const pushOnHide = () => {
+      void gameSaveSync.pushIfChanged(supabaseService, accessToken);
+    };
+    window.addEventListener('pagehide', pushOnHide);
+    return () => {
+      window.removeEventListener('pagehide', pushOnHide);
+    };
+  }, [gameSaveSync, session?.access_token, supabaseService]);
 
   const flushPendingSyncs = useCallback(async () => {
     if (
@@ -579,5 +656,8 @@ export function useArcadeSupabaseSync({
     queueSyncOperation,
     retryPendingSyncs,
     reconcileTrustedBalance,
+    pushGameSave,
+    guestSaveOffers,
+    resolveGuestSaveOffer,
   };
 }

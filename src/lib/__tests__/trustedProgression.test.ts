@@ -6,6 +6,8 @@ import {
   calculateTrustedGameReward,
   getProcessedSessionMutationIds,
   getTrustedSessionAchievementIds,
+  MAX_TRUSTED_TIME_PLAYED_MS,
+  TrustedProgressionValidationError,
   validateAchievementIds,
   validateTrustedChallengeSync,
   validateTrustedGameSession,
@@ -44,6 +46,22 @@ describe('trustedProgression helpers', () => {
         powerup_types: 3.1,
       },
     });
+  });
+
+  test('validateTrustedGameSession rejects over-limit sessions with the typed validation error', () => {
+    const overLimit = () =>
+      validateTrustedGameSession({
+        gameId: 'runner',
+        score: 100,
+        pickups: 1,
+        timePlayedMs: MAX_TRUSTED_TIME_PLAYED_MS + 1,
+        clientMutationId: 'over-limit',
+      });
+
+    // The typed error is what lets the API route answer 400 (permanent
+    // rejection) instead of 500 — a 500 would poison the client sync outbox.
+    expect(overLimit).toThrow(TrustedProgressionValidationError);
+    expect(overLimit).toThrow('timePlayedMs exceeds the supported limit.');
   });
 
   test('validateTrustedGameSession rejects malformed numeric values', () => {

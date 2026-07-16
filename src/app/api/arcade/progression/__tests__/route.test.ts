@@ -309,4 +309,32 @@ describe('POST /api/arcade/progression', () => {
         'Failed to commit trusted game session atomically: function public.commit_trusted_game_session does not exist',
     });
   });
+
+  test('returns a 400 (not 500) when the session payload fails validation', async () => {
+    const privilegedClient = createPrivilegedClient();
+
+    mockedCreateSupabaseServerClient
+      .mockReturnValueOnce(createAuthClient() as never)
+      .mockReturnValueOnce(privilegedClient as never);
+    const { POST } = await loadRoute();
+
+    const response = await POST(
+      createRequest({
+        action: 'record-session',
+        gameId: 'runner',
+        score: 1000,
+        pickups: 1,
+        timePlayedMs: 5 * 60 * 60 * 1000,
+        clientMutationId: 'over-limit-1',
+      })
+    );
+
+    // 400 marks the rejection as permanent so the sync outbox discards the
+    // entry; a 500 would be retried forever and block the queue behind it.
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: 'timePlayedMs exceeds the supported limit.',
+    });
+    expect(privilegedClient.rpc).not.toHaveBeenCalled();
+  });
 });

@@ -7,6 +7,7 @@ import { BoonId, BOON_TUNING } from '../data/boons';
 import { ClassDef, ClassId, ClassKit, CLASS_TUNING, DEFAULT_KIT } from '../data/classes';
 import { GEAR_TUNING, GearId } from '../data/gear';
 import { ItemEffects } from '../data/items';
+import { LINEAGE_TUNING, LineageId } from '../data/lineages';
 import { LevelGain } from '../data/progression';
 import { PLAYER, PICKUPS, PotionBuff } from '../data/constants';
 import { RelicId, RELIC_TUNING } from '../data/relics';
@@ -85,6 +86,11 @@ export class Player {
   killsSinceHeal = 0; // vampire fang counter
   phoenixUsed = 0; // consumed Phoenix Feather stacks
 
+  // Wave I — the bloodline (applied beside applyKit; 'human' is neutral).
+  lineage: LineageId = 'human';
+  stoneSenseSpent = false; // dwarf: recharged each floor by the game
+  luckUsed = false; // halfling: once per expedition (reset() = depart)
+
   reset(x: number, y: number): void {
     this.x = x;
     this.y = y;
@@ -121,6 +127,42 @@ export class Player {
     this.dashCooldown = 0;
     this.phoenixUsed = 0;
     this.spellCds.clear();
+    this.lineage = 'human';
+    this.stoneSenseSpent = false;
+    this.luckUsed = false;
+  }
+
+  /** Wave I — set the hero's bloodline (call right after applyKit). */
+  applyLineage(id: LineageId): void {
+    this.lineage = id;
+  }
+
+  /** Wave I — a new floor re-arms the dwarf's trap warning. */
+  rechargeStoneSense(): void {
+    this.stoneSenseSpent = false;
+  }
+
+  /**
+   * Wave I — STONE-SENSE: a dwarf shrugs off the first trap each floor.
+   * Deterministic (no roll); only fires when the hit would actually land.
+   */
+  tryConsumeStoneSense(): boolean {
+    if (this.lineage !== 'dwarf' || this.stoneSenseSpent || this.invuln > 0) return false;
+    this.stoneSenseSpent = true;
+    return true;
+  }
+
+  /**
+   * Wave I — LUCK'S LAST WORD: a halfling's killing blow misses once per
+   * expedition. Checked after phoenix and survivor (magic, grit, then luck).
+   */
+  tryConsumeLuck(): boolean {
+    if (this.lineage !== 'halfling' || this.luckUsed) return false;
+    this.luckUsed = true;
+    this.hp = LINEAGE_TUNING.HALFLING_ESCAPE_HP;
+    this.invuln = LINEAGE_TUNING.HALFLING_ESCAPE_INVULN;
+    this.hitFlash = 0;
+    return true;
   }
 
   // v4 Wave D — grimoire cooldown plumbing (ticked in update).
@@ -280,7 +322,9 @@ export class Player {
       this.levelBonus.daggerCap +
       this.gearTier('quiver') * GEAR_TUNING.QUIVER_CAP +
       this.relicCount('dagger-sage') * RELIC_TUNING.DAGGER_SAGE_CAP_BONUS +
-      this.itemEffects.daggerCap
+      this.itemEffects.daggerCap +
+      // Wave I — KEEN QUIVER: one more blade rides an elf's sheath.
+      (this.lineage === 'elf' ? LINEAGE_TUNING.ELF_DAGGER_CAP : 0)
     );
   }
 

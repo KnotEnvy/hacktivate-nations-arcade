@@ -39,6 +39,7 @@ function heroFixture(
     scores: { ...STAT_BASES.fighter },
     equipment: {},
     stash: [],
+    lineage: 'human',
   };
 }
 

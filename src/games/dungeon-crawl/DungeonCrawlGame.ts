@@ -21,7 +21,8 @@ import {
   VIEW,
 } from './data/constants';
 import { BOON_TUNING } from './data/boons';
-import { ALL_CLASS_IDS, ClassId } from './data/classes';
+import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
+import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
 import { BOSS } from './data/enemies';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
@@ -62,7 +63,9 @@ import { HudRenderer, RecapStats } from './rendering/HudRenderer';
 import { TileRenderer } from './rendering/TileRenderer';
 
 type GameState =
+  | 'title'
   | 'classSelect'
+  | 'lineageSelect'
   | 'town'
   | 'playing'
   | 'relic'
@@ -422,8 +425,9 @@ export class DungeonCrawlGame extends BaseGame {
     this.particles.clear();
     this.musicIntensity = -1;
 
-    // v4.1 — the roster: every run opens on the hero select; each class keeps
-    // its own persistent hero. LASTLIGHT renders behind the overlay.
+    // v4.1 — the roster: each class keeps its own persistent hero. Wave I —
+    // every session now opens on the TITLE PAGE; Lastlight glows behind it
+    // and behind the roster overlay that follows.
     this.progression.load();
     this.progression.resetSessionCounters();
     this.retireHold = 0;
@@ -436,7 +440,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.nestsCleared = 0;
     this.spellsCast = 0;
     this.activeSpellIndex = 0;
-    this.state = 'classSelect';
+    this.state = 'title';
 
     this.enterTownWorld();
     this.syncExtendedData();
@@ -475,7 +479,9 @@ export class DungeonCrawlGame extends BaseGame {
       this.state === 'town' ||
       this.state === 'victory' ||
       this.state === 'interlude' ||
+      this.state === 'title' ||
       this.state === 'classSelect' ||
+      this.state === 'lineageSelect' ||
       (this.state === 'levelUp' && this.draftFlow.returnState === 'town') ||
       (this.state === 'inventory' && this.inventoryReturn === 'town') ||
       (this.state === 'sheet' && this.sheetReturn === 'town')
@@ -519,6 +525,7 @@ export class DungeonCrawlGame extends BaseGame {
       : null;
     this.stairsLocked = this.plan.isBossFloor;
     this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
+    this.player.rechargeStoneSense(); // Wave I — a new floor, a fresh warning
     this.minimap.resetFor(this.map);
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
@@ -579,8 +586,24 @@ export class DungeonCrawlGame extends BaseGame {
     }
 
     switch (this.state) {
+      case 'title': {
+        // Wave I — the opening page: any confirm turns it.
+        const input = this.services?.input;
+        const confirm =
+          input?.isKeyPressed('Space') || input?.isKeyPressed('Enter') || input?.isKeyPressed('KeyJ');
+        if (confirm && !this.confirmWas) {
+          this.state = 'classSelect';
+          this.services?.audio?.playSound?.('success', { volume: 0.5 });
+        }
+        break;
+      }
       case 'classSelect': {
         const next = this.draftFlow.updateClassSelect();
+        if (next) this.state = next;
+        break;
+      }
+      case 'lineageSelect': {
+        const next = this.draftFlow.updateLineageSelect();
         if (next) this.state = next;
         break;
       }
@@ -1159,6 +1182,13 @@ export class DungeonCrawlGame extends BaseGame {
   /** Single damage funnel for the player. */
   private damagePlayer(amount: number, cause: DeathCause): void {
     if (this.state !== 'playing') return;
+    // Wave I — STONE-SENSE: the rock warns a dwarf of the first trap each
+    // floor (deterministic, so it fires before any dodge roll).
+    if (cause === 'hazard' && this.player.tryConsumeStoneSense()) {
+      this.services?.audio?.playSound?.('collision', { volume: 0.25 });
+      this.particles.burst(this.player.x, this.player.y, '#9aa0a8', 10, 90, 0.4);
+      return;
+    }
     // v3 — Blur Cloak: sometimes the blow finds only afterimage.
     const blur = this.player.relicCount('blur-cloak');
     if (blur > 0 && this.player.invuln <= 0) {
@@ -1211,6 +1241,14 @@ export class DungeonCrawlGame extends BaseGame {
         this.services?.audio?.playSound?.('extraLife', { volume: 0.7 });
         this.particles.burst(this.player.x, this.player.y, '#ffd24a', 26, 180, 0.8);
         this.showBanner('SHEER GRIT', 'DEATH REFUSED — ONCE');
+        return;
+      }
+      // Wave I — a halfling's luck gets the last word (after magic and grit).
+      if (this.player.tryConsumeLuck()) {
+        this.shake.add(0.6);
+        this.services?.audio?.playSound?.('extraLife', { volume: 0.7 });
+        this.particles.burst(this.player.x, this.player.y, '#d8c96a', 26, 180, 0.8);
+        this.showBanner("LUCK'S LAST WORD", 'THE BLOW MISSES — ONCE');
         return;
       }
       this.openRecap(cause);
@@ -1614,6 +1652,9 @@ export class DungeonCrawlGame extends BaseGame {
       });
     }
     if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
+    if (this.state === 'title') {
+      this.hud.renderTitle(ctx, this.gameTime);
+    }
     if (this.state === 'classSelect') {
       this.hud.renderClassSelect(
         ctx,
@@ -1623,8 +1664,18 @@ export class DungeonCrawlGame extends BaseGame {
         'your heroes persist and grow · ← → · SPACE · 1-4',
         id => {
           const hero = this.progression.heroFor(id);
-          return hero ? { name: hero.name, level: hero.level } : null;
+          return hero
+            ? { name: hero.name, level: hero.level, lineage: LINEAGES[hero.lineage].name }
+            : null;
         },
+      );
+    }
+    if (this.state === 'lineageSelect' && this.draftFlow.pendingClass) {
+      this.hud.renderLineageSelect(
+        ctx,
+        ALL_LINEAGE_IDS,
+        this.draftFlow.lineageIndex,
+        CLASSES[this.draftFlow.pendingClass].name,
       );
     }
     if (this.state === 'relic') {

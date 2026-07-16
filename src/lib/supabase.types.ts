@@ -165,6 +165,27 @@ export interface Database {
         };
         Relationships: [];
       };
+      game_saves: {
+        Row: {
+          user_id: string;
+          game_id: string;
+          payload: Json;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          game_id: string;
+          payload: Json;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          game_id?: string;
+          payload?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       leaderboard_scores: {
         Row: {
           id: string;
@@ -255,6 +276,13 @@ export interface Database {
           _unlocked_games: string[];
         };
         Returns: { balance: number; unlocked_tiers: number[]; unlocked_games: string[] }[];
+      };
+      upsert_game_save: {
+        Args: {
+          _game_id: string;
+          _payload: Json;
+        };
+        Returns: string;
       };
       record_leaderboard_score: {
         Args: {

@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { Session } from '@supabase/supabase-js';
 import { getSupabaseBrowserClient } from '@/lib/supabase';
+import { GameSaveSync } from '@/services/GameSaveSync';
 import { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 import { SupabaseSyncOutbox } from '@/services/SupabaseSyncOutbox';
 import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
@@ -163,6 +164,12 @@ const mockHydrationQueries = () => {
   jest
     .spyOn(SupabaseArcadeService.prototype, 'fetchChallenges')
     .mockResolvedValue([]);
+  jest
+    .spyOn(SupabaseArcadeService.prototype, 'fetchGameSave')
+    .mockResolvedValue(null);
+  jest
+    .spyOn(SupabaseArcadeService.prototype, 'upsertGameSave')
+    .mockResolvedValue('2026-07-15T10:00:00.000Z');
 };
 
 const flushEffects = async () => {
@@ -259,6 +266,67 @@ describe('useArcadeSupabaseSync', () => {
   afterEach(() => {
     jest.restoreAllMocks();
     jest.useRealTimers();
+  });
+
+  it('reconciles cloud game saves exactly once after account hydration', async () => {
+    const reconcileSpy = jest
+      .spyOn(GameSaveSync.prototype, 'reconcile')
+      .mockResolvedValue([]);
+
+    renderSupabaseSyncHook();
+
+    await waitFor(() => {
+      expect(reconcileSpy).toHaveBeenCalledTimes(1);
+    });
+    await flushEffects();
+    expect(reconcileSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('surfaces a guest save offer and resolves it one time', async () => {
+    jest
+      .spyOn(GameSaveSync.prototype, 'reconcile')
+      .mockResolvedValue([{ gameId: 'dungeon-crawl', title: 'Dungeon Crawl' }]);
+    const declineSpy = jest
+      .spyOn(GameSaveSync.prototype, 'declineGuestSave')
+      .mockImplementation(() => {});
+
+    const { result } = renderSupabaseSyncHook();
+
+    await waitFor(() => {
+      expect(result.current.guestSaveOffers).toHaveLength(1);
+    });
+
+    act(() => {
+      result.current.resolveGuestSaveOffer('dungeon-crawl', false);
+    });
+
+    expect(declineSpy).toHaveBeenCalledWith('dungeon-crawl');
+    expect(result.current.guestSaveOffers).toEqual([]);
+  });
+
+  it('pushGameSave delegates to a scoped pushIfChanged', async () => {
+    jest.spyOn(GameSaveSync.prototype, 'reconcile').mockResolvedValue([]);
+    const pushSpy = jest
+      .spyOn(GameSaveSync.prototype, 'pushIfChanged')
+      .mockResolvedValue();
+
+    const { result } = renderSupabaseSyncHook();
+
+    await waitFor(() => {
+      expect(result.current.supabaseService).not.toBeNull();
+    });
+
+    act(() => {
+      result.current.pushGameSave('dungeon-crawl');
+    });
+
+    await waitFor(() => {
+      expect(pushSpy).toHaveBeenCalledWith(
+        expect.any(SupabaseArcadeService),
+        'token-123',
+        'dungeon-crawl'
+      );
+    });
   });
 
   it('queues a profile sync when the permitted debounced write fails', async () => {

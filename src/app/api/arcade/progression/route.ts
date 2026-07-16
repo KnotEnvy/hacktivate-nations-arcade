@@ -11,6 +11,7 @@ import {
   buildTrustedChallengeProgressUpdate,
   buildTrustedSessionProgressionState,
   calculateTrustedGameReward,
+  TrustedProgressionValidationError,
   validateAchievementIds,
   validateTrustedChallengeSync,
   validateTrustedGameSession,
@@ -619,6 +620,11 @@ export async function POST(request: Request) {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : 'Trusted progression request failed.';
+    // Payload rejections are permanent: answer 400 so the client outbox discards
+    // the operation instead of retrying a poisoned entry forever.
+    if (error instanceof TrustedProgressionValidationError) {
+      return jsonError(message, 400);
+    }
     return jsonError(message, 500);
   }
 }

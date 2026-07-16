@@ -89,7 +89,9 @@ export abstract class BaseGame implements GameModule {
   }
 
   getScore(): GameScore {
-    const timePlayedMs = this.isRunning ? Date.now() - this.startTime : this.gameTime;
+    // gameTime accumulates dt only while running and unpaused — wall clock would
+    // count hidden-tab/idle hours and overflow the trusted-progression time cap.
+    const timePlayedMs = Math.round(this.gameTime * 1000);
     const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services?.currency?.calculateGameReward?.(
       this.score,
@@ -124,7 +126,6 @@ export abstract class BaseGame implements GameModule {
     if (!this.isRunning) return;
     
     this.isRunning = false;
-    this.gameTime = Date.now() - this.startTime; 
     const finalScore = this.getScore();
     
     //play game over sound

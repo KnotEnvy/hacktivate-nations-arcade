@@ -168,6 +168,11 @@ describe('class-select flow (public metric contract)', () => {
   test('browsing with nav keys alone never starts the run', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
+    // Wave I — turn the title page so the browsing happens on the roster.
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
     held.add('ArrowRight');
     for (let i = 0; i < 30; i++) h.game.update(1 / 60);
     const s = metrics(h);
@@ -179,7 +184,16 @@ describe('class-select flow (public metric contract)', () => {
   test('Digit2 picks the second class and starts play on floor 1', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
-    held.add('Digit2');
+    // Wave I — turn the title page.
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
+    held.add('Digit2'); // pick -> the bloodline page
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60); // releasing arms the lineage digits
+    held.add('Digit1'); // forge a HUMAN (card 1)
     h.game.update(1 / 60);
     const picked = ALL_CLASS_IDS[1];
     const s = metrics(h);
@@ -192,8 +206,17 @@ describe('class-select flow (public metric contract)', () => {
   test('Q fires the signature ability once an expedition begins', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
+    // Wave I — title page, fighter pick, HUMAN forge.
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
     held.add('Digit1');
-    h.game.update(1 / 60); // pick fighter -> Lastlight
+    h.game.update(1 / 60); // pick fighter -> the bloodline page
+    held.clear();
+    h.game.update(1 / 60); // releasing arms the lineage digits
+    held.add('Digit1');
+    h.game.update(1 / 60); // forge a HUMAN -> Lastlight
     held.clear();
     // v4 Wave B — abilities live in the depths; set out through the gate.
     (h.game as unknown as { departOnQuest(q: unknown): void }).departOnQuest(QUESTS.endless);
@@ -208,21 +231,35 @@ describe('class-select flow (public metric contract)', () => {
     expect(metrics(h).abilities_used).toBeGreaterThanOrEqual(1);
   });
 
-  test('restart returns to the roster; the hero persists in its slot (v4.1)', () => {
+  test('restart returns to the title page; the hero persists in its slot (v4.1)', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
-    held.add('Digit3');
+    // Wave I — title page, pick, HUMAN forge.
+    held.add('Space');
     h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
+    held.add('Digit3');
+    h.game.update(1 / 60); // pick -> the bloodline page
+    held.clear();
+    h.game.update(1 / 60); // releasing arms the lineage digits
+    held.add('Digit1');
+    h.game.update(1 / 60); // forge a HUMAN
     const picked = ALL_CLASS_IDS[2];
     expect(metrics(h)[`${picked}_depth`]).toBe(1);
     held.clear();
     h.game.restart?.();
     let s = metrics(h);
-    // Back at the roster select — no class is active yet.
+    // Back at the title page — no class is active yet.
     for (const id of ALL_CLASS_IDS) {
       expect(s[`${id}_depth`]).toBe(0);
     }
-    // Re-picking the same slot resumes that hero.
+    // Turn the page again; re-picking the same slot resumes that hero
+    // (a returning hero skips the bloodline pick).
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
     held.add('Digit3');
     h.game.update(1 / 60);
     s = metrics(h);

@@ -25,7 +25,7 @@ import {
 } from '@/games/dungeon-crawl/persistence/CharacterStore';
 import { ProgressionController } from '@/games/dungeon-crawl/progression/ProgressionController';
 import { SAGAS } from '@/games/dungeon-crawl/data/sagas';
-import { STAT_BASES } from '@/games/dungeon-crawl/data/stats';
+import { STAT_BASES, STAT_TUNING } from '@/games/dungeon-crawl/data/stats';
 import { initGame, type Harness } from '@/games/shared/gameTestHarness';
 
 let randomSpy: jest.SpyInstance;
@@ -53,6 +53,7 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     scores: { ...STAT_BASES.fighter },
     equipment: {},
     stash: [],
+    lineage: 'human',
     ...overrides,
   };
 }
@@ -241,6 +242,11 @@ describe('ProgressionController (roster)', () => {
     expect(created.name.length).toBeGreaterThan(0);
     expect(controller.hasCharacter()).toBe(true);
 
+    // Wave I — the human forge rolls wider, so a variance point can cross a
+    // WIS boundary; derive the earned XP from the forged hero's own delta
+    // (the town.test CHA pattern).
+    const wisMult = 1 + STAT_TUNING.WIS_XP_MULT * controller.statDeltas().wis;
+    const earnedXp = Math.round(LEVEL_CURVE[2] * wisMult);
     controller.grantXp(LEVEL_CURVE[2]);
     expect(controller.pendingLevelUp()).toBe(true);
     const choices = controller.draftChoices(new Rng(7));
@@ -257,7 +263,7 @@ describe('ProgressionController (roster)', () => {
     const again = new ProgressionController();
     again.load();
     expect(again.heroFor('thief')?.level).toBe(2);
-    expect(again.heroFor('thief')?.xp).toBe(LEVEL_CURVE[2]);
+    expect(again.heroFor('thief')?.xp).toBe(earnedXp);
     expect(again.heroFor('fighter')).toBeNull();
   });
 
@@ -356,6 +362,11 @@ describe('roster flow (public metric surface)', () => {
     expect(s.fighter_depth).toBe(0);
 
     const held = wireHeldKeys(h);
+    // Wave I — turn the title page (a returning hero skips the bloodline pick).
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
     held.add('Digit1'); // fighter slot
     h.game.update(1 / 60);
     s = h.game.getScore!() as unknown as Record<string, number>;
@@ -367,7 +378,16 @@ describe('roster flow (public metric surface)', () => {
     localStorage.setItem('dungeon-crawl-save:guest', JSON.stringify(v1Save()));
     const h = initGame(new DungeonCrawlGame());
     const held = wireHeldKeys(h);
-    held.add('Digit2'); // thief slot — empty
+    // Wave I — turn the title page.
+    held.add('Space');
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60);
+    held.add('Digit2'); // thief slot — empty -> the bloodline page
+    h.game.update(1 / 60);
+    held.clear();
+    h.game.update(1 / 60); // releasing arms the lineage digits
+    held.add('Digit1'); // forge a HUMAN (card 1)
     h.game.update(1 / 60);
     const s = h.game.getScore!() as unknown as Record<string, number>;
     expect(s.character_level).toBe(1);

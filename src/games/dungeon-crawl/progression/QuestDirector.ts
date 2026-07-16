@@ -101,6 +101,7 @@ export class QuestDirector {
       const player = this.host.player();
       player.reset(0, 0);
       player.applyKit(CLASSES[hero.classId]);
+      player.applyLineage(hero.lineage);
       player.applyProgression(
         progression.gains(),
         hero.boons,

@@ -8,6 +8,7 @@ import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
 import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
+import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
 import { PROGRESSION } from '../data/progression';
 import { QUESTS, QuestId } from '../data/quests';
@@ -327,13 +328,132 @@ export class HudRenderer {
   }
 
   /** v3 — run-start class draft: four hero cards, relic-draft house style. */
+  /** Wave I — the opening page: Lastlight glows behind the scrim. */
+  renderTitle(ctx: CanvasRenderingContext2D, gameTime: number): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.86)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('DUNGEON CRAWL', VIEW.WIDTH / 2, VIEW.HEIGHT / 2 - 118);
+
+    // The title breathes with the ember light.
+    const glow = 0.75 + 0.25 * Math.sin(gameTime * 2.2);
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.globalAlpha = glow;
+    ctx.font = 'bold 52px monospace';
+    ctx.fillText('THE EMBER DEPTHS', VIEW.WIDTH / 2, VIEW.HEIGHT / 2 - 62);
+    ctx.globalAlpha = 1;
+
+    ctx.fillStyle = PALETTE.textWarm;
+    ctx.font = '14px monospace';
+    ctx.fillText(
+      'Below the town of Lastlight, the old dark is turning its pages.',
+      VIEW.WIDTH / 2,
+      VIEW.HEIGHT / 2 - 22,
+    );
+
+    const pulse = Math.sin(gameTime * 3.5) > -0.25;
+    if (pulse) {
+      ctx.fillStyle = PALETTE.emberBright;
+      ctx.font = 'bold 18px monospace';
+      ctx.fillText('PRESS SPACE TO ENTER LASTLIGHT', VIEW.WIDTH / 2, VIEW.HEIGHT / 2 + 46);
+    }
+
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '12px monospace';
+    ctx.fillText(
+      'move WASD/arrows · sword SPACE · dagger X · dash SHIFT · ability Q · sheet TAB',
+      VIEW.WIDTH / 2,
+      VIEW.HEIGHT - 42,
+    );
+  }
+
+  /** Wave I — the forge's bloodline pick (class-select card grammar). */
+  renderLineageSelect(
+    ctx: CanvasRenderingContext2D,
+    ids: readonly LineageId[],
+    selectedIndex: number,
+    className: string,
+  ): void {
+    ctx.fillStyle = 'rgba(5, 3, 8, 0.82)';
+    ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+
+    ctx.fillStyle = PALETTE.emberBright;
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('CHOOSE YOUR BLOODLINE', VIEW.WIDTH / 2, 104);
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '14px monospace';
+    ctx.fillText(
+      `a ${className} is about to be forged · ← → · SPACE · 1-4`,
+      VIEW.WIDTH / 2,
+      132,
+    );
+
+    const cardW = 168;
+    const cardH = 280;
+    const gap = 20;
+    const startX = (VIEW.WIDTH - cardW * ids.length - gap * (ids.length - 1)) / 2;
+    for (let i = 0; i < ids.length; i++) {
+      const def = LINEAGES[ids[i]];
+      const x = startX + i * (cardW + gap);
+      const y = 168;
+      const selected = i === selectedIndex;
+
+      ctx.fillStyle = selected ? 'rgba(45, 25, 10, 0.95)' : 'rgba(18, 12, 8, 0.95)';
+      ctx.fillRect(x, y, cardW, cardH);
+      ctx.strokeStyle = selected ? def.color : '#4d4238';
+      ctx.lineWidth = selected ? 3 : 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, cardW, cardH);
+      ctx.lineWidth = 1;
+
+      ctx.fillStyle = selected ? def.color : PALETTE.textDim;
+      ctx.font = 'bold 14px monospace';
+      ctx.fillText(`[${i + 1}]`, x + cardW / 2, y - 10);
+
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = 'bold 11px monospace';
+      ctx.fillText(def.epithet, x + cardW / 2, y + 30);
+      ctx.fillStyle = def.color;
+      ctx.font = 'bold 40px monospace';
+      ctx.fillText(def.icon, x + cardW / 2, y + 78);
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(def.name, x + cardW / 2, y + 112);
+
+      // The nudge line: which score this blood favors (humans roll wider).
+      const nudges = Object.entries(def.statNudge) as [keyof typeof STATS, number][];
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = 'bold 12px monospace';
+      ctx.fillText(
+        nudges.length > 0
+          ? nudges.map(([stat, amt]) => `+${amt} ${STATS[stat].abbr}`).join(' · ')
+          : 'A WIDER ROLL',
+        x + cardW / 2,
+        y + 138,
+      );
+
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '12px monospace';
+      this.wrapText(ctx, def.blurb, x + cardW / 2, y + 164, cardW - 20, 15);
+
+      ctx.fillStyle = def.color;
+      ctx.font = 'bold 12px monospace';
+      this.wrapText(ctx, def.passiveName, x + cardW / 2, y + 218, cardW - 20, 14);
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '11px monospace';
+      this.wrapText(ctx, def.passiveBlurb, x + cardW / 2, y + 238, cardW - 20, 13);
+    }
+  }
+
   renderClassSelect(
     ctx: CanvasRenderingContext2D,
     ids: readonly ClassId[],
     selectedIndex: number,
     title = 'CHOOSE YOUR HERO',
     subtitle = '← → to browse · SPACE to choose · 1-4 direct',
-    heroInfo?: (id: ClassId) => { name: string; level: number } | null,
+    heroInfo?: (id: ClassId) => { name: string; level: number; lineage?: string } | null,
   ): void {
     ctx.fillStyle = 'rgba(5, 3, 8, 0.82)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
@@ -391,11 +511,17 @@ export class HudRenderer {
       this.wrapText(ctx, def.abilityBlurb, x + cardW / 2, y + 232, cardW - 20, 13);
 
       // v4.1 — the roster line: this class's persistent hero (or the lack).
+      // Wave I — the bloodline joins the card: ELDRIN · LV 3 / ELF.
       const hero = heroInfo?.(def.id) ?? null;
       ctx.font = 'bold 11px monospace';
       if (hero) {
         ctx.fillStyle = PALETTE.textWarm;
-        this.wrapText(ctx, `${hero.name} · LV ${hero.level}`, x + cardW / 2, y + cardH - 12, cardW - 12, 12);
+        this.wrapText(ctx, `${hero.name} · LV ${hero.level}`, x + cardW / 2, y + cardH - 24, cardW - 12, 12);
+        if (hero.lineage) {
+          ctx.fillStyle = PALETTE.textDim;
+          ctx.font = '10px monospace';
+          ctx.fillText(hero.lineage, x + cardW / 2, y + cardH - 10);
+        }
       } else {
         ctx.fillStyle = PALETTE.textDim;
         ctx.fillText('UNPROVEN', x + cardW / 2, y + cardH - 12);
@@ -836,7 +962,12 @@ export class HudRenderer {
     ctx.fillText(hero.name, VIEW.WIDTH / 2, 84);
     ctx.fillStyle = PALETTE.textDim;
     ctx.font = 'bold 14px monospace';
-    ctx.fillText(`${classDef.icon} ${classDef.name} · LEVEL ${hero.level}`, VIEW.WIDTH / 2, 110);
+    // Wave I — the identity line carries the bloodline: ☀ HUMAN FIGHTER · LEVEL 3.
+    ctx.fillText(
+      `${classDef.icon} ${LINEAGES[hero.lineage].name} ${classDef.name} · LEVEL ${hero.level}`,
+      VIEW.WIDTH / 2,
+      110,
+    );
 
     // XP bar to the next level.
     ctx.fillStyle = '#241d38';

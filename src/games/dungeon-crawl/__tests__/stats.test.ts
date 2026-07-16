@@ -15,6 +15,7 @@ import {
   STATS,
   zeroStatMods,
 } from '@/games/dungeon-crawl/data/stats';
+import { LINEAGE_TUNING } from '@/games/dungeon-crawl/data/lineages';
 import { Rng } from '@/games/dungeon-crawl/dungeon/rng';
 import { Player } from '@/games/dungeon-crawl/entities/Player';
 import { CharacterStore } from '@/games/dungeon-crawl/persistence/CharacterStore';
@@ -164,7 +165,10 @@ describe('persistence (mirrors the sagas clamp pattern)', () => {
     ctrl.load();
     const forged = ctrl.create('mage', new Rng(7));
     const total = ALL_STAT_IDS.reduce((sum, id) => sum + forged.scores[id], 0);
-    expect(total).toBe(72 + STAT_TUNING.FORGE_VARIANCE_POINTS);
+    // Wave I — create() defaults to HUMAN, whose FAR HORIZONS rolls wider.
+    expect(total).toBe(
+      72 + STAT_TUNING.FORGE_VARIANCE_POINTS + LINEAGE_TUNING.HUMAN_EXTRA_FORGE_POINTS,
+    );
 
     const reloaded = new ProgressionController();
     reloaded.load();

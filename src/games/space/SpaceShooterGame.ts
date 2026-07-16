@@ -1971,7 +1971,7 @@ export class SpaceShooterGame extends BaseGame {
     this.services?.audio?.playSound?.('game_over');
     
     // Set extended data for achievements
-    const survivalTimeSec = Math.floor((Date.now() - this.startTime) / 1000);
+    const survivalTimeSec = Math.floor(this.gameTime);
     this.extendedGameData = {
       maxCombo: this.maxCombo,
       totalKills: this.totalKills,
@@ -2125,7 +2125,7 @@ export class SpaceShooterGame extends BaseGame {
     const finalScore = this.gameOver ? this.cachedFinalScore : this.score;
     const finalPickups = this.gameOver ? this.cachedFinalPickups : this.pickups;
     
-    const timePlayedMs = this.gameOver ? this.gameTime : Date.now() - this.startTime;
+    const timePlayedMs = Math.round(this.gameTime * 1000);
     const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
     const coinsEarned = this.services?.currency?.calculateGameReward?.(
       finalScore,

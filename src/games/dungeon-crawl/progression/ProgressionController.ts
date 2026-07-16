@@ -17,6 +17,7 @@ import {
   PROGRESSION,
   xpIntoLevel,
 } from '../data/progression';
+import { applyLineageNudge, LINEAGE_TUNING, LineageId } from '../data/lineages';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
 import { ItemId, mergeItemEffects } from '../data/items';
@@ -83,8 +84,12 @@ export class ProgressionController {
   }
 
   /** Forge a new hero for an empty class slot; it becomes active. */
-  create(classId: ClassId, rng: Rng): SavedHero {
+  create(classId: ClassId, rng: Rng, lineageId: LineageId = 'human'): SavedHero {
     const names = HERO_NAMES[classId];
+    // Wave I — FAR HORIZONS: a human hero rolls one extra variance point.
+    const forgePoints =
+      STAT_TUNING.FORGE_VARIANCE_POINTS +
+      (lineageId === 'human' ? LINEAGE_TUNING.HUMAN_EXTRA_FORGE_POINTS : 0);
     const hero: SavedHero = {
       classId,
       name: names[rng.int(0, names.length - 1)],
@@ -99,9 +104,16 @@ export class ProgressionController {
       sagas: {},
       spells: [],
       // v5 Wave E — rolled AFTER the name pick (name rng order is pinned).
-      scores: rollStatScores(classId, rng),
+      // Wave I — the lineage nudge lands on top, clamped at the cap (the
+      // lineage itself is user input: no rng consumed).
+      scores: applyLineageNudge(
+        rollStatScores(classId, rng, forgePoints),
+        lineageId,
+        STAT_TUNING.SCORE_MAX,
+      ),
       equipment: {},
       stash: [],
+      lineage: lineageId,
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;

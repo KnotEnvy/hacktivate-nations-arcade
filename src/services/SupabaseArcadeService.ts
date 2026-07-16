@@ -1,6 +1,7 @@
 import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js';
 import type { Database, Json } from '@/lib/supabase.types';
 import { createSupabaseAccessTokenClient } from '@/lib/supabase';
+import { MAX_TRUSTED_TIME_PLAYED_MS } from '@/lib/trustedProgression';
 
 type DbClient = SupabaseClient<Database>;
 type LeaderboardPeriod = Database['public']['Enums']['leaderboard_period'];
@@ -153,6 +154,42 @@ export class SupabaseArcadeService {
     }
 
     throwOnError(error, 'fetchProfile');
+    return data;
+  }
+
+  /** Read the caller's cloud save for one game (null when none exists). */
+  async fetchGameSave(userId: string, gameId: string, options?: SupabaseRequestOptions) {
+    const client = this.getClient(options);
+    const { data, error } = await client
+      .from('game_saves')
+      .select('payload, updated_at')
+      .eq('user_id', userId)
+      .eq('game_id', gameId)
+      .maybeSingle();
+
+    throwOnError(error, 'fetchGameSave');
+    return data;
+  }
+
+  /**
+   * Upsert the caller's cloud save through the auth.uid()-gated RPC.
+   * Returns the server's updated_at for the sync sidecar.
+   */
+  async upsertGameSave(
+    gameId: string,
+    payload: Json,
+    options?: SupabaseRequestOptions
+  ): Promise<string> {
+    const client = this.getClient(options);
+    const { data, error } = await client.rpc('upsert_game_save', {
+      _game_id: gameId,
+      _payload: payload,
+    });
+
+    throwOnError(error, 'upsertGameSave');
+    if (typeof data !== 'string' || data.length === 0) {
+      throw new Error('upsertGameSave did not return a server timestamp.');
+    }
     return data;
   }
 
@@ -396,7 +433,9 @@ export class SupabaseArcadeService {
         gameId: input.gameId,
         score: input.score,
         pickups: input.pickups,
-        timePlayedMs: input.timePlayedMs,
+        // Clamp instead of letting the server reject the session outright — an
+        // over-cap duration (e.g. a legacy queued entry) still banks its rewards.
+        timePlayedMs: Math.min(input.timePlayedMs, MAX_TRUSTED_TIME_PLAYED_MS),
         metrics: input.metrics ?? {},
         clientMutationId: input.clientMutationId,
       },

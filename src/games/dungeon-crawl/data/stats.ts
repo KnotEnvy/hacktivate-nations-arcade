@@ -152,10 +152,15 @@ export function withStatBonus(
   return out;
 }
 
-/** Forge roll: the class base plus FORGE_VARIANCE_POINTS scattered by rng. */
-export function rollStatScores(classId: ClassId, rng: Rng): StatScores {
+/** Forge roll: the class base plus `points` scattered by rng (Wave I: a
+ * human hero's FAR HORIZONS passes one extra; the default is unchanged). */
+export function rollStatScores(
+  classId: ClassId,
+  rng: Rng,
+  points: number = STAT_TUNING.FORGE_VARIANCE_POINTS,
+): StatScores {
   const scores: StatScores = { ...STAT_BASES[classId] };
-  for (let i = 0; i < STAT_TUNING.FORGE_VARIANCE_POINTS; i++) {
+  for (let i = 0; i < points; i++) {
     let id = ALL_STAT_IDS[rng.int(0, ALL_STAT_IDS.length - 1)];
     while (scores[id] >= STAT_TUNING.SCORE_MAX) {
       id = ALL_STAT_IDS[rng.int(0, ALL_STAT_IDS.length - 1)];

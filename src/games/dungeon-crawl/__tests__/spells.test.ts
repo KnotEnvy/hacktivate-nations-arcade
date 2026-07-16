@@ -52,11 +52,20 @@ function metrics(h: Harness): Record<string, number> {
   return h.game.getScore!() as unknown as Record<string, number>;
 }
 
-/** Pick a class card by digit, landing in Lastlight. */
+/** Turn the title page, pick a class card by digit, forge a HUMAN — Lastlight. */
 function startWithClass(h: Harness, digit: string): Set<string> {
   const held = wireHeldKeys(h);
-  held.add(digit);
+  // Wave I — turn the title page.
+  held.add('Space');
   h.game.update(1 / 60);
+  held.clear();
+  h.game.update(1 / 60);
+  held.add(digit);
+  h.game.update(1 / 60); // pick the class -> the bloodline page
+  held.clear();
+  h.game.update(1 / 60); // releasing arms the lineage digits
+  held.add('Digit1');
+  h.game.update(1 / 60); // forge a HUMAN (card 1) -> town
   held.clear();
   h.game.update(1 / 60);
   return held;

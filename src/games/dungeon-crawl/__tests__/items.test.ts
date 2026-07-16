@@ -192,6 +192,7 @@ describe('the satchel + victory banking', () => {
       scores: { ...STAT_BASES.fighter },
       equipment: {},
       stash: [],
+      lineage: 'human',
       ...overrides,
     };
   }

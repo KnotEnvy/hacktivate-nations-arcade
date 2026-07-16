@@ -300,7 +300,7 @@ export class RunnerGame extends BaseGame {
     const baseScore = super.getScore?.() || {
       score: this.score,
       pickups: this.pickups,
-      timePlayedMs: Date.now() - this.startTime,
+      timePlayedMs: Math.round(this.gameTime * 1000),
       coinsEarned: 0,
     };
     return {

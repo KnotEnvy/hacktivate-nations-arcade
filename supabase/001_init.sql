@@ -9,6 +9,8 @@ drop view if exists public.leaderboards_view;
 drop function if exists public.commit_trusted_game_session(uuid, text, integer, integer, text[], integer, integer, jsonb, jsonb, jsonb, text);
 drop function if exists public.record_leaderboard_score(text, integer);
 drop function if exists public.upsert_leaderboard_score(uuid, text, public.leaderboard_period, date, integer);
+drop function if exists public.upsert_game_save(text, jsonb);
+drop table if exists public.game_saves cascade;
 drop table if exists public.leaderboard_scores cascade;
 drop table if exists public.game_sessions cascade;
 drop table if exists public.challenge_assignments cascade;
@@ -81,6 +83,17 @@ create table public.challenge_assignments (
   expires_at timestamptz not null,
   updated_at timestamptz default now(),
   primary key (user_id, challenge_id)
+);
+
+-- Cloud game saves: one opaque JSON save document per (user, game). State
+-- only — never coins/unlocks (those ride trusted session metrics). Browser
+-- clients read their own row via RLS and write ONLY via upsert_game_save.
+create table public.game_saves (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  game_id text not null,
+  payload jsonb not null,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, game_id)
 );
 
 -- Leaderboard score entries. Each submitted session can occupy its own row,
@@ -179,6 +192,46 @@ begin
   perform public.upsert_leaderboard_score(uid, game_id, 'daily', day_start, score);
   perform public.upsert_leaderboard_score(uid, game_id, 'weekly', week_start, score);
   perform public.upsert_leaderboard_score(uid, game_id, 'monthly', month_start, score);
+end;
+$$;
+
+-- Upsert the caller's cloud save for one game. SECURITY DEFINER bypasses RLS,
+-- but user_id is pinned to auth.uid() so callers can only write their own row.
+create or replace function public.upsert_game_save(
+  _game_id text,
+  _payload jsonb
+) returns timestamptz
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid := auth.uid();
+  v_now timestamptz := now();
+begin
+  if v_user_id is null then
+    raise exception 'Not authenticated';
+  end if;
+
+  if _game_id is null or btrim(_game_id) = '' or length(_game_id) > 64 then
+    raise exception 'A valid game id is required.';
+  end if;
+
+  if _payload is null or jsonb_typeof(_payload) <> 'object' then
+    raise exception 'Save payload must be a JSON object.';
+  end if;
+
+  if pg_column_size(_payload) > 65536 then
+    raise exception 'Save payload exceeds the supported size.';
+  end if;
+
+  insert into public.game_saves (user_id, game_id, payload, updated_at)
+  values (v_user_id, _game_id, _payload, v_now)
+  on conflict (user_id, game_id) do update set
+    payload = excluded.payload,
+    updated_at = v_now;
+
+  return v_now;
 end;
 $$;
 
@@ -566,6 +619,7 @@ alter table public.wallets enable row level security;
 alter table public.achievements enable row level security;
 alter table public.challenge_assignments enable row level security;
 alter table public.leaderboard_scores enable row level security;
+alter table public.game_saves enable row level security;
 
 -- Profiles policies
 drop policy if exists "profiles_insert_own" on public.profiles;
@@ -604,6 +658,11 @@ create policy "leaderboard_scores_select_public" on public.leaderboard_scores
 
 drop policy if exists "leaderboard_scores_modify_own" on public.leaderboard_scores;
 
+-- Game save policies (reads via RLS; writes only through upsert_game_save)
+drop policy if exists "game_saves_select_own" on public.game_saves;
+create policy "game_saves_select_own" on public.game_saves
+  for select using (auth.uid() = user_id);
+
 revoke all on function public.upsert_leaderboard_score(uuid, text, public.leaderboard_period, date, integer) from public, anon, authenticated;
 revoke all on function public.record_leaderboard_score(text, integer) from public, anon, authenticated;
 revoke all on function public.commit_trusted_game_session(uuid, text, integer, integer, text[], integer, integer, jsonb, jsonb, jsonb, text) from public, anon, authenticated;
@@ -613,3 +672,6 @@ grant execute on function public.upsert_leaderboard_score(uuid, text, public.lea
 grant execute on function public.commit_trusted_game_session(uuid, text, integer, integer, text[], integer, integer, jsonb, jsonb, jsonb, text) to service_role;
 grant execute on function public.claim_trusted_challenge(uuid, text, integer) to service_role;
 grant execute on function public.apply_trusted_unlock_purchase(uuid, integer, integer[], text[]) to service_role;
+revoke all on function public.upsert_game_save(text, jsonb) from public, anon;
+grant execute on function public.upsert_game_save(text, jsonb) to authenticated;
+grant execute on function public.upsert_game_save(text, jsonb) to service_role;

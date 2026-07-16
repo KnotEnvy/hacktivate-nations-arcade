@@ -1,12 +1,12 @@
 # Supabase Production Runbook
 
-Last updated: July 12, 2026
+Last updated: July 15, 2026
 
 Use this when promoting or verifying the current trusted progression work against a real Supabase project before signed-in testing or deployment.
 
 ## What Changed
 
-The clean-install schema lives in `supabase/001_init.sql`. Existing projects must apply `supabase/003_lock_down_progression.sql` before public launch. The current server route depends on:
+The clean-install schema lives in `supabase/001_init.sql`. Existing projects must apply `supabase/003_lock_down_progression.sql` before public launch, and `supabase/004_game_saves.sql` for cloud game saves (the Dungeon Crawl roster). The current server route depends on:
 
 - `public.commit_trusted_game_session(...)`
 - `public.record_leaderboard_score(...)`
@@ -21,9 +21,10 @@ The clean-install schema lives in `supabase/001_init.sql`. Existing projects mus
 1. Confirm the target Supabase project is the one you want to test against
 2. Back up any non-disposable beta data if needed
 3. Apply `supabase/003_lock_down_progression.sql` to the existing target project
-4. Regenerate local Supabase types if the schema changed
-5. Verify the RPCs exist before running the app against that project
-6. Run local verification and then test the signed-in flows in the browser
+4. Apply `supabase/004_game_saves.sql` (non-destructive: adds the `game_saves` table + `upsert_game_save` RPC for cross-device game saves)
+5. Regenerate local Supabase types if the schema changed
+6. Verify the RPCs exist before running the app against that project
+7. Run local verification and then test the signed-in flows in the browser
 
 ## Apply The SQL
 
@@ -66,12 +67,20 @@ where routine_schema = 'public'
     'record_leaderboard_score',
     'upsert_leaderboard_score',
     'claim_trusted_challenge',
-    'apply_trusted_unlock_purchase'
+    'apply_trusted_unlock_purchase',
+    'upsert_game_save'
   )
 order by routine_name;
 ```
 
-You should see all five routines.
+You should see all six routines (`upsert_game_save` only after 004 is applied).
+
+Confirm the game-saves surface after applying 004: `game_saves` exists with RLS enabled, `authenticated` may execute `upsert_game_save` (it writes only the caller's own row via `auth.uid()`), and `anon` may not:
+
+```sql
+select grantee from information_schema.role_routine_grants
+where routine_schema = 'public' and routine_name = 'upsert_game_save';
+```
 
 Confirm browser roles cannot execute the privileged functions:
 
@@ -139,4 +148,5 @@ npm run build
 
 - `supabase/001_init.sql` rebuilds the arcade schema and must only be used for a new empty project.
 - `supabase/003_lock_down_progression.sql` is the non-destructive launch migration for the existing project.
+- `supabase/004_game_saves.sql` is non-destructive and adds cloud game saves. The payload is opaque game STATE only (no coins/unlocks — rewards stay on trusted session metrics). Until it is applied, the app degrades silently to local-only saves.
 - Treat future changes to `commit_trusted_game_session(...)` as coordinated app + SQL + generated-types work.

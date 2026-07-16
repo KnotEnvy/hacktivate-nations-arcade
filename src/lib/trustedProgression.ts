@@ -14,9 +14,14 @@ import { UserService, type UserStats } from '@/services/UserServices';
 const MAX_TRUSTED_SCORE = 100000000;
 const MAX_TRUSTED_PICKUPS = 1000000;
 const MAX_TRUSTED_PROGRESS = 1000000;
-const MAX_TRUSTED_TIME_PLAYED_MS = 4 * 60 * 60 * 1000;
+export const MAX_TRUSTED_TIME_PLAYED_MS = 4 * 60 * 60 * 1000;
 const MAX_TRUSTED_SESSION_METRIC = 100000000;
 export const MAX_TRUSTED_REWARD_PER_SESSION = 5000;
+
+// Payload rejections must be distinguishable from server faults: the API route
+// maps this to a 400 so the client sync outbox discards the operation instead
+// of retrying it forever.
+export class TrustedProgressionValidationError extends Error {}
 
 const DEFAULT_USER_STATS: UserStats = {
   totalDistance: 0,
@@ -111,12 +116,12 @@ const normalizeBoundedInteger = (
   maxValue: number
 ): number => {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${fieldName} must be a non-negative number.`);
+    throw new TrustedProgressionValidationError(`${fieldName} must be a non-negative number.`);
   }
 
   const normalized = Math.floor(value);
   if (normalized > maxValue) {
-    throw new Error(`${fieldName} exceeds the supported limit.`);
+    throw new TrustedProgressionValidationError(`${fieldName} exceeds the supported limit.`);
   }
 
   return normalized;
@@ -128,11 +133,11 @@ const normalizeBoundedNumber = (
   maxValue: number
 ): number => {
   if (!Number.isFinite(value) || value < 0) {
-    throw new Error(`${fieldName} must be a non-negative number.`);
+    throw new TrustedProgressionValidationError(`${fieldName} must be a non-negative number.`);
   }
 
   if (value > maxValue) {
-    throw new Error(`${fieldName} exceeds the supported limit.`);
+    throw new TrustedProgressionValidationError(`${fieldName} exceeds the supported limit.`);
   }
 
   return value;
@@ -265,7 +270,7 @@ export const validateTrustedGameSession = (
   input: TrustedGameSessionInput
 ): TrustedGameSessionInput => {
   if (!isGameImplemented(input.gameId)) {
-    throw new Error('Game is not registered for trusted progression writes.');
+    throw new TrustedProgressionValidationError('Game is not registered for trusted progression writes.');
   }
 
   return {
@@ -316,7 +321,7 @@ export const validateAchievementIds = (achievementIds: string[]): string[] => {
 
   uniqueIds.forEach(achievementId => {
     if (!getAchievementDefinition(achievementId)) {
-      throw new Error(`Unknown achievement id: ${achievementId}`);
+      throw new TrustedProgressionValidationError(`Unknown achievement id: ${achievementId}`);
     }
   });
 
@@ -329,12 +334,12 @@ export const validateTrustedChallengeSync = (
   return challenges.map(challenge => {
     const template = getChallengeTemplate(challenge.challengeId);
     if (!template) {
-      throw new Error(`Unknown challenge id: ${challenge.challengeId}`);
+      throw new TrustedProgressionValidationError(`Unknown challenge id: ${challenge.challengeId}`);
     }
 
     const expiresAt = getDailyChallengeExpiresAt(challenge.challengeId);
     if (!expiresAt) {
-      throw new Error(`Challenge id is missing a valid expiry: ${challenge.challengeId}`);
+      throw new TrustedProgressionValidationError(`Challenge id is missing a valid expiry: ${challenge.challengeId}`);
     }
 
     const progress = normalizeBoundedInteger(

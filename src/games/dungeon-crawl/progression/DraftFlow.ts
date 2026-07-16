@@ -9,6 +9,7 @@
 import { SoundName } from '@/services/AudioManager';
 import { BOONS } from '../data/boons';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from '../data/classes';
+import { ALL_LINEAGE_IDS, LINEAGES } from '../data/lineages';
 import { SPELLS } from '../data/spells';
 import { STATS } from '../data/stats';
 import { Rng } from '../dungeon/rng';
@@ -44,6 +45,11 @@ export interface DraftFlowHost {
 export class DraftFlow {
   /** Run-start class draft cursor (HUD renders from this). */
   classIndex = 0;
+  /** Wave I — the forge's lineage pick (HUD renders from these). */
+  pendingClass: ClassId | null = null;
+  lineageIndex = 0;
+  /** Digits must be RELEASED once after the class pick before they forge. */
+  private lineageArmed = false;
   /** Level-up draft cards + cursor (HUD renders from these). */
   choices: DraftPick[] = [];
   index = 0;
@@ -54,13 +60,16 @@ export class DraftFlow {
   /** New run: back to the first class card; no draft in flight. */
   reset(): void {
     this.classIndex = 0;
+    this.pendingClass = null;
+    this.lineageIndex = 0;
+    this.lineageArmed = false;
     this.choices = [];
     this.index = 0;
     this.returnState = 'playing';
   }
 
   /** v3 — run-start class draft. Mirrors the relic draft's input handling. */
-  updateClassSelect(): 'town' | null {
+  updateClassSelect(): 'town' | 'lineageSelect' | null {
     const input = this.host.input();
     if (!input) return null;
 
@@ -72,28 +81,66 @@ export class DraftFlow {
     if ((confirm && !this.host.confirmWas()) || directPick) {
       const def = CLASSES[ALL_CLASS_IDS[this.classIndex]];
       const progression = this.host.progression();
-      // v4.1 — resume this class's hero, or forge one for an empty slot.
-      const existing = progression.heroFor(def.id);
-      const hero = existing
-        ? progression.selectHero(def.id)
-        : progression.create(def.id, this.host.rng());
-      this.host.player().applyKit(def);
-      this.host
-        .player()
-        .applyProgression(progression.gains(), hero.boons, {}, progression.statDeltas());
-      this.host.setChosenClass(def.id);
-      this.host.trackStat(`${def.id}_depth`, this.host.floor());
-      this.host.trackStat('character_level', hero.level);
-      this.host.playSound('powerup', 0.55);
-      this.host.showBanner(
-        hero.name,
-        existing
-          ? `LEVEL ${hero.level} ${def.name} — WELCOME TO LASTLIGHT`
-          : `${def.name} — THE QUEST BOARD AWAITS`,
-      );
+      // v4.1 — resume this class's hero...
+      if (progression.heroFor(def.id)) {
+        this.enterTown(def.id, true);
+        return 'town';
+      }
+      // ...or, Wave I, choose a bloodline before the forge lights.
+      this.pendingClass = def.id;
+      this.lineageIndex = 0;
+      this.lineageArmed = false;
+      this.host.playSound('success', 0.45);
+      return 'lineageSelect';
+    }
+    return null;
+  }
+
+  /** Wave I — the forge's lineage pick (same card grammar as the classes). */
+  updateLineageSelect(): 'town' | null {
+    const input = this.host.input();
+    if (!input || !this.pendingClass) return null;
+
+    this.lineageIndex = this.host.draftNav(this.lineageIndex, ALL_LINEAGE_IDS.length);
+
+    // A digit held over from the class pick must release before it can forge.
+    const anyDigit = ALL_LINEAGE_IDS.some((_, i) => input.isKeyPressed(`Digit${i + 1}`));
+    if (!this.lineageArmed) {
+      if (!anyDigit) this.lineageArmed = true;
+      return null;
+    }
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    if ((confirm && !this.host.confirmWas()) || anyDigit) {
+      this.enterTown(this.pendingClass, false);
+      this.pendingClass = null;
       return 'town';
     }
     return null;
+  }
+
+  /** Resume or forge the hero, arm the player, and step into Lastlight. */
+  private enterTown(classId: ClassId, existing: boolean): void {
+    const def = CLASSES[classId];
+    const progression = this.host.progression();
+    const hero = existing
+      ? progression.selectHero(classId)
+      : progression.create(classId, this.host.rng(), ALL_LINEAGE_IDS[this.lineageIndex]);
+    const player = this.host.player();
+    player.applyKit(def);
+    player.applyLineage(hero.lineage);
+    player.applyProgression(progression.gains(), hero.boons, {}, progression.statDeltas());
+    this.host.setChosenClass(def.id);
+    this.host.trackStat(`${def.id}_depth`, this.host.floor());
+    this.host.trackStat('character_level', hero.level);
+    this.host.playSound('powerup', 0.55);
+    this.host.showBanner(
+      hero.name,
+      existing
+        ? `LEVEL ${hero.level} ${def.name} — WELCOME TO LASTLIGHT`
+        : `${LINEAGES[hero.lineage].name} ${def.name} — THE QUEST BOARD AWAITS`,
+    );
   }
 
   /** Open the level-up draft for a pending level (or auto-level when maxed). */

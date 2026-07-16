@@ -438,6 +438,9 @@ export function ArcadeHub() {
     queueSyncOperation,
     retryPendingSyncs,
     reconcileTrustedBalance,
+    pushGameSave,
+    guestSaveOffers,
+    resolveGuestSaveOffer,
   } = useArcadeSupabaseSync({
     session,
     achievementService,
@@ -760,6 +763,11 @@ export function ArcadeHub() {
 
   const handleBackToHub = () => {
     playUiSound('click');
+    // Leaving a game is a natural save point — mirror any changed local
+    // save (e.g. the Dungeon Crawl roster) to the cloud.
+    if (selectedGameId) {
+      pushGameSave(selectedGameId);
+    }
     setShowHub(true);
     setCurrentGame(null);
     setSelectedGameId(null);
@@ -1095,6 +1103,8 @@ export function ArcadeHub() {
       }
     })();
 
+    // A finished session is a save point for games with cloud-synced saves.
+    pushGameSave(selectedGameId);
   };
 
   const resetProgress = () => {
@@ -1274,6 +1284,32 @@ export function ArcadeHub() {
                   )}
                 </div>
               )}
+              {session &&
+                guestSaveOffers.map(offer => (
+                  <div
+                    key={offer.gameId}
+                    className="text-[11px] text-emerald-200 mt-1 max-w-[260px]"
+                  >
+                    <div>
+                      Found a guest {offer.title} save on this device. Bring it
+                      into your account?
+                    </div>
+                    <div className="flex gap-3 mt-1">
+                      <button
+                        onClick={() => resolveGuestSaveOffer(offer.gameId, true)}
+                        className="text-[10px] text-emerald-100 underline hover:text-white"
+                      >
+                        Bring it with me
+                      </button>
+                      <button
+                        onClick={() => resolveGuestSaveOffer(offer.gameId, false)}
+                        className="text-[10px] text-gray-300 underline hover:text-white"
+                      >
+                        Leave it
+                      </button>
+                    </div>
+                  </div>
+                ))}
               {authError && (
                 <div className="text-[11px] text-red-200 mt-1 max-w-[220px]">
                   {authError}

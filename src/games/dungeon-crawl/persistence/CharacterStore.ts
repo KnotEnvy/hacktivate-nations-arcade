@@ -24,6 +24,7 @@ import {
   ITEMS,
   ItemId,
 } from '../data/items';
+import { asLineageId, LineageId } from '../data/lineages';
 import { LEVEL_CAP } from '../data/progression';
 import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
@@ -64,6 +65,10 @@ export interface SavedHero {
   // path never touches them (unbanked finds are simply lost).
   equipment: Partial<Record<EquipSlot, ItemId>>;
   stash: ItemId[];
+  // Wave I — the bloodline chosen at the forge. Additive field: absent on
+  // older saves → 'human', whose passive is forge-time only, so veterans
+  // play exactly as before.
+  lineage: LineageId;
 }
 
 export interface SavePayloadV2 {
@@ -192,6 +197,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     scores,
     equipment,
     stash,
+    lineage: asLineageId(hero.lineage),
   };
 }
 

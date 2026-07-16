@@ -1,4 +1,5 @@
 import { SupabaseSyncOutbox } from '@/services/SupabaseSyncOutbox';
+import { TrustedProgressionRequestError } from '@/services/SupabaseArcadeService';
 import type { SupabaseArcadeService } from '@/services/SupabaseArcadeService';
 
 const makeServiceMock = () =>
@@ -208,6 +209,30 @@ describe('SupabaseSyncOutbox', () => {
       },
     ]);
     expect(outbox.getPendingCount()).toBe(0);
+  });
+
+  test('flush discards permanently rejected operations and keeps draining the queue', async () => {
+    const outbox = new SupabaseSyncOutbox('user-1');
+    const service = makeServiceMock();
+    service.recordTrustedGameSession.mockRejectedValueOnce(
+      new TrustedProgressionRequestError(
+        'timePlayedMs exceeds the supported limit.',
+        400
+      )
+    );
+
+    outbox.enqueue(makeRichTrustedSessionRecord());
+    outbox.enqueue({
+      kind: 'trusted-achievement-claim',
+      payload: { achievementIds: ['first_jump'] },
+    });
+
+    const result = await outbox.flush(service, 'token');
+
+    expect(result).toEqual({ processed: 1, remaining: 0 });
+    expect(service.claimAchievements).toHaveBeenCalled();
+    expect(outbox.getPendingCount()).toBe(0);
+    expect(outbox.getDiagnostics().failedCount).toBe(0);
   });
 
   test('flush stops at the first failure and leaves the failed item queued', async () => {

@@ -69,8 +69,17 @@ function metrics(h: Harness): Record<string, number> {
 
 function startWithFighter(h: Harness): Set<string> {
   const held = wireHeldKeys(h);
+  // Wave I — turn the title page.
+  held.add('Space');
+  h.game.update(1 / 60);
+  held.clear();
+  h.game.update(1 / 60);
   held.add('Digit1');
-  h.game.update(1 / 60); // pick fighter -> town
+  h.game.update(1 / 60); // pick fighter -> the bloodline page
+  held.clear();
+  h.game.update(1 / 60); // releasing arms the lineage digits
+  held.add('Digit1');
+  h.game.update(1 / 60); // forge a HUMAN (card 1) -> town
   held.clear();
   h.game.update(1 / 60);
   return held;
@@ -180,6 +189,7 @@ describe('the saga board page', () => {
         scores: { ...STAT_BASES.fighter },
         equipment: {},
         stash: [],
+        lineage: 'human',
       },
       save: () => {},
       playSound: () => {},
