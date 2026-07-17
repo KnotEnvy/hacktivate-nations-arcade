@@ -12,6 +12,7 @@ import {
   biomeForFloor,
   COMBAT,
   FLOOR_NAMES,
+  JUICE,
   OVERLAY,
   PALETTE,
   PICKUPS,
@@ -52,7 +53,8 @@ import { Projectile } from './entities/Projectile';
 import { Player } from './entities/Player';
 import { Urn } from './entities/Urn';
 import { causeForEnemy, Combat, DeathCause } from './systems/Combat';
-import { Lighting, LightSource } from './systems/Lighting';
+import { Juice } from './systems/Juice';
+import { Lighting } from './systems/Lighting';
 import { Minimap } from './systems/Minimap';
 import { Inventory } from './systems/Inventory';
 import { ParticleSystem } from './systems/ParticleSystem';
@@ -60,6 +62,7 @@ import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
 import { HudRenderer, RecapStats } from './rendering/HudRenderer';
+import { gatherLights } from './rendering/lights';
 import { TileRenderer } from './rendering/TileRenderer';
 
 type GameState =
@@ -114,6 +117,7 @@ export class DungeonCrawlGame extends BaseGame {
   private particles = new ParticleSystem();
   private shake = new ScreenShake();
   private lighting = new Lighting();
+  private juice = new Juice();
   private minimap = new Minimap();
   private tiles = new TileRenderer();
   private hud = new HudRenderer();
@@ -131,6 +135,7 @@ export class DungeonCrawlGame extends BaseGame {
     boss: () => this.boss,
     particles: this.particles,
     shake: this.shake,
+    juice: this.juice,
     addEnemy: enemy => this.enemies.push(enemy),
     addPickup: pickup => this.pickupItems.push(pickup),
     addProjectile: projectile => this.projectiles.push(projectile),
@@ -299,6 +304,8 @@ export class DungeonCrawlGame extends BaseGame {
       this.activeSpellIndex = index;
     },
     refreshStatMods: () => this.refreshItemFolds(),
+    flashLight: (x, y) =>
+      this.juice.flashLight(x, y, JUICE.FLASH_LEVEL_UP_RADIUS, JUICE.FLASH_LEVEL_UP_LIFE),
   });
   private retireHold = 0;
   private recapRetired = false;
@@ -423,6 +430,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.player.reset(0, 0);
     this.shake.reset();
     this.particles.clear();
+    this.juice.reset();
     this.musicIntensity = -1;
 
     // v4.1 — the roster: each class keeps its own persistent hero. Wave I —
@@ -469,6 +477,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
     this.particles.clear();
+    this.juice.reset();
+    this.juice.startCurtain(); // Wave K — Lastlight fades in
     this.musicIntensity = 0.45;
     this.services?.audio?.setMusicIntensity?.(0.45);
   }
@@ -530,6 +540,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
     this.particles.clear();
+    this.juice.reset();
+    this.juice.startCurtain(); // Wave K — the new floor fades in under its banner
 
     const floorLabel =
       questFloors > 0 ? `FLOOR ${this.floor} OF ${questFloors}` : `FLOOR ${this.floor}`;
@@ -555,6 +567,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.shake.update(dt);
     this.particles.update(dt);
     this.lighting.update(dt);
+    this.juice.update(dt); // real dt — freezes thaw in real time
     if (this.bannerTimer > 0) this.bannerTimer = Math.max(0, this.bannerTimer - dt);
     if (this.shopDeniedFlash > 0) this.shopDeniedFlash = Math.max(0, this.shopDeniedFlash - dt);
 
@@ -611,7 +624,8 @@ export class DungeonCrawlGame extends BaseGame {
         this.updateTown(dt);
         break;
       case 'playing':
-        this.updatePlaying(dt);
+        // Wave K — hit-stop freezes ONLY the sim; view systems above ride real dt.
+        this.updatePlaying(this.juice.simDt(dt));
         break;
       case 'sheet':
         break; // frozen under the character sheet
@@ -1210,6 +1224,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.combo = 1;
     this.comboTimer = 0;
     this.shake.add(0.4);
+    this.shake.kick(0, 1, JUICE.KICK_HURT); // Wave K — the hit jolts downward
+    this.juice.hitStop(JUICE.HITSTOP_PLAYER_HURT); // Wave K — the blow lands heavy
     this.services?.audio?.playSound?.('hurt_grunt', { volume: 0.5 });
     this.particles.burst(this.player.x, this.player.y, PALETTE.blood, 10, 120, 0.5, 200);
 
@@ -1265,6 +1281,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.particles.burst(center.x, center.y, this.biome.wallFace, 14, 120, 0.6);
     this.particles.burst(center.x, center.y, this.biome.floorCrack, 8, 80, 0.5);
     this.shake.add(0.2);
+    this.juice.flashLight(center.x, center.y, JUICE.FLASH_SPELL_RADIUS, JUICE.FLASH_SPELL_LIFE);
     this.services?.audio?.playSound?.('collision', { volume: 0.5 });
     this.secretRooms.onWallCracked(tx, ty);
   }
@@ -1526,38 +1543,18 @@ export class DungeonCrawlGame extends BaseGame {
     this.particles.render(ctx);
     ctx.restore();
 
-    // Darkness + torchlight (screen space).
-    const lights: LightSource[] = [
-      {
-        x: this.player.x,
-        y: this.player.y,
-        radius: Lighting.playerTorchRadius(this.player.torchBonus()),
-        flicker: 0.6,
-      },
-    ];
-    for (const torch of this.plan.torches) lights.push(Lighting.wallTorchLight(torch.tx, torch.ty));
-    // v3 — fire beetles carry their own glow: glands bright enough to read by.
-    for (const enemy of this.enemies) {
-      if (enemy.alive && enemy.config.id === 'fire-beetle') {
-        lights.push({ x: enemy.x, y: enemy.y, radius: 70, flicker: 0.6 });
-      }
-    }
-    if (!this.stairsLocked) {
-      const stairs = this.map.tileCenter(this.plan.stairsTile.tx, this.plan.stairsTile.ty);
-      lights.push({ x: stairs.x, y: stairs.y, radius: 80, flicker: 0.4 });
-    }
-    if (this.merchant) {
-      lights.push({ x: this.merchant.x, y: this.merchant.y, radius: 110, flicker: 0.5 });
-    }
-    if (this.inTownWorld()) {
-      lights.push({ x: this.town.spots.smith.x, y: this.town.spots.smith.y, radius: 110, flicker: 0.5 });
-      lights.push({ x: this.town.spots.alchemist.x, y: this.town.spots.alchemist.y, radius: 110, flicker: 0.5 });
-      lights.push({ x: this.town.spots.inn.x, y: this.town.spots.inn.y, radius: 110, flicker: 0.5 });
-      lights.push({ x: this.town.spots.quests.x, y: this.town.spots.quests.y, radius: 95, flicker: 0.4 });
-    }
-    if (this.boss?.alive) {
-      lights.push({ x: this.boss.x, y: this.boss.y, radius: 130, flicker: 1 });
-    }
+    // Darkness + torchlight (screen space); gathering lives in rendering/lights.
+    const lights = gatherLights({
+      player: this.player,
+      torches: this.plan.torches,
+      enemies: this.enemies,
+      stairsLocked: this.stairsLocked,
+      stairsCenter: this.map.tileCenter(this.plan.stairsTile.tx, this.plan.stairsTile.ty),
+      merchant: this.merchant,
+      townSpots: this.inTownWorld() ? this.town.spots : null,
+      boss: this.boss,
+    });
+    lights.push(...this.juice.lights()); // Wave K — explosion/spell flash-lights
     this.lighting.render(ctx, VIEW.WIDTH, VIEW.HEIGHT, this.camX - offset.x, this.camY - offset.y, this.floor, lights);
   }
 
@@ -1568,6 +1565,12 @@ export class DungeonCrawlGame extends BaseGame {
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
+    // Wave K — floor-entry curtain: the world fades in under the HUD chrome.
+    const curtain = this.juice.curtainAlpha();
+    if (curtain > 0) {
+      ctx.fillStyle = `rgba(2, 1, 4, ${curtain.toFixed(3)})`;
+      ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
+    }
     const readiedSpell = this.activeSpell();
     this.hud.renderHud(ctx, {
       score: this.score,
@@ -1597,6 +1600,8 @@ export class DungeonCrawlGame extends BaseGame {
       buffs: this.player.buffs,
       relics: this.player.relics,
       itemCount: this.inventory.satchel.length,
+      hurtFlash: this.player.hitFlash,
+      gameTime: this.gameTime,
     });
     this.minimap.render(
       ctx,
@@ -1607,7 +1612,15 @@ export class DungeonCrawlGame extends BaseGame {
       this.boss?.alive ? { x: this.boss.x, y: this.boss.y } : null,
     );
     if (this.boss?.alive) {
-      this.hud.renderBossBar(ctx, this.boss.kit.name, this.boss.hp, this.boss.maxHp, this.boss.enraged);
+      this.hud.renderBossBar(
+        ctx,
+        this.boss.kit.name,
+        this.boss.hp,
+        this.boss.maxHp,
+        this.boss.enraged,
+        this.boss.flash,
+        this.boss.enrageFlash,
+      );
     }
     if (this.activeShopItem && this.state === 'playing') {
       const price = this.hagglerPrice(this.activeShopItem.price);

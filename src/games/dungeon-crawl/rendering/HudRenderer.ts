@@ -6,7 +6,7 @@
 import { BOONS, BoonId } from '../data/boons';
 import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
-import { COMBAT, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
+import { COMBAT, JUICE, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
 import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
 import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
@@ -56,6 +56,9 @@ export interface HudState {
   relics: ReadonlyMap<RelicId, number>;
   // v5 Wave F — run finds carried in the satchel (I opens the pack).
   itemCount: number;
+  // Wave K — hurt vignette (player.hitFlash) + animation clock for pulses.
+  hurtFlash: number;
+  gameTime: number;
 }
 
 /** v4 — frozen at death; the renderer assembles the recap rows from it. */
@@ -107,6 +110,20 @@ export interface InventoryView {
 export class HudRenderer {
   renderHud(ctx: CanvasRenderingContext2D, s: HudState): void {
     const classDef = s.classId ? CLASSES[s.classId] : null;
+
+    // Wave K — hurt vignette: the screen edges flash blood on a landed hit
+    // and breathe dark red while the hero clings to their last hearts.
+    const hurt = Math.min(1, s.hurtFlash / 0.4);
+    const lowHp = s.hp > 0 && s.hp <= 2 ? 0.6 + 0.4 * Math.sin(s.gameTime * 3) : 0;
+    const edge = Math.max(hurt * JUICE.VIGNETTE_HURT_ALPHA, lowHp * JUICE.VIGNETTE_LOW_HP_ALPHA);
+    if (edge > 0) {
+      ctx.fillStyle = `rgba(214, 61, 61, ${edge.toFixed(3)})`;
+      ctx.fillRect(0, 0, VIEW.WIDTH, 26);
+      ctx.fillRect(0, VIEW.HEIGHT - 26, VIEW.WIDTH, 26);
+      ctx.fillRect(0, 26, 26, VIEW.HEIGHT - 52);
+      ctx.fillRect(VIEW.WIDTH - 26, 26, 26, VIEW.HEIGHT - 52);
+    }
+
     // Panel (v4: one row taller for the hero's XP bar).
     const panelH = s.heroLevel !== null ? 124 : 108;
     ctx.fillStyle = PALETTE.hudPanel;
@@ -144,6 +161,12 @@ export class HudRenderer {
       } else {
         this.drawHeart(ctx, hx, hy);
       }
+    }
+    // Wave K — the last hearts beat visibly.
+    if (s.hp > 0 && s.hp <= 2) {
+      const beat = 0.5 + 0.5 * Math.sin(s.gameTime * 6);
+      ctx.strokeStyle = `rgba(214, 61, 61, ${(0.3 + 0.45 * beat).toFixed(3)})`;
+      ctx.strokeRect(16.5, 52.5, hearts * 20 + 4, 22);
     }
 
     // Daggers + keys.
@@ -202,10 +225,14 @@ export class HudRenderer {
       ctx.fillRect(216, 82, 34 * (1 - Math.max(0, Math.min(1, s.spellFrac))), 8);
     }
 
-    // Combo meter.
+    // Combo meter. Wave K — the counter POPS on a fresh kill and burns
+    // white-hot at full heat (both derived from the existing timers).
     if (s.combo > 1) {
-      ctx.fillStyle = PALETTE.emberBright;
-      ctx.font = 'bold 16px monospace';
+      const pop = Math.max(0, Math.min(1, (s.comboTimer - (COMBAT.COMBO_WINDOW - 0.25)) / 0.25));
+      const maxed = s.combo >= COMBAT.MAX_COMBO;
+      ctx.fillStyle =
+        maxed && Math.floor(s.gameTime * 6) % 2 === 0 ? '#fff6e8' : PALETTE.emberBright;
+      ctx.font = `bold ${16 + Math.round(5 * pop)}px monospace`;
       ctx.fillText(`x${s.combo} COMBO`, 140, 96);
       const frac = Math.max(0, s.comboTimer / COMBAT.COMBO_WINDOW);
       ctx.fillStyle = PALETTE.ember;
@@ -265,6 +292,8 @@ export class HudRenderer {
     hp: number,
     maxHp: number,
     enraged: boolean,
+    flash = 0, // Wave K — boss.flash: the bar blips white as hits land
+    enrageFlash = 0, // Wave K — the 35% crossing lights the whole frame
   ): void {
     const w = 400;
     const x = (VIEW.WIDTH - w) / 2;
@@ -273,13 +302,19 @@ export class HudRenderer {
     ctx.fillRect(x - 6, y - 20, w + 12, 36);
     ctx.strokeStyle = enraged ? PALETTE.blood : PALETTE.hudBorder;
     ctx.strokeRect(x - 5.5, y - 19.5, w + 11, 35);
+    if (enrageFlash > 0) {
+      ctx.strokeStyle = `rgba(255, 240, 232, ${(0.9 * enrageFlash).toFixed(3)})`;
+      ctx.lineWidth = 1 + 2 * enrageFlash;
+      ctx.strokeRect(x - 8.5, y - 22.5, w + 17, 41);
+      ctx.lineWidth = 1;
+    }
     ctx.fillStyle = PALETTE.textWarm;
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(enraged ? `${name} — ENRAGED` : name, VIEW.WIDTH / 2, y - 6);
     ctx.fillStyle = '#3a1408';
     ctx.fillRect(x, y, w, 10);
-    ctx.fillStyle = enraged ? PALETTE.blood : PALETTE.ember;
+    ctx.fillStyle = flash > 0 ? '#fff2e4' : enraged ? PALETTE.blood : PALETTE.ember;
     ctx.fillRect(x, y, w * Math.max(0, hp / maxHp), 10);
   }
 
@@ -292,6 +327,10 @@ export class HudRenderer {
 
     ctx.save();
     ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+    // Wave K — the banner rises its last few pixels as it fades in.
+    if (elapsed < OVERLAY.BANNER_FADE_IN) {
+      ctx.translate(0, Math.round((1 - elapsed / OVERLAY.BANNER_FADE_IN) * 10));
+    }
     ctx.fillStyle = 'rgba(5, 3, 8, 0.75)';
     ctx.fillRect(0, 180, VIEW.WIDTH, 110);
     ctx.fillStyle = PALETTE.emberBright;
@@ -883,6 +922,8 @@ export class HudRenderer {
     // v5 Wave F — the finds ledger, only when there is something to say.
     if (ledger.bankedFinds > 0) rows.push(['FINDS KEPT', `${ledger.bankedFinds}`]);
     if (ledger.dupeGold > 0) rows.push(['DUPLICATES SOLD', `+${ledger.dupeGold}g`]);
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, timer / 0.3); // Wave K — the page fades in
     ctx.fillStyle = 'rgba(5, 3, 8, 0.88)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
 
@@ -915,6 +956,7 @@ export class HudRenderer {
         ctx.fillText('PRESS SPACE — LASTLIGHT AWAITS', VIEW.WIDTH / 2, y + 30);
       }
     }
+    ctx.restore();
   }
 
   /** v4 Wave C — saga interlude: a story beat between chapters. */
@@ -923,6 +965,8 @@ export class HudRenderer {
     view: { sagaName: string; title: string; text: string },
     timer: number,
   ): void {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, timer / 0.3); // Wave K — the page fades in
     ctx.fillStyle = 'rgba(5, 3, 8, 0.92)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
 
@@ -943,6 +987,7 @@ export class HudRenderer {
       ctx.font = 'bold 16px monospace';
       ctx.fillText('PRESS SPACE', VIEW.WIDTH / 2, VIEW.HEIGHT - 84);
     }
+    ctx.restore();
   }
 
   /** v4 Wave D — the character sheet (Tab): the whole hero on one page. */
@@ -1337,6 +1382,8 @@ export class HudRenderer {
         ? recap.retireHold / PROGRESSION.RETIRE_HOLD_SECONDS
         : undefined;
 
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, recap.timer / 0.35); // Wave K — fade in
     ctx.fillStyle = 'rgba(5, 3, 8, 0.88)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
 
@@ -1399,6 +1446,7 @@ export class HudRenderer {
         }
       }
     }
+    ctx.restore();
   }
 
   /** v4 Wave C — dungeon-merchant pedestal prompt (naming lives with the view). */

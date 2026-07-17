@@ -125,6 +125,40 @@ export const LIGHTING = {
   DARKNESS_MAX: 0.93,
 } as const;
 
+// Wave K — THE SPECTACLE: every impact-feel magnitude in one place. Hit-stop
+// freezes ONLY the playing sim (simDt); particles/shake/lighting/banners ride
+// real dt so the world stays alive through the freeze.
+export const JUICE = {
+  // Hit-stop lengths (seconds of frozen sim).
+  HITSTOP_KILL: 0.045,
+  HITSTOP_BOSS_HIT: 0.03,
+  HITSTOP_BOSS_KILL: 0.22,
+  HITSTOP_PLAYER_HURT: 0.06,
+  HITSTOP_SPELL_IMPACT: 0.05,
+  HITSTOP_ENRAGE: 0.08,
+  HITSTOP_MAX: 0.3, // stacked freezes never exceed this
+  // Transient flash-lights (radius px, life seconds).
+  FLASH_EXPLOSION_RADIUS: 130,
+  FLASH_EXPLOSION_LIFE: 0.35,
+  FLASH_SPELL_RADIUS: 110,
+  FLASH_SPELL_LIFE: 0.3,
+  FLASH_BOSS_DEATH_RADIUS: 220,
+  FLASH_BOSS_DEATH_LIFE: 0.8,
+  FLASH_LEVEL_UP_RADIUS: 150,
+  FLASH_LEVEL_UP_LIFE: 0.6,
+  // Floor-entry curtain: black scrim fading off after loadFloor.
+  CURTAIN_TIME: 0.35,
+  // Directional camera kick (px at strength 1) + decay rate.
+  KICK_MAGNITUDE: 7,
+  KICK_DECAY: 9,
+  KICK_MELEE: 0.5,
+  KICK_HURT: 0.7,
+  KICK_BOSS: 1.0,
+  // Hurt vignette / low-HP pulse alphas.
+  VIGNETTE_HURT_ALPHA: 0.28,
+  VIGNETTE_LOW_HP_ALPHA: 0.16,
+} as const;
+
 // Overlay timing (house style: fade-in / hold / fade-out banners, recap lockout)
 export const OVERLAY = {
   BANNER_FADE_IN: 0.4,

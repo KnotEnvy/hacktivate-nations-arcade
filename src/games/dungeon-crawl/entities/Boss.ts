@@ -38,6 +38,9 @@ export class Boss {
   readonly tier: number; // 1-based boss encounter number
   readonly kit: BossKit;
   flash = 0;
+  // Wave K — view-only flare set by Combat at the moment the 35% enrage
+  // threshold is crossed (TileRenderer ring + HUD bar flash read it).
+  enrageFlash = 0;
 
   phase: BossPhase = 'pursue';
   phaseTimer: number = BOSS.PURSUE_TIME;
@@ -89,6 +92,7 @@ export class Boss {
   update(dt: number, ctx: BossUpdateContext): void {
     if (!this.alive) return;
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt);
+    if (this.enrageFlash > 0) this.enrageFlash = Math.max(0, this.enrageFlash - dt);
     if (this.fading > 0) this.fading = Math.max(0, this.fading - dt * 3);
 
     const dx = ctx.playerX - this.x;

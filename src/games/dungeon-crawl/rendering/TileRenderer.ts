@@ -26,6 +26,19 @@ export class TileRenderer {
   /** Bolts + daggers (mage mana bolts glow arcane; plain daggers stay steel). */
   drawProjectiles(ctx: CanvasRenderingContext2D, projectiles: readonly Projectile[]): void {
     for (const proj of projectiles) {
+      // Wave K — motion trail: two fading chips back along the flight path.
+      const speed = Math.hypot(proj.vx, proj.vy) || 1;
+      const dirX = proj.vx / speed;
+      const dirY = proj.vy / speed;
+      ctx.fillStyle =
+        proj.kind === 'bolt'
+          ? proj.homing > 0 ? '#c99aff' : '#78beff'
+          : proj.homing > 0 ? '#9ad8ff' : PALETTE.dagger;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(Math.round(proj.x - dirX * 7) - 2, Math.round(proj.y - dirY * 7) - 2, 4, 4);
+      ctx.globalAlpha = 0.15;
+      ctx.fillRect(Math.round(proj.x - dirX * 13) - 1, Math.round(proj.y - dirY * 13) - 1, 3, 3);
+      ctx.globalAlpha = 1;
       if (proj.kind === 'bolt') {
         ctx.fillStyle = proj.homing > 0 ? '#c99aff' : '#78beff';
         ctx.fillRect(Math.round(proj.x) - 3, Math.round(proj.y) - 3, 6, 6);
@@ -152,6 +165,13 @@ export class TileRenderer {
               const pulse = 0.5 + 0.5 * Math.sin(time * 4);
               ctx.fillStyle = `rgba(255, 184, 77, ${0.25 + 0.3 * pulse})`;
               ctx.fillRect(px + 8, py + 8, TILE - 16, TILE - 16);
+              // Wave K — motes rise from the open stairwell, beckoning down.
+              for (let m = 0; m < 3; m++) {
+                const t = (time * 0.6 + m * 0.37) % 1;
+                const mx = px + 6 + ((m * 11 + 3) % (TILE - 12));
+                ctx.fillStyle = `rgba(255, 208, 120, ${(1 - t) * 0.65})`;
+                ctx.fillRect(mx, Math.round(py + TILE - 6 - t * (TILE - 10)), 2, 2);
+              }
             }
             break;
           }
@@ -188,26 +208,50 @@ export class TileRenderer {
     if (player.invuln > 0 && Math.floor(time * 16) % 2 === 0) return;
 
     const bob = player.moving ? Math.round(Math.sin(time * 12)) : 0;
-    const px = Math.round(x);
-    const py = Math.round(y) + bob;
-
-    // Sword slash arc (visual tail).
-    if (player.swingAnim > 0) {
-      const progress = 1 - player.swingAnim / 0.22;
-      const angle = Math.atan2(player.faceY, player.faceX);
-      ctx.strokeStyle = `rgba(255, 232, 200, ${0.9 - progress * 0.8})`;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      const sweep = (player.meleeArcDeg() * Math.PI) / 180;
-      ctx.arc(px, py, player.meleeRange() - 6, angle - sweep / 2 + sweep * progress * 0.4, angle + sweep / 2 - sweep * (1 - progress) * 0.1);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-    }
+    const swingProgress = player.swingAnim > 0 ? 1 - player.swingAnim / 0.22 : 0;
+    // Wave K — the strike leans into the swing (a short forward lunge).
+    const lunge = player.swingAnim > 0 ? Math.sin(Math.min(1, swingProgress) * Math.PI) * 3 : 0;
+    const px = Math.round(x + player.faceX * lunge);
+    const py = Math.round(y + player.faceY * lunge) + bob;
 
     // v3 — class recolor + silhouette; thief fades while hidden.
     const cls = player.classId ? CLASSES[player.classId] : null;
     const tunic = cls?.tunic ?? '#7a3b1e';
     const trim = cls?.trim ?? '#5c2c14';
+
+    // Wave K — dash afterimages trail the sprint (derived from dash state).
+    if (player.dashTimer > 0) {
+      ctx.fillStyle = tunic;
+      for (let g = 1; g <= 2; g++) {
+        ctx.globalAlpha = g === 1 ? 0.3 : 0.14;
+        ctx.fillRect(
+          px - Math.round(player.dashDirX * 9 * g) - 8,
+          py - Math.round(player.dashDirY * 9 * g) - 6,
+          16,
+          14,
+        );
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Sword slash arc (visual tail) + Wave K bright inner edge.
+    if (player.swingAnim > 0) {
+      const angle = Math.atan2(player.faceY, player.faceX);
+      const sweep = (player.meleeArcDeg() * Math.PI) / 180;
+      const from = angle - sweep / 2 + sweep * swingProgress * 0.4;
+      const to = angle + sweep / 2 - sweep * (1 - swingProgress) * 0.1;
+      ctx.strokeStyle = `rgba(255, 232, 200, ${0.9 - swingProgress * 0.8})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(px, py, player.meleeRange() - 6, from, to);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(255, 255, 244, ${0.55 - swingProgress * 0.5})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, player.meleeRange() - 11, from, to);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
     ctx.save();
     if (player.hiddenTimer > 0) ctx.globalAlpha = 0.4;
 
@@ -292,6 +336,16 @@ export class TileRenderer {
       ctx.beginPath();
       ctx.arc(px, py - half - 7, 5, 0, Math.PI * 2);
       ctx.stroke();
+    }
+
+    // Wave K — hit squash: the blow visibly compresses the body (derived from
+    // the same 0.15s flash timer that whitens it).
+    const squash = enemy.flash > 0 ? enemy.flash / 0.15 : 0;
+    if (squash > 0) {
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.scale(1 + 0.22 * squash, 1 - 0.18 * squash);
+      ctx.translate(-px, -py);
     }
 
     switch (enemy.config.behavior) {
@@ -492,6 +546,8 @@ export class TileRenderer {
         break;
       }
     }
+
+    if (squash > 0) ctx.restore(); // Wave K — undo the hit squash
   }
 
   drawBoss(ctx: CanvasRenderingContext2D, boss: Boss, time: number): void {
@@ -504,6 +560,17 @@ export class TileRenderer {
 
     // Teleport fade-in (Hollow King) — sprite ghosts back into existence.
     if (boss.fading > 0) ctx.globalAlpha = Math.max(0.15, 1 - boss.fading);
+
+    // Wave K — the enrage flare: a blood ring erupts as the threshold breaks.
+    if (boss.enrageFlash > 0) {
+      const f = boss.enrageFlash; // 1 -> 0 over the flare second
+      ctx.strokeStyle = `rgba(214, 61, 61, ${0.75 * f})`;
+      ctx.lineWidth = 2 + 3 * f;
+      ctx.beginPath();
+      ctx.arc(px, py, half + 10 + (1 - f) * 34, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
 
     // Telegraph ring — the dodge cue.
     if (telegraph) {
@@ -726,9 +793,21 @@ export class TileRenderer {
         ctx.fillRect(px - 4, py - 4, 8, 8);
         ctx.fillStyle = '#b8860b';
         ctx.fillRect(px - 1, py - 3, 2, 6);
+        // Wave K — a passing glint catches the torchlight.
+        if (Math.floor(time * 3 + pickup.bobPhase) % 4 === 0) {
+          ctx.fillStyle = '#fff6d8';
+          ctx.fillRect(px - 3, py - 3, 2, 2);
+        }
         break;
       }
       case 'heart': {
+        // Wave K — a soft beat: the heart glows on its pulse.
+        if (Math.sin(time * 4 + pickup.bobPhase) > 0.55) {
+          ctx.globalAlpha = 0.25;
+          ctx.fillStyle = PALETTE.heart;
+          ctx.fillRect(px - 8, py - 6, 16, 15);
+          ctx.globalAlpha = 1;
+        }
         ctx.fillStyle = PALETTE.heart;
         ctx.fillRect(px - 6, py - 4, 5, 5);
         ctx.fillRect(px + 1, py - 4, 5, 5);

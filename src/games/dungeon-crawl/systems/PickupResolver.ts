@@ -90,6 +90,7 @@ export class PickupResolver {
     this.host.onRelicCollected();
     this.host.playSound('unlock', 0.6);
     this.host.particles.burst(player.x, player.y, RELICS[id].color, 16, 120, 0.8);
+    this.host.particles.ring(player.x, player.y, RELICS[id].color, 40, 0.4); // Wave K
     this.host.showBanner(RELICS[id].name, RELICS[id].blurb);
   }
 

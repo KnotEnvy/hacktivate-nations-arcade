@@ -40,6 +40,8 @@ export interface DraftFlowHost {
   setActiveSpellIndex(index: number): void;
   /** v5 Wave F — re-fold effective scores (equipment-aware) into the player. */
   refreshStatMods(): void;
+  /** Wave K — a burst of light blooms where the hero levels up. */
+  flashLight(x: number, y: number): void;
 }
 
 export class DraftFlow {
@@ -198,6 +200,8 @@ export class DraftFlow {
         this.host.showBanner(`LEVEL ${level}!`, `${STATS[pick.id].name} RISES`);
       }
       player.gainLevelBenefits(gain);
+      this.host.flashLight(player.x, player.y); // Wave K — the moment glows
+      this.host.particles().ring(player.x, player.y, '#ffd980', 46, 0.45);
       this.host.playSound('powerup', 0.6);
       this.syncProgressionStats();
       // Boss XP can cross two thresholds — draft again if another level waits.

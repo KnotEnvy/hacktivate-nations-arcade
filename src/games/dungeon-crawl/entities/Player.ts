@@ -49,8 +49,9 @@ export class Player {
   // v2 — dodge dash.
   dashTimer = 0; // > 0 while mid-dash
   dashCooldown = 0;
-  private dashDirX = 0;
-  private dashDirY = 1;
+  // Wave K — public: TileRenderer draws the dash ghost trail along these.
+  dashDirX = 0;
+  dashDirY = 1;
 
   // v3 — class kit (neutral until the run-start pick) + signature ability.
   kit: ClassKit = DEFAULT_KIT;

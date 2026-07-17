@@ -7,7 +7,7 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { AbilityId, CLASS_TUNING } from '../data/classes';
-import { EXPLOSIONS, HAZARDS, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
+import { EXPLOSIONS, HAZARDS, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
 import { STAT_TUNING } from '../data/stats';
@@ -23,6 +23,7 @@ import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { Urn } from '../entities/Urn';
+import { Juice } from './Juice';
 import { ParticleSystem } from './ParticleSystem';
 import { ScreenShake } from './ScreenShake';
 
@@ -149,6 +150,7 @@ export interface CombatHost {
   boss(): Boss | null;
   particles: ParticleSystem;
   shake: ScreenShake;
+  juice: Juice; // Wave K — hit-stop + flash-lights
   addEnemy(enemy: Enemy): void;
   addPickup(pickup: Pickup): void;
   addProjectile(projectile: Projectile): void;
@@ -198,6 +200,7 @@ export class Combat {
     this.shockwaves.push({ x, y, radius: 0, delay, hitPlayer: false });
     if (delay === 0) {
       this.host.shake.add(0.45);
+      this.host.shake.kick(0, 1, JUICE.KICK_BOSS); // Wave K — the slam lands
       this.host.playSound('explosion', 0.45);
     }
   }
@@ -264,6 +267,8 @@ export class Combat {
     enemy.applyKnockback(dirX, dirY, player.meleeKnockback());
     this.host.playSound('hit', 0.35);
     this.host.particles.spray(enemy.x, enemy.y, dirX, dirY, enemy.config.color, 6);
+    this.host.particles.sparks(enemy.x, enemy.y, dirX, dirY, '#ffd9a0', 4); // Wave K
+    this.host.shake.kick(dirX, dirY, JUICE.KICK_MELEE); // Wave K — follow-through
 
     if (enemy.hp <= 0) this.killEnemy(enemy);
   }
@@ -282,7 +287,9 @@ export class Combat {
     const rng = this.host.rng();
     enemy.alive = false;
     this.host.registerKill(enemy.config.score * (enemy.elite?.scoreMult ?? 1));
+    this.host.juice.hitStop(JUICE.HITSTOP_KILL); // Wave K — the blow bites
     this.host.particles.burst(enemy.x, enemy.y, enemy.config.color, 14, 130, 0.6);
+    this.host.particles.ring(enemy.x, enemy.y, enemy.config.color, 26, 0.28); // Wave K
     this.host.playSound('explosion', 0.2);
 
     // v2 — volatile elite death fuse (elite stat bookkeeping is host-side).
@@ -366,19 +373,42 @@ export class Combat {
   hitBoss(damage: number): void {
     const boss = this.host.boss();
     if (!boss?.alive) return;
+    const wasEnraged = boss.enraged;
     boss.hp -= damage;
     boss.flash = 0.15;
+    this.host.juice.hitStop(JUICE.HITSTOP_BOSS_HIT); // Wave K
     this.host.playSound('hit', 0.4);
     this.host.particles.burst(boss.x, boss.y, boss.kit.crackColor, 8, 120, 0.4);
-    if (boss.hp <= 0) this.killBoss(boss);
+    this.host.particles.sparks(boss.x, boss.y, 0, -1, '#ffd9a0', 5); // Wave K
+    if (boss.hp <= 0) {
+      this.killBoss(boss);
+      return;
+    }
+    // Wave K — the 35% crossing gets its MOMENT: flare, roar, heave, freeze.
+    if (!wasEnraged && boss.enraged) {
+      boss.enrageFlash = 1.0;
+      this.host.juice.hitStop(JUICE.HITSTOP_ENRAGE);
+      this.host.juice.flashLight(boss.x, boss.y, JUICE.FLASH_BOSS_DEATH_RADIUS, 0.5);
+      this.host.shake.add(0.5);
+      this.host.shake.kick(0, -1, JUICE.KICK_BOSS);
+      this.host.particles.ring(boss.x, boss.y, PALETTE.blood, 70, 0.5);
+      this.host.particles.burst(boss.x, boss.y, PALETTE.blood, 18, 170, 0.6);
+      this.host.playSound('death_cry', 0.35);
+    }
   }
 
   private killBoss(boss: Boss): void {
     const rng = this.host.rng();
     boss.alive = false;
     this.host.shake.add(0.8);
+    this.host.shake.kick(0, -1, JUICE.KICK_BOSS); // Wave K — the arena heaves
+    // Wave K — the Guardian's fall stops the world and lights the arena.
+    this.host.juice.hitStop(JUICE.HITSTOP_BOSS_KILL);
+    this.host.juice.flashLight(boss.x, boss.y, JUICE.FLASH_BOSS_DEATH_RADIUS, JUICE.FLASH_BOSS_DEATH_LIFE);
     this.host.particles.burst(boss.x, boss.y, PALETTE.emberBright, 40, 220, 1.0, 120);
     this.host.particles.burst(boss.x, boss.y, boss.kit.crackColor, 24, 160, 0.8);
+    this.host.particles.ring(boss.x, boss.y, PALETTE.emberBright, 90, 0.55); // Wave K
+    this.host.particles.ring(boss.x, boss.y, boss.kit.crackColor, 55, 0.4);
     this.host.playSound('death_cry', 0.7);
 
     // Gold shower + a heart for the road.
@@ -765,6 +795,10 @@ export class Combat {
           this.hitBoss(dmg);
         }
         this.host.shake.add(0.25);
+        this.host.juice.hitStop(JUICE.HITSTOP_SPELL_IMPACT); // Wave K
+        if (target) {
+          this.host.juice.flashLight(target.x, target.y, JUICE.FLASH_SPELL_RADIUS, JUICE.FLASH_SPELL_LIFE);
+        }
         this.host.playSound('explosion', 0.35);
         this.host.particles.burst(player.x, player.y, '#ffe95e', 10, 120, 0.4);
         break;
@@ -828,6 +862,7 @@ export class Combat {
         // A roar staggers the room: brief stun + shove all around.
         this.host.playSound('powerup', 0.5);
         this.host.shake.add(0.35);
+        this.host.juice.hitStop(JUICE.HITSTOP_SPELL_IMPACT); // Wave K
         this.host.particles.burst(player.x, player.y, '#ff6a4d', 22, 190, 0.55);
         for (const enemy of this.host.enemies()) {
           if (!enemy.alive || enemy.dormant) continue;
@@ -1038,8 +1073,11 @@ export class Combat {
         }
       }
       this.host.shake.add(0.35);
+      this.host.juice.flashLight(explosion.x, explosion.y, JUICE.FLASH_EXPLOSION_RADIUS, JUICE.FLASH_EXPLOSION_LIFE);
       this.host.particles.burst(explosion.x, explosion.y, PALETTE.ember, 22, 190, 0.6, 140);
       this.host.particles.burst(explosion.x, explosion.y, PALETTE.emberBright, 10, 120, 0.4);
+      this.host.particles.ring(explosion.x, explosion.y, PALETTE.emberBright, explosion.radius + 14, 0.35); // Wave K
+      this.host.particles.sparks(explosion.x, explosion.y, 0, -1, PALETTE.emberBright, 8, 320);
       this.host.playSound('explosion', 0.4);
     }
   }
