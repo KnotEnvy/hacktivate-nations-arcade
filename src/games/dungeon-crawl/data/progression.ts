@@ -41,27 +41,23 @@ export interface LevelGain {
 
 /**
  * Gains arriving AT each level: index 0 = reaching level 2 ... index 8 = level
- * 10 (nine rows per class). Hit-die flavor: fighter/cleric end at 20 hp, thief
- * trades hp for stride, mage stays fragile but deepens the mana pool.
+ * 10 (nine rows per class). Wave L — HP left these rows for the HIT DIE: every
+ * level-up ROLLS the class die live and the hero keeps the roll (hpRolls on
+ * the save). The rows now carry only the side benefits: thief stride, mage
+ * mana-pool depth.
  */
 export const LEVEL_GAINS: Record<ClassId, readonly LevelGain[]> = {
-  fighter: [
-    { hp: 2 }, { hp: 1 }, { hp: 1 }, { hp: 2 }, { hp: 1 },
-    { hp: 1 }, { hp: 2 }, { hp: 1 }, { hp: 1 },
-  ],
-  cleric: [
-    { hp: 2 }, { hp: 1 }, { hp: 2 }, { hp: 1 }, { hp: 2 },
-    { hp: 1 }, { hp: 2 }, { hp: 1 }, { hp: 2 },
-  ],
+  fighter: [{}, {}, {}, {}, {}, {}, {}, {}, {}],
+  cleric: [{}, {}, {}, {}, {}, {}, {}, {}, {}],
   thief: [
-    { hp: 1 }, { hp: 1, speed: 0.03 }, { hp: 1 }, { hp: 1 },
-    { hp: 1, speed: 0.03 }, { hp: 1 }, { hp: 1 },
-    { hp: 1, speed: 0.03 }, { hp: 1 },
+    {}, { speed: 0.03 }, {}, {},
+    { speed: 0.03 }, {}, {},
+    { speed: 0.03 }, {},
   ],
   mage: [
-    { hp: 1, daggerCap: 1 }, { hp: 1 }, { hp: 1, daggerCap: 1 }, { hp: 1 },
-    { hp: 1, daggerCap: 1 }, { hp: 1 }, { hp: 1, daggerCap: 1 }, { hp: 1 },
-    { hp: 1, daggerCap: 1 },
+    { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
+    { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
+    { daggerCap: 1 },
   ],
 };
 
@@ -75,6 +71,15 @@ export function cumulativeGains(classId: ClassId, level: number): Required<Level
     total.daggerCap += rows[i].daggerCap ?? 0;
   }
   return total;
+}
+
+/**
+ * Wave L — the middle-of-the-die backfill: veterans saved before hit dice
+ * existed (and any missing hpRolls entry) are treated as having rolled the
+ * average, rounded up. d10 -> 6, d8 -> 5, d6 -> 4, d4 -> 3.
+ */
+export function averageHpRoll(hitDie: number): number {
+  return Math.ceil((hitDie + 1) / 2);
 }
 
 export const PROGRESSION = {

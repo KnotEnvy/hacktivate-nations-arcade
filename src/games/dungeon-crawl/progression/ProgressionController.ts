@@ -6,8 +6,9 @@
 // frame. DungeonCrawlGame stays dispatch glue.
 
 import { ALL_BOON_IDS, BOONS, BoonId } from '../data/boons';
-import { ClassId } from '../data/classes';
+import { CLASSES, ClassId } from '../data/classes';
 import {
+  averageHpRoll,
   cumulativeGains,
   HERO_NAMES,
   LEVEL_CAP,
@@ -114,6 +115,7 @@ export class ProgressionController {
       equipment: {},
       stash: [],
       lineage: lineageId,
+      hpRolls: [], // Wave L — level 1 is the die's maximum; rolls start at 2
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -178,7 +180,7 @@ export class ProgressionController {
    * Returns the new level and the class's gain row for it so the game can
    * apply the benefits live.
    */
-  confirmLevelUp(pick: DraftPick | null): { level: number; gain: LevelGain } {
+  confirmLevelUp(pick: DraftPick | null, hpRoll?: number): { level: number; gain: LevelGain } {
     const hero = this.character()!;
     hero.level++;
     if (pick?.kind === 'boon') {
@@ -192,9 +194,22 @@ export class ProgressionController {
       // semantically "boons").
       hero.scores[pick.id] = Math.min(STAT_TUNING.SCORE_MAX, hero.scores[pick.id] + 1);
     }
+    // Wave L — the hit die is rolled by the caller (live rng); the hero keeps
+    // the roll forever. Missing roll (tests, edge paths) = the average.
+    const hitDie = CLASSES[hero.classId].kit.hitDie;
+    const rolled = Math.min(
+      hitDie,
+      Math.max(1, Math.floor(hpRoll ?? averageHpRoll(hitDie))),
+    );
+    hero.hpRolls.push(rolled);
     this.sessionLevels++;
     this.store.save(this.payload);
-    const gain = LEVEL_GAINS[hero.classId][hero.level - 2] ?? {};
+    const row = LEVEL_GAINS[hero.classId][hero.level - 2] ?? {};
+    // The new level's HP: the roll + this level's CON share (2e: per hit die).
+    const gain: LevelGain = {
+      ...row,
+      hp: rolled + this.statDeltas().con * STAT_TUNING.CON_HP_PER_LEVEL,
+    };
     return { level: hero.level, gain };
   }
 
@@ -209,7 +224,11 @@ export class ProgressionController {
   gains(): { hp: number; speed: number; daggerCap: number } {
     const hero = this.character();
     if (!hero) return { hp: 0, speed: 0, daggerCap: 0 };
-    return cumulativeGains(hero.classId, hero.level);
+    const total = cumulativeGains(hero.classId, hero.level);
+    // Wave L — banked HP is the hero's OWN kept rolls (sanitize guarantees
+    // exactly level-1 entries); CON's per-level share folds in Player.
+    total.hp = hero.hpRolls.reduce((sum, roll) => sum + roll, 0);
+    return total;
   }
 
   /**

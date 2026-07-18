@@ -7,6 +7,7 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { AbilityId, CLASS_TUNING } from '../data/classes';
+import { rollDice } from '../data/dice';
 import { EXPLOSIONS, HAZARDS, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
@@ -23,6 +24,7 @@ import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
 import { Urn } from '../entities/Urn';
+import { FloatingTextSystem } from './FloatingText';
 import { Juice } from './Juice';
 import { ParticleSystem } from './ParticleSystem';
 import { ScreenShake } from './ScreenShake';
@@ -151,6 +153,7 @@ export interface CombatHost {
   particles: ParticleSystem;
   shake: ScreenShake;
   juice: Juice; // Wave K — hit-stop + flash-lights
+  floatingText: FloatingTextSystem; // Wave L — combat numbers
   addEnemy(enemy: Enemy): void;
   addPickup(pickup: Pickup): void;
   addProjectile(projectile: Projectile): void;
@@ -175,6 +178,17 @@ export class Combat {
   shockwaves: Shockwave[] = [];
 
   constructor(private host: CombatHost) {}
+
+  /** Wave L — heal + show the ACTUAL hp gained (the clamp can eat a roll). */
+  private healPlayer(amount: number): void {
+    const player = this.host.player();
+    const before = player.hp;
+    player.heal(amount);
+    const gained = player.hp - before;
+    if (gained > 0) {
+      this.host.floatingText.push(player.x, player.y - 16, `+${gained}`, '#7fd764');
+    }
+  }
 
   reset(): void {
     this.explosions = [];
@@ -265,6 +279,8 @@ export class Combat {
     enemy.flash = 0.15;
     enemy.aggro = true;
     enemy.applyKnockback(dirX, dirY, player.meleeKnockback());
+    // Wave L — the number lands with the blow (pale, small).
+    this.host.floatingText.push(enemy.x, enemy.y - enemy.radius - 6, `${dealt}`, '#fff2e4', 0.85);
     this.host.playSound('hit', 0.35);
     this.host.particles.spray(enemy.x, enemy.y, dirX, dirY, enemy.config.color, 6);
     this.host.particles.sparks(enemy.x, enemy.y, dirX, dirY, '#ffd9a0', 4); // Wave K
@@ -376,6 +392,7 @@ export class Combat {
     const wasEnraged = boss.enraged;
     boss.hp -= damage;
     boss.flash = 0.15;
+    this.host.floatingText.push(boss.x, boss.y - boss.radius - 8, `${damage}`, '#fff2e4', 0.85);
     this.host.juice.hitStop(JUICE.HITSTOP_BOSS_HIT); // Wave K
     this.host.playSound('hit', 0.4);
     this.host.particles.burst(boss.x, boss.y, boss.kit.crackColor, 8, 120, 0.4);
@@ -492,7 +509,7 @@ export class Combat {
         this.frostNova();
         break;
       case 'healing':
-        player.heal(Math.ceil(SCROLL_TUNING.HEAL_HP * scholarMult));
+        this.healPlayer(Math.ceil(rollDice(this.host.rng(), SCROLL_TUNING.HEAL_HP) * scholarMult));
         this.host.playSound('extraLife', 0.5);
         this.host.particles.burst(player.x, player.y, PALETTE.heart, 14, 110, 0.6);
         break;
@@ -607,7 +624,7 @@ export class Combat {
       if (!hazard.dangerous) continue;
       const reach = HAZARDS.RADIUS + player.size / 2;
       if (Math.hypot(hazard.x - player.x, hazard.y - player.y) < reach) {
-        this.host.damagePlayer(HAZARDS.DAMAGE, 'hazard');
+        this.host.damagePlayer(rollDice(this.host.rng(), HAZARDS.DAMAGE), 'hazard');
       }
     }
   }
@@ -634,7 +651,7 @@ export class Combat {
     const player = this.host.player();
     switch (product) {
       case 'heart':
-        player.heal(PICKUPS.HEART_HEAL + player.heartHealBonus());
+        this.healPlayer(rollDice(this.host.rng(), PICKUPS.HEART_HEAL) + player.heartHealBonus());
         break;
       case 'daggers':
         player.daggers = Math.min(player.daggerCap(), player.daggers + PICKUPS.DAGGER_BUNDLE + 2);
@@ -711,9 +728,11 @@ export class Combat {
         break;
       }
       case 'cure-wounds':
-        player.heal(
+        this.healPlayer(
           Math.ceil(
-            (SPELL_TUNING.CURE_HP + player.statMods.wis * STAT_TUNING.WIS_HEAL) * scholarMult,
+            (rollDice(this.host.rng(), SPELL_TUNING.CURE_HP) +
+              player.statMods.wis * STAT_TUNING.WIS_HEAL) *
+              scholarMult,
           ),
         );
         this.host.playSound('extraLife', 0.5);
@@ -721,7 +740,7 @@ export class Combat {
         break;
       case 'bless':
         player.addBuff('haste');
-        player.heal(SPELL_TUNING.BLESS_HP + player.statMods.wis * STAT_TUNING.WIS_HEAL);
+        this.healPlayer(SPELL_TUNING.BLESS_HP + player.statMods.wis * STAT_TUNING.WIS_HEAL);
         this.host.playSound('powerup', 0.5);
         this.host.particles.burst(player.x, player.y, '#ffe08a', 14, 110, 0.6);
         break;
@@ -876,7 +895,7 @@ export class Combat {
         break;
       case 'second-wind':
         // Martial grit — a flat heal, no WIS fold.
-        player.heal(SPELL_TUNING.SECOND_WIND_HP);
+        this.healPlayer(rollDice(this.host.rng(), SPELL_TUNING.SECOND_WIND_HP));
         this.host.playSound('extraLife', 0.5);
         this.host.particles.burst(player.x, player.y, '#8fe08a', 14, 110, 0.6);
         break;
@@ -958,11 +977,14 @@ export class Combat {
       map: this.host.map(),
       rng: this.host.rng(),
       fireBolt: (x, y, dirX, dirY, speed) => {
-        this.host.addProjectile(new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1));
+        // Wave L — Guardian bolts roll their dice at fire time.
+        const damage = rollDice(this.host.rng(), BOSS.BOLT_DAMAGE);
+        this.host.addProjectile(new Projectile('bolt', x, y, dirX * speed, dirY * speed, damage));
       },
       fireHomingBolt: (x, y, dirX, dirY, speed) => {
+        const damage = rollDice(this.host.rng(), BOSS.BOLT_DAMAGE);
         this.host.addProjectile(
-          new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1, false, 2.2),
+          new Projectile('bolt', x, y, dirX * speed, dirY * speed, damage, false, 2.2),
         );
       },
       spawnShockwave: (x, y, delay) => this.spawnShockwave(x, y, delay),
@@ -988,8 +1010,9 @@ export class Combat {
     });
     const touchReach = boss.radius + player.size / 2;
     if (Math.hypot(boss.x - player.x, boss.y - player.y) < touchReach) {
+      // Wave L — the Guardian's blow lands as dice.
       this.host.damagePlayer(
-        boss.isCharging ? BOSS.CHARGE_DAMAGE : BOSS.TOUCH_DAMAGE,
+        rollDice(this.host.rng(), boss.isCharging ? BOSS.CHARGE_DAMAGE : BOSS.TOUCH_DAMAGE),
         boss.isCharging ? 'boss_charge' : 'boss_touch',
       );
     }
@@ -1037,10 +1060,11 @@ export class Combat {
       if (explosion.fuse > 0) continue;
       this.explosions.splice(i, 1);
       if (explosion.source === 'enemy') {
-        // Boom: player inside the radius.
+        // Boom: player inside the radius. Wave L — the blast rolls its dice
+        // against the HERO; the staged number stays the monster-side economy.
         const reach = explosion.radius + player.size / 2;
         if (Math.hypot(explosion.x - player.x, explosion.y - player.y) < reach) {
-          this.host.damagePlayer(explosion.damage, 'explosion');
+          this.host.damagePlayer(rollDice(this.host.rng(), EXPLOSIONS.PLAYER_DAMAGE), 'explosion');
         }
       } else {
         // Player-sourced boom: monsters and the boss, never the player.
@@ -1117,7 +1141,7 @@ export class Combat {
         const dist = Math.hypot(wave.x - player.x, wave.y - player.y);
         if (Math.abs(dist - wave.radius) < SHOCKWAVE.THICKNESS + player.size / 2) {
           wave.hitPlayer = true;
-          this.host.damagePlayer(SHOCKWAVE.DAMAGE, 'shockwave');
+          this.host.damagePlayer(rollDice(this.host.rng(), SHOCKWAVE.DAMAGE), 'shockwave');
         }
       }
       if (wave.radius > SHOCKWAVE.MAX_RADIUS) this.shockwaves.splice(i, 1);

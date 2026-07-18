@@ -4,6 +4,8 @@
 // player carries one at a time and reads it with F / O. Effects resolve in
 // DungeonCrawlGame/Combat; nothing here executes logic. All text original.
 
+import type { Dice } from './dice';
+
 export type ScrollId = 'flame' | 'frost' | 'healing' | 'shielding' | 'revelation';
 
 export interface ScrollDef {
@@ -32,7 +34,7 @@ export const SCROLLS: Record<ScrollId, ScrollDef> = {
   healing: {
     id: 'healing',
     name: 'SCROLL OF HEALING',
-    blurb: 'Mends two full hearts',
+    blurb: 'Mends grievous wounds',
     icon: '✜',
     color: '#ff4d5e',
   },
@@ -62,6 +64,6 @@ export const SCROLL_TUNING = {
   FLAME_DAMAGE: 3,
   FROST_RADIUS: 380,
   FROST_STUN: 2.5, // seconds — reuses Enemy.stunned
-  HEAL_HP: 4,
+  HEAL_HP: { n: 2, d: 6, plus: 2 } as Dice, // Wave L — rolled at the reading
   SHIELD_INVULN: 1.0, // seconds on top of the stoneskin buff
 } as const;

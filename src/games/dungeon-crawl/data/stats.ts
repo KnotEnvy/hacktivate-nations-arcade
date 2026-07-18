@@ -42,7 +42,7 @@ export const STATS: Record<StatId, StatDef> = {
     id: 'con',
     abbr: 'CON',
     name: 'CONSTITUTION',
-    blurb: 'Endurance — a deeper well of hearts',
+    blurb: 'Endurance — a deeper well of vigor',
     icon: '♥',
     color: '#d1604f',
   },
@@ -107,10 +107,10 @@ export const STAT_TUNING = {
   STR_KNOCKBACK: 20, // px onto the kit's melee knockback
   DEX_SPEED: 0.03, // additive into the speed training sum
   DEX_DASH_CD_MULT: 0.92, // dash cooldown ×this^dex
-  CON_HP: 2, // one heart
+  CON_HP_PER_LEVEL: 1, // Wave L — 2e proper: +this HP per delta point PER HIT DIE
   INT_SPELL_CD_MULT: 0.9, // spell cooldown ×this^int
   INT_SPELL_DAMAGE: 1, // burning hands / fireball
-  WIS_HEAL: 1, // hearts and cure/bless mend this much more
+  WIS_HEAL: 2, // heart pickups and cure/bless mend this much more (per point)
   WIS_XP_MULT: 0.05, // xp ×(1 + this·wis)
   CHA_SHOP_DISCOUNT: 0.05, // joins the haggler discount
   CHA_QUEST_GOLD: 0.05, // quest rewardGold ×(1 + this·cha)

@@ -3,7 +3,7 @@
 // ProgressionController roster API, and thin integration checks through the
 // public metric surface.
 
-import { ALL_BOON_IDS, BOONS } from '@/games/dungeon-crawl/data/boons';
+import { ALL_BOON_IDS, BOON_TUNING, BOONS } from '@/games/dungeon-crawl/data/boons';
 import { ALL_CLASS_IDS, CLASSES } from '@/games/dungeon-crawl/data/classes';
 import { PLAYER } from '@/games/dungeon-crawl/data/constants';
 import {
@@ -54,6 +54,8 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     equipment: {},
     stash: [],
     lineage: 'human',
+    // Wave L — a level-3 fighter carries two kept d10 rolls.
+    hpRolls: [6, 6],
     ...overrides,
   };
 }
@@ -120,12 +122,15 @@ describe('level curve + gains', () => {
     expect(mid.frac).toBeLessThan(1);
   });
 
-  test('every class has nine gain rows and respects the hp cap', () => {
+  test('every class has nine gain rows; HP left them for the hit die (Wave L)', () => {
     for (const classId of ALL_CLASS_IDS) {
       expect(LEVEL_GAINS[classId]).toHaveLength(LEVEL_CAP - 1);
       const total = cumulativeGains(classId, LEVEL_CAP);
-      expect(CLASSES[classId].kit.maxHp + total.hp).toBeLessThanOrEqual(PLAYER.HP_CAP);
-      expect(total.hp).toBeGreaterThan(0);
+      // Rows carry only side benefits now — the pool comes from kept rolls.
+      expect(total.hp).toBe(0);
+      const die = CLASSES[classId].kit.hitDie;
+      // Even a max-rolling max-CON hero stays under the safety ceiling.
+      expect(die + (LEVEL_CAP - 1) * die).toBeLessThanOrEqual(PLAYER.HP_CAP);
     }
   });
 });
@@ -330,15 +335,15 @@ describe('ProgressionController (roster)', () => {
 });
 
 describe('Player progression application', () => {
-  test('level gains and toughness raise the ceiling (clamped)', () => {
+  test('kept rolls and toughness raise the ceiling (Wave L contract)', () => {
     const player = new Player();
     player.reset(0, 0);
     player.applyKit(CLASSES.fighter);
-    // v5 Wave E legacy contract: no statDeltas passed = zero deltas = this
-    // exact pre-stats math. Deltas get their own tests in stats.test.ts.
-    player.applyProgression(cumulativeGains('fighter', 5), { toughness: 2 });
-    // fighter kit 8 + gains(L5: 2+1+1+2=6) + toughness 4 = 18
-    expect(player.maxHp).toBe(18);
+    // Wave L contract: the pool = hit-die max + the hero's OWN kept rolls +
+    // flat boon HP; zero statDeltas still means zero CON share.
+    player.applyProgression({ hp: 17, speed: 0, daggerCap: 0 }, { toughness: 2 });
+    // fighter d10 kit 10 + rolls 17 + toughness 2×5 = 37
+    expect(player.maxHp).toBe(10 + 17 + 2 * BOON_TUNING.TOUGHNESS_HP);
     expect(player.hp).toBe(player.maxHp);
   });
 

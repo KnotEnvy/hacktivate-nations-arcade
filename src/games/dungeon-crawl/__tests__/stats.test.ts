@@ -2,6 +2,7 @@
 // formula, delta folding (flat base = zero deltas = legacy feel), the seeded
 // forge roll, milestone schedule, persistence sanitize, and the Player folds.
 
+import { BOON_TUNING } from '@/games/dungeon-crawl/data/boons';
 import { ALL_CLASS_IDS, CLASSES } from '@/games/dungeon-crawl/data/classes';
 import {
   ALL_STAT_IDS,
@@ -256,17 +257,21 @@ describe('Player folds (siblings of the zero-delta legacy pins)', () => {
     return player;
   }
 
-  test('CON deepens the well: the legacy 18-hp fighter reaches 20 with +1 CON', () => {
+  test('CON deepens the well PER HIT DIE (Wave L): +1 CON at level 5 = +5 HP', () => {
     const player = new Player();
     player.reset(0, 0);
     player.applyKit(CLASSES.fighter);
     player.applyProgression(
-      { hp: 6, speed: 0, daggerCap: 0 }, // = cumulativeGains('fighter', 5)
+      { hp: 24, speed: 0, daggerCap: 0 }, // four kept d10 rolls of 6
       { toughness: 2 },
       {},
       { ...zeroStatMods(), con: 1 },
+      5, // Wave L — the CON share multiplies by level (2e: per hit die)
     );
-    expect(player.maxHp).toBe(18 + STAT_TUNING.CON_HP);
+    // kit 10 + rolls 24 + toughness 2×5 + CON 1×1×5 = 49
+    expect(player.maxHp).toBe(
+      10 + 24 + 2 * BOON_TUNING.TOUGHNESS_HP + 5 * STAT_TUNING.CON_HP_PER_LEVEL,
+    );
   });
 
   test('STR lands on sword damage and knockback', () => {
@@ -294,14 +299,14 @@ describe('Player folds (siblings of the zero-delta legacy pins)', () => {
     expect(keen.spellCooldown('cure-wounds')).toBeCloseTo(10 * STAT_TUNING.INT_SPELL_CD_MULT);
   });
 
-  test('a mid-run stat bump lands at once; a CON rise grants its hearts', () => {
-    const player = armedFighter({});
+  test('a mid-run stat bump lands at once; a CON rise grants its per-level HP', () => {
+    const player = armedFighter({}); // armed at default level 1
     const before = player.maxHp;
     player.setStatMods({ ...zeroStatMods(), con: 1 });
-    expect(player.maxHp).toBe(before + STAT_TUNING.CON_HP);
+    expect(player.maxHp).toBe(before + STAT_TUNING.CON_HP_PER_LEVEL * 1);
     expect(player.hp).toBe(player.maxHp);
     player.setStatMods({ ...zeroStatMods(), con: 1, str: 1 }); // no double CON grant
-    expect(player.maxHp).toBe(before + STAT_TUNING.CON_HP);
+    expect(player.maxHp).toBe(before + STAT_TUNING.CON_HP_PER_LEVEL * 1);
   });
 
   test('WIS multiplies earned XP (rounded)', () => {

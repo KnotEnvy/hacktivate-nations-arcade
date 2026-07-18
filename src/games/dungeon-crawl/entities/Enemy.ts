@@ -2,6 +2,7 @@
 // Data-driven monster. One class interprets every archetype's behavior from
 // ENEMY_CONFIGS; DungeonCrawlGame resolves damage, deaths and drops.
 
+import { rollDice } from '../data/dice';
 import {
   BOMBER,
   ELITE_CONFIGS,
@@ -31,6 +32,7 @@ export interface EnemyUpdateContext {
     dirY: number,
     speed: number,
     cause?: DeathCause, // v4 Wave D — recap flavor per shooter (default sorcery)
+    damage?: number, // Wave L — the shooter's dice, rolled at fire time
   ) => void;
   /** v2 — lob an arcing bomb that lands at the target point. */
   throwBomb: (x: number, y: number, targetX: number, targetY: number) => void;
@@ -232,7 +234,16 @@ export class Enemy {
           }
         }
         if (this.windup > 0 && this.windup - dt <= 0) {
-          ctx.fireBolt(this.x, this.y, dirX, dirY, SORCERER.BOLT_SPEED, this.config.boltCause);
+          ctx.fireBolt(
+            this.x,
+            this.y,
+            dirX,
+            dirY,
+            SORCERER.BOLT_SPEED,
+            this.config.boltCause,
+            // Wave L — the shooter rolls its own bolt dice on the live rng.
+            rollDice(ctx.rng, this.config.boltDamage ?? { n: 1, d: 3 }),
+          );
         }
       } else if (!ctx.playerHidden && dist < this.config.aggroRange) {
         this.aggro = ctx.map.hasLineOfSight(this.x, this.y, ctx.playerX, ctx.playerY);

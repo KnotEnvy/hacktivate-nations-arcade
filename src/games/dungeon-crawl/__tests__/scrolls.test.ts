@@ -3,6 +3,7 @@
 // Pins the scroll/relic data contracts, generator scroll placement, the
 // Minimap reveal, and the read-scroll flow through the public metric surface.
 
+import { diceMin } from '@/games/dungeon-crawl/data/dice';
 import { ALL_RELIC_IDS, RELIC_TUNING, RELICS } from '@/games/dungeon-crawl/data/relics';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, SCROLLS, ScrollId } from '@/games/dungeon-crawl/data/scrolls';
 import { QUESTS } from '@/games/dungeon-crawl/data/quests';
@@ -55,7 +56,7 @@ describe('scroll data contract', () => {
   test('scroll tuning is playable', () => {
     expect(SCROLL_TUNING.FLAME_DAMAGE).toBeGreaterThan(0);
     expect(SCROLL_TUNING.FROST_STUN).toBeGreaterThan(0);
-    expect(SCROLL_TUNING.HEAL_HP).toBeGreaterThan(0);
+    expect(diceMin(SCROLL_TUNING.HEAL_HP)).toBeGreaterThan(0); // Wave L — dice
     expect(SCROLL_TUNING.SHIELD_INVULN).toBeGreaterThan(0);
   });
 });

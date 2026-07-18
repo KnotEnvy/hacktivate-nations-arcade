@@ -36,7 +36,7 @@ export const BOONS: Record<BoonId, BoonDef> = {
   toughness: {
     id: 'toughness',
     name: 'TOUGHNESS',
-    blurb: '+1 heart, earned the hard way',
+    blurb: '+5 HP, earned the hard way',
     icon: '♦',
     color: '#c25b4a',
     maxStacks: 3,
@@ -60,7 +60,7 @@ export const BOONS: Record<BoonId, BoonDef> = {
   herbalism: {
     id: 'herbalism',
     name: 'HERBALISM',
-    blurb: 'Hearts mend one wound more',
+    blurb: 'Found hearts mend deeper',
     icon: '❦',
     color: '#7fae3f',
     maxStacks: 1,
@@ -111,14 +111,14 @@ export const ALL_BOON_IDS = Object.keys(BOONS) as BoonId[];
 
 export const BOON_TUNING = {
   WEAPON_SPEC_DAMAGE: 1,
-  TOUGHNESS_HP: 2,
+  TOUGHNESS_HP: 5, // Wave L — re-priced for hit-die pools
   FLEET_FOOT_SPEED: 0.04, // additive per stack
   BLIND_FIGHT_INVULN_MULT: 0.2, // extra hit i-frames per stack
-  HERBALISM_HEAL: 1,
+  HERBALISM_HEAL: 2, // Wave L — re-priced for hit-die pools
   HAGGLER_DISCOUNT: 0.1, // per stack
   MARKSMAN_DAMAGE: 1,
   IRON_WILL_CD_MULT: 0.92, // per stack
   SCHOLAR_MULT: 1.25,
-  SURVIVOR_HP: 2, // one heart on the once-per-expedition revive
+  // (Wave L — the revive returns at PLAYER.REVIVE_FRAC of the pool.)
   SURVIVOR_INVULN: 2.0,
 } as const;

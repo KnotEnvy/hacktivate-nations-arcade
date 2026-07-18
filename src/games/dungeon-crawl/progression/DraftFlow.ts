@@ -132,7 +132,13 @@ export class DraftFlow {
     const player = this.host.player();
     player.applyKit(def);
     player.applyLineage(hero.lineage);
-    player.applyProgression(progression.gains(), hero.boons, {}, progression.statDeltas());
+    player.applyProgression(
+      progression.gains(),
+      hero.boons,
+      hero.gear, // Wave L — the town pool now reads true (armor included)
+      progression.statDeltas(),
+      hero.level, // Wave L — CON's HP share is per hit die
+    );
     this.host.setChosenClass(def.id);
     this.host.trackStat(`${def.id}_depth`, this.host.floor());
     this.host.trackStat('character_level', hero.level);
@@ -152,11 +158,11 @@ export class DraftFlow {
     this.choices = progression.draftChoices(this.host.rng());
     this.index = 0;
     if (this.choices.length === 0) {
-      // Every training maxed — the level still lands.
+      // Every training maxed — the level still lands (hit die rolled live).
       while (progression.pendingLevelUp()) {
-        const { level, gain } = progression.confirmLevelUp(null);
+        const { level, gain } = progression.confirmLevelUp(null, this.rollHitDie());
         this.host.player().gainLevelBenefits(gain);
-        this.host.showBanner(`LEVEL ${level}!`, 'YOUR LEGEND GROWS');
+        this.host.showBanner(`LEVEL ${level}!`, `+${gain.hp ?? 0} HP — YOUR LEGEND GROWS`);
       }
       this.syncProgressionStats();
       return null;
@@ -179,25 +185,28 @@ export class DraftFlow {
       const progression = this.host.progression();
       const player = this.host.player();
       const pick = this.choices[this.index];
-      const { level, gain } = progression.confirmLevelUp(pick);
+      // Wave L — the hit die is rolled the moment the level lands; the
+      // banner announces the RESULT (never dice math on screen).
+      const { level, gain } = progression.confirmLevelUp(pick, this.rollHitDie());
+      const headline = `LEVEL ${level}! +${gain.hp ?? 0} HP`;
       if (pick.kind === 'boon') {
         player.gainBoon(pick.id);
         this.host.particles().burst(player.x, player.y, BOONS[pick.id].color, 18, 130, 0.8);
-        this.host.showBanner(`LEVEL ${level}!`, BOONS[pick.id].name);
+        this.host.showBanner(headline, BOONS[pick.id].name);
       } else if (pick.kind === 'spell') {
         // v4 Wave D — a spell joins the grimoire and readies itself at once.
         this.host.setActiveSpellIndex(
           Math.max(0, (progression.character()?.spells.length ?? 1) - 1),
         );
         this.host.particles().burst(player.x, player.y, SPELLS[pick.id].color, 18, 130, 0.8);
-        this.host.showBanner(`LEVEL ${level}!`, `${SPELLS[pick.id].name} — V TO CAST`);
+        this.host.showBanner(headline, `${SPELLS[pick.id].name} — V TO CAST`);
         this.host.trackStat('spells_learned', progression.sessionSpellsLearned);
       } else {
         // v5 Wave E — a favored score rises; its new deltas land on the spot
         // (equipment-aware since Wave F).
         this.host.refreshStatMods();
         this.host.particles().burst(player.x, player.y, STATS[pick.id].color, 18, 130, 0.8);
-        this.host.showBanner(`LEVEL ${level}!`, `${STATS[pick.id].name} RISES`);
+        this.host.showBanner(headline, `${STATS[pick.id].name} RISES`);
       }
       player.gainLevelBenefits(gain);
       this.host.flashLight(player.x, player.y); // Wave K — the moment glows
@@ -209,6 +218,13 @@ export class DraftFlow {
       return this.returnState;
     }
     return null;
+  }
+
+  /** Wave L — roll the active hero's class hit die on the live rng. */
+  private rollHitDie(): number {
+    const hero = this.host.progression().character();
+    const die = hero ? CLASSES[hero.classId].kit.hitDie : 6;
+    return this.host.rng().int(1, die);
   }
 
   private syncProgressionStats(): void {

@@ -50,14 +50,14 @@ export const RELICS: Record<RelicId, RelicDef> = {
   'tower-shield': {
     id: 'tower-shield',
     name: 'TOWER SHIELD',
-    blurb: '+1 heart (heals it too)',
+    blurb: '+5 HP (heals them too)',
     icon: '⛨',
     color: '#8a93a6',
   },
   'vampire-fang': {
     id: 'vampire-fang',
     name: 'VAMPIRE FANG',
-    blurb: 'Heal ½ heart per 10 kills',
+    blurb: 'Drink back HP every 10 kills',
     icon: '♰',
     color: '#c22f2f',
   },
@@ -78,7 +78,7 @@ export const RELICS: Record<RelicId, RelicDef> = {
   'berserker-rage': {
     id: 'berserker-rage',
     name: 'BERSERKER RAGE',
-    blurb: '+1 damage below 2 hearts',
+    blurb: '+1 damage while bloodied',
     icon: '♆',
     color: '#ff4d5e',
   },
@@ -167,10 +167,11 @@ export const ALL_RELIC_IDS = Object.keys(RELICS) as RelicId[];
 export const RELIC_TUNING = {
   EMBER_BLADE_DAMAGE: 1,
   SWIFT_BOOTS_SPEED_MULT: 0.18, // additive per stack
-  TOWER_SHIELD_HP: 2,
+  TOWER_SHIELD_HP: 5, // Wave L — re-priced for hit-die pools
   VAMPIRE_KILLS_PER_HEAL: 10,
+  VAMPIRE_HEAL: 2, // Wave L — HP drunk back per threshold
   DAGGER_SAGE_CAP_BONUS: 4,
-  BERSERKER_THRESHOLD_HP: 4, // active at or below this HP (2 hearts)
+  BERSERKER_THRESHOLD_FRAC: 0.3, // Wave L — active while "bloodied" (≤ this × maxHp)
   BERSERKER_DAMAGE: 1,
   SHADOW_CLOAK_COOLDOWN_MULT: 0.75, // dash cooldown multiplier per stack
   SHADOW_CLOAK_IFRAME_BONUS: 0.1, // extra dash i-frame seconds per stack
@@ -178,10 +179,11 @@ export const RELIC_TUNING = {
   THORN_MAIL_DAMAGE: 1, // per stack
   LUCKY_GOLD_BONUS: 1, // extra guaranteed gold per stack
   LUCKY_HEART_CHANCE: 0.05, // heart drop chance per stack
-  PHOENIX_REVIVE_HP: 2, // one heart
+  // (Wave L — revives return at PLAYER.REVIVE_FRAC of the pool, not a flat HP.)
   PHOENIX_INVULN: 2.0,
   // v3 — Vaults of the Magica
-  RENEWAL_INTERVAL: 45, // seconds per 1 hp; stacks divide it
+  RENEWAL_INTERVAL: 45, // seconds per tick; stacks divide it
+  RENEWAL_HEAL: 2, // Wave L — HP knit closed per tick
   WAR_BRACERS_CD_MULT: 0.85, // ability cooldown multiplier per stack
   GRAVE_WARD_DAMAGE: 1, // bonus vs undead per stack
   OGRE_KNOCKBACK_MULT: 0.4, // additive knockback fraction per stack

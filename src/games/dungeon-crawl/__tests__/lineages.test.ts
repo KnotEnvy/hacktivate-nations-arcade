@@ -4,6 +4,7 @@
 // title -> roster -> bloodline flow through the public GameModule surface.
 
 import { CLASSES, DEFAULT_KIT } from '@/games/dungeon-crawl/data/classes';
+import { PLAYER } from '@/games/dungeon-crawl/data/constants';
 import {
   ALL_LINEAGE_IDS,
   applyLineageNudge,
@@ -178,7 +179,8 @@ describe('the Player passives', () => {
     expect(player.tryConsumeLuck()).toBe(false);
     player.applyLineage('halfling');
     expect(player.tryConsumeLuck()).toBe(true);
-    expect(player.hp).toBe(LINEAGE_TUNING.HALFLING_ESCAPE_HP);
+    // Wave L — every death-cheat returns at the same fraction of the pool.
+    expect(player.hp).toBe(Math.ceil(player.maxHp * PLAYER.REVIVE_FRAC));
     expect(player.invuln).toBeGreaterThan(0);
     player.hp = 0;
     expect(player.tryConsumeLuck()).toBe(false); // luck spoke once

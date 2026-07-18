@@ -80,7 +80,7 @@ describe('effect merging + drops', () => {
     });
     const merged = mergeItemEffects(['dawnsliver', 'bulwark-of-the-deep', 'philosophers-ring']);
     expect(merged.damage).toBe(2);
-    expect(merged.hp).toBe(4);
+    expect(merged.hp).toBe(10); // Wave L — bulwark re-priced for hit-die pools
     expect(merged.speed).toBeCloseTo(0.04);
     expect(merged.statBonus).toEqual({ con: 1, int: 1, wis: 1 });
   });
@@ -116,7 +116,7 @@ describe('Player equipment folds', () => {
     const geared = armedFighter();
     geared.applyEquipment(mergeItemEffects(['dawnsliver', 'wardens-mail', 'hawks-eye-locket']));
     expect(geared.swordDamage()).toBe(bare.swordDamage() + 2);
-    expect(geared.maxHp).toBe(bare.maxHp + 4);
+    expect(geared.maxHp).toBe(bare.maxHp + 8); // Wave L — warden's mail re-priced
     expect(geared.hp).toBe(geared.maxHp);
     expect(geared.speed()).toBeGreaterThan(bare.speed());
     expect(geared.daggerCap()).toBe(bare.daggerCap() + 1);
@@ -126,11 +126,11 @@ describe('Player equipment folds', () => {
 
   test('swapping armor off lowers the ceiling without killing the wearer', () => {
     const player = armedFighter();
-    player.applyEquipment(mergeItemEffects(['wardens-mail'])); // +4
+    player.applyEquipment(mergeItemEffects(['wardens-mail'])); // +8 (Wave L)
     const worn = player.maxHp;
     player.hp = 2;
-    player.applyEquipment(mergeItemEffects(['padded-jack'])); // +2: delta -2
-    expect(player.maxHp).toBe(worn - 2);
+    player.applyEquipment(mergeItemEffects(['padded-jack'])); // +4: delta -4
+    expect(player.maxHp).toBe(worn - 4);
     expect(player.hp).toBeGreaterThanOrEqual(1);
   });
 
@@ -193,6 +193,7 @@ describe('the satchel + victory banking', () => {
       equipment: {},
       stash: [],
       lineage: 'human',
+      hpRolls: [],
       ...overrides,
     };
   }

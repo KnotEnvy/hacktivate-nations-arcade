@@ -40,6 +40,7 @@ function heroFixture(
     equipment: {},
     stash: [],
     lineage: 'human',
+    hpRolls: [],
   };
 }
 

@@ -30,6 +30,9 @@ export class Player {
 
   hp: number = PLAYER.MAX_HP;
   maxHp: number = PLAYER.MAX_HP;
+  // Wave L — the hero's level, mirrored here so CON's per-hit-die HP share
+  // can fold without reaching back into progression.
+  level = 1;
   invuln = 0; // i-frame seconds remaining
   hitFlash = 0;
 
@@ -111,6 +114,7 @@ export class Player {
     this.provisionTorch = 0;
     this.hp = this.kit.maxHp;
     this.maxHp = this.kit.maxHp;
+    this.level = 1;
     this.invuln = 0;
     this.hitFlash = 0;
     this.faceX = 0;
@@ -160,7 +164,7 @@ export class Player {
   tryConsumeLuck(): boolean {
     if (this.lineage !== 'halfling' || this.luckUsed) return false;
     this.luckUsed = true;
-    this.hp = LINEAGE_TUNING.HALFLING_ESCAPE_HP;
+    this.hp = this.reviveHp();
     this.invuln = LINEAGE_TUNING.HALFLING_ESCAPE_INVULN;
     this.hitFlash = 0;
     return true;
@@ -219,7 +223,9 @@ export class Player {
     boons: Partial<Record<BoonId, number>>,
     gear: Partial<Record<GearId, number>> = {},
     statDeltas: Record<StatId, number> = zeroStatMods(),
+    level = 1, // Wave L — CON's HP share is PER HIT DIE (2e), so folds need it
   ): void {
+    this.level = level;
     this.levelBonus = { ...gains };
     this.statMods = { ...statDeltas };
     // Equipment re-arms separately (applyEquipment) — start from bare.
@@ -239,7 +245,7 @@ export class Player {
         gains.hp +
         this.boonCount('toughness') * BOON_TUNING.TOUGHNESS_HP +
         this.gearTier('armor') * GEAR_TUNING.ARMOR_HP +
-        this.statMods.con * STAT_TUNING.CON_HP,
+        this.statMods.con * STAT_TUNING.CON_HP_PER_LEVEL * this.level,
     );
     this.hp = this.maxHp;
     this.daggers = Math.min(
@@ -250,6 +256,7 @@ export class Player {
 
   /** v4 — a mid-run level-up lands its gains (and heals what it grants). */
   gainLevelBenefits(gain: LevelGain): void {
+    this.level++; // Wave L — keeps the CON-per-level fold honest mid-run
     this.levelBonus.hp += gain.hp ?? 0;
     this.levelBonus.speed += gain.speed ?? 0;
     this.levelBonus.daggerCap += gain.daggerCap ?? 0;
@@ -282,10 +289,12 @@ export class Player {
 
   /**
    * v5 Wave E — a milestone stat bump (or any mid-run score change) lands its
-   * new deltas; a CON rise grants its hearts on the spot like Toughness does.
+   * new deltas; a CON rise grants its HP on the spot like Toughness does.
+   * Wave L — the grant is per hit die: delta × CON_HP_PER_LEVEL × level.
    */
   setStatMods(mods: Record<StatId, number>): void {
-    const conGain = (mods.con - this.statMods.con) * STAT_TUNING.CON_HP;
+    const conGain =
+      (mods.con - this.statMods.con) * STAT_TUNING.CON_HP_PER_LEVEL * this.level;
     this.statMods = { ...mods };
     if (conGain > 0) {
       this.maxHp = Math.min(PLAYER.HP_CAP, this.maxHp + conGain);
@@ -375,7 +384,8 @@ export class Player {
     if (this.buffs.has('strength')) dmg += 1;
     if (
       this.relicCount('berserker-rage') > 0 &&
-      this.hp <= RELIC_TUNING.BERSERKER_THRESHOLD_HP
+      // Wave L — "bloodied" is a fraction of the pool, not a heart count.
+      this.hp <= this.maxHp * RELIC_TUNING.BERSERKER_THRESHOLD_FRAC
     ) {
       dmg += RELIC_TUNING.BERSERKER_DAMAGE * this.relicCount('berserker-rage');
     }
@@ -428,6 +438,11 @@ export class Player {
     this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
+  /** Wave L — every death-cheat returns at the same fraction of the pool. */
+  private reviveHp(): number {
+    return Math.max(1, Math.ceil(this.maxHp * PLAYER.REVIVE_FRAC));
+  }
+
   /**
    * v2 — Phoenix Feather: consume an unspent stack to cheat death.
    * Returns true when the revive fired (caller restores the run).
@@ -435,7 +450,7 @@ export class Player {
   tryConsumePhoenix(): boolean {
     if (this.relicCount('phoenix-feather') <= this.phoenixUsed) return false;
     this.phoenixUsed++;
-    this.hp = RELIC_TUNING.PHOENIX_REVIVE_HP;
+    this.hp = this.reviveHp();
     this.invuln = RELIC_TUNING.PHOENIX_INVULN;
     this.hitFlash = 0;
     return true;
@@ -448,7 +463,7 @@ export class Player {
   tryConsumeSurvivor(): boolean {
     if (this.boonCount('survivor') === 0 || this.survivorUsed) return false;
     this.survivorUsed = true;
-    this.hp = BOON_TUNING.SURVIVOR_HP;
+    this.hp = this.reviveHp();
     this.invuln = BOON_TUNING.SURVIVOR_INVULN;
     this.hitFlash = 0;
     return true;
@@ -464,7 +479,7 @@ export class Player {
     );
     if (this.killsSinceHeal >= needed) {
       this.killsSinceHeal = 0;
-      this.heal(1);
+      this.heal(RELIC_TUNING.VAMPIRE_HEAL);
       return true;
     }
     return false;
@@ -506,7 +521,7 @@ export class Player {
       const interval = RELIC_TUNING.RENEWAL_INTERVAL / renewal;
       if (this.hpRegenTimer >= interval) {
         this.hpRegenTimer -= interval;
-        this.heal(1);
+        this.heal(RELIC_TUNING.RENEWAL_HEAL);
       }
     } else {
       this.hpRegenTimer = 0;

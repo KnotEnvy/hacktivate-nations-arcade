@@ -107,6 +107,7 @@ export class QuestDirector {
         hero.boons,
         hero.gear,
         progression.statDeltas(),
+        hero.level, // Wave L — CON's HP share is per hit die
       );
       // v5 Wave F — wear the saved equipment (folds + effective scores) so
       // provisions below see the right dagger caps.

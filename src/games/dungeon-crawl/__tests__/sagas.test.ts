@@ -190,6 +190,7 @@ describe('the saga board page', () => {
         equipment: {},
         stash: [],
         lineage: 'human',
+        hpRolls: [],
       },
       save: () => {},
       playSound: () => {},

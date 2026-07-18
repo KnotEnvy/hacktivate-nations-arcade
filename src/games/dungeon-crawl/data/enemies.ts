@@ -3,6 +3,7 @@
 // numeric lives here so balance is a data edit, not a code edit.
 
 import type { DeathCause } from '../systems/Combat';
+import type { Dice } from './dice';
 
 export type EnemyTypeId =
   | 'slime'
@@ -110,7 +111,9 @@ export interface EnemyConfig {
   hp: number;
   speed: number; // px/s
   size: number; // square hitbox, px
-  touchDamage: number;
+  // Wave L — damage is DICE, rolled internally on the live rng at the moment
+  // the blow lands (never shown as dice on screen). d1 = a fixed nip.
+  touchDamage: Dice;
   score: number; // base kill score before combo/depth multipliers
   xp: number; // v4 — experience granted to the hero on the kill
   goldDrop: [min: number, max: number]; // gold pickups scattered on death
@@ -120,6 +123,7 @@ export interface EnemyConfig {
   undead?: boolean; // v3 — seared + stunned by the cleric's Turn Undead
   splitsInto?: EnemyTypeId; // v3 — divides into two of these on death
   boltCause?: DeathCause; // v4 Wave D — recap cause for a ranged type's bolts
+  boltDamage?: Dice; // Wave L — a ranged type's bolt dice (rolled at fire time)
 }
 
 export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
@@ -129,7 +133,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 42,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 20,
     xp: 10,
     goldDrop: [0, 2],
@@ -144,7 +148,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 1,
     speed: 78,
     size: 14,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 1 },
     score: 8,
     xp: 3,
     goldDrop: [0, 1],
@@ -158,7 +162,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 3,
     speed: 68,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 30,
     xp: 15,
     goldDrop: [1, 2],
@@ -173,7 +177,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 1,
     speed: 128,
     size: 16,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 1 },
     score: 25,
     xp: 12,
     goldDrop: [0, 1],
@@ -187,13 +191,14 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 55,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 45,
     xp: 25,
     goldDrop: [1, 3],
     aggroRange: 300,
     color: '#3f6fd8',
     accent: '#c9e2ff',
+    boltDamage: { n: 1, d: 3 },
   },
   knight: {
     id: 'knight',
@@ -201,7 +206,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 5,
     speed: 52,
     size: 24,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 60,
     xp: 35,
     goldDrop: [2, 4],
@@ -215,7 +220,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 4,
     speed: 96,
     size: 24,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 80,
     xp: 45,
     goldDrop: [4, 7],
@@ -229,7 +234,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 62,
     size: 20,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 50,
     xp: 28,
     goldDrop: [1, 3],
@@ -243,7 +248,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 3,
     speed: 46,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 70,
     xp: 40,
     goldDrop: [1, 2],
@@ -259,7 +264,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 58,
     size: 20,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 25,
     xp: 12,
     goldDrop: [1, 2],
@@ -273,7 +278,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 5,
     speed: 34,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 35,
     xp: 18,
     goldDrop: [1, 3],
@@ -288,7 +293,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 3,
     speed: 88,
     size: 20,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 55,
     xp: 30,
     goldDrop: [1, 3],
@@ -303,7 +308,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 3,
     speed: 40,
     size: 24,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 2 },
     score: 30,
     xp: 30,
     goldDrop: [1, 2],
@@ -318,7 +323,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 1,
     speed: 72,
     size: 14,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 1 },
     score: 8,
     xp: 3,
     goldDrop: [0, 1],
@@ -332,7 +337,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 4,
     speed: 62,
     size: 22,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 50,
     xp: 28,
     goldDrop: [2, 4],
@@ -346,7 +351,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 62,
     size: 20,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 3 },
     score: 65,
     xp: 36,
     goldDrop: [1, 2],
@@ -361,7 +366,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 105,
     size: 18,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 3 },
     score: 45,
     xp: 24,
     goldDrop: [1, 2],
@@ -376,7 +381,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 3,
     speed: 60,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 3 },
     score: 55,
     xp: 30,
     goldDrop: [1, 3],
@@ -384,6 +389,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#d84a1a',
     accent: '#ffd24a',
     boltCause: 'salamander',
+    boltDamage: { n: 1, d: 4 },
   },
   'bone-archer': {
     id: 'bone-archer',
@@ -391,7 +397,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 2,
     speed: 58,
     size: 20,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 3 },
     score: 50,
     xp: 26,
     goldDrop: [1, 2],
@@ -400,6 +406,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     accent: '#8a2f2f',
     undead: true,
     boltCause: 'bone_arrow',
+    boltDamage: { n: 1, d: 4 },
   },
   'drowned-one': {
     id: 'drowned-one',
@@ -407,7 +414,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 4,
     speed: 40,
     size: 22,
-    touchDamage: 1,
+    touchDamage: { n: 1, d: 3 },
     score: 40,
     xp: 22,
     goldDrop: [1, 3],
@@ -422,7 +429,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 4,
     speed: 48,
     size: 22,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 70,
     xp: 40,
     goldDrop: [2, 4],
@@ -437,7 +444,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     hp: 4,
     speed: 110,
     size: 20,
-    touchDamage: 2,
+    touchDamage: { n: 1, d: 4, plus: 1 },
     score: 75,
     xp: 42,
     goldDrop: [1, 3],
@@ -527,8 +534,10 @@ export const BOSS = {
   HP_PER_TIER: 12, // tier = how many boss floors have been reached (1-based)
   SPEED: 62,
   CHARGE_SPEED: 330,
-  TOUCH_DAMAGE: 2,
-  CHARGE_DAMAGE: 2,
+  // Wave L — Guardian blows land as dice (rolled at the moment of impact).
+  TOUCH_DAMAGE: { n: 1, d: 6, plus: 1 } as Dice,
+  CHARGE_DAMAGE: { n: 2, d: 4 } as Dice,
+  BOLT_DAMAGE: { n: 1, d: 4 } as Dice,
   SCORE: 600,
   GOLD_SHOWER: 14,
   ENRAGE_THRESHOLD: 0.35, // fraction of HP left

@@ -11,7 +11,10 @@ export type ClassId = 'fighter' | 'thief' | 'cleric' | 'mage';
 export type AbilityId = 'cleave' | 'shadow-hide' | 'turn-undead' | 'fireball';
 
 export interface ClassKit {
-  maxHp: number; // 2 hp per heart
+  // Wave L — AD&D 2e vitals: level 1 opens at the hit die's MAXIMUM, and
+  // every level after rolls the die live (kept on the hero as hpRolls).
+  maxHp: number; // level-1 pool = hitDie
+  hitDie: number; // d10 warrior / d8 priest / d6 rogue / d4 wizard
   speedMult: number; // on PLAYER.SPEED
   meleeDamageBonus: number; // added to the base 1 before relics
   meleeRange: number; // px from player center
@@ -48,6 +51,7 @@ export interface ClassDef {
  */
 export const DEFAULT_KIT: ClassKit = {
   maxHp: PLAYER.MAX_HP,
+  hitDie: 6, // neutral d6 until the pick (pre-class hero only)
   speedMult: 1,
   meleeDamageBonus: 0,
   meleeRange: PLAYER.SWORD_RANGE,
@@ -69,7 +73,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
   fighter: {
     id: 'fighter',
     name: 'FIGHTER',
-    blurb: 'Iron-shod veteran. Four hearts and a wide, heavy swing.',
+    blurb: 'Iron-shod veteran. The deepest well of vigor; a wide, heavy swing.',
     icon: '⚔',
     color: '#e08a3d',
     tunic: '#8a5a2a',
@@ -78,7 +82,8 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     abilityBlurb: 'Spin and strike everything in reach.',
     kit: {
       ...DEFAULT_KIT,
-      maxHp: 8,
+      maxHp: 10,
+      hitDie: 10, // the warrior's d10
       meleeArcDeg: 120,
       meleeKnockback: 230,
       abilityId: 'cleave',
@@ -97,6 +102,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     abilityBlurb: 'Vanish briefly; your next strike is a backstab.',
     kit: {
       ...DEFAULT_KIT,
+      hitDie: 6, // the rogue's d6
       speedMult: 1.14,
       meleeRange: 36,
       meleeArcDeg: 90,
@@ -112,7 +118,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
   cleric: {
     id: 'cleric',
     name: 'CLERIC',
-    blurb: 'Faith and a heavy mace. Hearts mend an extra wound.',
+    blurb: 'Faith and a heavy mace. Healing runs deeper in devout hands.',
     icon: '✚',
     color: '#ffe08a',
     tunic: '#c9c2a8',
@@ -121,11 +127,13 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     abilityBlurb: 'A holy pulse that sears bone and shade.',
     kit: {
       ...DEFAULT_KIT,
+      maxHp: 8,
+      hitDie: 8, // the priest's d8
       meleeDamageBonus: 1,
       meleeRange: 34,
       meleeCooldown: 0.48,
       meleeKnockback: 280,
-      healBonus: 1,
+      healBonus: 2, // Wave L — re-priced for hit-die pools
       abilityId: 'turn-undead',
       abilityCooldown: 8,
     },
@@ -133,7 +141,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
   mage: {
     id: 'mage',
     name: 'MAGE',
-    blurb: 'Two hearts, endless bolts. Seeking missiles that renew.',
+    blurb: 'Frail as parchment, endless bolts. Seeking missiles that renew.',
     icon: '✦',
     color: '#78beff',
     tunic: '#3f4a8a',
@@ -143,6 +151,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     kit: {
       ...DEFAULT_KIT,
       maxHp: 4,
+      hitDie: 4, // the wizard's d4
       meleeRange: 28,
       meleeArcDeg: 90,
       meleeCooldown: 0.4,

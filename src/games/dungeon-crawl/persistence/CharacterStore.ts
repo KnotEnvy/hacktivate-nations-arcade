@@ -25,7 +25,7 @@ import {
   ItemId,
 } from '../data/items';
 import { asLineageId, LineageId } from '../data/lineages';
-import { LEVEL_CAP } from '../data/progression';
+import { averageHpRoll, LEVEL_CAP } from '../data/progression';
 import { ALL_SAGA_IDS, SAGAS, SagaId } from '../data/sagas';
 import { SpellId, spellsForClass } from '../data/spells';
 import { ALL_STAT_IDS, STAT_BASES, STAT_TUNING, StatScores } from '../data/stats';
@@ -69,6 +69,10 @@ export interface SavedHero {
   // older saves → 'human', whose passive is forge-time only, so veterans
   // play exactly as before.
   lineage: LineageId;
+  // Wave L — the hit-die rolls kept from each level-up (entry 0 = reaching
+  // level 2). Additive field: absent/short entries backfill the average roll
+  // so pre-hit-dice veterans land mid-pool, never punished.
+  hpRolls: number[];
 }
 
 export interface SavePayloadV2 {
@@ -173,6 +177,17 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
       )
     : [];
 
+  // Wave L — hit-die rolls: exactly level-1 entries, each clamped to the
+  // class die; absent or short arrays backfill the average roll (veterans
+  // saved before hit dice existed land mid-pool).
+  const hitDie = CLASSES[expectedClass].kit.hitDie;
+  const rawRolls: unknown[] = Array.isArray(hero.hpRolls) ? hero.hpRolls : [];
+  const hpRolls: number[] = [];
+  for (let i = 0; i < level - 1; i++) {
+    const value = Math.floor(asFiniteNumber(rawRolls[i], averageHpRoll(hitDie)));
+    hpRolls.push(Math.min(hitDie, Math.max(1, value)));
+  }
+
   const stats = hero.stats && typeof hero.stats === 'object' ? hero.stats : undefined;
   return {
     classId: expectedClass,
@@ -198,6 +213,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     equipment,
     stash,
     lineage: asLineageId(hero.lineage),
+    hpRolls,
   };
 }
 

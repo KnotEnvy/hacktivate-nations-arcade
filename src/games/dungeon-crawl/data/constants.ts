@@ -2,6 +2,8 @@
 // Central tuning for The Ember Depths. Everything gameplay-feel lives here so
 // balance passes never require touching entity/system code.
 
+import type { Dice } from './dice';
+
 export const TILE = 32; // world pixels per tile
 
 export const VIEW = {
@@ -30,8 +32,10 @@ export const FLOOR_GEN = {
 export const PLAYER = {
   HITBOX: 20, // square, centered
   SPEED: 150, // px/s
-  MAX_HP: 6, // drawn as 3 hearts (2 hp per heart)
-  HP_CAP: 20, // absolute ceiling with levels + Toughness + Tower Shields (v4)
+  MAX_HP: 6, // pre-pick neutral pool (DEFAULT_KIT only; classes bring hit dice)
+  HP_CAP: 120, // Wave L — 2e pools: a safety ceiling (god-roll d10 = 100), not a balance lever
+  LOW_HP_FRAC: 0.25, // Wave L — "bloodied": danger stinger + HUD vignette gate
+  REVIVE_FRAC: 0.25, // Wave L — phoenix/survivor/luck return at this share of the pool
   HIT_INVULN: 1.0, // seconds of i-frames after damage
   SWORD_RANGE: 40, // px from player center
   SWORD_ARC_DEG: 100, // total arc width centered on facing
@@ -62,7 +66,7 @@ export const COMBAT = {
 export const PICKUPS = {
   GOLD_VALUE: 1, // pickups counter (arcade coin economy)
   GOLD_SCORE: 15,
-  HEART_HEAL: 2,
+  HEART_HEAL: { n: 1, d: 6, plus: 1 } as Dice, // Wave L — rolled at the bite
   DAGGER_BUNDLE: 4,
   POTION_DURATION: 10, // seconds of buff
   MAGNET_RADIUS: 90, // Coin Magnet relic pull radius
@@ -93,7 +97,7 @@ export const HAZARDS = {
   DOWN_TIME: 1.5, // safe
   TELEGRAPH_TIME: 0.45, // points peeking / vent hissing
   UP_TIME: 0.8, // damaging
-  DAMAGE: 1,
+  DAMAGE: { n: 1, d: 3 } as Dice, // Wave L — rolled when the trap bites
   RADIUS: 13, // damage overlap radius from tile center
 } as const;
 
@@ -104,7 +108,8 @@ export const EXPLOSIONS = {
   BOMB_RADIUS: 46,
   VOLATILE_FUSE: 0.6,
   VOLATILE_RADIUS: 54,
-  DAMAGE: 1,
+  DAMAGE: 1, // staged number vs MONSTERS/urns — the enemy-side economy
+  PLAYER_DAMAGE: { n: 1, d: 6 } as Dice, // Wave L — an enemy boom vs the hero
 } as const;
 
 // v2 — boss shockwave rings (Bone Colossus slam).
@@ -112,7 +117,7 @@ export const SHOCKWAVE = {
   SPEED: 210, // px/s radius growth
   MAX_RADIUS: 250,
   THICKNESS: 15, // player is hit while |dist - radius| < this
-  DAMAGE: 1,
+  DAMAGE: { n: 1, d: 4, plus: 1 } as Dice, // Wave L — rolled as the ring bites
 } as const;
 
 export const LIGHTING = {

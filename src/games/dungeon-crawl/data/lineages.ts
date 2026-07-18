@@ -80,8 +80,8 @@ export const LINEAGE_TUNING = {
   HUMAN_EXTRA_FORGE_POINTS: 1,
   /** KEEN QUIVER: added to Player.daggerCap(). */
   ELF_DAGGER_CAP: 1,
-  /** LUCK'S LAST WORD: hp/invuln on the escape (mirrors survivor/phoenix). */
-  HALFLING_ESCAPE_HP: 2,
+  /** LUCK'S LAST WORD: invuln on the escape (mirrors survivor/phoenix; the
+   *  returned HP is PLAYER.REVIVE_FRAC of the pool since Wave L). */
   HALFLING_ESCAPE_INVULN: 2.0,
 } as const;
 

@@ -27,7 +27,7 @@ export const GEAR: Record<GearId, GearDef> = {
   armor: {
     id: 'armor',
     name: 'FITTED MAIL',
-    blurb: '+1 heart per tier, hammered to your frame',
+    blurb: '+4 HP per tier, hammered to your frame',
     icon: '⛨',
     color: '#8a93a6',
     prices: [100, 240, 480],
@@ -55,7 +55,7 @@ export const ALL_GEAR_IDS = Object.keys(GEAR) as GearId[];
 export const GEAR_TUNING = {
   MAX_TIER: 3,
   BLADE_DAMAGE: 1, // per tier
-  ARMOR_HP: 2,
+  ARMOR_HP: 4, // Wave L — re-priced for hit-die pools
   BOOTS_SPEED: 0.04,
   QUIVER_CAP: 2,
   QUIVER_START: 2,

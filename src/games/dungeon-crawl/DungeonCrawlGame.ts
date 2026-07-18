@@ -23,6 +23,7 @@ import {
 } from './data/constants';
 import { BOON_TUNING } from './data/boons';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
+import { rollDice } from './data/dice';
 import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
 import { BOSS } from './data/enemies';
 import { PROGRESSION } from './data/progression';
@@ -53,6 +54,7 @@ import { Projectile } from './entities/Projectile';
 import { Player } from './entities/Player';
 import { Urn } from './entities/Urn';
 import { causeForEnemy, Combat, DeathCause } from './systems/Combat';
+import { FloatingTextSystem } from './systems/FloatingText';
 import { Juice } from './systems/Juice';
 import { Lighting } from './systems/Lighting';
 import { Minimap } from './systems/Minimap';
@@ -118,6 +120,7 @@ export class DungeonCrawlGame extends BaseGame {
   private shake = new ScreenShake();
   private lighting = new Lighting();
   private juice = new Juice();
+  private floatingText = new FloatingTextSystem();
   private minimap = new Minimap();
   private tiles = new TileRenderer();
   private hud = new HudRenderer();
@@ -136,6 +139,7 @@ export class DungeonCrawlGame extends BaseGame {
     particles: this.particles,
     shake: this.shake,
     juice: this.juice,
+    floatingText: this.floatingText,
     addEnemy: enemy => this.enemies.push(enemy),
     addPickup: pickup => this.pickupItems.push(pickup),
     addProjectile: projectile => this.projectiles.push(projectile),
@@ -165,6 +169,7 @@ export class DungeonCrawlGame extends BaseGame {
     playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
     showBanner: (text, sub) => this.showBanner(text, sub),
     shake: amount => this.shake.add(amount),
+    floatText: (x, y, text, color) => this.floatingText.push(x, y, text, color),
     collectScroll: pickup => this.combat.collectScroll(pickup),
     collectItem: pickup => {
       // Full satchel leaves the find lying (the scroll precedent).
@@ -431,6 +436,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.shake.reset();
     this.particles.clear();
     this.juice.reset();
+    this.floatingText.clear();
     this.musicIntensity = -1;
 
     // v4.1 — the roster: each class keeps its own persistent hero. Wave I —
@@ -477,6 +483,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
     this.particles.clear();
+    this.floatingText.clear();
     this.juice.reset();
     this.juice.startCurtain(); // Wave K — Lastlight fades in
     this.musicIntensity = 0.45;
@@ -540,6 +547,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
     this.particles.clear();
+    this.floatingText.clear();
     this.juice.reset();
     this.juice.startCurtain(); // Wave K — the new floor fades in under its banner
 
@@ -568,6 +576,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.particles.update(dt);
     this.lighting.update(dt);
     this.juice.update(dt); // real dt — freezes thaw in real time
+    this.floatingText.update(dt); // real dt — numbers read through hit-stop
     if (this.bannerTimer > 0) this.bannerTimer = Math.max(0, this.bannerTimer - dt);
     if (this.shopDeniedFlash > 0) this.shopDeniedFlash = Math.max(0, this.shopDeniedFlash - dt);
 
@@ -866,8 +875,9 @@ export class DungeonCrawlGame extends BaseGame {
       playerY: this.player.y,
       map: this.map,
       rng: this.rng,
-      fireBolt: (x, y, dirX, dirY, speed, cause) => {
-        const bolt = new Projectile('bolt', x, y, dirX * speed, dirY * speed, 1);
+      fireBolt: (x, y, dirX, dirY, speed, cause, damage) => {
+        // Wave L — the shooter rolled its dice; 1 only if none were passed.
+        const bolt = new Projectile('bolt', x, y, dirX * speed, dirY * speed, damage ?? 1);
         bolt.cause = cause;
         this.projectiles.push(bolt);
       },
@@ -885,7 +895,8 @@ export class DungeonCrawlGame extends BaseGame {
         enemy.stunned <= 0 &&
         Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) < reach
       ) {
-        this.damagePlayer(enemy.config.touchDamage, causeForEnemy(enemy));
+        // Wave L — the blow lands as dice, rolled on the live run rng.
+        this.damagePlayer(rollDice(this.rng, enemy.config.touchDamage), causeForEnemy(enemy));
       }
     }
     this.enemies = this.enemies.filter(e => e.alive);
@@ -1219,6 +1230,8 @@ export class DungeonCrawlGame extends BaseGame {
     }
     const applied = this.player.takeDamage(amount);
     if (!applied) return;
+    // Wave L — the wound reads in blood over the hero's head.
+    this.floatingText.push(this.player.x, this.player.y - 18, `-${amount}`, PALETTE.blood, 1.15);
     this.damageTakenThisFloor = true;
     this.killChain = 0;
     this.combo = 1;
@@ -1241,7 +1254,9 @@ export class DungeonCrawlGame extends BaseGame {
       this.particles.burst(this.player.x, this.player.y, '#7fae3f', 12, 140, 0.4);
     }
 
-    if (this.player.hp <= 2) this.services?.audio?.triggerMusicStinger?.('danger');
+    if (this.player.hp <= this.player.maxHp * PLAYER.LOW_HP_FRAC) {
+      this.services?.audio?.triggerMusicStinger?.('danger');
+    }
     if (this.player.hp <= 0) {
       // v2 — Phoenix Feather cheats death once per stack.
       if (this.player.tryConsumePhoenix()) {
@@ -1541,6 +1556,7 @@ export class DungeonCrawlGame extends BaseGame {
 
     if (this.state !== 'recap') this.tiles.drawPlayer(ctx, this.player, this.gameTime);
     this.particles.render(ctx);
+    this.floatingText.render(ctx); // Wave L — combat numbers ride world space
     ctx.restore();
 
     // Darkness + torchlight (screen space); gathering lives in rendering/lights.
@@ -1652,7 +1668,14 @@ export class DungeonCrawlGame extends BaseGame {
     if (this.state === 'sheet') {
       const hero = this.progression.character();
       if (hero) {
-        this.hud.renderCharacterSheet(ctx, hero, this.activeSpell(), this.progression.xpFrac());
+        this.hud.renderCharacterSheet(
+          ctx,
+          hero,
+          this.activeSpell(),
+          this.progression.xpFrac(),
+          this.player.hp,
+          this.player.maxHp,
+        );
       }
     }
     if (this.state === 'inventory') {

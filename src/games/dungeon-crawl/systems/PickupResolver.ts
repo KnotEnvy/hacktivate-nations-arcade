@@ -6,6 +6,7 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { PALETTE, PICKUPS, PotionBuff, TILE } from '../data/constants';
+import { rollDice } from '../data/dice';
 import { ALL_RELIC_IDS, RELICS, RelicId } from '../data/relics';
 import { Rng } from '../dungeon/rng';
 import { Tile, TileMap } from '../dungeon/TileMap';
@@ -21,6 +22,8 @@ export interface PickupResolverHost {
   playSound(name: SoundName, volume: number): void;
   showBanner(text: string, sub: string): void;
   shake(amount: number): void;
+  /** Wave L — a floating combat number (heals read in green). */
+  floatText(x: number, y: number, text: string, color: string): void;
   /** Scroll intake lives with Combat (satchel + identify). */
   collectScroll(pickup: Pickup): void;
   /** v5 Wave F — equipment intake lives with Inventory (may leave it lying). */
@@ -46,7 +49,10 @@ export class PickupResolver {
       }
       case 'heart': {
         const player = this.host.player();
-        player.heal(PICKUPS.HEART_HEAL + player.heartHealBonus());
+        const before = player.hp;
+        player.heal(rollDice(this.host.rng(), PICKUPS.HEART_HEAL) + player.heartHealBonus());
+        const gained = player.hp - before;
+        if (gained > 0) this.host.floatText(player.x, player.y - 16, `+${gained}`, '#7fd764');
         this.host.playSound('extraLife', 0.4);
         this.host.particles.burst(pickup.x, pickup.y, PALETTE.heart, 8, 80, 0.5);
         break;

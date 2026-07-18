@@ -12,6 +12,7 @@
 // minLevel bands gate the draft: deep heroes draft deeper magic.
 
 import { ClassId } from './classes';
+import type { Dice } from './dice';
 
 export type SpellId =
   | 'burning-hands'
@@ -261,8 +262,8 @@ export const SPELL_TUNING = {
   FROST_RAY_STUN: 2.0,
   BLINK_DIST: 120, // px toward facing (lands on the nearest open tile)
   BLINK_INVULN: 0.4,
-  CURE_HP: 3, // scholar boon multiplies
-  BLESS_HP: 1,
+  CURE_HP: { n: 1, d: 8 } as Dice, // Wave L — 2e's cure, rolled + WIS; scholar multiplies
+  BLESS_HP: 2,
   SANCTUARY_INVULN: 1.2, // scholar boon multiplies; rides the stoneskin buff
 
   // v6 Wave J — the deeper grimoire.
@@ -288,7 +289,7 @@ export const SPELL_TUNING = {
   WAR_CRY_RADIUS: 150,
   WAR_CRY_STUN: 0.8,
   WAR_CRY_PUSH: 220,
-  SECOND_WIND_HP: 2, // flat — martial grit, no WIS fold
+  SECOND_WIND_HP: { n: 1, d: 10 } as Dice, // Wave L — the fighter rolls their own die; no WIS fold
   SUNDER_BONUS_DAMAGE: 1, // + swordDamage (STR folds there for free)
   SUNDER_SPEED: 320,
   SMOKE_RADIUS: 110,

@@ -6,7 +6,7 @@
 import { BOONS, BoonId } from '../data/boons';
 import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
-import { COMBAT, JUICE, OVERLAY, PALETTE, PICKUPS, PotionBuff, VIEW } from '../data/constants';
+import { COMBAT, JUICE, OVERLAY, PALETTE, PICKUPS, PLAYER, PotionBuff, VIEW } from '../data/constants';
 import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
 import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
@@ -114,7 +114,11 @@ export class HudRenderer {
     // Wave K — hurt vignette: the screen edges flash blood on a landed hit
     // and breathe dark red while the hero clings to their last hearts.
     const hurt = Math.min(1, s.hurtFlash / 0.4);
-    const lowHp = s.hp > 0 && s.hp <= 2 ? 0.6 + 0.4 * Math.sin(s.gameTime * 3) : 0;
+    // Wave L — "bloodied" is a fraction of the pool, not a heart count.
+    const lowHp =
+      s.hp > 0 && s.hp <= s.maxHp * PLAYER.LOW_HP_FRAC
+        ? 0.6 + 0.4 * Math.sin(s.gameTime * 3)
+        : 0;
     const edge = Math.max(hurt * JUICE.VIGNETTE_HURT_ALPHA, lowHp * JUICE.VIGNETTE_LOW_HP_ALPHA);
     if (edge > 0) {
       ctx.fillStyle = `rgba(214, 61, 61, ${edge.toFixed(3)})`;
@@ -141,33 +145,23 @@ export class HudRenderer {
     ctx.font = 'bold 14px monospace';
     ctx.fillText(`FLOOR ${s.floor}`, 170, 32);
 
-    // Hearts (2 hp per heart).
-    const hearts = Math.ceil(s.maxHp / 2);
-    for (let i = 0; i < hearts; i++) {
-      const hx = 20 + i * 20;
-      const hy = 62;
-      const hpInHeart = Math.max(0, Math.min(2, s.hp - i * 2));
-      ctx.fillStyle = hpInHeart === 0 ? '#3a2a2a' : PALETTE.heart;
-      if (hpInHeart === 1) {
-        ctx.fillStyle = '#3a2a2a';
-        this.drawHeart(ctx, hx, hy);
-        ctx.fillStyle = PALETTE.heart;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(hx, hy - 6, 8, 16);
-        ctx.clip();
-        this.drawHeart(ctx, hx, hy);
-        ctx.restore();
-      } else {
-        this.drawHeart(ctx, hx, hy);
-      }
-    }
-    // Wave K — the last hearts beat visibly.
-    if (s.hp > 0 && s.hp <= 2) {
-      const beat = 0.5 + 0.5 * Math.sin(s.gameTime * 6);
-      ctx.strokeStyle = `rgba(214, 61, 61, ${(0.3 + 0.45 * beat).toFixed(3)})`;
-      ctx.strokeRect(16.5, 52.5, hearts * 20 + 4, 22);
-    }
+    // Wave L — THE TRUE MEASURE: one heart, a vigor bar, and the numbers.
+    const bloodied = s.hp > 0 && s.hp <= s.maxHp * PLAYER.LOW_HP_FRAC;
+    // The heart beats visibly while bloodied (Wave K's pulse, kept).
+    const beat = bloodied ? 0.55 + 0.45 * Math.sin(s.gameTime * 6) : 1;
+    ctx.globalAlpha = beat;
+    ctx.fillStyle = bloodied ? PALETTE.blood : PALETTE.heart;
+    this.drawHeart(ctx, 20, 62);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#241d38';
+    ctx.fillRect(42, 56, 120, 11);
+    ctx.fillStyle = bloodied ? PALETTE.blood : PALETTE.heart;
+    ctx.fillRect(42, 56, 120 * Math.max(0, Math.min(1, s.hp / s.maxHp)), 11);
+    ctx.strokeStyle = PALETTE.hudBorder;
+    ctx.strokeRect(42.5, 56.5, 120, 11);
+    ctx.fillStyle = bloodied ? PALETTE.blood : PALETTE.textWarm;
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText(`${s.hp} / ${s.maxHp}`, 42, 80);
 
     // Daggers + keys.
     ctx.fillStyle = PALETTE.dagger;
@@ -532,11 +526,10 @@ export class HudRenderer {
       ctx.font = 'bold 16px monospace';
       ctx.fillText(def.name, x + cardW / 2, y + 100);
 
-      // Hearts row shows the kit's toughness at a glance.
-      const hearts = Math.ceil(def.kit.maxHp / 2);
+      // Wave L — the hit die tells the kit's toughness at a glance.
       ctx.fillStyle = PALETTE.heart;
-      ctx.font = '13px monospace';
-      ctx.fillText('♥'.repeat(hearts).split('').join(' '), x + cardW / 2, y + 124);
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`♥ HIT DIE d${def.kit.hitDie}`, x + cardW / 2, y + 124);
 
       ctx.fillStyle = PALETTE.textWarm;
       ctx.font = '12px monospace';
@@ -996,6 +989,8 @@ export class HudRenderer {
     hero: SavedHero,
     activeSpell: SpellId | null,
     xpFrac: number,
+    hp: number, // Wave L — the live pool (armed player)
+    maxHp: number,
   ): void {
     ctx.fillStyle = 'rgba(5, 3, 8, 0.9)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
@@ -1008,8 +1003,10 @@ export class HudRenderer {
     ctx.fillStyle = PALETTE.textDim;
     ctx.font = 'bold 14px monospace';
     // Wave I — the identity line carries the bloodline: ☀ HUMAN FIGHTER · LEVEL 3.
+    // Wave L — and the TRUE MEASURE beside it: hit die + the living pool.
     ctx.fillText(
-      `${classDef.icon} ${LINEAGES[hero.lineage].name} ${classDef.name} · LEVEL ${hero.level}`,
+      `${classDef.icon} ${LINEAGES[hero.lineage].name} ${classDef.name} · LEVEL ${hero.level}` +
+        ` · d${classDef.kit.hitDie} · HP ${hp}/${maxHp}`,
       VIEW.WIDTH / 2,
       110,
     );

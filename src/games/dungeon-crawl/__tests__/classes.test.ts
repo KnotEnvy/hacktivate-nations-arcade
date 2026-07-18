@@ -72,7 +72,8 @@ describe('class data contract', () => {
     for (const id of ALL_CLASS_IDS) {
       const kit = CLASSES[id].kit;
       expect(kit.maxHp).toBeGreaterThan(0);
-      expect(kit.maxHp % 2).toBe(0); // hearts draw 2hp apiece
+      // Wave L — 2e vitals: level 1 opens at the class hit die's MAXIMUM.
+      expect(kit.maxHp).toBe(kit.hitDie);
       expect(kit.maxHp).toBeLessThanOrEqual(PLAYER.HP_CAP);
       expect(kit.speedMult).toBeGreaterThan(0);
       expect(kit.meleeRange).toBeGreaterThan(0);
@@ -109,13 +110,13 @@ describe('kit application on the Player', () => {
     expect(player.daggers).toBe(PLAYER.START_DAGGERS);
   });
 
-  test('fighter kit: four hearts', () => {
+  test('fighter kit: the warrior d10 opens at 10 HP', () => {
     const player = new Player();
     player.reset(0, 0);
     player.applyKit(CLASSES.fighter);
     expect(player.classId).toBe('fighter');
-    expect(player.maxHp).toBe(8);
-    expect(player.hp).toBe(8);
+    expect(player.maxHp).toBe(10);
+    expect(player.hp).toBe(10);
   });
 
   test('thief kit: extra daggers and a faster stride', () => {
@@ -136,7 +137,7 @@ describe('kit application on the Player', () => {
     expect(player.meleeKnockback()).toBeGreaterThan(DEFAULT_KIT.meleeKnockback);
   });
 
-  test('mage kit: fragile, capped seeking bolts', () => {
+  test('mage kit: the wizard d4 — fragile, capped seeking bolts', () => {
     const player = new Player();
     player.reset(0, 0);
     player.applyKit(CLASSES.mage);

@@ -98,7 +98,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     color: '#8a7a5a',
     slot: 'armor',
     rarity: 'common',
-    effects: { hp: 2 },
+    effects: { hp: 4 },
   },
   'wardens-mail': {
     id: 'wardens-mail',
@@ -108,7 +108,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     color: '#9aa5b5',
     slot: 'armor',
     rarity: 'rare',
-    effects: { hp: 4 },
+    effects: { hp: 8 },
   },
   'drakescale-coat': {
     id: 'drakescale-coat',
@@ -118,7 +118,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     color: '#7fae3f',
     slot: 'armor',
     rarity: 'rare',
-    effects: { hp: 2, statBonus: { con: 1 } },
+    effects: { hp: 5, statBonus: { con: 1 } },
   },
   'bulwark-of-the-deep': {
     id: 'bulwark-of-the-deep',
@@ -128,7 +128,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
     color: '#7ae0ff',
     slot: 'armor',
     rarity: 'legendary',
-    effects: { hp: 4, statBonus: { con: 1 } },
+    effects: { hp: 10, statBonus: { con: 1 } },
   },
   // --- Trinkets.
   'lucky-knucklebone': {
