@@ -99,6 +99,7 @@ export const HAZARDS = {
   UP_TIME: 0.8, // damaging
   DAMAGE: { n: 1, d: 3 } as Dice, // Wave L — rolled when the trap bites
   RADIUS: 13, // damage overlap radius from tile center
+  DISARM_RADIUS: 30, // Wave M — px to the plate for a thief's E-disarm
 } as const;
 
 // v2 — staged explosions (bomber bombs + volatile elite death).
@@ -192,6 +193,23 @@ export const SECRETS = {
   NEST_PACK_MAX: 5,
   NEST_REWARD_BASE: 25, // run-wallet gold on clearing a nest...
   NEST_REWARD_PER_FLOOR: 10, // ...plus this per floor
+  CHEST_CHANCE: 0.35, // Wave M — a secret room may hold a locked chest
+} as const;
+
+// Wave M — locked chests: the rogue's trade. The generator seeds POSITIONS
+// only; contents (and every skill roll) come off the live run rng at game
+// level. A key turns any lock; only a thief picks one for free.
+export const CHESTS = {
+  FLOOR_MIN: 2, // floor 1 stays gentle
+  FLOOR_CHANCE: 0.7, // chance a rooms-floor hides exactly one chest
+  INTERACT_RADIUS: 30, // px to the chest to show the prompt
+  GOLD_MIN: 4, // gold pickups scattered on opening...
+  GOLD_MAX: 7,
+  BONUS_SCROLL: 0.35, // one bonus roll: a scroll...
+  BONUS_POTION: 0.25, // ...else a potion...
+  BONUS_ITEM: 0.2, // ...else an equipment find...
+  GOLD_EXTRA_MIN: 2, // ...else a little more gold
+  GOLD_EXTRA_MAX: 3,
 } as const;
 
 // Floor flavor names cycle as the player descends.

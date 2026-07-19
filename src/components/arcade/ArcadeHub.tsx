@@ -150,6 +150,8 @@ interface GameEndData {
   spells_learned?: number;
   spells_cast?: number;
   items_found?: number;
+  chests_opened?: number;
+  traps_disarmed?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

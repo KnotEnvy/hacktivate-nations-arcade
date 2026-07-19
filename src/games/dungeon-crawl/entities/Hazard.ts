@@ -14,6 +14,8 @@ export class Hazard {
   readonly y: number;
   readonly style: HazardStyle;
   phase: HazardPhase = 'down';
+  /** Wave M — a disarmed trap never cycles again (thief Remove Traps). */
+  disarmed = false;
   private timer: number;
 
   constructor(tx: number, ty: number, style: HazardStyle, phaseOffset = 0) {
@@ -27,6 +29,7 @@ export class Hazard {
   }
 
   update(dt: number): void {
+    if (this.disarmed) return;
     this.timer -= dt;
     if (this.timer > 0) return;
     switch (this.phase) {
@@ -46,7 +49,14 @@ export class Hazard {
   }
 
   get dangerous(): boolean {
-    return this.phase === 'up';
+    return this.phase === 'up' && !this.disarmed;
+  }
+
+  /** Wave M — a failed disarm springs the trap under the thief's hands. */
+  spring(): void {
+    if (this.disarmed) return;
+    this.phase = 'up';
+    this.timer = HAZARDS.UP_TIME;
   }
 
   /** 0..1 progress within the current phase (drives the sprite animation). */

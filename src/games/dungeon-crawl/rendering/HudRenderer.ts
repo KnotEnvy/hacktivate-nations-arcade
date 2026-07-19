@@ -337,12 +337,16 @@ export class HudRenderer {
     ctx.restore();
   }
 
-  /** Floating "buy" prompt above the shop pedestal the player is touching. */
+  /**
+   * Floating "buy" prompt above the shop pedestal the player is touching.
+   * Wave M reuses the same box for chest/trap interactions (deniedText).
+   */
   renderShopPrompt(
     ctx: CanvasRenderingContext2D,
     label: string,
     canAfford: boolean,
     deniedFlash: number,
+    deniedText = 'NOT ENOUGH GOLD',
   ): void {
     const y = VIEW.HEIGHT - 76;
     ctx.fillStyle = PALETTE.hudPanel;
@@ -353,7 +357,7 @@ export class HudRenderer {
     ctx.font = 'bold 14px monospace';
     if (deniedFlash > 0 && Math.floor(deniedFlash * 8) % 2 === 0) {
       ctx.fillStyle = PALETTE.blood;
-      ctx.fillText('NOT ENOUGH GOLD', VIEW.WIDTH / 2, y + 1);
+      ctx.fillText(deniedText, VIEW.WIDTH / 2, y + 1);
     } else {
       ctx.fillStyle = canAfford ? PALETTE.textWarm : PALETTE.textDim;
       ctx.fillText(label, VIEW.WIDTH / 2, y + 1);
@@ -991,6 +995,8 @@ export class HudRenderer {
     xpFrac: number,
     hp: number, // Wave L — the live pool (armed player)
     maxHp: number,
+    // Wave M — the thief's trade-skills (live percentages); null off-class.
+    tradeSkills: { locks: number; traps: number } | null = null,
   ): void {
     ctx.fillStyle = 'rgba(5, 3, 8, 0.9)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
@@ -1107,6 +1113,12 @@ export class HudRenderer {
       const spell = SPELLS[id];
       const readied = id === activeSpell ? ' ▶' : '';
       y = row(`${spell.icon} ${spell.name}${readied}`, rightX, y, spell.color);
+    }
+    // Wave M — the rogue's trade-skills read live from level + DEX.
+    if (tradeSkills) {
+      y = header('TRADE-SKILLS', rightX, y + 16);
+      y = row(`OPEN LOCKS   ${tradeSkills.locks}%`, rightX, y, classDef.color);
+      y = row(`FIND TRAPS   ${tradeSkills.traps}%`, rightX, y, classDef.color);
     }
 
     ctx.textAlign = 'center';

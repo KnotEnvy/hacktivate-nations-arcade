@@ -183,3 +183,33 @@ export const CLASS_TUNING = {
   FIREBALL_RADIUS: 56,
   FIREBALL_DAMAGE: 2,
 } as const;
+
+// Wave M — THE ROGUE'S TRADE: the thief's percentile trade-skills, 2e-shaped
+// (base + per-level growth + a DEX lean, capped). No save field — both derive
+// live from hero level + DEX delta, so milestones and trinkets fold in free.
+export const THIEF_SKILLS = {
+  OPEN_LOCKS_BASE: 40, // percent at level 1
+  REMOVE_TRAPS_BASE: 35,
+  PER_LEVEL: 5, // percent per hero level past 1
+  DEX_BONUS: 10, // percent per DEX delta modifier point
+  CAP: 95, // even a master can snap a pick
+  PICK_RETRY: 0.9, // seconds before the pick steadies after a slip
+  DISARM_XP_BASE: 8, // grantXp on a disarm (the WIS fold rides inside)...
+  DISARM_XP_PER_FLOOR: 2, // ...plus this per floor
+} as const;
+
+const skillChance = (base: number, level: number, dexDelta: number): number =>
+  Math.min(
+    THIEF_SKILLS.CAP,
+    base + THIEF_SKILLS.PER_LEVEL * (level - 1) + THIEF_SKILLS.DEX_BONUS * dexDelta,
+  );
+
+/** Percent chance to pick a chest's lock (thief only; rolled on the live rng). */
+export function openLocksChance(level: number, dexDelta: number): number {
+  return skillChance(THIEF_SKILLS.OPEN_LOCKS_BASE, level, dexDelta);
+}
+
+/** Percent chance to disarm a floor trap (thief only; failure springs it). */
+export function removeTrapsChance(level: number, dexDelta: number): number {
+  return skillChance(THIEF_SKILLS.REMOVE_TRAPS_BASE, level, dexDelta);
+}

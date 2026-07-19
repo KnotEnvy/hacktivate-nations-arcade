@@ -442,6 +442,7 @@ function buildTown(): {
     shop: null,
     hazards: [],
     urns: [],
+    chests: [],
     secrets: [],
   };
 

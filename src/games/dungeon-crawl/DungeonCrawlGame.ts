@@ -22,8 +22,14 @@ import {
   VIEW,
 } from './data/constants';
 import { BOON_TUNING } from './data/boons';
-import { ALL_CLASS_IDS, CLASSES, ClassId } from './data/classes';
-import { rollDice } from './data/dice';
+import {
+  ALL_CLASS_IDS,
+  CLASSES,
+  ClassId,
+  openLocksChance,
+  removeTrapsChance,
+  THIEF_SKILLS,
+} from './data/classes';
 import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
 import { BOSS } from './data/enemies';
 import { PROGRESSION } from './data/progression';
@@ -47,13 +53,14 @@ import {
 import { Rng } from './dungeon/rng';
 import { Tile, TileMap } from './dungeon/TileMap';
 import { Boss } from './entities/Boss';
-import { Enemy, EnemyUpdateContext } from './entities/Enemy';
+import { Chest } from './entities/Chest';
+import { Enemy } from './entities/Enemy';
 import { Hazard } from './entities/Hazard';
 import { Pickup } from './entities/Pickup';
 import { Projectile } from './entities/Projectile';
 import { Player } from './entities/Player';
 import { Urn } from './entities/Urn';
-import { causeForEnemy, Combat, DeathCause } from './systems/Combat';
+import { Combat, DeathCause } from './systems/Combat';
 import { FloatingTextSystem } from './systems/FloatingText';
 import { Juice } from './systems/Juice';
 import { Lighting } from './systems/Lighting';
@@ -63,6 +70,7 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
+import { ThiefSkills } from './systems/ThiefSkills';
 import { HudRenderer, RecapStats } from './rendering/HudRenderer';
 import { gatherLights } from './rendering/lights';
 import { TileRenderer } from './rendering/TileRenderer';
@@ -111,6 +119,7 @@ export class DungeonCrawlGame extends BaseGame {
   private pickupItems: Pickup[] = [];
   private hazards: Hazard[] = [];
   private urns: Urn[] = [];
+  private chests: Chest[] = []; // Wave M — locked strongboxes
   private shopItems: LiveShopItem[] = [];
   private merchant: { x: number; y: number } | null = null;
   private stairsLocked = false;
@@ -135,6 +144,7 @@ export class DungeonCrawlGame extends BaseGame {
     map: () => this.map,
     enemies: () => this.enemies,
     urns: () => this.urns,
+    projectiles: () => this.projectiles,
     boss: () => this.boss,
     particles: this.particles,
     shake: this.shake,
@@ -240,6 +250,41 @@ export class DungeonCrawlGame extends BaseGame {
     },
   });
 
+  // Wave M — the rogue's trade (locked chests + trap disarming) behind its
+  // own narrow host; mechanics in the system, counters/metrics here.
+  private thiefSkills = new ThiefSkills({
+    player: () => this.player,
+    rng: () => this.rng,
+    chests: () => this.chests,
+    hazards: () => this.hazards,
+    isThief: () => this.chosenClass === 'thief',
+    heroLevel: () => this.progression.character()?.level ?? 1,
+    dexDelta: () => this.player.statMods.dex,
+    particles: this.particles,
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    floatText: (x, y, text, color) => this.floatingText.push(x, y, text, color),
+    addPickup: pickup => this.pickupItems.push(pickup),
+    findOpenSpotNear: (x, y) =>
+      this.map.findOpenSpotNear(x, y) ?? { x: this.player.x, y: this.player.y },
+    dropItemAt: (x, y) =>
+      this.pickupItems.push(
+        new Pickup('item', x, y, rollItemDrop(this.rng, ITEM_TUNING.TREASURE_WEIGHTS)),
+      ),
+    onChestOpened: viaKey => {
+      this.chestsOpened++;
+      this.trackStat('chests_opened', this.chestsOpened);
+      if (viaKey) this.keysUsed++;
+    },
+    onTrapDisarmed: () => {
+      this.trapsDisarmed++;
+      this.trackStat('traps_disarmed', this.trapsDisarmed);
+      // 2e pays the specialist: a sliver of XP per trap made safe.
+      this.progression.grantXp(
+        THIEF_SKILLS.DISARM_XP_BASE + THIEF_SKILLS.DISARM_XP_PER_FLOOR * this.floor,
+      );
+    },
+  });
+
   // Run stats (extendedGameData / achievements).
   private floor = 1;
   private enemiesSlain = 0;
@@ -267,6 +312,9 @@ export class DungeonCrawlGame extends BaseGame {
   private goldBalance = 0; // spendable; `pickups` stays cumulative for the arcade
   // v5 Wave F
   private itemsFound = 0;
+  // Wave M — the rogue's trade
+  private chestsOpened = 0;
+  private trapsDisarmed = 0;
 
   // Combo chain.
   private combo = 1;
@@ -425,6 +473,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.uniqueBossKits.clear();
     this.goldBalance = 0;
     this.itemsFound = 0;
+    this.chestsOpened = 0;
+    this.trapsDisarmed = 0;
     this.inventory.reset();
     this.combo = 1;
     this.killChain = 0;
@@ -471,11 +521,13 @@ export class DungeonCrawlGame extends BaseGame {
     this.pickupItems = [];
     this.hazards = [];
     this.urns = [];
+    this.chests = [];
     this.shopItems = [];
     this.merchant = null;
     this.projectiles = [];
     this.combat.reset();
     this.secretRooms.resetFor([]);
+    this.thiefSkills.reset();
     this.boss = null;
     this.stairsLocked = false;
     this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
@@ -526,11 +578,13 @@ export class DungeonCrawlGame extends BaseGame {
       (h, i) => new Hazard(h.tx, h.ty, h.style, (i * 0.37) % 1),
     );
     this.urns = this.plan.urns.map(u => new Urn(u.x, u.y, u.variant));
+    this.chests = this.plan.chests.map(c => new Chest(c.x, c.y)); // Wave M
     this.shopItems = this.plan.shop ? this.plan.shop.items.map(i => ({ ...i, sold: false })) : [];
     this.merchant = this.plan.shop?.merchant ?? null;
     this.projectiles = [];
     this.combat.reset();
     this.secretRooms.resetFor(this.plan.secrets);
+    this.thiefSkills.reset();
     this.activeShopItem = null;
     this.boss = this.plan.isBossFloor && this.plan.bossSpawn
       ? new Boss(
@@ -850,114 +904,12 @@ export class DungeonCrawlGame extends BaseGame {
     if ((input?.isKeyPressed('KeyV') ?? false) && !this.spellWas) this.castActiveSpell();
     if ((input?.isKeyPressed('KeyG') ?? false) && !this.spellCycleWas) this.cycleActiveSpell();
 
-    // --- Sword swing resolution (enemies, boss, urns).
-    if (this.player.swing) {
-      for (const enemy of this.enemies) {
-        if (!enemy.alive || this.player.swing.hitIds.has(enemy.id)) continue;
-        if (!this.player.swingHits(enemy.x, enemy.y, enemy.radius)) continue;
-        this.player.swing.hitIds.add(enemy.id);
-        this.combat.hitEnemy(enemy, this.player.swordDamage(), 'sword');
-      }
-      if (this.boss?.alive && !this.player.swing.hitIds.has(-1)) {
-        if (this.player.swingHits(this.boss.x, this.boss.y, this.boss.radius)) {
-          this.player.swing.hitIds.add(-1);
-          this.combat.hitBoss(this.player.swordDamage());
-        }
-      }
-      for (const urn of this.urns) {
-        if (urn.alive && this.player.swingHits(urn.x, urn.y, urn.radius)) this.combat.breakUrn(urn);
-      }
-    }
-
-    // --- Enemies.
-    const enemyCtx: EnemyUpdateContext = {
-      playerX: this.player.x,
-      playerY: this.player.y,
-      map: this.map,
-      rng: this.rng,
-      fireBolt: (x, y, dirX, dirY, speed, cause, damage) => {
-        // Wave L — the shooter rolled its dice; 1 only if none were passed.
-        const bolt = new Projectile('bolt', x, y, dirX * speed, dirY * speed, damage ?? 1);
-        bolt.cause = cause;
-        this.projectiles.push(bolt);
-      },
-      throwBomb: (x, y, targetX, targetY) => this.combat.throwBomb(x, y, targetX, targetY),
-      onMimicWake: enemy => this.onMimicWake(enemy),
-      playerHidden: this.player.hiddenTimer > 0,
-    };
-    for (const enemy of this.enemies) {
-      if (!enemy.alive) continue;
-      enemy.update(dt, enemyCtx);
-      // Touch damage (stunned monsters are safe to brush past).
-      const reach = enemy.radius + this.player.size / 2;
-      if (
-        !enemy.dormant &&
-        enemy.stunned <= 0 &&
-        Math.hypot(enemy.x - this.player.x, enemy.y - this.player.y) < reach
-      ) {
-        // Wave L — the blow lands as dice, rolled on the live run rng.
-        this.damagePlayer(rollDice(this.rng, enemy.config.touchDamage), causeForEnemy(enemy));
-      }
-    }
-    this.enemies = this.enemies.filter(e => e.alive);
-
-    // --- Boss (kit AI + touch damage live in Combat).
+    // --- Sword swing, enemies, boss, projectiles — the whole entity turn
+    //     resolves in Combat (Wave M valve; arrays compacted in place).
+    this.combat.updateSwing();
+    this.combat.updateEnemies(dt);
     this.combat.updateBoss(dt);
-
-    // --- Projectiles. Hostile bolts home on the player; mage mana bolts
-    // home on the nearest living monster instead.
-    for (const proj of this.projectiles) {
-      if (proj.kind === 'dagger' && proj.homing > 0) {
-        const target = this.combat.nearestEnemyTo(proj.x, proj.y);
-        proj.update(dt, this.map, target?.x, target?.y);
-      } else {
-        proj.update(dt, this.map, this.player.x, this.player.y);
-      }
-      if (!proj.alive) continue;
-      if (proj.kind === 'bolt') {
-        const reach = proj.radius + this.player.size / 2;
-        if (Math.hypot(proj.x - this.player.x, proj.y - this.player.y) < reach) {
-          proj.alive = false;
-          this.damagePlayer(
-            proj.damage,
-            proj.cause ?? (this.boss?.alive ? 'boss_bolt' : 'sorcerer_bolt'),
-          );
-        }
-      } else {
-        // Player dagger vs monsters, urns and boss. Daggers ignore knight armor.
-        for (const enemy of this.enemies) {
-          if (!enemy.alive || proj.hitIds.has(enemy.id)) continue;
-          if (Math.hypot(proj.x - enemy.x, proj.y - enemy.y) < proj.radius + enemy.radius) {
-            proj.hitIds.add(enemy.id);
-            this.combat.hitEnemy(enemy, proj.damage, 'dagger');
-            if (!proj.pierce) {
-              proj.alive = false;
-              break;
-            }
-          }
-        }
-        if (proj.alive) {
-          for (const urn of this.urns) {
-            if (!urn.alive) continue;
-            if (Math.hypot(proj.x - urn.x, proj.y - urn.y) < proj.radius + urn.radius) {
-              this.combat.breakUrn(urn);
-              if (!proj.pierce) {
-                proj.alive = false;
-                break;
-              }
-            }
-          }
-        }
-        if (proj.alive && this.boss?.alive && !proj.hitIds.has(-1)) {
-          if (Math.hypot(proj.x - this.boss.x, proj.y - this.boss.y) < proj.radius + this.boss.radius) {
-            proj.hitIds.add(-1);
-            this.combat.hitBoss(proj.damage);
-            if (!proj.pierce) proj.alive = false;
-          }
-        }
-      }
-    }
-    this.projectiles = this.projectiles.filter(p => p.alive);
+    this.combat.updateProjectiles(dt);
 
     // --- v2: bombs in flight -> staged explosions -> booms; shockwaves; hazards.
     this.combat.update(dt);
@@ -974,7 +926,11 @@ export class DungeonCrawlGame extends BaseGame {
     this.pickupItems = this.pickupItems.filter(p => p.alive);
 
     // --- v2: shop interaction.
-    this.updateShop(input ? input.isKeyPressed('KeyE') : false);
+    const interactDown = input ? input.isKeyPressed('KeyE') : false;
+    this.updateShop(interactDown);
+
+    // --- Wave M: locked chests + trap disarming (shop pedestals win the E).
+    this.thiefSkills.update(dt, interactDown && !this.activeShopItem, this.interactWas);
 
     // --- Combo decay.
     if (this.comboTimer > 0) {
@@ -1512,6 +1468,9 @@ export class DungeonCrawlGame extends BaseGame {
       spells_cast: this.spellsCast,
       // v5 Wave F — vaults & reliquaries.
       items_found: this.itemsFound,
+      // Wave M — the rogue's trade.
+      chests_opened: this.chestsOpened,
+      traps_disarmed: this.trapsDisarmed,
     };
   }
 
@@ -1538,6 +1497,7 @@ export class DungeonCrawlGame extends BaseGame {
     for (const urn of this.urns) {
       if (urn.alive) this.tiles.drawUrn(ctx, urn);
     }
+    for (const chest of this.chests) this.tiles.drawChest(ctx, chest, this.gameTime); // Wave M
     if (this.merchant) this.tiles.drawMerchant(ctx, this.merchant.x, this.merchant.y, this.gameTime);
     if (this.inTownWorld()) {
       // Lastlight's fixtures: smith (soot-brown), alchemist (violet), board,
@@ -1647,6 +1607,18 @@ export class DungeonCrawlGame extends BaseGame {
         this.goldBalance >= price,
         this.shopDeniedFlash,
       );
+    } else if (this.state === 'playing') {
+      // Wave M — the rogue's trade prompt (chest lock / trap plate in reach).
+      const prompt = this.thiefSkills.prompt();
+      if (prompt) {
+        this.hud.renderShopPrompt(
+          ctx,
+          prompt.text,
+          prompt.ok,
+          this.thiefSkills.denied(),
+          'NO KEY TO TURN',
+        );
+      }
     }
     // v4 Wave B — town prompts + overlays (the town routes its own overlay).
     if (this.state === 'town') {
@@ -1675,6 +1647,13 @@ export class DungeonCrawlGame extends BaseGame {
           this.progression.xpFrac(),
           this.player.hp,
           this.player.maxHp,
+          // Wave M — the thief's trade-skills, live percentages (level + DEX).
+          hero.classId === 'thief'
+            ? {
+                locks: openLocksChance(hero.level, this.player.statMods.dex),
+                traps: removeTrapsChance(hero.level, this.player.statMods.dex),
+              }
+            : null,
         );
       }
     }

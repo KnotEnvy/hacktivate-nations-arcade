@@ -467,4 +467,27 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 1000,
     unlocked: false
   },
+  // Wave M — the rogue's trade
+  {
+    id: 'dungeon_tumblers_and_teeth',
+    title: 'Tumblers & Teeth',
+    description: 'Open 5 locked chests in a single session',
+    icon: '🗝️',
+    gameId: 'dungeon-crawl',
+    category: 'gameplay',
+    requirement: { type: 'chests_opened', value: 5 },
+    reward: 200,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_the_gentle_touch',
+    title: 'The Gentle Touch',
+    description: 'Disarm 10 traps in a single session',
+    icon: '🪤',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'traps_disarmed', value: 10 },
+    reward: 300,
+    unlocked: false
+  },
 ];

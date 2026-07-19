@@ -149,6 +149,7 @@ export interface CombatHost {
   map(): TileMap;
   enemies(): Enemy[];
   urns(): Urn[];
+  projectiles(): Projectile[]; // Wave M valve — flight resolution lives here
   boss(): Boss | null;
   particles: ParticleSystem;
   shake: ScreenShake;
@@ -962,6 +963,133 @@ export class Combat {
   update(dt: number): void {
     this.updateBombsAndExplosions(dt);
     this.updateShockwaves(dt);
+  }
+
+  // ------------------------------------------- Wave M valve: entity resolution
+  // The sword-swing / enemy / projectile turns, extracted verbatim from the
+  // orchestrator for guardrail headroom (the updateBoss precedent). Arrays are
+  // compacted IN PLACE so the game's per-floor references stay live.
+
+  /** Sword swing resolution (enemies, boss, urns). */
+  updateSwing(): void {
+    const player = this.host.player();
+    if (!player.swing) return;
+    for (const enemy of this.host.enemies()) {
+      if (!enemy.alive || player.swing.hitIds.has(enemy.id)) continue;
+      if (!player.swingHits(enemy.x, enemy.y, enemy.radius)) continue;
+      player.swing.hitIds.add(enemy.id);
+      this.hitEnemy(enemy, player.swordDamage(), 'sword');
+    }
+    const boss = this.host.boss();
+    if (boss?.alive && !player.swing.hitIds.has(-1)) {
+      if (player.swingHits(boss.x, boss.y, boss.radius)) {
+        player.swing.hitIds.add(-1);
+        this.hitBoss(player.swordDamage());
+      }
+    }
+    for (const urn of this.host.urns()) {
+      if (urn.alive && player.swingHits(urn.x, urn.y, urn.radius)) this.breakUrn(urn);
+    }
+  }
+
+  /** Enemy AI turns + touch damage; the dead are compacted away. */
+  updateEnemies(dt: number): void {
+    const player = this.host.player();
+    const enemies = this.host.enemies();
+    const enemyCtx: EnemyUpdateContext = {
+      playerX: player.x,
+      playerY: player.y,
+      map: this.host.map(),
+      rng: this.host.rng(),
+      fireBolt: (x, y, dirX, dirY, speed, cause, damage) => {
+        // Wave L — the shooter rolled its dice; 1 only if none were passed.
+        const bolt = new Projectile('bolt', x, y, dirX * speed, dirY * speed, damage ?? 1);
+        bolt.cause = cause;
+        this.host.addProjectile(bolt);
+      },
+      throwBomb: (x, y, targetX, targetY) => this.throwBomb(x, y, targetX, targetY),
+      onMimicWake: enemy => this.host.onMimicWake(enemy),
+      playerHidden: player.hiddenTimer > 0,
+    };
+    for (const enemy of enemies) {
+      if (!enemy.alive) continue;
+      enemy.update(dt, enemyCtx);
+      // Touch damage (stunned monsters are safe to brush past).
+      const reach = enemy.radius + player.size / 2;
+      if (
+        !enemy.dormant &&
+        enemy.stunned <= 0 &&
+        Math.hypot(enemy.x - player.x, enemy.y - player.y) < reach
+      ) {
+        // Wave L — the blow lands as dice, rolled on the live run rng.
+        this.host.damagePlayer(rollDice(this.host.rng(), enemy.config.touchDamage), causeForEnemy(enemy));
+      }
+    }
+    let write = 0;
+    for (const enemy of enemies) if (enemy.alive) enemies[write++] = enemy;
+    enemies.length = write;
+  }
+
+  /** Projectile flight + hits. Hostile bolts home on the player; mage mana
+   *  bolts home on the nearest living monster instead. */
+  updateProjectiles(dt: number): void {
+    const player = this.host.player();
+    const projectiles = this.host.projectiles();
+    for (const proj of projectiles) {
+      if (proj.kind === 'dagger' && proj.homing > 0) {
+        const target = this.nearestEnemyTo(proj.x, proj.y);
+        proj.update(dt, this.host.map(), target?.x, target?.y);
+      } else {
+        proj.update(dt, this.host.map(), player.x, player.y);
+      }
+      if (!proj.alive) continue;
+      if (proj.kind === 'bolt') {
+        const reach = proj.radius + player.size / 2;
+        if (Math.hypot(proj.x - player.x, proj.y - player.y) < reach) {
+          proj.alive = false;
+          this.host.damagePlayer(
+            proj.damage,
+            proj.cause ?? (this.host.boss()?.alive ? 'boss_bolt' : 'sorcerer_bolt'),
+          );
+        }
+      } else {
+        // Player dagger vs monsters, urns and boss. Daggers ignore knight armor.
+        for (const enemy of this.host.enemies()) {
+          if (!enemy.alive || proj.hitIds.has(enemy.id)) continue;
+          if (Math.hypot(proj.x - enemy.x, proj.y - enemy.y) < proj.radius + enemy.radius) {
+            proj.hitIds.add(enemy.id);
+            this.hitEnemy(enemy, proj.damage, 'dagger');
+            if (!proj.pierce) {
+              proj.alive = false;
+              break;
+            }
+          }
+        }
+        if (proj.alive) {
+          for (const urn of this.host.urns()) {
+            if (!urn.alive) continue;
+            if (Math.hypot(proj.x - urn.x, proj.y - urn.y) < proj.radius + urn.radius) {
+              this.breakUrn(urn);
+              if (!proj.pierce) {
+                proj.alive = false;
+                break;
+              }
+            }
+          }
+        }
+        const boss = this.host.boss();
+        if (proj.alive && boss?.alive && !proj.hitIds.has(-1)) {
+          if (Math.hypot(proj.x - boss.x, proj.y - boss.y) < proj.radius + boss.radius) {
+            proj.hitIds.add(-1);
+            this.hitBoss(proj.damage);
+            if (!proj.pierce) proj.alive = false;
+          }
+        }
+      }
+    }
+    let write = 0;
+    for (const proj of projectiles) if (proj.alive) projectiles[write++] = proj;
+    projectiles.length = write;
   }
 
   // ---------------------------------------------------------------- boss

@@ -9,6 +9,7 @@ import { ShopItemPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Enemy } from '../entities/Enemy';
 import { Boss } from '../entities/Boss';
+import { Chest } from '../entities/Chest';
 import { Hazard } from '../entities/Hazard';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
@@ -741,6 +742,43 @@ export class TileRenderer {
     ctx.fillRect(px - 4, py - 10, 8, 3); // mouth
   }
 
+  /**
+   * Wave M — locked strongboxes. A closed box deliberately echoes the mimic's
+   * innocent disguise (approaching ANY chest should stay tense); the padlock
+   * and keyhole are the honest tell once the torchlight reaches it.
+   */
+  drawChest(ctx: CanvasRenderingContext2D, chest: Chest, time: number): void {
+    const jig = chest.jiggle > 0 ? Math.round(Math.sin(time * 40) * 2) : 0;
+    const px = Math.round(chest.x) + jig;
+    const py = Math.round(chest.y);
+    if (chest.opened) {
+      // Lid thrown back, dark and emptied.
+      ctx.fillStyle = '#6b4520';
+      ctx.fillRect(px - 11, py - 13, 22, 5);
+      ctx.fillStyle = '#5c3d1e';
+      ctx.fillRect(px - 11, py - 6, 22, 13);
+      ctx.fillStyle = '#241407';
+      ctx.fillRect(px - 9, py - 4, 18, 9);
+      return;
+    }
+    ctx.fillStyle = '#7c5226';
+    ctx.fillRect(px - 11, py - 7, 22, 16);
+    ctx.fillStyle = '#6b4520';
+    ctx.fillRect(px - 11, py - 11, 22, 7); // lid
+    ctx.fillStyle = '#54401f';
+    ctx.fillRect(px - 11, py - 1, 22, 2); // band
+    // The padlock.
+    ctx.fillStyle = PALETTE.gold;
+    ctx.fillRect(px - 3, py - 3, 7, 8);
+    ctx.fillStyle = '#241407';
+    ctx.fillRect(px - 1, py - 1, 3, 3); // keyhole
+    // A passing glint so the box catches the eye (Wave K idiom).
+    if (Math.floor(time * 2.5 + (px % 7)) % 5 === 0) {
+      ctx.fillStyle = '#fff6d8';
+      ctx.fillRect(px - 9, py - 10, 2, 2);
+    }
+  }
+
   drawHazard(ctx: CanvasRenderingContext2D, hazard: Hazard, time: number): void {
     const px = Math.round(hazard.x);
     const py = Math.round(hazard.y);
@@ -748,6 +786,14 @@ export class TileRenderer {
     // Base plate marks the trap even when dormant — fair, learnable.
     ctx.fillStyle = 'rgba(0, 0, 0, 0.30)';
     ctx.fillRect(px - 12, py - 12, 24, 24);
+
+    // Wave M — a disarmed trap: the plate stays, the pulled works lie dead.
+    if (hazard.disarmed) {
+      ctx.fillStyle = '#77808c';
+      ctx.fillRect(px - 8, py + 2, 6, 2);
+      ctx.fillRect(px + 2, py + 4, 7, 2);
+      return;
+    }
 
     if (hazard.style === 'spikes') {
       if (hazard.phase === 'down') return;

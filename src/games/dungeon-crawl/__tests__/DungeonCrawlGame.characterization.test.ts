@@ -108,6 +108,9 @@ describe('DungeonCrawlGame characterization', () => {
           spells_cast: 0,
           // v5 Wave F metric contract (vaults & reliquaries)
           items_found: 0,
+          // Wave M metric contract (the rogue's trade)
+          chests_opened: 0,
+          traps_disarmed: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');

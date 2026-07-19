@@ -3,7 +3,7 @@
 // same FloorPlan out. All world-space outputs are pixels; tile-space fields
 // are named tx/ty.
 
-import { TILE, FLOOR_GEN, SECRETS, SHOP, BIOMES, biomeForFloor, HazardStyle } from '../data/constants';
+import { TILE, FLOOR_GEN, SECRETS, SHOP, BIOMES, biomeForFloor, HazardStyle, CHESTS } from '../data/constants';
 import {
   ELITES,
   EliteTrait,
@@ -96,6 +96,8 @@ export interface FloorPlan {
   shop: ShopPlan | null;
   hazards: HazardSpawnPlan[];
   urns: Array<{ x: number; y: number; variant: number }>;
+  /** Wave M — locked chests: seeded POSITIONS only, contents roll live. */
+  chests: Array<{ x: number; y: number }>;
   secrets: SecretRoomPlan[];
 }
 
@@ -247,9 +249,10 @@ function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPla
   const occupied = new Set<number>([stairsTile.ty * map.cols + stairsTile.tx]);
   const hazards = placeHazards(map, rng, rooms, floor, occupied, biomeId);
   const urns = placeUrns(map, rng, rooms, occupied);
+  const chests = placeChests(map, rng, rooms, floor, occupied);
 
   // 8.5 v4 Wave C — stock the secret rooms generously and roll their nests.
-  stockSecretRooms(map, rng, secrets, floor, pickups, urns, occupied, biomeId);
+  stockSecretRooms(map, rng, secrets, floor, pickups, urns, chests, occupied, biomeId);
 
   const startCenter = map.tileCenter(sc.tx, sc.ty);
   return {
@@ -265,6 +268,7 @@ function generateRoomsFloor(rng: Rng, floor: number, biomeId?: string): FloorPla
     shop,
     hazards,
     urns,
+    chests,
     secrets,
   };
 }
@@ -545,6 +549,34 @@ function placeUrns(
   return urns;
 }
 
+/**
+ * Wave M — at most ONE locked chest per rooms-floor (floor 2+, rolled), on a
+ * free tile of a normal/stairs room. Positions only; the strongbox's contents
+ * and every pick/disarm roll live on the game's rng.
+ */
+function placeChests(
+  map: TileMap,
+  rng: Rng,
+  rooms: Room[],
+  floor: number,
+  occupied: Set<number>,
+): Array<{ x: number; y: number }> {
+  const chests: Array<{ x: number; y: number }> = [];
+  if (floor < CHESTS.FLOOR_MIN || !rng.chance(CHESTS.FLOOR_CHANCE)) return chests;
+  const candidates = rooms.filter(r => r.kind === 'normal' || r.kind === 'stairs');
+  if (candidates.length === 0) return chests;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const t = randomFloorTileInRoom(rng, rng.pick(candidates));
+    const key = t.ty * map.cols + t.tx;
+    if (occupied.has(key) || map.get(t.tx, t.ty) !== Tile.Floor) continue;
+    occupied.add(key);
+    const center = map.tileCenter(t.tx, t.ty);
+    chests.push({ x: center.x, y: center.y });
+    break;
+  }
+  return chests;
+}
+
 function spawnPickups(
   map: TileMap,
   rng: Rng,
@@ -673,6 +705,7 @@ function stockSecretRooms(
   floor: number,
   pickups: PickupSpawnPlan[],
   urns: Array<{ x: number; y: number; variant: number }>,
+  chests: Array<{ x: number; y: number }>,
   occupied: Set<number>,
   biomeId?: string,
 ): void {
@@ -694,6 +727,18 @@ function stockSecretRooms(
       occupied.add(key);
       const center = map.tileCenter(t.tx, t.ty);
       urns.push({ x: center.x, y: center.y, variant: rng.int(0, 2) });
+    }
+
+    // Wave M — a secret room may keep a locked chest of its own (the same
+    // floor gate as the open floors: floor 1 stays lock-free).
+    if (floor >= CHESTS.FLOOR_MIN && rng.chance(SECRETS.CHEST_CHANCE)) {
+      const t = randomFloorTileInRoom(rng, room);
+      const key = t.ty * map.cols + t.tx;
+      if (!occupied.has(key) && map.get(t.tx, t.ty) === Tile.Floor) {
+        occupied.add(key);
+        const center = map.tileCenter(t.tx, t.ty);
+        chests.push({ x: center.x, y: center.y });
+      }
     }
 
     if (rng.chance(SECRETS.NEST_CHANCE)) {
@@ -771,6 +816,7 @@ function generateBossArena(rng: Rng, floor: number): FloorPlan {
     shop: null,
     hazards: [],
     urns: [],
+    chests: [],
     secrets: [],
   };
 }
