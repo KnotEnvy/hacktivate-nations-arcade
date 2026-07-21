@@ -11,6 +11,7 @@ import {
   ENEMY_CONFIGS,
   EnemyConfig,
   EnemyTypeId,
+  MORALE,
   SORCERER,
 } from '../data/enemies';
 import { Rng } from '../dungeon/rng';
@@ -61,6 +62,9 @@ export class Enemy {
   // Behavior state.
   aggro = false;
   stunned = 0; // v3 — Turn Undead freeze, seconds remaining
+  fleeTimer = 0; // Wave N — seconds of routed flight remaining (> 0 = fleeing)
+  wandering = false; // Wave N — a wandering pack left its lair (and its coin) behind
+  private routedOnce = false; // Wave N — has this foe EVER broken (metric once-only)
   dormant: boolean; // mimic only — looks like a chest until woken
   private wanderTimer = 0;
   private wanderDirX = 0;
@@ -130,10 +134,30 @@ export class Enemy {
     return dot < -0.25;
   }
 
+  /**
+   * Wave N — the pack's nerve gives. Turn tail for FLEE_TIME seconds. `aggro`
+   * deliberately stays as-is (the foe knows where the player is — it just runs
+   * the other way). Returns true only the FIRST time this foe EVER breaks, so
+   * the metric counts each foe once however many bodies later rattle it.
+   */
+  breakAndFlee(): boolean {
+    this.fleeTimer = MORALE.FLEE_TIME;
+    const first = !this.routedOnce;
+    this.routedOnce = true;
+    return first;
+  }
+
   update(dt: number, ctx: EnemyUpdateContext): void {
     if (!this.alive) return;
     if (this.flash > 0) this.flash = Math.max(0, this.flash - dt);
     if (this.windup > 0) this.windup = Math.max(0, this.windup - dt);
+    // Wave N — a routed foe counts its flight down beside flash/windup. When it
+    // runs out the foe STEADIES: aggro drops so it must re-acquire naturally
+    // (it may break again on a later sweep — no extra state to carry).
+    if (this.fleeTimer > 0) {
+      this.fleeTimer = Math.max(0, this.fleeTimer - dt);
+      if (this.fleeTimer === 0) this.aggro = false;
+    }
 
     // v3 — stunned: frozen in place except for knockback decay.
     if (this.stunned > 0) {
@@ -179,7 +203,24 @@ export class Enemy {
     let moveY = 0;
     const behavior = this.config.behavior;
 
-    if (behavior === 'wander' || (!this.aggro && behavior !== 'ranged')) {
+    if (this.fleeTimer > 0) {
+      // Wave N — ROUTED: no ranged fire, no bomb, no chase. Backpedal hard away
+      // from the player on the wander clock (away dominant, a little jitter so
+      // the herd scatters instead of lining up). Facing flips to the flight
+      // direction: a routed foe shows its back, so a knight's frontal block
+      // stops applying and backstabs land — deliberate, the reward for a rout.
+      this.wanderTimer -= dt;
+      if (this.wanderTimer <= 0) {
+        this.wanderTimer = ctx.rng.range(1.2, 2.6);
+        const angle = ctx.rng.range(0, Math.PI * 2);
+        this.wanderDirX = -dirX * 0.8 + Math.cos(angle) * 0.2;
+        this.wanderDirY = -dirY * 0.8 + Math.sin(angle) * 0.2;
+      }
+      moveX = this.wanderDirX;
+      moveY = this.wanderDirY;
+      this.facingX = -dirX;
+      this.facingY = -dirY;
+    } else if (behavior === 'wander' || (!this.aggro && behavior !== 'ranged')) {
       // Amble in a random direction, re-rolling every couple seconds.
       this.wanderTimer -= dt;
       if (this.wanderTimer <= 0) {
@@ -293,8 +334,9 @@ export class Enemy {
         );
         this.x = moved.x;
         this.y = moved.y;
-        // Wanderers bounce off walls instead of hugging them.
-        if ((moved.hitX || moved.hitY) && !this.aggro) this.wanderTimer = 0;
+        // Wanderers (and Wave N routers) bounce off walls instead of hugging
+        // them — a wall re-rolls the next amble/flight heading.
+        if ((moved.hitX || moved.hitY) && (!this.aggro || this.fleeTimer > 0)) this.wanderTimer = 0;
       }
     }
 

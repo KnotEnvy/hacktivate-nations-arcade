@@ -105,6 +105,37 @@ export const ELITES = {
   CHANCE_CAP: 0.25,
 } as const;
 
+// ===== Wave N — THE LIVING DEPTHS: reaction & morale =====
+// Living, pack-minded foes lose their nerve. When one of their number falls,
+// every morale-flagged member near the body rolls to BREAK and run. The
+// undead, the mindless and the ambusher never carry the flag, so they hold
+// the line by construction. Every knob is a data edit.
+export const MORALE = {
+  PACK_RADIUS: 200, // a fallen ally within this rattles the rest of the pack
+  BASE_CHANCE: 0.15, // floor odds any one flagged foe breaks per body
+  BELOW_HALF_BONUS: 0.2, // added while the pack is below half its seeded strength
+  HERO_LEVEL_BONUS: 0.03, // per hero level ABOVE the floor — an overmatched pack runs
+  CHANCE_CAP: 0.6, // even a rout keeps its holdouts
+  FLEE_TIME: 4, // seconds a broken foe runs before it steadies
+} as const;
+
+/**
+ * Odds one flagged foe breaks when a body drops nearby — designed ONCE here so
+ * the sweep and the tests read the same law. Thinned or overmatched packs
+ * break more readily; a healthy pack facing a peer mostly holds. `baseline` is
+ * the floor's seeded pack size (guarded: <= 0 means no below-strength bonus).
+ */
+export function moraleBreakChance(
+  heroLevel: number,
+  floor: number,
+  alive: number,
+  baseline: number,
+): number {
+  const belowStrength = baseline > 0 && alive < baseline / 2 ? MORALE.BELOW_HALF_BONUS : 0;
+  const overmatch = MORALE.HERO_LEVEL_BONUS * Math.max(0, heroLevel - floor);
+  return Math.min(MORALE.CHANCE_CAP, MORALE.BASE_CHANCE + belowStrength + overmatch);
+}
+
 export interface EnemyConfig {
   id: EnemyTypeId;
   behavior: EnemyBehavior;
@@ -124,6 +155,10 @@ export interface EnemyConfig {
   splitsInto?: EnemyTypeId; // v3 — divides into two of these on death
   boltCause?: DeathCause; // v4 Wave D — recap cause for a ranged type's bolts
   boltDamage?: Dice; // Wave L — a ranged type's bolt dice (rolled at fire time)
+  // Wave N — living, pack-minded types that can BREAK and flee when the fight
+  // turns against them. NEVER on the undead, the mindless (slimes/oozes) or the
+  // mimic (an ambusher has no nerve to lose) — pinned by test.
+  morale?: true;
 }
 
 export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
@@ -184,6 +219,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 260,
     color: '#7b5ea7',
     accent: '#e8d24a',
+    morale: true, // Wave N — skittish flyers scatter first
   },
   sorcerer: {
     id: 'sorcerer',
@@ -199,6 +235,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#3f6fd8',
     accent: '#c9e2ff',
     boltDamage: { n: 1, d: 3 },
+    morale: true, // Wave N
   },
   knight: {
     id: 'knight',
@@ -213,6 +250,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 240,
     color: '#8a93a6',
     accent: '#c22f2f',
+    morale: true, // Wave N — even a mailed veteran can lose heart
   },
   mimic: {
     id: 'mimic',
@@ -241,6 +279,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 280,
     color: '#6f8f3a',
     accent: '#2b3a12',
+    morale: true, // Wave N
   },
   wraith: {
     id: 'wraith',
@@ -271,6 +310,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 200,
     color: '#c9542a',
     accent: '#ffd24a', // glow glands — the game gives these real light
+    morale: true, // Wave N
   },
   zombie: {
     id: 'zombie',
@@ -344,6 +384,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 240,
     color: '#4a8a56',
     accent: '#ffd24a',
+    morale: true, // Wave N
   },
   shade: {
     id: 'shade',
@@ -373,6 +414,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 280,
     color: '#8a3a2a',
     accent: '#ffd24a',
+    morale: true, // Wave N
   },
   // ===== v4 Wave D — Monstrous Manual additions =====
   salamander: {
@@ -390,6 +432,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     accent: '#ffd24a',
     boltCause: 'salamander',
     boltDamage: { n: 1, d: 4 },
+    morale: true, // Wave N
   },
   'bone-archer': {
     id: 'bone-archer',
@@ -451,6 +494,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     aggroRange: 280,
     color: '#8a8a92',
     accent: '#c9c9d2',
+    morale: true, // Wave N
   },
 };
 

@@ -17,7 +17,7 @@ import {
   PALETTE,
   PICKUPS,
   PLAYER,
-  SHOP,
+  REST,
   TILE,
   VIEW,
 } from './data/constants';
@@ -31,7 +31,7 @@ import {
   THIEF_SKILLS,
 } from './data/classes';
 import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
-import { BOSS } from './data/enemies';
+import { BOSS, spawnWeightsForFloor } from './data/enemies';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
@@ -39,17 +39,11 @@ import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from './data/relics';
 import { SCROLLS, ScrollId } from './data/scrolls';
 import { bossItemWeights, ITEM_TUNING, rollItemDrop } from './data/items';
 import { SPELLS, SpellId } from './data/spells';
-import { STAT_TUNING } from './data/stats';
 import { DraftFlow } from './progression/DraftFlow';
 import { ProgressionController } from './progression/ProgressionController';
 import { QuestDirector } from './progression/QuestDirector';
 import { TOWN_PALETTE, TownController } from './town/TownController';
-import {
-  FloorPlan,
-  generateFloor,
-  Room,
-  ShopItemPlan,
-} from './dungeon/DungeonGenerator';
+import { FloorPlan, generateFloor, Room } from './dungeon/DungeonGenerator';
 import { Rng } from './dungeon/rng';
 import { Tile, TileMap } from './dungeon/TileMap';
 import { Boss } from './entities/Boss';
@@ -70,6 +64,8 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
+import { MerchantShop } from './systems/MerchantShop';
+import { pickWanderType, Rest, wanderSpawnSpot } from './systems/Rest';
 import { ThiefSkills } from './systems/ThiefSkills';
 import { HudRenderer, RecapStats } from './rendering/HudRenderer';
 import { gatherLights } from './rendering/lights';
@@ -88,11 +84,6 @@ type GameState =
   | 'sheet'
   | 'inventory'
   | 'recap';
-
-// v2 — live shop item (plan + sold state).
-interface LiveShopItem extends ShopItemPlan {
-  sold: boolean;
-}
 
 export class DungeonCrawlGame extends BaseGame {
   manifest: GameManifest = {
@@ -120,8 +111,6 @@ export class DungeonCrawlGame extends BaseGame {
   private hazards: Hazard[] = [];
   private urns: Urn[] = [];
   private chests: Chest[] = []; // Wave M — locked strongboxes
-  private shopItems: LiveShopItem[] = [];
-  private merchant: { x: number; y: number } | null = null;
   private stairsLocked = false;
 
   // Systems.
@@ -159,6 +148,15 @@ export class DungeonCrawlGame extends BaseGame {
     showBanner: (text, sub) => this.showBanner(text, sub),
     grantRelic: id => this.pickupResolver.grantRelic(id),
     levelPressure: () => this.progression.levelPressure(),
+    // Wave N — the living depths: morale reads the hero vs the floor, the
+    // floor's seeded pack size, and reports each foe's first rout as a metric.
+    floor: () => this.floor,
+    heroLevel: () => this.progression.character()?.level ?? 1,
+    floorSpawnBaseline: () => this.plan.enemies.length,
+    onFoeRouted: () => {
+      this.foesRouted++;
+      this.trackStat('foes_routed', this.foesRouted);
+    },
     revealMap: () => this.minimap.revealAll(this.map),
     crackWall: (tx, ty) => this.crackWall(tx, ty),
     playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
@@ -285,6 +283,28 @@ export class DungeonCrawlGame extends BaseGame {
     },
   });
 
+  // Wave N — THE LIVING DEPTHS: the stairs camp behind its own narrow host.
+  // The heal rides the canonical Combat.healPlayer path; the wandering pack is
+  // rolled + built at GAME level (spawnWanderingPack, the nest-spawn precedent,
+  // generator untouched). rest.update() runs ONLY from updatePlaying, so
+  // Lastlight can never camp for free.
+  private rest = new Rest({
+    player: () => this.player,
+    rng: () => this.rng,
+    stairsCenter: () => this.map.tileCenter(this.plan.stairsTile.tx, this.plan.stairsTile.ty),
+    onStairsTile: () => {
+      const { tx, ty } = this.map.tileAtWorld(this.player.x, this.player.y);
+      return tx === this.plan.stairsTile.tx && ty === this.plan.stairsTile.ty;
+    },
+    floorCleared: () =>
+      (!this.boss || !this.boss.alive) && this.enemies.every(e => !e.alive || e.dormant),
+    heal: amount => this.combat.healPlayer(amount),
+    spawnWanderingPack: () => this.spawnWanderingPack(),
+    particles: this.particles,
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    floatText: (x, y, text, color) => this.floatingText.push(x, y, text, color),
+  });
+
   // Run stats (extendedGameData / achievements).
   private floor = 1;
   private enemiesSlain = 0;
@@ -315,6 +335,8 @@ export class DungeonCrawlGame extends BaseGame {
   // Wave M — the rogue's trade
   private chestsOpened = 0;
   private trapsDisarmed = 0;
+  // Wave N — the living depths
+  private foesRouted = 0;
 
   // Combo chain.
   private combo = 1;
@@ -407,8 +429,24 @@ export class DungeonCrawlGame extends BaseGame {
   private inventoryReturn: 'playing' | 'town' = 'playing';
   private recapStats: RecapStats | null = null;
   private recapTimer = 0;
-  private shopDeniedFlash = 0;
-  private activeShopItem: LiveShopItem | null = null;
+
+  // Wave N valve — the dungeon merchant (pedestals, haggle, purchase) behind
+  // its own narrow host; the run's gold ledger + buy metrics stay here.
+  private merchantShop = new MerchantShop({
+    player: () => this.player,
+    goldBalance: () => this.goldBalance,
+    particles: this.particles,
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    applyPurchase: product => this.combat.applyShopPurchase(product),
+    onPurchase: (product, price) => {
+      this.goldBalance -= price;
+      this.goldSpent += price;
+      this.itemsBought++;
+      if (product === 'potion') this.potionsUsed++;
+      this.trackStat('items_bought', this.itemsBought);
+      this.trackStat('gold_spent', this.goldSpent);
+    },
+  });
 
   // Input edges.
   private attackWas = false;
@@ -475,6 +513,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.itemsFound = 0;
     this.chestsOpened = 0;
     this.trapsDisarmed = 0;
+    this.foesRouted = 0;
     this.inventory.reset();
     this.combo = 1;
     this.killChain = 0;
@@ -522,12 +561,12 @@ export class DungeonCrawlGame extends BaseGame {
     this.hazards = [];
     this.urns = [];
     this.chests = [];
-    this.shopItems = [];
-    this.merchant = null;
+    this.merchantShop.reset();
     this.projectiles = [];
     this.combat.reset();
     this.secretRooms.resetFor([]);
     this.thiefSkills.reset();
+    this.rest.reset();
     this.boss = null;
     this.stairsLocked = false;
     this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
@@ -579,13 +618,12 @@ export class DungeonCrawlGame extends BaseGame {
     );
     this.urns = this.plan.urns.map(u => new Urn(u.x, u.y, u.variant));
     this.chests = this.plan.chests.map(c => new Chest(c.x, c.y)); // Wave M
-    this.shopItems = this.plan.shop ? this.plan.shop.items.map(i => ({ ...i, sold: false })) : [];
-    this.merchant = this.plan.shop?.merchant ?? null;
+    this.merchantShop.loadFor(this.plan.shop);
     this.projectiles = [];
     this.combat.reset();
     this.secretRooms.resetFor(this.plan.secrets);
     this.thiefSkills.reset();
-    this.activeShopItem = null;
+    this.rest.reset();
     this.boss = this.plan.isBossFloor && this.plan.bossSpawn
       ? new Boss(
           this.plan.bossSpawn.x,
@@ -632,7 +670,7 @@ export class DungeonCrawlGame extends BaseGame {
     this.juice.update(dt); // real dt — freezes thaw in real time
     this.floatingText.update(dt); // real dt — numbers read through hit-stop
     if (this.bannerTimer > 0) this.bannerTimer = Math.max(0, this.bannerTimer - dt);
-    if (this.shopDeniedFlash > 0) this.shopDeniedFlash = Math.max(0, this.shopDeniedFlash - dt);
+    this.merchantShop.tickFlash(dt); // Wave K — the buy-denial flash fades on real dt
 
     // v4 Wave D — Tab flips the character sheet open from play or town (and
     // closed again); the world holds its breath underneath.
@@ -927,10 +965,21 @@ export class DungeonCrawlGame extends BaseGame {
 
     // --- v2: shop interaction.
     const interactDown = input ? input.isKeyPressed('KeyE') : false;
-    this.updateShop(interactDown);
+    this.merchantShop.update(dt, interactDown, this.interactWas);
 
     // --- Wave M: locked chests + trap disarming (shop pedestals win the E).
-    this.thiefSkills.update(dt, interactDown && !this.activeShopItem, this.interactWas);
+    this.thiefSkills.update(dt, interactDown && !this.merchantShop.hasActive(), this.interactWas);
+
+    // --- Wave N: the stairs camp. E priority: shop pedestal > chest/trap >
+    //     camp, so the camp only sees the E when nothing else claims it. Held
+    //     movement breaks the fire (the input read, not the walled result).
+    const moveHeld = moveX !== 0 || moveY !== 0;
+    this.rest.update(
+      dt,
+      interactDown && !this.merchantShop.hasActive() && !this.thiefSkills.prompt(),
+      this.interactWas,
+      moveHeld,
+    );
 
     // --- Combo decay.
     if (this.comboTimer > 0) {
@@ -1001,42 +1050,6 @@ export class DungeonCrawlGame extends BaseGame {
     this.showBanner(SPELLS[spells[this.activeSpellIndex]].name, 'READIED — V TO CAST');
   }
 
-  private updateShop(interactDown: boolean): void {
-    this.activeShopItem = null;
-    if (this.shopItems.length === 0) return;
-    let best: LiveShopItem | null = null;
-    let bestDist = SHOP.INTERACT_RADIUS + this.player.size / 2;
-    for (const item of this.shopItems) {
-      if (item.sold) continue;
-      const dist = Math.hypot(item.x - this.player.x, item.y - this.player.y);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = item;
-      }
-    }
-    this.activeShopItem = best;
-    if (!best || !interactDown || this.interactWas) return;
-
-    const price = this.hagglerPrice(best.price);
-    if (this.goldBalance < price) {
-      this.shopDeniedFlash = 0.8;
-      this.services?.audio?.playSound?.('error', { volume: 0.4 });
-      return;
-    }
-
-    // Purchase (product effects resolve in Combat).
-    this.goldBalance -= price;
-    this.goldSpent += price;
-    this.itemsBought++;
-    best.sold = true;
-    this.combat.applyShopPurchase(best.product);
-    if (best.product === 'potion') this.potionsUsed++;
-    this.services?.audio?.playSound?.('success', { volume: 0.5 });
-    this.particles.burst(best.x, best.y, PALETTE.gold, 12, 100, 0.6);
-    this.trackStat('items_bought', this.itemsBought);
-    this.trackStat('gold_spent', this.goldSpent);
-  }
-
   /** v5 Wave F — re-fold worn equipment + effective scores into the player. */
   private refreshItemFolds(): void {
     this.player.applyEquipment(this.inventory.mergedEffects());
@@ -1055,13 +1068,35 @@ export class DungeonCrawlGame extends BaseGame {
     this.pickupItems.push(new Pickup('item', center.x, center.y, rollItemDrop(this.rng, weights)));
   }
 
-  /** v4 — Haggler training (+ v5 Presence) talks merchants down, never below 1 gold. */
-  private hagglerPrice(base: number): number {
-    const discount =
-      this.player.boonCount('haggler') * BOON_TUNING.HAGGLER_DISCOUNT +
-      this.player.statMods.cha * STAT_TUNING.CHA_SHOP_DISCOUNT;
-    if (discount === 0) return base;
-    return Math.max(1, Math.round(base * (1 - discount)));
+  /**
+   * Wave N — the dark answers the campfire (Rest calls in on a wander hit): ONE
+   * pack of a single type arrives to hunt. Type rolled from the floor's spawn
+   * table on the LIVE rng with the mimic row EXCLUDED (an ambusher does not
+   * wander); built at GAME level with level pressure (the nest-spawn precedent —
+   * the generator is never touched). They come aggro'd (they smelled the fire)
+   * and flagged `wandering`, so killEnemy scatters no lair gold. Their arrival
+   * re-blocks rest; their deaths re-allow it.
+   */
+  private spawnWanderingPack(): void {
+    const rows = spawnWeightsForFloor(this.floor, this.biome.id).filter(
+      r => r.weight > 0 && r.type !== 'mimic',
+    );
+    if (rows.length === 0) return;
+    const type = pickWanderType(this.rng, rows);
+    const count = this.rng.int(REST.PACK_MIN, REST.PACK_MAX);
+    const pressure = this.progression.levelPressure();
+    for (let i = 0; i < count; i++) {
+      const spot = wanderSpawnSpot(this.rng, this.plan.rooms, this.map, this.player.x, this.player.y);
+      const foe = new Enemy(type, spot.x, spot.y, null, pressure);
+      foe.aggro = true; // they smelled the fire
+      foe.wandering = true; // no lair treasure
+      this.enemies.push(foe);
+    }
+    this.showBanner(
+      this.rng.chance(0.5) ? 'SOMETHING COMES' : 'THE DARK HAS FOOTSTEPS',
+      'THE FIRE DREW EYES',
+    );
+    this.services?.audio?.playSound?.('whoosh', { volume: 0.5 });
   }
 
   /** v4 — Scholar training deepens scroll magic where it sensibly can. */
@@ -1186,6 +1221,7 @@ export class DungeonCrawlGame extends BaseGame {
     }
     const applied = this.player.takeDamage(amount);
     if (!applied) return;
+    this.rest.onPlayerDamaged(); // Wave N — a wound that lands breaks camp
     // Wave L — the wound reads in blood over the hero's head.
     this.floatingText.push(this.player.x, this.player.y - 18, `-${amount}`, PALETTE.blood, 1.15);
     this.damageTakenThisFloor = true;
@@ -1471,6 +1507,8 @@ export class DungeonCrawlGame extends BaseGame {
       // Wave M — the rogue's trade.
       chests_opened: this.chestsOpened,
       traps_disarmed: this.trapsDisarmed,
+      // Wave N — the living depths.
+      foes_routed: this.foesRouted,
     };
   }
 
@@ -1498,7 +1536,7 @@ export class DungeonCrawlGame extends BaseGame {
       if (urn.alive) this.tiles.drawUrn(ctx, urn);
     }
     for (const chest of this.chests) this.tiles.drawChest(ctx, chest, this.gameTime); // Wave M
-    if (this.merchant) this.tiles.drawMerchant(ctx, this.merchant.x, this.merchant.y, this.gameTime);
+    this.merchantShop.render(ctx, this.tiles, this.gameTime);
     if (this.inTownWorld()) {
       // Lastlight's fixtures: smith (soot-brown), alchemist (violet), board,
       // and (v5 Wave G) the keeper of THE LAST LANTERN at the inn door.
@@ -1507,7 +1545,6 @@ export class DungeonCrawlGame extends BaseGame {
       this.tiles.drawMerchant(ctx, this.town.spots.inn.x, this.town.spots.inn.y, this.gameTime, '#7a5a30', '#4a3418');
       this.tiles.drawQuestBoard(ctx, this.town.spots.quests.x, this.town.spots.quests.y, this.gameTime);
     }
-    for (const item of this.shopItems) this.tiles.drawShopItem(ctx, item, item.sold, this.gameTime);
     for (const pickup of this.pickupItems) this.tiles.drawPickup(ctx, pickup, this.gameTime);
     for (const enemy of this.enemies) this.tiles.drawEnemy(ctx, enemy, this.gameTime);
     if (this.boss?.alive) this.tiles.drawBoss(ctx, this.boss, this.gameTime);
@@ -1526,7 +1563,7 @@ export class DungeonCrawlGame extends BaseGame {
       enemies: this.enemies,
       stairsLocked: this.stairsLocked,
       stairsCenter: this.map.tileCenter(this.plan.stairsTile.tx, this.plan.stairsTile.ty),
-      merchant: this.merchant,
+      merchant: this.merchantShop.merchant(),
       townSpots: this.inTownWorld() ? this.town.spots : null,
       boss: this.boss,
     });
@@ -1598,26 +1635,15 @@ export class DungeonCrawlGame extends BaseGame {
         this.boss.enrageFlash,
       );
     }
-    if (this.activeShopItem && this.state === 'playing') {
-      const price = this.hagglerPrice(this.activeShopItem.price);
-      this.hud.renderShopItemPrompt(
-        ctx,
-        this.activeShopItem.product,
-        price,
-        this.goldBalance >= price,
-        this.shopDeniedFlash,
-      );
-    } else if (this.state === 'playing') {
-      // Wave M — the rogue's trade prompt (chest lock / trap plate in reach).
+    // Interact prompts (playing only), in E-priority order: shop pedestal >
+    // chest/trap (Wave M) > stairs camp (Wave N). Each falls through to the next.
+    if (this.state === 'playing' && !this.merchantShop.renderPrompt(ctx, this.hud)) {
       const prompt = this.thiefSkills.prompt();
       if (prompt) {
-        this.hud.renderShopPrompt(
-          ctx,
-          prompt.text,
-          prompt.ok,
-          this.thiefSkills.denied(),
-          'NO KEY TO TURN',
-        );
+        this.hud.renderShopPrompt(ctx, prompt.text, prompt.ok, this.thiefSkills.denied(), 'NO KEY TO TURN');
+      } else {
+        const camp = this.rest.prompt();
+        if (camp) this.hud.renderShopPrompt(ctx, camp.text, camp.ok, 0);
       }
     }
     // v4 Wave B — town prompts + overlays (the town routes its own overlay).

@@ -152,6 +152,7 @@ interface GameEndData {
   items_found?: number;
   chests_opened?: number;
   traps_disarmed?: number;
+  foes_routed?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

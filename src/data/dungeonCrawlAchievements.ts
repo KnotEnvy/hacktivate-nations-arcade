@@ -490,4 +490,16 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 300,
     unlocked: false
   },
+  // Wave N — the living depths
+  {
+    id: 'dungeon_the_rout',
+    title: 'The Rout',
+    description: 'Send 10 foes fleeing for their lives in a single session',
+    icon: '🏳️',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'foes_routed', value: 10 },
+    reward: 300,
+    unlocked: false
+  },
 ];

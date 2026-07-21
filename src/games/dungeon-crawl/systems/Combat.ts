@@ -12,7 +12,7 @@ import { EXPLOSIONS, HAZARDS, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCK
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
 import { STAT_TUNING } from '../data/stats';
-import { BOSS } from '../data/enemies';
+import { BOSS, MORALE, moraleBreakChance } from '../data/enemies';
 import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from '../data/relics';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
 import { Rng } from '../dungeon/rng';
@@ -163,6 +163,10 @@ export interface CombatHost {
   showBanner(text: string, sub: string): void; // v4 Wave D — shop scroll flavor
   grantRelic(id: RelicId): void; // v4 Wave D — shop relic purchases
   levelPressure(): number; // v4 — hero-level hp multiplier for spawned monsters
+  floor(): number; // Wave N — morale weighs the hero's level against the floor
+  heroLevel(): number; // Wave N — the living hero's level (1 when none)
+  floorSpawnBaseline(): number; // Wave N — the floor's seeded pack size
+  onFoeRouted(): void; // Wave N — a foe broke for the first time (metric hook)
   revealMap(): void; // Scroll of Revelation — fog-of-war lifts
   crackWall(tx: number, ty: number): void; // v4 Wave C — a CrackedWall gives way
   playSound(name: SoundName, volume: number): void;
@@ -180,8 +184,12 @@ export class Combat {
 
   constructor(private host: CombatHost) {}
 
-  /** Wave L — heal + show the ACTUAL hp gained (the clamp can eat a roll). */
-  private healPlayer(amount: number): void {
+  /**
+   * Wave L — heal + show the ACTUAL hp gained (the clamp can eat a roll). The
+   * CANONICAL heal path: every heal (pickups, scrolls, spells, Wave N's stairs
+   * camp) lands here so the green floating number always reads the true gain.
+   */
+  healPlayer(amount: number): void {
     const player = this.host.player();
     const before = player.hp;
     player.heal(amount);
@@ -323,18 +331,22 @@ export class Combat {
 
     // Gold drops (elite/thief multipliers + Lucky Charm bonus). Multiplies the
     // drop COUNT only — the arcade `pickups` counter is untouched here.
-    const [min, max] = enemy.config.goldDrop;
+    // Wave N — a WANDERING pack left its lair (and its coin) behind: no gold
+    // scatters, so the campfire never becomes a mint (XP/score still count).
     const lucky = player.relicCount('lucky-charm');
-    const drops =
-      Math.round(rng.int(min, max) * (enemy.elite?.goldMult ?? 1) * player.kit.goldDropMult) +
-      lucky * RELIC_TUNING.LUCKY_GOLD_BONUS;
-    for (let i = 0; i < drops; i++) {
-      const angle = rng.range(0, Math.PI * 2);
-      const spot = this.host.findOpenSpotNear(
-        enemy.x + Math.cos(angle) * 14,
-        enemy.y + Math.sin(angle) * 14,
-      );
-      this.host.addPickup(new Pickup('gold', spot.x, spot.y));
+    if (!enemy.wandering) {
+      const [min, max] = enemy.config.goldDrop;
+      const drops =
+        Math.round(rng.int(min, max) * (enemy.elite?.goldMult ?? 1) * player.kit.goldDropMult) +
+        lucky * RELIC_TUNING.LUCKY_GOLD_BONUS;
+      for (let i = 0; i < drops; i++) {
+        const angle = rng.range(0, Math.PI * 2);
+        const spot = this.host.findOpenSpotNear(
+          enemy.x + Math.cos(angle) * 14,
+          enemy.y + Math.sin(angle) * 14,
+        );
+        this.host.addPickup(new Pickup('gold', spot.x, spot.y));
+      }
     }
     if (lucky > 0 && rng.chance(lucky * RELIC_TUNING.LUCKY_HEART_CHANCE)) {
       const spot = this.host.findOpenSpotNear(enemy.x, enemy.y);
@@ -353,7 +365,37 @@ export class Combat {
           this.host.levelPressure(),
         );
         mini.aggro = true;
+        mini.wandering = enemy.wandering; // Wave N — a wanderer's minis stay goldless
         this.host.addEnemy(mini);
+      }
+    }
+
+    // Wave N — THE LIVING DEPTHS: the fall rattles the pack. Every OTHER
+    // living, non-dormant, non-elite, morale-flagged foe within PACK_RADIUS
+    // rolls ONCE on the live rng to BREAK and run. The undead/mindless/mimic
+    // carry no flag, so they hold the line by construction; elites never break.
+    // Chance is designed once (moraleBreakChance) against the floor's seeded
+    // strength — a thinned or overmatched pack breaks more readily.
+    const enemies = this.host.enemies();
+    let aliveNonDormant = 0;
+    for (const other of enemies) if (other.alive && !other.dormant) aliveNonDormant++;
+    const chance = moraleBreakChance(
+      this.host.heroLevel(),
+      this.host.floor(),
+      aliveNonDormant,
+      this.host.floorSpawnBaseline(),
+    );
+    let firstBreaker = true;
+    for (const other of enemies) {
+      if (other === enemy || !other.alive || other.dormant) continue;
+      if (!other.config.morale || other.elite !== null) continue;
+      if (Math.hypot(other.x - enemy.x, other.y - enemy.y) > MORALE.PACK_RADIUS) continue;
+      if (rng.next() >= chance) continue;
+      if (other.breakAndFlee()) this.host.onFoeRouted();
+      if (firstBreaker) {
+        firstBreaker = false;
+        // One pale cry per sweep, at the first foe to lose its nerve.
+        this.host.floatingText.push(other.x, other.y - other.radius - 6, 'THEY BREAK!', '#c9cfd8');
       }
     }
 

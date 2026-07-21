@@ -111,6 +111,8 @@ describe('DungeonCrawlGame characterization', () => {
           // Wave M metric contract (the rogue's trade)
           chests_opened: 0,
           traps_disarmed: 0,
+          // Wave N metric contract (the living depths)
+          foes_routed: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');

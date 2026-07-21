@@ -212,6 +212,22 @@ export const CHESTS = {
   GOLD_EXTRA_MAX: 3,
 } as const;
 
+// Wave N — THE LIVING DEPTHS: the stairs camp. On a CLEARED floor the hero may
+// make camp beside the stairs to heal — but every tick in the dark feeds a
+// wandering-monster roll that climbs the longer the fire burns. The gamble is
+// TIME, not math: nothing rolled here ever reaches the screen as dice.
+export const REST = {
+  STAIRS_RADIUS: 48, // px from the stairs center where camp may be pitched
+  TICK_TIME: 1.6, // seconds between each heal + wander roll
+  HEAL_DICE: { n: 1, d: 4 } as Dice, // rolled per tick down the canonical heal path
+  WANDER_BASE: 0.12, // floor odds the dark answers on any one tick...
+  WANDER_RAMP: 0.04, // ...climbing this much per tick this camp...
+  WANDER_CAP: 0.5, // ...never past this
+  PACK_MIN: 2, // a wandering pack is this many of one type...
+  PACK_MAX: 4,
+  SPAWN_MIN_DIST: 300, // ...arriving at least this far from the campfire
+} as const;
+
 // Floor flavor names cycle as the player descends.
 export const FLOOR_NAMES: readonly string[] = [
   'THE EMBER DEPTHS',
