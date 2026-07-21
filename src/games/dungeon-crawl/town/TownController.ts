@@ -8,7 +8,16 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { BiomePalette } from '../data/constants';
-import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '../data/gear';
+import { CURSE_TUNING, CURSES } from '../data/curses';
+import {
+  ALCHEMIST_PROVISION_IDS,
+  ALL_GEAR_IDS,
+  GEAR,
+  GEAR_TUNING,
+  PROVISIONS,
+  ProvisionId,
+  TEMPLE_PROVISION_IDS,
+} from '../data/gear';
 import { ALL_NPC_IDS, NPCS, storyStage } from '../data/npcs';
 import { QUESTS, QuestDef, STANDALONE_QUEST_IDS } from '../data/quests';
 import { currentChapter, SAGAS, visibleSagaIds } from '../data/sagas';
@@ -32,7 +41,7 @@ export const TOWN_PALETTE: BiomePalette = {
   hazardStyle: 'vent',
 };
 
-export type TownOverlay = 'none' | 'quests' | 'smith' | 'alchemist' | 'inn';
+export type TownOverlay = 'none' | 'quests' | 'smith' | 'alchemist' | 'inn' | 'temple';
 type TownStation = Exclude<TownOverlay, 'none'> | 'gate';
 
 export interface TownInput {
@@ -62,6 +71,8 @@ export interface TownCtx {
   depart(quest: QuestDef): void;
   /** v5 Wave G — one line of bar talk from a pool (the game's live rng). */
   pickRumor(pool: readonly string[]): string;
+  /** Wave O — the temple lifted a curse (the game keeps the counter). */
+  onCurseLifted(): void;
 }
 
 const INTERACT_RADIUS = 34;
@@ -104,6 +115,8 @@ export class TownController {
         return 'ALCHEMIST — press E';
       case 'inn':
         return 'THE LAST LANTERN — press E';
+      case 'temple':
+        return 'THE TEMPLE — press E';
       case 'gate':
         return 'THE DEPTHS GATE — press E to choose a quest';
       default:
@@ -118,6 +131,8 @@ export class TownController {
       this.updateQuestBoard(ctx);
     } else if (this.overlay === 'inn') {
       this.updateInn(ctx);
+    } else if (this.overlay === 'temple') {
+      this.updateTemple(ctx);
     } else {
       this.updateShop(ctx, this.overlay);
     }
@@ -163,7 +178,9 @@ export class TownController {
           ? 'alchemist'
           : this.nearStation === 'inn'
             ? 'inn'
-            : 'quests';
+            : this.nearStation === 'temple'
+              ? 'temple'
+              : 'quests';
     if (this.overlay === 'inn') this.rollRumor(ctx);
   }
 
@@ -262,7 +279,8 @@ export class TownController {
   private updateShop(ctx: TownCtx, which: 'smith' | 'alchemist'): void {
     const { input } = ctx;
     if (!input) return;
-    const count = which === 'smith' ? ALL_GEAR_IDS.length : ALL_PROVISION_IDS.length;
+    // Wave O — the alchemist lists only its own wares (the temple has the rest).
+    const count = which === 'smith' ? ALL_GEAR_IDS.length : ALCHEMIST_PROVISION_IDS.length;
     this.navigate(ctx, count);
 
     if (this.closeRequested(ctx)) return;
@@ -292,22 +310,74 @@ export class TownController {
       ctx.playSound('success', 0.5);
       ctx.showBanner(gear.name, `TIER ${tier + 1} — WORN FROM THE NEXT EXPEDITION ON`);
     } else {
-      const provision = PROVISIONS[ALL_PROVISION_IDS[this.selection]];
-      if (hero.provisions.includes(provision.id)) {
+      this.buyProvision(ctx, hero, ALCHEMIST_PROVISION_IDS[this.selection]);
+    }
+  }
+
+  /** Wave O — shared provision purchase (alchemist counter + temple counter). */
+  private buyProvision(ctx: TownCtx, hero: SavedHero, id: ProvisionId): void {
+    const provision = PROVISIONS[id];
+    if (hero.provisions.includes(provision.id)) {
+      ctx.playSound('error', 0.35);
+      ctx.showBanner(provision.name, 'ALREADY PACKED FOR THE ROAD');
+      return;
+    }
+    if (hero.gold < provision.price) {
+      ctx.playSound('error', 0.4);
+      return;
+    }
+    hero.gold -= provision.price;
+    hero.provisions.push(provision.id);
+    ctx.save();
+    ctx.playSound('success', 0.5);
+    ctx.showBanner(provision.name, 'PACKED — APPLIED AT THE GATE');
+  }
+
+  /**
+   * Wave O — THE TEMPLE: card 0 is the rite that lifts a clinging curse (a
+   * banked-gold SERVICE, priced by the hero's level), then the two provision
+   * wares (augury, chrism) on the shared purchase path.
+   */
+  private updateTemple(ctx: TownCtx): void {
+    const { input } = ctx;
+    if (!input) return;
+    this.navigate(ctx, 1 + TEMPLE_PROVISION_IDS.length);
+
+    if (this.closeRequested(ctx)) return;
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    if (!confirm || ctx.edges.confirmWas) return;
+    const hero = ctx.hero;
+    if (!hero) return;
+
+    if (this.selection === 0) {
+      if (!hero.curse) {
         ctx.playSound('error', 0.35);
-        ctx.showBanner(provision.name, 'ALREADY PACKED FOR THE ROAD');
+        ctx.showBanner('THE RITE OF LIFTING', 'NO CURSE LIES ON YOU — GO IN PEACE');
         return;
       }
-      if (hero.gold < provision.price) {
+      const price = TownController.liftPrice(hero.level);
+      if (hero.gold < price) {
         ctx.playSound('error', 0.4);
         return;
       }
-      hero.gold -= provision.price;
-      hero.provisions.push(provision.id);
+      const lifted = CURSES[hero.curse];
+      hero.gold -= price;
+      hero.curse = null;
+      ctx.player.applyCurse(null); // the armed body sheds it at once
       ctx.save();
+      ctx.onCurseLifted();
       ctx.playSound('success', 0.5);
-      ctx.showBanner(provision.name, 'PACKED — APPLIED AT THE GATE');
+      ctx.showBanner('THE CURSE LIFTS', `${lifted.name} BURNS AWAY IN THE TEMPLE FLAME`);
+      return;
     }
+    this.buyProvision(ctx, hero, TEMPLE_PROVISION_IDS[this.selection - 1]);
+  }
+
+  /** The rite's price grows with the hero (deep pockets, deep burdens). */
+  static liftPrice(level: number): number {
+    return CURSE_TUNING.LIFT_PRICE_BASE + CURSE_TUNING.LIFT_PRICE_PER_LEVEL * level;
   }
 
   // ---------------------------------------------------------------- rendering
@@ -333,7 +403,17 @@ export class TownController {
     } else if (this.overlay === 'alchemist') {
       hud.renderAlchemist(
         ctx,
-        ALL_PROVISION_IDS,
+        ALCHEMIST_PROVISION_IDS,
+        this.selection,
+        id => hero?.provisions.includes(id) ?? false,
+        hero?.gold ?? 0,
+      );
+    } else if (this.overlay === 'temple') {
+      hud.renderTemple(
+        ctx,
+        hero?.curse ?? null,
+        TownController.liftPrice(hero?.level ?? 1),
+        TEMPLE_PROVISION_IDS,
         this.selection,
         id => hero?.provisions.includes(id) ?? false,
         hero?.gold ?? 0,
@@ -403,6 +483,14 @@ function buildTown(): {
   }
   map.set(5, 5, Tile.Door);
 
+  // Wave O — the Temple: a small chapel across the square, south door too.
+  for (let ty = 2; ty <= 4; ty++) {
+    for (let tx = 19; tx <= 23; tx++) {
+      map.set(tx, ty, Tile.Wall);
+    }
+  }
+  map.set(21, 4, Tile.Door);
+
   // The gate down to the depths.
   const gateTile = { tx: 13, ty: 15 };
   map.set(gateTile.tx, gateTile.ty, Tile.Stairs);
@@ -426,6 +514,8 @@ function buildTown(): {
     alchemist: center(6, 11),
     // v5 Wave G — the keeper stands before the inn's south door.
     inn: center(5, 6),
+    // Wave O — the temple keeper stands before the chapel's south door.
+    temple: center(21, 5),
     gate: center(gateTile.tx, gateTile.ty),
   };
 

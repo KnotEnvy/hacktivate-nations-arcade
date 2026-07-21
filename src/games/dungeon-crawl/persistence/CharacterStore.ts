@@ -9,6 +9,7 @@
 
 import { CLASSES, ClassId } from '../data/classes';
 import { ALL_BOON_IDS, BOONS, BoonId } from '../data/boons';
+import { asCurseId, CurseId } from '../data/curses';
 import {
   ALL_GEAR_IDS,
   ALL_PROVISION_IDS,
@@ -73,6 +74,11 @@ export interface SavedHero {
   // level 2). Additive field: absent/short entries backfill the average roll
   // so pre-hit-dice veterans land mid-pool, never punished.
   hpRolls: number[];
+  // Wave O — the curse that clung at run end (null = unburdened). Additive
+  // field: absent on older saves → null, so veterans play exactly as before.
+  // Written at run end (recordDeath / openVictory); cleared only by the
+  // temple's LIFT THE CURSE.
+  curse: CurseId | null;
 }
 
 export interface SavePayloadV2 {
@@ -214,6 +220,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     stash,
     lineage: asLineageId(hero.lineage),
     hpRolls,
+    curse: asCurseId(hero.curse),
   };
 }
 

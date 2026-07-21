@@ -10,6 +10,7 @@ import { SoundName } from '@/services/AudioManager';
 import { BOONS } from '../data/boons';
 import { ALL_CLASS_IDS, CLASSES, ClassId } from '../data/classes';
 import { ALL_LINEAGE_IDS, LINEAGES } from '../data/lineages';
+import { ALL_RELIC_IDS, RelicId } from '../data/relics';
 import { SPELLS } from '../data/spells';
 import { STATS } from '../data/stats';
 import { Rng } from '../dungeon/rng';
@@ -42,6 +43,9 @@ export interface DraftFlowHost {
   refreshStatMods(): void;
   /** Wave K — a burst of light blooms where the hero levels up. */
   flashLight(x: number, y: number): void;
+  // Wave O valve — the stair relic draft joined its sibling drafts here.
+  runSeed(): number;
+  grantRelic(id: RelicId): void;
 }
 
 export class DraftFlow {
@@ -56,6 +60,9 @@ export class DraftFlow {
   choices: DraftPick[] = [];
   index = 0;
   returnState: 'playing' | 'town' = 'playing';
+  /** Wave O valve — the stair relic draft (HUD renders from these). */
+  relicChoices: RelicId[] = [];
+  relicIndex = 0;
 
   constructor(private host: DraftFlowHost) {}
 
@@ -68,6 +75,36 @@ export class DraftFlow {
     this.choices = [];
     this.index = 0;
     this.returnState = 'playing';
+    this.relicChoices = [];
+    this.relicIndex = 0;
+  }
+
+  /**
+   * Wave O valve — the stair relic draft, moved beside its sibling drafts.
+   * Deterministic per (run, floor): a fresh seeded Rng, never the live one.
+   */
+  openRelicDraft(): void {
+    const draftRng = new Rng((this.host.runSeed() ^ (this.host.floor() * 0x85ebca6b)) >>> 0);
+    this.relicChoices = draftRng.shuffle(ALL_RELIC_IDS).slice(0, 3);
+    this.relicIndex = 0;
+    this.host.playSound('success', 0.5);
+  }
+
+  /** The pick grants through the shared funnel; 'descend' hands back to the game. */
+  updateRelicChoice(): 'descend' | null {
+    const input = this.host.input();
+    if (!input) return null;
+
+    this.relicIndex = this.host.draftNav(this.relicIndex, 3);
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    const directPick = [0, 1, 2].some(i => input.isKeyPressed(`Digit${i + 1}`));
+    if ((confirm && !this.host.confirmWas()) || directPick) {
+      this.host.grantRelic(this.relicChoices[this.relicIndex]);
+      return 'descend';
+    }
+    return null;
   }
 
   /** v3 — run-start class draft. Mirrors the relic draft's input handling. */
@@ -132,6 +169,7 @@ export class DraftFlow {
     const player = this.host.player();
     player.applyKit(def);
     player.applyLineage(hero.lineage);
+    player.applyCurse(hero.curse); // Wave O — the burden shows even in town
     player.applyProgression(
       progression.gains(),
       hero.boons,

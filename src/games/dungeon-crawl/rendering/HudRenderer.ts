@@ -7,6 +7,7 @@ import { BOONS, BoonId } from '../data/boons';
 import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, JUICE, OVERLAY, PALETTE, PICKUPS, PLAYER, PotionBuff, VIEW } from '../data/constants';
+import { CURSES, CurseId } from '../data/curses';
 import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
 import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
@@ -54,6 +55,8 @@ export interface HudState {
   heroXpFrac: number;
   buffs: ReadonlyMap<PotionBuff, number>;
   relics: ReadonlyMap<RelicId, number>;
+  // Wave O — shrine finds whose NAME is hidden; the tally masks them.
+  veiledRelics: readonly RelicId[];
   // v5 Wave F — run finds carried in the satchel (I opens the pack).
   itemCount: number;
   // Wave K — hurt vignette (player.hitFlash) + animation clock for pulses.
@@ -73,6 +76,9 @@ export interface RecapStats {
   timeMs: number;
   // v5 Wave F — run finds that died unbanked.
   itemsLost: number;
+  // Wave O — death lifts every veil; a clinging curse is named.
+  veiledNames: string[];
+  curseName: string | null;
 }
 
 export interface RecapView {
@@ -96,6 +102,9 @@ export interface VictoryLedger {
   // v5 Wave F — finds banked at this victory + gold from duplicates/overflow.
   bankedFinds: number;
   dupeGold: number;
+  // Wave O — the gate's light lifts every veil; a clinging curse is named.
+  veiledNames: string[];
+  curseName: string | null;
 }
 
 /** v5 Wave F — view state for the pack screen (KeyI). */
@@ -262,14 +271,24 @@ export class HudRenderer {
       bx += 32;
     }
 
-    // Relic tally (icons under panel, grows with the run).
+    // Relic tally (icons under panel, grows with the run). Wave O — veiled
+    // stacks render as a dim "?" so the tally never leaks a hidden name.
     const relicY = s.heroLevel !== null ? 150 : 134;
     let rx = 14;
     ctx.font = '13px monospace';
     for (const [id, count] of s.relics) {
+      let veiled = 0;
+      for (const v of s.veiledRelics) if (v === id) veiled++;
+      const known = count - veiled;
+      if (known <= 0) continue;
       ctx.fillStyle = RELICS[id].color;
-      ctx.fillText(count > 1 ? `${RELICS[id].icon}×${count}` : RELICS[id].icon, rx, relicY);
-      rx += count > 1 ? 40 : 22;
+      ctx.fillText(known > 1 ? `${RELICS[id].icon}×${known}` : RELICS[id].icon, rx, relicY);
+      rx += known > 1 ? 40 : 22;
+    }
+    ctx.fillStyle = '#8a7ba6';
+    for (let i = 0; i < s.veiledRelics.length; i++) {
+      ctx.fillText('?', rx, relicY);
+      rx += 14;
     }
   }
 
@@ -811,6 +830,83 @@ export class HudRenderer {
     }
   }
 
+  /** Wave O — the temple: the rite of lifting + the priests' two wares. */
+  renderTemple(
+    ctx: CanvasRenderingContext2D,
+    curse: CurseId | null,
+    liftPrice: number,
+    provisionIds: readonly ProvisionId[],
+    selectedIndex: number,
+    packed: (id: ProvisionId) => boolean,
+    gold: number,
+  ): void {
+    this.renderShopFrame(ctx, 'THE TEMPLE', gold, 'SPACE for the rite or the road · E steps away');
+    const count = 1 + provisionIds.length;
+    const cardW = count > 3 ? 170 : 190; // four cards must still fit the view
+    const cardH = 240;
+    const gap = count > 3 ? 16 : 26;
+    const startX = (VIEW.WIDTH - cardW * count - gap * (count - 1)) / 2;
+    const y = 190;
+
+    // Card 0 — THE RITE OF LIFTING (a banked-gold service, not a provision).
+    {
+      const x = startX;
+      const color = curse ? CURSES[curse].color : '#8a8a8a';
+      this.shopCard(ctx, x, y, cardW, cardH, selectedIndex === 0, color, 0);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 40px monospace';
+      ctx.fillText(curse ? CURSES[curse].icon : '✧', x + cardW / 2, y + 70);
+      ctx.font = 'bold 14px monospace';
+      this.wrapText(ctx, 'THE RITE OF LIFTING', x + cardW / 2, y + 106, cardW - 16, 16);
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '12px monospace';
+      this.wrapText(
+        ctx,
+        curse
+          ? `${CURSES[curse].name} lies on you — the flame can take it`
+          : 'No curse lies on you — go in peace',
+        x + cardW / 2,
+        y + 146,
+        cardW - 24,
+        15,
+      );
+      ctx.font = 'bold 13px monospace';
+      if (curse) {
+        ctx.fillStyle = gold >= liftPrice ? PALETTE.gold : PALETTE.blood;
+        ctx.fillText(`${liftPrice}g`, x + cardW / 2, y + cardH - 20);
+      } else {
+        ctx.fillStyle = PALETTE.textDim;
+        ctx.fillText('UNBURDENED', x + cardW / 2, y + cardH - 20);
+      }
+    }
+
+    // The wares ride the alchemist card recipe.
+    for (let i = 0; i < provisionIds.length; i++) {
+      const provision = PROVISIONS[provisionIds[i]];
+      const x = startX + (i + 1) * (cardW + gap);
+      const selected = i + 1 === selectedIndex;
+
+      this.shopCard(ctx, x, y, cardW, cardH, selected, provision.color, i + 1);
+      ctx.fillStyle = provision.color;
+      ctx.font = 'bold 40px monospace';
+      ctx.fillText(provision.icon, x + cardW / 2, y + 70);
+      ctx.font = 'bold 14px monospace';
+      this.wrapText(ctx, provision.name, x + cardW / 2, y + 106, cardW - 16, 16);
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '12px monospace';
+      this.wrapText(ctx, provision.blurb, x + cardW / 2, y + 146, cardW - 24, 15);
+
+      ctx.font = 'bold 13px monospace';
+      if (packed(provision.id)) {
+        ctx.fillStyle = '#7ae0a8';
+        ctx.fillText('PACKED', x + cardW / 2, y + cardH - 20);
+      } else {
+        ctx.fillStyle = gold >= provision.price ? PALETTE.gold : PALETTE.blood;
+        ctx.fillText(`${provision.price}g`, x + cardW / 2, y + cardH - 20);
+      }
+    }
+  }
+
   /** v5 Wave G — the inn: five patrons, one line of bar talk at a time. */
   renderInn(
     ctx: CanvasRenderingContext2D,
@@ -919,6 +1015,9 @@ export class HudRenderer {
     // v5 Wave F — the finds ledger, only when there is something to say.
     if (ledger.bankedFinds > 0) rows.push(['FINDS KEPT', `${ledger.bankedFinds}`]);
     if (ledger.dupeGold > 0) rows.push(['DUPLICATES SOLD', `+${ledger.dupeGold}g`]);
+    // Wave O — reveals, only when there is something to reveal.
+    if (ledger.veiledNames.length > 0) rows.push(['THE VEILS LIFT', ledger.veiledNames.join(' · ')]);
+    if (ledger.curseName) rows.push(['A CURSE CLINGS', `${ledger.curseName} — the temple can lift it`]);
     ctx.save();
     ctx.globalAlpha = Math.min(1, timer / 0.3); // Wave K — the page fades in
     ctx.fillStyle = 'rgba(5, 3, 8, 0.88)';
@@ -997,6 +1096,8 @@ export class HudRenderer {
     maxHp: number,
     // Wave M — the thief's trade-skills (live percentages); null off-class.
     tradeSkills: { locks: number; traps: number } | null = null,
+    // Wave O — the LIVE curse (armed player), named on the record.
+    curse: CurseId | null = null,
   ): void {
     ctx.fillStyle = 'rgba(5, 3, 8, 0.9)';
     ctx.fillRect(0, 0, VIEW.WIDTH, VIEW.HEIGHT);
@@ -1065,6 +1166,10 @@ export class HudRenderer {
     y = row(`Victories     ${hero.stats.victories}`, leftX, y);
     y = row(`Falls         ${hero.stats.deaths}`, leftX, y);
     y = row(`Treasury      ${hero.gold}g`, leftX, y, PALETTE.gold);
+    // Wave O — a clinging curse sits on the record until the temple lifts it.
+    if (curse) {
+      y = row(`${CURSES[curse].icon} ${CURSES[curse].name} — the temple can lift it`, leftX, y, CURSES[curse].color);
+    }
     y = header('GEAR', leftX, y + 16);
     for (const id of ALL_GEAR_IDS) {
       const tier = hero.gear[id] ?? 0;
@@ -1374,6 +1479,15 @@ export class HudRenderer {
       ['GOLD PLUNDERED', `${recap.stats.gold}`],
       ['GUARDIANS FELLED', `${recap.stats.bosses}`],
       ['RELICS CLAIMED', `${recap.stats.relics}`],
+      // Wave O — death lifts every veil; a clinging curse is named.
+      ...(recap.stats.veiledNames.length > 0
+        ? ([['THE VEILS LIFT', recap.stats.veiledNames.join(' · ')]] as Array<[string, string]>)
+        : []),
+      ...(recap.stats.curseName
+        ? ([['A CURSE CLINGS', `${recap.stats.curseName} — seek the temple`]] as Array<
+            [string, string]
+          >)
+        : []),
       // v5 Wave F — the deep keeps what wasn't banked.
       ...(recap.stats.itemsLost > 0
         ? ([['FINDS LOST TO THE DEEP', `${recap.stats.itemsLost}`]] as Array<[string, string]>)

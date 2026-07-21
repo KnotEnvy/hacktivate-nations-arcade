@@ -41,6 +41,7 @@ function heroFixture(
     stash: [],
     lineage: 'human',
     hpRolls: [],
+    curse: null,
   };
 }
 
@@ -77,6 +78,7 @@ function townCtx(
       hooks?.pools?.push(pool);
       return pool[0];
     },
+    onCurseLifted: () => {}, // Wave O — temple metric; unused at the inn/board
   };
 }
 

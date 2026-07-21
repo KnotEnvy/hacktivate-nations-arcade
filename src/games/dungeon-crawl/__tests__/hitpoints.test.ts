@@ -44,6 +44,7 @@ function fighterHero(overrides?: Partial<SavedHero>): SavedHero {
     stash: [],
     lineage: 'human',
     hpRolls: [7, 2, 9],
+    curse: null,
     ...overrides,
   };
 }

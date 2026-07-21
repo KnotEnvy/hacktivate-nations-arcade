@@ -6,6 +6,7 @@
 
 import { SoundName } from '@/services/AudioManager';
 import { PALETTE, PICKUPS, PotionBuff, TILE } from '../data/constants';
+import { ALL_CURSE_IDS, CURSE_TUNING, CURSES } from '../data/curses';
 import { rollDice } from '../data/dice';
 import { ALL_RELIC_IDS, RELICS, RelicId } from '../data/relics';
 import { Rng } from '../dungeon/rng';
@@ -33,6 +34,8 @@ export interface PickupResolverHost {
   onPotionUsed(): void;
   onKeyUsed(): void;
   onRelicCollected(): void;
+  /** Wave O — a curse SEIZED the hero (fires only when one takes hold). */
+  onCurseSuffered(): void;
 }
 
 export class PickupResolver {
@@ -84,10 +87,64 @@ export class PickupResolver {
         this.host.collectItem(pickup);
         break;
       case 'relic-shrine': {
-        this.grantRelic(this.host.rng().pick(ALL_RELIC_IDS));
+        this.grantShrineRelic();
         break;
       }
     }
+  }
+
+  /**
+   * Wave O — a shrine find, rolled on the LIVE rng at collect (the scroll
+   * precedent): maybe named (today's grant), maybe VEILED, and a veiled find
+   * may be a LIE — a curse wearing a relic's shape. The temple's riders
+   * intervene in order: augury refuses the lie, the chrism burns it away.
+   */
+  private grantShrineRelic(): void {
+    const rng = this.host.rng();
+    const player = this.host.player();
+    if (!rng.chance(CURSE_TUNING.VEIL_CHANCE)) {
+      this.grantRelic(rng.pick(ALL_RELIC_IDS));
+      return;
+    }
+    if (rng.chance(CURSE_TUNING.CURSE_CHANCE)) {
+      if (player.augury) {
+        this.host.playSound('error', 0.4);
+        this.host.showBanner('THE AUGURY WARNS', 'the relic is a lie — leave it to the dark');
+        return;
+      }
+      if (player.blessWard) {
+        player.blessWard = false;
+        this.host.showBanner('THE CHRISM FLARES', 'the curse burns away — the relic stands cleansed');
+        this.grantRelic(rng.pick(ALL_RELIC_IDS));
+        return;
+      }
+      if (player.curse) {
+        // One burden at a time — the first curse holds; no second branding.
+        this.host.playSound('error', 0.4);
+        this.host.showBanner('THE CURSE HOLDS ITS GRIP', CURSES[player.curse].blurb);
+        return;
+      }
+      const curse = CURSES[rng.pick(ALL_CURSE_IDS)];
+      player.curse = curse.id;
+      this.host.onCurseSuffered();
+      this.host.playSound('death_cry', 0.3);
+      this.host.particles.burst(player.x, player.y, curse.color, 16, 120, 0.8);
+      this.host.showBanner(`A CURSE SEIZES YOU — ${curse.name}`, curse.blurb);
+      return;
+    }
+    // Veiled but true: the power is real, the name is not yours to know yet.
+    const id = rng.pick(ALL_RELIC_IDS);
+    if (player.augury) {
+      this.grantRelic(id); // the priests' sight names it on the spot
+      return;
+    }
+    player.addRelic(id);
+    player.veiledRelics.push(id);
+    this.host.onRelicCollected();
+    this.host.playSound('unlock', 0.6);
+    this.host.particles.burst(player.x, player.y, '#8a7ba6', 16, 120, 0.8);
+    this.host.particles.ring(player.x, player.y, '#8a7ba6', 40, 0.4);
+    this.host.showBanner('A VEILED RELIC', 'its name is hidden — its power is not');
   }
 
   grantRelic(id: RelicId): void {

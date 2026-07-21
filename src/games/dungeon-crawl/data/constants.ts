@@ -113,6 +113,17 @@ export const EXPLOSIONS = {
   PLAYER_DAMAGE: { n: 1, d: 6 } as Dice, // Wave L — an enemy boom vs the hero
 } as const;
 
+// Wave O — THE SELLSWORD, the temple's hired blade (one per expedition).
+export const HIRELING = {
+  HP: 12,
+  FOLLOW_DIST: 40, // px — stands off the hero's shoulder
+  REACH: 26, // px — sword reach against a foe's edge
+  STRIKE_TIME: 0.8, // s between swings
+  DAMAGE: { n: 1, d: 3 } as Dice, // rolled per strike on the live rng
+  TOUCH_COOLDOWN: 0.5, // s of grace between bites taken
+  SPEED: 150, // px/s — a touch slower than the hero's base stride
+} as const;
+
 // v2 — boss shockwave rings (Bone Colossus slam).
 export const SHOCKWAVE = {
   SPEED: 210, // px/s radius growth

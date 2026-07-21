@@ -191,12 +191,14 @@ describe('the saga board page', () => {
         stash: [],
         lineage: 'human',
         hpRolls: [],
+        curse: null,
       },
       save: () => {},
       playSound: () => {},
       showBanner: () => {},
       depart: quest => departed.push(quest),
       pickRumor: pool => pool[0], // v5 Wave G — inn talk; unused on the board
+      onCurseLifted: () => {}, // Wave O — temple metric; unused on the board
     };
   }
 

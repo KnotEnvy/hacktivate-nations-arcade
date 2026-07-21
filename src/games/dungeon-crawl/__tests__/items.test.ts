@@ -194,6 +194,7 @@ describe('the satchel + victory banking', () => {
       stash: [],
       lineage: 'human',
       hpRolls: [],
+      curse: null,
       ...overrides,
     };
   }

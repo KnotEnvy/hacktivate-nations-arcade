@@ -30,12 +30,15 @@ import {
   removeTrapsChance,
   THIEF_SKILLS,
 } from './data/classes';
+import { CURSES } from './data/curses';
+import { Hireling } from './entities/Hireling';
+import { RecapFlow } from './progression/RecapFlow';
 import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
 import { BOSS, spawnWeightsForFloor } from './data/enemies';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
-import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from './data/relics';
+import { RELIC_TUNING, RELICS } from './data/relics';
 import { SCROLLS, ScrollId } from './data/scrolls';
 import { bossItemWeights, ITEM_TUNING, rollItemDrop } from './data/items';
 import { SPELLS, SpellId } from './data/spells';
@@ -67,7 +70,7 @@ import { SecretRooms } from './systems/SecretRooms';
 import { MerchantShop } from './systems/MerchantShop';
 import { pickWanderType, Rest, wanderSpawnSpot } from './systems/Rest';
 import { ThiefSkills } from './systems/ThiefSkills';
-import { HudRenderer, RecapStats } from './rendering/HudRenderer';
+import { HudRenderer } from './rendering/HudRenderer';
 import { gatherLights } from './rendering/lights';
 import { TileRenderer } from './rendering/TileRenderer';
 
@@ -205,6 +208,10 @@ export class DungeonCrawlGame extends BaseGame {
       this.relicsCollected++;
       this.trackStat('relics_collected', this.relicsCollected);
     },
+    onCurseSuffered: () => {
+      this.cursesSuffered++;
+      this.trackStat('curses_suffered', this.cursesSuffered);
+    },
   });
 
   // v5 Wave F — the found-equipment satchel/worn set behind its own host.
@@ -337,6 +344,11 @@ export class DungeonCrawlGame extends BaseGame {
   private trapsDisarmed = 0;
   // Wave N — the living depths
   private foesRouted = 0;
+  // Wave O — the temple and the curse
+  private cursesSuffered = 0;
+  private cursesLifted = 0;
+  /** Wave O — the hired blade (one per expedition; null = none hired). */
+  private hireling: Hireling | null = null;
 
   // Combo chain.
   private combo = 1;
@@ -352,8 +364,6 @@ export class DungeonCrawlGame extends BaseGame {
   private bannerText = '';
   private bannerSub = '';
   private bannerTimer = 0;
-  private relicChoices: RelicId[] = [];
-  private relicIndex = 0;
   // v3 — run-start class draft.
   private chosenClass: ClassId | null = null;
   // v4 — the persistent hero + retire affordance.
@@ -381,9 +391,18 @@ export class DungeonCrawlGame extends BaseGame {
     refreshStatMods: () => this.refreshItemFolds(),
     flashLight: (x, y) =>
       this.juice.flashLight(x, y, JUICE.FLASH_LEVEL_UP_RADIUS, JUICE.FLASH_LEVEL_UP_LIFE),
+    // Wave O valve — the stair relic draft joined its sibling drafts.
+    runSeed: () => this.runSeed,
+    grantRelic: id => this.pickupResolver.grantRelic(id),
   });
-  private retireHold = 0;
-  private recapRetired = false;
+  // Wave O valve — the death-recap overlay lifecycle (timers + hold-R retire).
+  private recap = new RecapFlow({
+    input: () => this.services?.input,
+    confirmWas: () => this.confirmWas,
+    progression: () => this.progression,
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+    endGame: () => this.endGame(),
+  });
   // v4 Wave B — Lastlight + quest expeditions. v5 Wave G: the expedition
   // lifecycle (depart/victory/interlude) lives in QuestDirector; the session
   // counters stay here in the host callbacks.
@@ -417,6 +436,10 @@ export class DungeonCrawlGame extends BaseGame {
       this.sagasCompleted++;
       this.trackStat('sagas_completed', this.sagasCompleted);
     },
+    armHireling: () => {
+      // Wave O — the sellsword provision hires one blade for the expedition.
+      this.hireling = new Hireling();
+    },
   });
   private questsCompleted = 0;
   private goldBanked = 0;
@@ -427,8 +450,6 @@ export class DungeonCrawlGame extends BaseGame {
   private activeSpellIndex = 0;
   private sheetReturn: 'playing' | 'town' = 'playing';
   private inventoryReturn: 'playing' | 'town' = 'playing';
-  private recapStats: RecapStats | null = null;
-  private recapTimer = 0;
 
   // Wave N valve — the dungeon merchant (pedestals, haggle, purchase) behind
   // its own narrow host; the run's gold ledger + buy metrics stay here.
@@ -514,13 +535,15 @@ export class DungeonCrawlGame extends BaseGame {
     this.chestsOpened = 0;
     this.trapsDisarmed = 0;
     this.foesRouted = 0;
+    this.cursesSuffered = 0;
+    this.cursesLifted = 0;
     this.inventory.reset();
     this.combo = 1;
     this.killChain = 0;
     this.comboTimer = 0;
     this.chosenClass = null;
     this.draftFlow.reset();
-    this.recapStats = null;
+    this.recap.reset();
     this.player.reset(0, 0);
     this.shake.reset();
     this.particles.clear();
@@ -533,8 +556,6 @@ export class DungeonCrawlGame extends BaseGame {
     // and behind the roster overlay that follows.
     this.progression.load();
     this.progression.resetSessionCounters();
-    this.retireHold = 0;
-    this.recapRetired = false;
     this.quests.reset();
     this.questsCompleted = 0;
     this.goldBanked = 0;
@@ -635,6 +656,15 @@ export class DungeonCrawlGame extends BaseGame {
     this.stairsLocked = this.plan.isBossFloor;
     this.player.placeAt(this.plan.playerStart.x, this.plan.playerStart.y);
     this.player.rechargeStoneSense(); // Wave I — a new floor, a fresh warning
+    if (this.hireling?.alive) {
+      // Wave O — the sellsword falls in beside the hero on every floor.
+      const spot =
+        this.map.findOpenSpotNear(this.player.x + 24, this.player.y) ?? {
+          x: this.player.x,
+          y: this.player.y,
+        };
+      this.hireling.placeAt(spot.x, spot.y);
+    }
     this.minimap.resetFor(this.map);
     this.visitedRooms.clear();
     this.damageTakenThisFloor = false;
@@ -738,7 +768,7 @@ export class DungeonCrawlGame extends BaseGame {
         });
         break;
       case 'relic':
-        this.updateRelicChoice();
+        if (this.draftFlow.updateRelicChoice() === 'descend') this.descend();
         break;
       case 'levelUp': {
         const next = this.draftFlow.updateBoonChoice();
@@ -756,7 +786,7 @@ export class DungeonCrawlGame extends BaseGame {
         break;
       }
       case 'recap':
-        this.updateRecap(dt);
+        this.recap.update(dt);
         break;
     }
 
@@ -827,6 +857,10 @@ export class DungeonCrawlGame extends BaseGame {
       showBanner: (text, sub) => this.showBanner(text, sub),
       depart: quest => this.departOnQuest(quest),
       pickRumor: pool => this.rng.pick(pool),
+      onCurseLifted: () => {
+        this.cursesLifted++;
+        this.trackStat('curses_lifted', this.cursesLifted);
+      },
     });
     this.updateCamera();
     this.minimap.reveal(
@@ -850,6 +884,7 @@ export class DungeonCrawlGame extends BaseGame {
 
   /** Expedition-scoped resets (session metrics keep accumulating). */
   private resetExpedition(): void {
+    this.hireling = null; // Wave O — a blade is hired per expedition
     this.floor = 1;
     this.combo = 1;
     this.killChain = 0;
@@ -946,6 +981,7 @@ export class DungeonCrawlGame extends BaseGame {
     //     resolves in Combat (Wave M valve; arrays compacted in place).
     this.combat.updateSwing();
     this.combat.updateEnemies(dt);
+    if (this.hireling) this.combat.updateHireling(dt, this.hireling); // Wave O
     this.combat.updateBoss(dt);
     this.combat.updateProjectiles(dt);
 
@@ -1316,35 +1352,13 @@ export class DungeonCrawlGame extends BaseGame {
       if (quest && quest.floors > 0 && this.floor === quest.floors) {
         this.openVictory();
       } else {
-        this.openRelicDraft();
+        this.draftFlow.openRelicDraft(); // Wave O valve — the draft lives there
+        this.state = 'relic';
       }
     }
   }
 
-  // ------------------------------------------------------------ relic draft + descent
-
-  private openRelicDraft(): void {
-    const draftRng = new Rng((this.runSeed ^ (this.floor * 0x85ebca6b)) >>> 0);
-    this.relicChoices = draftRng.shuffle(ALL_RELIC_IDS).slice(0, 3);
-    this.relicIndex = 0;
-    this.state = 'relic';
-    this.services?.audio?.playSound?.('success', { volume: 0.5 });
-  }
-
-  private updateRelicChoice(): void {
-    const input = this.services?.input;
-    if (!input) return;
-
-    this.relicIndex = this.draftNav(this.relicIndex, 3);
-
-    const confirm =
-      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
-    const directPick = [0, 1, 2].some(i => input.isKeyPressed(`Digit${i + 1}`));
-    if ((confirm && !this.confirmWas) || directPick) {
-      this.pickupResolver.grantRelic(this.relicChoices[this.relicIndex]);
-      this.descend();
-    }
-  }
+  // ------------------------------------------------------------ descent
 
   private descend(): void {
     // Floor-clear bookkeeping happens for the floor being left.
@@ -1367,12 +1381,11 @@ export class DungeonCrawlGame extends BaseGame {
 
   private openRecap(cause: DeathCause): void {
     this.state = 'recap';
-    this.recapTimer = 0;
     // v4 — the hero endures: death banks XP/boons and counts the fall.
-    this.progression.recordDeath();
-    this.retireHold = 0;
-    this.recapRetired = false;
-    this.recapStats = {
+    // Wave O — and the run's curse CLINGS to them until the temple lifts it.
+    this.progression.recordDeath(this.player.curse);
+    // The game assembles its frozen stats; RecapFlow owns the overlay from here.
+    this.recap.open({
       cause,
       depth: this.floor,
       kills: this.enemiesSlain,
@@ -1383,34 +1396,12 @@ export class DungeonCrawlGame extends BaseGame {
       timeMs: Date.now() - this.startTime,
       // v5 Wave F — run finds that died unbanked.
       itemsLost: this.inventory.lostCount(this.progression.character()),
-    };
+      // Wave O — death lifts every veil, and names what clings.
+      veiledNames: this.player.veiledRelics.map(id => RELICS[id].name),
+      curseName: this.player.curse ? CURSES[this.player.curse].name : null,
+    });
     this.shake.add(0.6);
     this.syncExtendedData();
-  }
-
-  private updateRecap(dt: number): void {
-    this.recapTimer += dt;
-    const input = this.services?.input;
-    const confirm = input
-      ? input.isKeyPressed('Space') || input.isKeyPressed('Enter')
-      : false;
-    const canDismiss = this.recapTimer > OVERLAY.RECAP_INPUT_LOCKOUT;
-
-    // v4 — hold R past the lockout to retire the hero (hold-gated on purpose).
-    if (canDismiss && !this.recapRetired && this.progression.hasCharacter() && input?.isKeyPressed('KeyR')) {
-      this.retireHold += dt;
-      if (this.retireHold >= PROGRESSION.RETIRE_HOLD_SECONDS) {
-        this.progression.retire();
-        this.recapRetired = true;
-        this.services?.audio?.playSound?.('gate_open', { volume: 0.5 });
-      }
-    } else {
-      this.retireHold = 0;
-    }
-
-    if ((canDismiss && confirm && !this.confirmWas) || this.recapTimer > OVERLAY.RECAP_AUTO_DISMISS) {
-      this.endGame();
-    }
   }
 
   // ------------------------------------------------------------ camera / ambience / metrics
@@ -1509,6 +1500,9 @@ export class DungeonCrawlGame extends BaseGame {
       traps_disarmed: this.trapsDisarmed,
       // Wave N — the living depths.
       foes_routed: this.foesRouted,
+      // Wave O — the temple and the curse.
+      curses_suffered: this.cursesSuffered,
+      curses_lifted: this.cursesLifted,
     };
   }
 
@@ -1543,10 +1537,15 @@ export class DungeonCrawlGame extends BaseGame {
       this.tiles.drawMerchant(ctx, this.town.spots.smith.x, this.town.spots.smith.y, this.gameTime, '#5a3a22', '#3a2414');
       this.tiles.drawMerchant(ctx, this.town.spots.alchemist.x, this.town.spots.alchemist.y, this.gameTime);
       this.tiles.drawMerchant(ctx, this.town.spots.inn.x, this.town.spots.inn.y, this.gameTime, '#7a5a30', '#4a3418');
+      // Wave O — the temple keeper in pale vestments before the chapel door.
+      this.tiles.drawMerchant(ctx, this.town.spots.temple.x, this.town.spots.temple.y, this.gameTime, '#d8d2c4', '#b89a4a');
       this.tiles.drawQuestBoard(ctx, this.town.spots.quests.x, this.town.spots.quests.y, this.gameTime);
     }
     for (const pickup of this.pickupItems) this.tiles.drawPickup(ctx, pickup, this.gameTime);
     for (const enemy of this.enemies) this.tiles.drawEnemy(ctx, enemy, this.gameTime);
+    if (this.hireling?.alive && !this.inTownWorld()) {
+      this.tiles.drawHireling(ctx, this.hireling, this.gameTime); // Wave O
+    }
     if (this.boss?.alive) this.tiles.drawBoss(ctx, this.boss, this.gameTime);
 
     this.renderCombatEffects(ctx);
@@ -1612,6 +1611,7 @@ export class DungeonCrawlGame extends BaseGame {
       heroXpFrac: this.progression.xpFrac(),
       buffs: this.player.buffs,
       relics: this.player.relics,
+      veiledRelics: this.player.veiledRelics, // Wave O — the tally masks these
       itemCount: this.inventory.satchel.length,
       hurtFlash: this.player.hitFlash,
       gameTime: this.gameTime,
@@ -1680,6 +1680,8 @@ export class DungeonCrawlGame extends BaseGame {
                 traps: removeTrapsChance(hero.level, this.player.statMods.dex),
               }
             : null,
+          // Wave O — the LIVE curse (mid-run seizures show at once).
+          this.player.curse,
         );
       }
     }
@@ -1720,7 +1722,10 @@ export class DungeonCrawlGame extends BaseGame {
       );
     }
     if (this.state === 'relic') {
-      this.hud.renderRelicDraft(ctx, this.relicChoices, this.relicIndex, id => this.player.relicCount(id));
+      // Wave O — the draft's owned-count only admits to NAMED stacks.
+      this.hud.renderRelicDraft(ctx, this.draftFlow.relicChoices, this.draftFlow.relicIndex, id =>
+        this.player.identifiedRelicCount(id),
+      );
     }
     if (this.state === 'levelUp') {
       this.hud.renderBoonDraft(
@@ -1731,15 +1736,15 @@ export class DungeonCrawlGame extends BaseGame {
         (this.progression.character()?.level ?? 1) + 1,
       );
     }
-    if (this.state === 'recap' && this.recapStats) {
+    if (this.state === 'recap' && this.recap.stats) {
       this.hud.renderRecap(ctx, {
-        stats: this.recapStats,
+        stats: this.recap.stats,
         sessionXp: this.progression.sessionXp,
         score: this.score,
-        timer: this.recapTimer,
-        retired: this.recapRetired,
+        timer: this.recap.timer,
+        retired: this.recap.retired,
         hasHero: this.progression.hasCharacter(),
-        retireHold: this.retireHold,
+        retireHold: this.recap.retireHold,
       });
     }
   }

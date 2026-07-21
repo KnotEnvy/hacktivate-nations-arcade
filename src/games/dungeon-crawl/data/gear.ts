@@ -63,7 +63,14 @@ export const GEAR_TUNING = {
 
 // ---------------------------------------------------------------- provisions
 
-export type ProvisionId = 'field-scroll' | 'bandolier' | 'blessed-candle';
+export type ProvisionId =
+  | 'field-scroll'
+  | 'bandolier'
+  | 'blessed-candle'
+  // Wave O — sold at the TEMPLE, not the alchemist (same provision machinery).
+  | 'rite-of-augury'
+  | 'warding-chrism'
+  | 'sellsword';
 
 export interface ProvisionDef {
   id: ProvisionId;
@@ -72,6 +79,8 @@ export interface ProvisionDef {
   icon: string;
   color: string;
   price: number; // banked gold; consumed at the gate
+  /** Wave O — which station's counter carries it (default alchemist). */
+  station?: 'temple';
 }
 
 export const PROVISIONS: Record<ProvisionId, ProvisionDef> = {
@@ -99,11 +108,47 @@ export const PROVISIONS: Record<ProvisionId, ProvisionDef> = {
     color: '#ffe08a',
     price: 40,
   },
+  // Wave O — the temple's counter.
+  'rite-of-augury': {
+    id: 'rite-of-augury',
+    name: 'RITE OF AUGURY',
+    blurb: "The priests' sight rides with you — shrine relics arrive named, and a cursed one is refused",
+    icon: '☽',
+    color: '#b9a8e8',
+    price: 45,
+    station: 'temple',
+  },
+  'warding-chrism': {
+    id: 'warding-chrism',
+    name: 'WARDING CHRISM',
+    blurb: 'The first curse that reaches for you burns away; the anointing mends hearts a little deeper',
+    icon: '✚',
+    color: '#ffd9a8',
+    price: 35,
+    station: 'temple',
+  },
+  sellsword: {
+    id: 'sellsword',
+    name: 'THE SELLSWORD',
+    blurb: 'A hired blade walks the next delve at your side — until the dark collects its fee',
+    icon: '⚔',
+    color: '#c9a86a',
+    price: 75,
+    station: 'temple',
+  },
 };
 
 export const ALL_PROVISION_IDS = Object.keys(PROVISIONS) as ProvisionId[];
+/** Wave O — each station lists only its own wares (sanitize keeps the full set). */
+export const ALCHEMIST_PROVISION_IDS = ALL_PROVISION_IDS.filter(
+  id => PROVISIONS[id].station !== 'temple',
+);
+export const TEMPLE_PROVISION_IDS = ALL_PROVISION_IDS.filter(
+  id => PROVISIONS[id].station === 'temple',
+);
 
 export const PROVISION_TUNING = {
   BANDOLIER_DAGGERS: 6,
   CANDLE_TORCH_BONUS: 1, // stacks with Keen Eye radius steps
+  CHRISM_HEAL_BONUS: 1, // Wave O — rides heartHealBonus for the delve
 } as const;

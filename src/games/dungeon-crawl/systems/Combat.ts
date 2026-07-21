@@ -8,7 +8,7 @@
 import { SoundName } from '@/services/AudioManager';
 import { AbilityId, CLASS_TUNING } from '../data/classes';
 import { rollDice } from '../data/dice';
-import { EXPLOSIONS, HAZARDS, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
+import { EXPLOSIONS, HAZARDS, HIRELING, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
 import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scrolls';
 import { SPELL_TUNING, SpellId } from '../data/spells';
 import { STAT_TUNING } from '../data/stats';
@@ -20,6 +20,7 @@ import { Tile, TileMap } from '../dungeon/TileMap';
 import { Boss } from '../entities/Boss';
 import { Enemy, EnemyUpdateContext } from '../entities/Enemy';
 import { Hazard } from '../entities/Hazard';
+import { Hireling } from '../entities/Hireling';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -337,7 +338,8 @@ export class Combat {
     if (!enemy.wandering) {
       const [min, max] = enemy.config.goldDrop;
       const drops =
-        Math.round(rng.int(min, max) * (enemy.elite?.goldMult ?? 1) * player.kit.goldDropMult) +
+        // Wave O — goldDropMult() folds THE MISER'S SHADOW over the kit rate.
+        Math.round(rng.int(min, max) * (enemy.elite?.goldMult ?? 1) * player.goldDropMult()) +
         lucky * RELIC_TUNING.LUCKY_GOLD_BONUS;
       for (let i = 0; i < drops; i++) {
         const angle = rng.range(0, Math.PI * 2);
@@ -1070,6 +1072,89 @@ export class Combat {
     let write = 0;
     for (const enemy of enemies) if (enemy.alive) enemies[write++] = enemy;
     enemies.length = write;
+  }
+
+  /**
+   * Wave O — THE SELLSWORD's turn: follow at the hero's shoulder, strike the
+   * nearest foe in reach (through the REAL woundEnemy/killEnemy path — kills
+   * count, morale sweeps, splits split), and take touch damage from any foe
+   * it presses against. Enemies never TARGET the sellsword and the
+   * damagePlayer funnel is never involved — no faction concept, no new
+   * damage source, no DeathCause.
+   */
+  updateHireling(dt: number, hireling: Hireling): void {
+    if (!hireling.alive) return;
+    hireling.tickTimers(dt);
+    const player = this.host.player();
+    const rng = this.host.rng();
+
+    // Fall in beside the hero.
+    const dxp = player.x - hireling.x;
+    const dyp = player.y - hireling.y;
+    const distToHero = Math.hypot(dxp, dyp);
+    if (distToHero > HIRELING.FOLLOW_DIST) {
+      const step = HIRELING.SPEED * dt;
+      const moved = this.host
+        .map()
+        .moveWithCollision(
+          hireling.x,
+          hireling.y,
+          hireling.size,
+          (dxp / distToHero) * step,
+          (dyp / distToHero) * step,
+        );
+      hireling.x = moved.x;
+      hireling.y = moved.y;
+      hireling.faceX = dxp / distToHero;
+      hireling.faceY = dyp / distToHero;
+    }
+
+    // The nearest living foe; a strike when it stands in reach.
+    let target: Enemy | null = null;
+    let targetDist = Infinity;
+    for (const enemy of this.host.enemies()) {
+      if (!enemy.alive || enemy.dormant) continue;
+      const d = Math.hypot(enemy.x - hireling.x, enemy.y - hireling.y);
+      if (d < targetDist) {
+        targetDist = d;
+        target = enemy;
+      }
+    }
+    if (target && targetDist <= HIRELING.REACH + target.radius) {
+      const len = targetDist || 1;
+      hireling.faceX = (target.x - hireling.x) / len;
+      hireling.faceY = (target.y - hireling.y) / len;
+      if (hireling.strikeCooldown <= 0) {
+        hireling.strikeCooldown = HIRELING.STRIKE_TIME;
+        hireling.swingAnim = 0.22;
+        this.host.playSound('sword_swing', 0.2);
+        this.host.particles.burst(target.x, target.y, '#c9a86a', 5, 70, 0.3);
+        this.woundEnemy(target, rollDice(rng, HIRELING.DAMAGE));
+      }
+    }
+
+    // Wading into the pack has teeth (stunned foes are safe to brush past).
+    if (hireling.hurtCooldown <= 0) {
+      for (const enemy of this.host.enemies()) {
+        if (!enemy.alive || enemy.dormant || enemy.stunned > 0) continue;
+        const reach = enemy.radius + hireling.radius;
+        if (Math.hypot(enemy.x - hireling.x, enemy.y - hireling.y) >= reach) continue;
+        hireling.hurtCooldown = HIRELING.TOUCH_COOLDOWN;
+        hireling.flash = 0.3;
+        const bite = rollDice(rng, enemy.config.touchDamage);
+        hireling.hp -= bite;
+        if (bite > 0) {
+          this.host.floatingText.push(hireling.x, hireling.y - 14, `-${bite}`, '#ff6a5e');
+        }
+        if (hireling.hp <= 0) {
+          hireling.alive = false;
+          this.host.particles.burst(hireling.x, hireling.y, '#c9a86a', 14, 110, 0.7);
+          this.host.playSound('death_cry', 0.25);
+          this.host.showBanner('THE SELLSWORD FALLS', 'the dark collects its fee');
+        }
+        break; // one bite per grace window
+      }
+    }
   }
 
   /** Projectile flight + hits. Hostile bolts home on the player; mage mana

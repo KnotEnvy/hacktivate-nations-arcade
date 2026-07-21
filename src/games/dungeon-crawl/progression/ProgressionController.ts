@@ -18,6 +18,7 @@ import {
   PROGRESSION,
   xpIntoLevel,
 } from '../data/progression';
+import { CurseId } from '../data/curses';
 import { applyLineageNudge, LINEAGE_TUNING, LineageId } from '../data/lineages';
 import { chaptersDone, sagaChapterForQuest, SAGAS } from '../data/sagas';
 import { SPELLS, SpellId, spellsForClass } from '../data/spells';
@@ -116,6 +117,7 @@ export class ProgressionController {
       stash: [],
       lineage: lineageId,
       hpRolls: [], // Wave L — level 1 is the die's maximum; rolls start at 2
+      curse: null, // Wave O — a fresh hero is unburdened
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -275,11 +277,13 @@ export class ProgressionController {
     };
   }
 
-  /** Death checkpoint — the hero endures, XP and boons are banked. */
-  recordDeath(): void {
+  /** Death checkpoint — the hero endures, XP and boons are banked. Wave O —
+   * and any curse the run carried CLINGS until the temple lifts it. */
+  recordDeath(curse: CurseId | null): void {
     const hero = this.character();
     if (!hero) return;
     hero.stats.deaths++;
+    hero.curse = curse;
     this.store.save(this.payload);
   }
 

@@ -3,7 +3,15 @@
 // victory / provision flows (dev-test internals pokes where rng-driven
 // steering would be impractical).
 
-import { ALL_GEAR_IDS, ALL_PROVISION_IDS, GEAR, GEAR_TUNING, PROVISIONS } from '@/games/dungeon-crawl/data/gear';
+import {
+  ALCHEMIST_PROVISION_IDS,
+  ALL_GEAR_IDS,
+  ALL_PROVISION_IDS,
+  GEAR,
+  GEAR_TUNING,
+  PROVISIONS,
+  TEMPLE_PROVISION_IDS,
+} from '@/games/dungeon-crawl/data/gear';
 import { ALL_QUEST_IDS, QUESTS, STANDALONE_QUEST_IDS } from '@/games/dungeon-crawl/data/quests';
 import { STAT_TUNING, statModDeltas } from '@/games/dungeon-crawl/data/stats';
 import { DungeonCrawlGame } from '@/games/dungeon-crawl/DungeonCrawlGame';
@@ -96,12 +104,20 @@ describe('gear + provision contracts', () => {
     }
   });
 
-  test('three provisions, priced and authored', () => {
-    expect(ALL_PROVISION_IDS).toHaveLength(3);
+  // Wave O — conscious update: the temple's three wares join the provision
+  // machinery (6 total), but the alchemist's counter still lists exactly the
+  // original three; the station lists partition the full set.
+  test('six provisions, priced and authored, split across two counters', () => {
+    expect(ALL_PROVISION_IDS).toHaveLength(6);
     for (const id of ALL_PROVISION_IDS) {
       expect(PROVISIONS[id].price).toBeGreaterThan(0);
       expect(PROVISIONS[id].blurb.length).toBeGreaterThan(0);
     }
+    expect(ALCHEMIST_PROVISION_IDS).toEqual(['field-scroll', 'bandolier', 'blessed-candle']);
+    expect(TEMPLE_PROVISION_IDS).toEqual(['rite-of-augury', 'warding-chrism', 'sellsword']);
+    expect([...ALCHEMIST_PROVISION_IDS, ...TEMPLE_PROVISION_IDS].sort()).toEqual(
+      [...ALL_PROVISION_IDS].sort(),
+    );
   });
 });
 

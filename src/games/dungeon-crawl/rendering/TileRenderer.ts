@@ -11,6 +11,7 @@ import { Enemy } from '../entities/Enemy';
 import { Boss } from '../entities/Boss';
 import { Chest } from '../entities/Chest';
 import { Hazard } from '../entities/Hazard';
+import { Hireling } from '../entities/Hireling';
 import { Pickup } from '../entities/Pickup';
 import { Player } from '../entities/Player';
 import { Projectile } from '../entities/Projectile';
@@ -636,6 +637,39 @@ export class TileRenderer {
     const flicker = 0.6 + 0.4 * Math.sin(time * 9);
     ctx.fillStyle = `rgba(255, 210, 74, ${flicker})`;
     ctx.fillRect(px + 7, py + 4 + bob, 6, 6);
+  }
+
+  /** Wave O — THE SELLSWORD: leather and steel at the hero's shoulder. */
+  drawHireling(ctx: CanvasRenderingContext2D, hireling: Hireling, time: number): void {
+    const px = Math.round(hireling.x);
+    const py = Math.round(hireling.y);
+    const bob = Math.round(Math.sin(time * 3) * 1);
+    const hurt = hireling.flash > 0;
+    // Leather jerkin (flashes pale when bitten).
+    ctx.fillStyle = hurt ? '#e8dcbc' : '#6b4a2a';
+    ctx.fillRect(px - 7, py - 4 + bob, 14, 14);
+    // Steel cap over a weathered face.
+    ctx.fillStyle = hurt ? '#ffffff' : '#9aa5b5';
+    ctx.fillRect(px - 6, py - 12 + bob, 12, 6);
+    ctx.fillStyle = '#c9a86a';
+    ctx.fillRect(px - 4, py - 7 + bob, 8, 3);
+    // The blade — swings out along the facing on a strike.
+    const lunge = hireling.swingAnim > 0 ? 4 : 0;
+    ctx.strokeStyle = '#cfd6e0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(px + hireling.faceX * 6, py + 2 + bob + hireling.faceY * 4);
+    ctx.lineTo(
+      px + hireling.faceX * (14 + lunge),
+      py + 2 + bob + hireling.faceY * (12 + lunge),
+    );
+    ctx.stroke();
+    // A sliver of hired health over the cap.
+    const frac = Math.max(0, hireling.hp / hireling.maxHp);
+    ctx.fillStyle = '#241d38';
+    ctx.fillRect(px - 8, py - 17 + bob, 16, 2);
+    ctx.fillStyle = frac > 0.35 ? '#7ae0a8' : '#ff6a5e';
+    ctx.fillRect(px - 8, py - 17 + bob, Math.round(16 * frac), 2);
   }
 
   /** v4 — Lastlight's quest board: post, plank, pinned parchments. */

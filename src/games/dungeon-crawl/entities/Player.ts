@@ -5,6 +5,7 @@
 
 import { BoonId, BOON_TUNING } from '../data/boons';
 import { ClassDef, ClassId, ClassKit, CLASS_TUNING, DEFAULT_KIT } from '../data/classes';
+import { CURSE_TUNING, CurseId } from '../data/curses';
 import { GEAR_TUNING, GearId } from '../data/gear';
 import { ItemEffects } from '../data/items';
 import { LINEAGE_TUNING, LineageId } from '../data/lineages';
@@ -95,6 +96,14 @@ export class Player {
   stoneSenseSpent = false; // dwarf: recharged each floor by the game
   luckUsed = false; // halfling: once per expedition (reset() = depart)
 
+  // Wave O — the clinging curse (applied beside applyLineage; null = clean),
+  // the veil (shrine relics whose NAME is hidden), and the temple's riders.
+  curse: CurseId | null = null;
+  veiledRelics: RelicId[] = [];
+  blessWard = false;
+  augury = false;
+  chrismHeal = 0;
+
   reset(x: number, y: number): void {
     this.x = x;
     this.y = y;
@@ -135,11 +144,21 @@ export class Player {
     this.lineage = 'human';
     this.stoneSenseSpent = false;
     this.luckUsed = false;
+    this.curse = null;
+    this.veiledRelics = [];
+    this.blessWard = false;
+    this.augury = false;
+    this.chrismHeal = 0;
   }
 
   /** Wave I — set the hero's bloodline (call right after applyKit). */
   applyLineage(id: LineageId): void {
     this.lineage = id;
+  }
+
+  /** Wave O — the clinging curse (call beside applyLineage at every arm site). */
+  applyCurse(id: CurseId | null): void {
+    this.curse = id;
   }
 
   /** Wave I — a new floor re-arms the dwarf's trap warning. */
@@ -315,6 +334,13 @@ export class Player {
     return this.relics.get(id) ?? 0;
   }
 
+  /** Wave O — stacks whose NAME the hero knows (the veil hides the rest). */
+  identifiedRelicCount(id: RelicId): number {
+    let veiled = 0;
+    for (const v of this.veiledRelics) if (v === id) veiled++;
+    return Math.max(0, this.relicCount(id) - veiled);
+  }
+
   addRelic(id: RelicId): void {
     this.relics.set(id, this.relicCount(id) + 1);
     if (id === 'tower-shield') {
@@ -352,6 +378,8 @@ export class Player {
       this.gearTier('boots') * GEAR_TUNING.BOOTS_SPEED +
       this.statMods.dex * STAT_TUNING.DEX_SPEED +
       this.itemEffects.speed;
+    // Wave O — LEADEN BLOOD drags the stride until the temple lifts it.
+    if (this.curse === 'leaden-blood') mult *= CURSE_TUNING.LEADEN_SPEED_MULT;
     return PLAYER.SPEED * this.kit.speedMult * training * mult;
   }
 
@@ -402,12 +430,25 @@ export class Player {
     return (
       this.kit.healBonus +
       this.boonCount('herbalism') * BOON_TUNING.HERBALISM_HEAL +
-      this.statMods.wis * STAT_TUNING.WIS_HEAL
+      this.statMods.wis * STAT_TUNING.WIS_HEAL +
+      // Wave O — the chrism's anointing vs THE HUNGRY WOUND's drink.
+      this.chrismHeal -
+      (this.curse === 'hungry-wound' ? CURSE_TUNING.HUNGRY_HEAL_MALUS : 0)
     );
   }
 
   torchBonus(): number {
-    return this.relicCount('keen-eye') + this.provisionTorch;
+    return (
+      this.relicCount('keen-eye') +
+      this.provisionTorch -
+      // Wave O — THE DIMMING draws the light in (one radius step).
+      (this.curse === 'dim-sight' ? CURSE_TUNING.DIM_TORCH_MALUS : 0)
+    );
+  }
+
+  /** Wave O — gold drop count multiplier (kit × THE MISER'S SHADOW). */
+  goldDropMult(): number {
+    return this.kit.goldDropMult * (this.curse === 'misers-shadow' ? CURSE_TUNING.MISER_GOLD_MULT : 1);
   }
 
   hasCoinMagnet(): boolean {

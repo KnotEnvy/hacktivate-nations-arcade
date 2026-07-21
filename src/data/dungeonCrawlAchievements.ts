@@ -502,4 +502,27 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 300,
     unlocked: false
   },
+  // Wave O — the temple and the curse
+  {
+    id: 'dungeon_the_marked',
+    title: 'The Marked',
+    description: 'Suffer 3 curses from veiled relics in a single session',
+    icon: '🕯️',
+    gameId: 'dungeon-crawl',
+    category: 'gameplay',
+    requirement: { type: 'curses_suffered', value: 3 },
+    reward: 250,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_unburdened',
+    title: 'Unburdened',
+    description: 'Have the temple lift 3 curses in a single session',
+    icon: '⛪',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'curses_lifted', value: 3 },
+    reward: 300,
+    unlocked: false
+  },
 ];

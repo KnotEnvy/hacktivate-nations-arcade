@@ -113,6 +113,9 @@ describe('DungeonCrawlGame characterization', () => {
           traps_disarmed: 0,
           // Wave N metric contract (the living depths)
           foes_routed: 0,
+          // Wave O metric contract (the temple and the curse)
+          curses_suffered: 0,
+          curses_lifted: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');

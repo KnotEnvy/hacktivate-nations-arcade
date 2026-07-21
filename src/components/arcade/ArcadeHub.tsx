@@ -153,6 +153,8 @@ interface GameEndData {
   chests_opened?: number;
   traps_disarmed?: number;
   foes_routed?: number;
+  curses_suffered?: number;
+  curses_lifted?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

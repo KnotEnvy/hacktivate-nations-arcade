@@ -56,6 +56,7 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     lineage: 'human',
     // Wave L — a level-3 fighter carries two kept d10 rolls.
     hpRolls: [6, 6],
+    curse: null,
     ...overrides,
   };
 }

@@ -11,6 +11,8 @@
 import { SoundName } from '@/services/AudioManager';
 import { CLASSES } from '../data/classes';
 import { OVERLAY } from '../data/constants';
+import { CURSES } from '../data/curses';
+import { RELICS } from '../data/relics';
 import { PROVISION_TUNING } from '../data/gear';
 import { QuestDef } from '../data/quests';
 import { sagaChapterForQuest } from '../data/sagas';
@@ -47,6 +49,8 @@ export interface QuestDirectorHost {
   /** A victory banked gold — the game keeps the session counters. */
   onQuestBanked(banked: number): void;
   onSagaCompleted(): void;
+  /** Wave O — the sellsword provision hires one blade for the expedition. */
+  armHireling(): void;
 }
 
 /**
@@ -102,6 +106,7 @@ export class QuestDirector {
       player.reset(0, 0);
       player.applyKit(CLASSES[hero.classId]);
       player.applyLineage(hero.lineage);
+      player.applyCurse(hero.curse); // Wave O — the burden rides out with you
       player.applyProgression(
         progression.gains(),
         hero.boons,
@@ -123,6 +128,13 @@ export class QuestDirector {
           );
         } else if (provision === 'blessed-candle') {
           player.provisionTorch = PROVISION_TUNING.CANDLE_TORCH_BONUS;
+        } else if (provision === 'rite-of-augury') {
+          player.augury = true; // Wave O — shrine finds arrive named
+        } else if (provision === 'warding-chrism') {
+          player.blessWard = true; // Wave O — one curse burns away
+          player.chrismHeal = PROVISION_TUNING.CHRISM_HEAL_BONUS;
+        } else if (provision === 'sellsword') {
+          this.host.armHireling(); // Wave O — a hired blade joins the delve
         }
       }
       hero.provisions = [];
@@ -166,6 +178,8 @@ export class QuestDirector {
     if (hero) {
       hero.gold += banked;
       hero.stats.victories++;
+      // Wave O — victory spends nothing on the curse: it CLINGS until lifted.
+      hero.curse = this.host.player().curse;
     }
     progression.grantXp(quest.rewardXp);
     this.host.trackStat('xp_earned', progression.sessionXp);
@@ -185,6 +199,7 @@ export class QuestDirector {
       if (sagaHit.completed) this.host.onSagaCompleted();
     }
 
+    const player = this.host.player();
     this.victoryLedger = {
       carried,
       rewardGold,
@@ -193,6 +208,9 @@ export class QuestDirector {
       treasury: hero?.gold ?? 0,
       bankedFinds: finds.bankedCount,
       dupeGold: finds.dupeGold,
+      // Wave O — the gate's light lifts every veil, and names what clings.
+      veiledNames: player.veiledRelics.map(id => RELICS[id].name),
+      curseName: player.curse ? CURSES[player.curse].name : null,
     };
     this.host.shake(0.3);
     this.host.playSound('success', 0.7);
