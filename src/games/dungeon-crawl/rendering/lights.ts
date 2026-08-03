@@ -34,9 +34,13 @@ export function gatherLights(view: LightGatherView): LightSource[] {
   ];
   for (const torch of view.torches) lights.push(Lighting.wallTorchLight(torch.tx, torch.ty));
   // v3 — fire beetles carry their own glow: glands bright enough to read by.
+  // Wave P — and the lantern wisp, whose whole hunting method is being seen.
   for (const enemy of view.enemies) {
-    if (enemy.alive && enemy.config.id === 'fire-beetle') {
+    if (!enemy.alive) continue;
+    if (enemy.config.id === 'fire-beetle') {
       lights.push({ x: enemy.x, y: enemy.y, radius: 70, flicker: 0.6 });
+    } else if (enemy.config.id === 'lantern-wisp') {
+      lights.push({ x: enemy.x, y: enemy.y, radius: 90, flicker: 0.9 });
     }
   }
   if (!view.stairsLocked) {

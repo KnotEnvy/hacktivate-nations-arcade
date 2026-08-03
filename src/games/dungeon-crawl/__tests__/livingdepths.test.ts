@@ -42,6 +42,10 @@ const FLAGGED: EnemyTypeId[] = [
   'cinder-hound',
   'salamander',
   'gargoyle',
+  // Wave P consciously added exactly ONE of its five: the cinder bloat is alive
+  // and knows what it is full of. The thrall is mindless, the weird elemental,
+  // the wisp malevolent, the hound undead — none of them can break.
+  'cinder-bloat',
 ];
 
 /** A frictionless map + context so a lone Enemy's flight can be simulated. */

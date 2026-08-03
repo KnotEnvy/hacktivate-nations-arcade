@@ -29,7 +29,14 @@ export type EnemyTypeId =
   | 'bone-archer'
   | 'drowned-one'
   | 'ember-wight'
-  | 'gargoyle';
+  | 'gargoyle'
+  // Wave P — THE WIDER WORLD: one more family member per biome, plus a deep
+  // shared terror for long runs.
+  | 'slag-thrall'
+  | 'barrow-hound'
+  | 'brine-weird'
+  | 'cinder-bloat'
+  | 'lantern-wisp';
 
 export type EnemyBehavior =
   | 'wander'
@@ -496,6 +503,88 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     accent: '#c9c9d2',
     morale: true, // Wave N
   },
+  // ===== Wave P — THE WIDER WORLD =====
+  // Each biome gains the member its threat grammar was missing: ember had no
+  // shield-bearer, bone nothing that RUNS, sunken nothing at range, ash no area
+  // denial. The wisp belongs to no biome — it is what waits below floor ten.
+  'slag-thrall': {
+    id: 'slag-thrall',
+    behavior: 'armored',
+    hp: 6,
+    speed: 44,
+    size: 24,
+    touchDamage: { n: 1, d: 4, plus: 1 },
+    score: 65,
+    xp: 38,
+    goldDrop: [2, 4],
+    aggroRange: 220,
+    color: '#4a3b34',
+    accent: '#ff8c3a', // molten seams where the plate has cracked open
+    // No morale: what is left in that armor stopped being afraid a long time ago.
+  },
+  'barrow-hound': {
+    id: 'barrow-hound',
+    behavior: 'chase',
+    hp: 2,
+    speed: 112,
+    size: 18,
+    touchDamage: { n: 1, d: 3 },
+    score: 45,
+    xp: 24,
+    goldDrop: [1, 2],
+    aggroRange: 280,
+    color: '#9a9382',
+    accent: '#bfe8ff',
+    undead: true, // the barrows kept their own dogs
+  },
+  'brine-weird': {
+    id: 'brine-weird',
+    behavior: 'ranged',
+    hp: 3,
+    speed: 50,
+    size: 22,
+    touchDamage: { n: 1, d: 3 },
+    score: 55,
+    xp: 30,
+    goldDrop: [1, 3],
+    aggroRange: 300,
+    color: '#2f6f8a',
+    accent: '#bfe8f6',
+    boltCause: 'brine_lash',
+    boltDamage: { n: 1, d: 4 },
+    // No morale: a rope of standing water has no nerve to break.
+  },
+  'cinder-bloat': {
+    id: 'cinder-bloat',
+    behavior: 'bomber',
+    hp: 3,
+    speed: 46,
+    size: 22,
+    touchDamage: { n: 1, d: 3 },
+    score: 55,
+    xp: 32,
+    goldDrop: [1, 3],
+    aggroRange: 260,
+    color: '#6a4438',
+    accent: '#ffb347',
+    morale: true, // Wave P — living, and it knows what it is full of
+  },
+  'lantern-wisp': {
+    id: 'lantern-wisp',
+    behavior: 'flit',
+    hp: 3,
+    speed: 138,
+    size: 14,
+    touchDamage: { n: 1, d: 4, plus: 1 },
+    score: 85,
+    xp: 48,
+    goldDrop: [1, 3],
+    aggroRange: 300,
+    color: '#e8f0a0',
+    accent: '#fffbe0',
+    // No morale: it does not fight for anything, so it has nothing to lose.
+    // The game gives this one real light — the lure IS the monster.
+  },
 };
 
 // Ranged-enemy tuning shared by Enemy.ts.
@@ -537,6 +626,8 @@ export function spawnWeightsForFloor(floor: number, biomeId: string): SpawnWeigh
     { type: 'mimic', weight: floor >= 4 ? 1 : 0 },
     // v4 Wave D — the deep terror: stone wings stir below floor 8.
     { type: 'gargoyle', weight: floor >= 8 ? 2 + Math.min(3, floor - 8) : 0 },
+    // Wave P — deeper still: a light that walks, and is not a light.
+    { type: 'lantern-wisp', weight: floor >= 10 ? 2 + Math.min(2, floor - 10) : 0 },
   ];
 
   // v3 — biome family: a heavy local presence, absent everywhere else.
@@ -544,21 +635,25 @@ export function spawnWeightsForFloor(floor: number, biomeId: string): SpawnWeigh
     case 'ember':
       rows.push({ type: 'fire-beetle', weight: 4 + Math.min(3, floor) });
       rows.push({ type: 'salamander', weight: floor >= 5 ? 3 : 0 });
+      rows.push({ type: 'slag-thrall', weight: floor >= 3 ? 3 : 0 }); // Wave P
       break;
     case 'bone':
       rows.push({ type: 'zombie', weight: 5 });
       rows.push({ type: 'ghoul', weight: floor >= 5 ? 4 : 0 });
       rows.push({ type: 'bone-archer', weight: floor >= 4 ? 3 : 0 });
+      rows.push({ type: 'barrow-hound', weight: floor >= 3 ? 3 : 0 }); // Wave P
       break;
     case 'sunken':
       rows.push({ type: 'deep-ooze', weight: 5 });
       rows.push({ type: 'lizardman', weight: floor >= 3 ? 3 + Math.min(3, floor - 3) : 0 });
       rows.push({ type: 'drowned-one', weight: floor >= 5 ? 4 : 0 });
+      rows.push({ type: 'brine-weird', weight: floor >= 4 ? 3 : 0 }); // Wave P
       break;
     case 'ash':
       rows.push({ type: 'shade', weight: floor >= 4 ? 4 : 0 });
       rows.push({ type: 'cinder-hound', weight: floor >= 4 ? 4 : 0 });
       rows.push({ type: 'ember-wight', weight: floor >= 6 ? 3 : 0 });
+      rows.push({ type: 'cinder-bloat', weight: floor >= 5 ? 3 : 0 }); // Wave P
       break;
   }
   return rows;

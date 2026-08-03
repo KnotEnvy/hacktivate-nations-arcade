@@ -270,6 +270,26 @@ export interface BiomePalette {
   hazardStyle: HazardStyle;
 }
 
+/**
+ * Wave P — mix two #rrggbb colors, `t` of the way from `a` to `b`. Pure and
+ * total: anything that does not parse comes back as `a`, so a bad data edit
+ * dulls a tint instead of painting the town black.
+ */
+export function mixHex(a: string, b: string, t: number): string {
+  const parse = (hex: string): [number, number, number] | null => {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const from = parse(a);
+  const to = parse(b);
+  if (!from || !to) return a;
+  const k = Math.max(0, Math.min(1, t));
+  const channel = (i: number) => Math.round(from[i] + (to[i] - from[i]) * k);
+  return `#${((channel(0) << 16) | (channel(1) << 8) | channel(2)).toString(16).padStart(6, '0')}`;
+}
+
 export const BIOMES: readonly BiomePalette[] = [
   {
     id: 'ember',

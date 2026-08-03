@@ -7,7 +7,7 @@
 // Reaches the game only through the narrow TownCtx.
 
 import { SoundName } from '@/services/AudioManager';
-import { BiomePalette } from '../data/constants';
+import { BiomePalette, mixHex } from '../data/constants';
 import { CURSE_TUNING, CURSES } from '../data/curses';
 import {
   ALCHEMIST_PROVISION_IDS,
@@ -20,12 +20,25 @@ import {
 } from '../data/gear';
 import { ALL_NPC_IDS, NPCS, storyStage } from '../data/npcs';
 import { QUESTS, QuestDef, STANDALONE_QUEST_IDS } from '../data/quests';
-import { currentChapter, SAGAS, visibleSagaIds } from '../data/sagas';
+import { currentChapter, SagaDef, SAGAS, visibleSagaIds } from '../data/sagas';
 import { FloorPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Player } from '../entities/Player';
 import { SavedHero } from '../persistence/CharacterStore';
 import type { HudRenderer } from '../rendering/HudRenderer';
+
+/**
+ * Wave P — how far Lastlight leans into a live arc. The town must stay warm and
+ * readable: the torches carry most of the colour, the stone barely any. All
+ * view-only — nothing here is ever read by gameplay.
+ */
+export const TOWN_DRESSING = {
+  FLAME_MIX: 0.5, // torch flame toward the arc's colour
+  FLAME_INNER_MIX: 0.45, // its heart toward the trim
+  WALL_MIX: 0.16,
+  FLOOR_MIX: 0.08,
+  BANNER_SWAY: 2.2, // radians/s of the hanging cloth's drift
+} as const;
 
 /** Warm lamplit palette — the town is night-dark but never hostile. */
 export const TOWN_PALETTE: BiomePalette = {
@@ -80,6 +93,8 @@ const INTERACT_RADIUS = 34;
 export class TownController {
   readonly plan: FloorPlan;
   readonly spots: Record<TownStation, { x: number; y: number }>;
+  /** Wave P — where the arc's cloth hangs when a tale is live (view only). */
+  readonly banners: ReadonlyArray<{ x: number; y: number }>;
   overlay: TownOverlay = 'none';
   selection = 0;
   /** v4 Wave C — the board carries two pages: contracts and sagas. */
@@ -92,6 +107,7 @@ export class TownController {
     const built = buildTown();
     this.plan = built.plan;
     this.spots = built.spots;
+    this.banners = built.banners;
   }
 
   /** Fresh arrival (session start / return from an expedition). */
@@ -380,6 +396,26 @@ export class TownController {
     return CURSE_TUNING.LIFT_PRICE_BASE + CURSE_TUNING.LIFT_PRICE_PER_LEVEL * level;
   }
 
+  /**
+   * Wave P — Lastlight dressed for the tale it is living through. Pure: with no
+   * live arc it returns the TOWN_PALETTE object ITSELF (identity — a town with
+   * nothing running renders bit-for-bit as it always has), otherwise a tinted
+   * copy. View-only; no gameplay may read the result.
+   */
+  static dressedPalette(saga: SagaDef | null): BiomePalette {
+    if (!saga) return TOWN_PALETTE;
+    const { color, accent } = saga.dressing;
+    return {
+      ...TOWN_PALETTE,
+      floorA: mixHex(TOWN_PALETTE.floorA, color, TOWN_DRESSING.FLOOR_MIX),
+      floorB: mixHex(TOWN_PALETTE.floorB, color, TOWN_DRESSING.FLOOR_MIX),
+      wallTop: mixHex(TOWN_PALETTE.wallTop, color, TOWN_DRESSING.WALL_MIX),
+      wallFace: mixHex(TOWN_PALETTE.wallFace, color, TOWN_DRESSING.WALL_MIX),
+      flameOuter: mixHex(TOWN_PALETTE.flameOuter, color, TOWN_DRESSING.FLAME_MIX),
+      flameInner: mixHex(TOWN_PALETTE.flameInner, accent, TOWN_DRESSING.FLAME_INNER_MIX),
+    };
+  }
+
   // ---------------------------------------------------------------- rendering
 
   /** v4 Wave C — the town routes its own overlay to the HUD's pure views. */
@@ -455,6 +491,7 @@ export class TownController {
 function buildTown(): {
   plan: FloorPlan;
   spots: Record<TownStation, { x: number; y: number }>;
+  banners: Array<{ x: number; y: number }>;
 } {
   const cols = 26;
   const rows = 18;
@@ -519,6 +556,11 @@ function buildTown(): {
     gate: center(gateTile.tx, gateTile.ty),
   };
 
+  // Wave P — three cloths for a live arc: the north wall between the square's
+  // torches, the inn's face above its lamp, and the chapel's face. All hang on
+  // WALL tiles, so none of them stands in a walker's way.
+  const banners = [center(13, 0), center(3, 5), center(23, 4)];
+
   const plan: FloorPlan = {
     map,
     rooms: [{ tx: 1, ty: 1, w: cols - 2, h: rows - 2, kind: 'normal' }],
@@ -536,5 +578,5 @@ function buildTown(): {
     secrets: [],
   };
 
-  return { plan, spots };
+  return { plan, spots, banners };
 }

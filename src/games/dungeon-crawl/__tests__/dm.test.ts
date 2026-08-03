@@ -268,24 +268,37 @@ describe('THE LAST PAGE (meta-saga)', () => {
     ).toBe('aftermath');
   });
 
-  test('the saga board offers the meta arc only once both sagas are TOLD', () => {
+  // Wave P — CONSCIOUS REWRITE. This used to lean on "Digit3 cannot reach a
+  // third card", which was only true while the board held exactly two visible
+  // arcs. The side tales share that board now, so the test asserts the actual
+  // invariant instead of a card index: the meta arc is unreachable until the
+  // FOUNDING sagas are told, and it reads last when it finally appears.
+  test('the saga board offers the meta arc only once the founding sagas are TOLD', () => {
     const town = new TownController();
-    town.overlay = 'quests';
-    town.boardPage = 'sagas';
     const departed: QuestDef[] = [];
+    const fresh = heroFixture(9, {});
 
-    // Locked: Digit3 cannot reach a third card — the first saga departs.
-    town.update(townCtx(new Set(['Digit3', 'Space']), heroFixture(9, {}), { departed }));
-    expect(departed[0]?.id).toBe('the-shallow-graves');
+    // Locked: the arc is off the board, so NO card on it departs the meta arc.
+    expect(visibleSagaIds(fresh.sagas)).not.toContain('the-last-page');
+    for (let digit = 1; digit <= ALL_SAGA_IDS.length; digit++) {
+      town.overlay = 'quests';
+      town.boardPage = 'sagas';
+      town.selection = 0;
+      town.update(townCtx(new Set([`Digit${digit}`, 'Space']), fresh, { departed }));
+    }
+    expect(departed.map(q => q.id)).not.toContain('the-blank-ledger');
 
-    // Unlocked: the third card departs on the meta arc's first chapter.
+    // Unlocked: it appears LAST on the board and departs on its first chapter.
+    const veteran = heroFixture(10, bothTold());
+    const visible = visibleSagaIds(veteran.sagas);
+    expect(visible[visible.length - 1]).toBe('the-last-page');
     town.overlay = 'quests';
     town.boardPage = 'sagas';
     town.selection = 0;
     town.update(
-      townCtx(new Set(['Digit3', 'Space']), heroFixture(10, bothTold()), { departed }),
+      townCtx(new Set([`Digit${visible.length}`, 'Space']), veteran, { departed }),
     );
-    expect(departed[1]?.id).toBe('the-blank-ledger');
+    expect(departed[departed.length - 1]?.id).toBe('the-blank-ledger');
   });
 });
 

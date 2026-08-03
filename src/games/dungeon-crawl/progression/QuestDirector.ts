@@ -15,7 +15,7 @@ import { CURSES } from '../data/curses';
 import { RELICS } from '../data/relics';
 import { PROVISION_TUNING } from '../data/gear';
 import { QuestDef } from '../data/quests';
-import { sagaChapterForQuest } from '../data/sagas';
+import { liveSagaId, sagaChapterForQuest, SAGAS } from '../data/sagas';
 import { ALL_SCROLL_IDS } from '../data/scrolls';
 import { STAT_TUNING } from '../data/stats';
 import { Rng } from '../dungeon/rng';
@@ -262,7 +262,12 @@ export class QuestDirector {
 
   /** Post-victory landing: banner + any level-up the reward XP earned. */
   private arrive(): 'town' | 'levelUp' {
-    this.host.showBanner('LASTLIGHT', 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT');
+    // Wave P — a town living through an unfinished tale says so at the gate.
+    const live = liveSagaId(this.host.progression().character()?.sagas);
+    this.host.showBanner(
+      'LASTLIGHT',
+      live ? SAGAS[live].dressing.banner : 'THE GATE CLOSES BEHIND YOU — WELL FOUGHT',
+    );
     // Reward XP can cross a threshold — level up right at the gate.
     return this.host.openBoonDraft('town') ?? 'town';
   }

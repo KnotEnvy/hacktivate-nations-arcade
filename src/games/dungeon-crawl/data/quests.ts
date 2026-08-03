@@ -28,7 +28,15 @@ export type QuestId =
   // v5 Wave G — THE LAST PAGE meta-saga chapters
   | 'the-blank-ledger'
   | 'the-ink-below'
-  | 'the-underscribe';
+  | 'the-underscribe'
+  // Wave P — THE DROWNED CHOIR chapters (the sunken vaults' own tale)
+  | 'the-listening-shallows'
+  | 'the-hall-of-hymns'
+  | 'the-flood-cantor'
+  // Wave P — THE ASH THAT REMEMBERS chapters (the deep ash's own tale)
+  | 'the-grey-drifts'
+  | 'the-unburnt-door'
+  | 'the-grey-effigy';
 
 export interface QuestDef {
   id: QuestId;
@@ -292,6 +300,108 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     rewardXp: 1200,
     saga: true,
     bossKitId: 'underscribe',
+  },
+  // ---- THE DROWNED CHOIR (Wave P saga, 3 chapters — the sunken vaults finally
+  // get a tale of their own; the mid-game arc the board was missing) ----
+  'the-listening-shallows': {
+    id: 'the-listening-shallows',
+    name: 'THE LISTENING SHALLOWS',
+    blurb: 'The drowned have stopped wandering. They are standing still, facing down.',
+    intro:
+      'Divers came back saying the drowned no longer roam the shallow vaults — ' +
+      'they STAND there, all turned the same way, heads tipped as if listening. ' +
+      'Three floors down, find out to what.',
+    floors: 3,
+    biomeId: 'sunken',
+    bossTier: 2,
+    minLevel: 4,
+    rewardGold: 130,
+    rewardXp: 150,
+    saga: true,
+  },
+  'the-hall-of-hymns': {
+    id: 'the-hall-of-hymns',
+    name: 'THE HALL OF HYMNS',
+    blurb: 'Someone taught the flood a tune. Find where it is being sung.',
+    intro:
+      'The sound has a room. Below the shallows lies a hall built for voices, ' +
+      'flooded to the gallery rail, and the water in it does not move the way ' +
+      'water should. Go and hear it out.',
+    floors: 4,
+    biomeId: 'sunken',
+    bossTier: 3,
+    minLevel: 5,
+    rewardGold: 240,
+    rewardXp: 280,
+    saga: true,
+  },
+  'the-flood-cantor': {
+    id: 'the-flood-cantor',
+    name: 'THE FLOOD CANTOR',
+    blurb: 'Something down there keeps the time. End the song.',
+    intro:
+      'The choir has a cantor, and it has been holding the same note since the ' +
+      'flood took the vaults. Every drowned thing below is only keeping time ' +
+      'for it. Go down. Break the measure.',
+    floors: 5,
+    biomeId: 'sunken',
+    bossTier: 4,
+    minLevel: 6,
+    rewardGold: 420,
+    rewardXp: 480,
+    saga: true,
+    bossKitId: 'flood-cantor',
+  },
+  // ---- THE ASH THAT REMEMBERS (Wave P saga, 3 chapters — the deep ash's own
+  // tale, for heroes who have already unseated one crown) ----
+  'the-grey-drifts': {
+    id: 'the-grey-drifts',
+    name: 'THE GREY DRIFTS',
+    blurb: 'The ash is drifting uphill. Something is collecting it.',
+    intro:
+      'Ash does not climb. Past the cinder line it is climbing anyway, in slow ' +
+      'grey rivers running the wrong way up the stair. Follow the drifts to ' +
+      'whatever is gathering them.',
+    floors: 4,
+    biomeId: 'ash',
+    bossTier: 3,
+    minLevel: 7,
+    rewardGold: 380,
+    rewardXp: 450,
+    saga: true,
+  },
+  'the-unburnt-door': {
+    id: 'the-unburnt-door',
+    name: 'THE UNBURNT DOOR',
+    blurb: 'A house stands whole in the deep ash. It should not.',
+    intro:
+      'Where everything burned, one door stands unburnt — and behind it a room ' +
+      'that remembers being a room: table laid, fire banked, the ash holding ' +
+      'the shape of people who sat there. Open it.',
+    floors: 5,
+    biomeId: 'ash',
+    bossTier: 4,
+    minLevel: 8,
+    rewardGold: 520,
+    rewardXp: 620,
+    saga: true,
+  },
+  'the-grey-effigy': {
+    id: 'the-grey-effigy',
+    name: 'THE GREY EFFIGY',
+    blurb: 'The ash is building someone back. Do not let it finish.',
+    intro:
+      'It has been gathering itself for an age: every burned thing pressed back ' +
+      'into one shape, one grey figure standing in a hall that remembers being ' +
+      'a city. It is nearly finished. Scatter it.',
+    floors: 5,
+    biomeId: 'ash',
+    bossTier: 5,
+    minLevel: 9,
+    rewardGold: 850,
+    rewardXp: 1000,
+    saga: true,
+    bossKitId: 'grey-effigy',
   },
 };
 

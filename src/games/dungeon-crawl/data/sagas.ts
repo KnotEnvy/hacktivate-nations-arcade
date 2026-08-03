@@ -7,7 +7,20 @@
 
 import { QuestId, QUESTS } from './quests';
 
-export type SagaId = 'pale-procession' | 'undying-ember' | 'the-last-page';
+export type SagaId =
+  | 'pale-procession'
+  | 'undying-ember'
+  // Wave P — a tale per biome: the sunken vaults and the deep ash get theirs.
+  | 'drowned-choir'
+  | 'ash-remembers'
+  | 'the-last-page';
+
+/** Wave P — how Lastlight dresses itself while an arc is live (view only). */
+export interface SagaDressing {
+  color: string; // the arc's cloth; tints the town's torchlight
+  accent: string; // its trim
+  banner: string; // the line the town is muttering (arrival sub-line)
+}
 
 export interface SagaDef {
   id: SagaId;
@@ -16,9 +29,14 @@ export interface SagaDef {
   quests: readonly QuestId[]; // ordered chapters; last = finale
   // interludes[i] shows after completing chapter i; the last is the epilogue.
   interludes: readonly string[];
-  // v5 Wave G — a meta arc: hidden from the board until every non-meta saga
+  // v5 Wave G — a meta arc: hidden from the board until every FOUNDING saga
   // is TOLD (metaUnlocked). Progress rides the same per-hero sagas map.
   meta?: boolean;
+  // Wave P — the two arcs that were here when the meta gate was written. The
+  // gate reads THIS, not `!meta`, so later arcs can never re-lock a last page
+  // a veteran already earned.
+  founding?: boolean;
+  dressing: SagaDressing;
 }
 
 export const SAGAS: Record<SagaId, SagaDef> = {
@@ -27,6 +45,12 @@ export const SAGAS: Record<SagaId, SagaDef> = {
     name: 'THE PALE PROCESSION',
     blurb: 'The dead walk in step below Lastlight. Someone calls the cadence.',
     quests: ['the-shallow-graves', 'the-silent-march', 'the-grave-warden'],
+    founding: true,
+    dressing: {
+      color: '#b7e29a',
+      accent: '#e8f0d8',
+      banner: 'A BELL BELOW IS COUNTING',
+    },
     interludes: [
       'The barrows stand open and swept, every grave tidied like a made bed. ' +
         'Chalk marks on the lintels count down: three, two. In the dust, boot ' +
@@ -47,6 +71,12 @@ export const SAGAS: Record<SagaId, SagaDef> = {
     name: 'THE UNDYING EMBER',
     blurb: 'The old fire beneath the deep ash remembers being worshipped.',
     quests: ['the-first-spark', 'the-quenching-vault', 'the-ash-gate', 'the-cinder-regent'],
+    founding: true,
+    dressing: {
+      color: '#ff8c3a',
+      accent: '#ffd24a',
+      banner: 'THE OLD FIRE IS AWAKE',
+    },
     interludes: [
       'Beetle-light led you to the furnace scar, and the scar was breathing. ' +
         'Old fire-keeper sigils ring it — not wards, offerings. Someone fed ' +
@@ -66,6 +96,66 @@ export const SAGAS: Record<SagaId, SagaDef> = {
         'dead. But it is cold, and it is patient, and so are you.',
     ],
   },
+  // Wave P — THE DROWNED CHOIR: the sunken vaults' own tale, and the mid-game
+  // arc the board was missing. The two new tales sit AHEAD of the meta arc so
+  // the capstone still reads last on the board.
+  'drowned-choir': {
+    id: 'drowned-choir',
+    name: 'THE DROWNED CHOIR',
+    blurb: 'The flood has learned a tune, and the drowned have learned to stand still.',
+    dressing: {
+      color: '#5fc6e8',
+      accent: '#bfe8f6',
+      banner: 'THE WATER IS SINGING',
+    },
+    quests: ['the-listening-shallows', 'the-hall-of-hymns', 'the-flood-cantor'],
+    interludes: [
+      'They were not waiting for you. Every drowned thing in the shallows ' +
+        'stood facing the same downward dark, patient as pews, and none of ' +
+        'them turned until you were among them. Whatever they are listening ' +
+        'to, it is below — and it has been holding their attention for a ' +
+        'hundred years.',
+      'The hall was built for a choir and the flood took it mid-hymn. The ' +
+        'water there stands in ridges, the way air stands when a low note ' +
+        'runs through it, and the ridges keep time. You have heard the ' +
+        'measure now. You will hear it in Lastlight, when the taps run and ' +
+        'when the rain starts.',
+      'The measure is broken and the vaults are only flooded rooms again. ' +
+        'The drowned drift where the current takes them, unattended at last. ' +
+        'One thing keeps you awake: the cantor was keeping time for someone, ' +
+        'the way a musician watches a hand — and the hand was not in the ' +
+        'water.',
+    ],
+  },
+  // Wave P — THE ASH THAT REMEMBERS: the deep ash's own tale, for heroes who
+  // have already unseated one crown down there.
+  'ash-remembers': {
+    id: 'ash-remembers',
+    name: 'THE ASH THAT REMEMBERS',
+    blurb: 'Ash keeps the shape of what it burned. Something is putting a shape back.',
+    dressing: {
+      color: '#c9c2b6',
+      accent: '#ffb347',
+      banner: 'THE ASH IS GATHERING ITSELF',
+    },
+    quests: ['the-grey-drifts', 'the-unburnt-door', 'the-grey-effigy'],
+    interludes: [
+      'Ash falls. It does not climb. You followed it uphill for four floors ' +
+        'anyway, grey rivers running the wrong way over the stair, and where ' +
+        'they gathered they held their shape: a wheel, a rail, half a ' +
+        'doorway. The deep is not scattering what it burned. It is sorting ' +
+        'it.',
+      'The room behind the unburnt door was laid for supper. Table, cups, a ' +
+        'banked fire — and at every chair a person-shaped weight of ash, ' +
+        'sitting, waiting to be told they could begin. You did not disturb ' +
+        'them. Down the far stair the drifts run heavier, toward whatever is ' +
+        'setting the table.',
+      'The effigy came apart in a grey wind and the hall it stood in ' +
+        'forgot, all at once, that it had ever been a city. What is left is ' +
+        'ash, and ash is only ash. Still — it had a face by the end, and it ' +
+        'was nearly a good one. Someone taught it what to remember.',
+    ],
+  },
   // v5 Wave G — the meta-saga: hidden until both tales above are TOLD. Both
   // arcs planted it (the Warden's unfound last page; the ember's patient
   // author) — this is the hand beneath them, and the game's final story.
@@ -75,6 +165,11 @@ export const SAGAS: Record<SagaId, SagaDef> = {
     blurb: 'Both tales ended a page short. Someone is still writing.',
     quests: ['the-blank-ledger', 'the-ink-below', 'the-underscribe'],
     meta: true,
+    dressing: {
+      color: '#e8dcc0',
+      accent: '#9a7bff',
+      banner: 'SOMETHING IS STILL WRITING',
+    },
     interludes: [
       'The Warden’s ledger, found at last — and it is still keeping itself. ' +
         'Names appear in a slow, patient hand: every soul in Lastlight, in ' +
@@ -133,14 +228,33 @@ export function sagaTold(
   return chaptersDone(progress, sagaId) >= SAGAS[sagaId].quests.length;
 }
 
-/** v5 Wave G — every NON-meta saga TOLD: the hidden last page may be found. */
+/**
+ * v5 Wave G — every FOUNDING saga TOLD: the hidden last page may be found.
+ *
+ * Wave P — the gate reads `founding`, NOT `!meta`. Arcs added after the meta
+ * saga shipped are side-tales: they must never re-lock a last page a veteran
+ * already earned, and they must never make the capstone harder to reach than
+ * it was the day it was written.
+ */
 export function metaUnlocked(progress: Partial<Record<SagaId, number>> | undefined): boolean {
-  return ALL_SAGA_IDS.filter(id => !SAGAS[id].meta).every(id => sagaTold(progress, id));
+  return ALL_SAGA_IDS.filter(id => SAGAS[id].founding).every(id => sagaTold(progress, id));
 }
 
-/** v5 Wave G — every saga TOLD, meta arcs included (the story is over). */
+/** v5 Wave G — every saga TOLD, side-tales included (the board is empty). */
 export function allSagasTold(progress: Partial<Record<SagaId, number>> | undefined): boolean {
   return ALL_SAGA_IDS.every(id => sagaTold(progress, id));
+}
+
+/**
+ * Wave P — the CORE story told: the founding arcs and the meta arc that crowns
+ * them. This, not `allSagasTold`, is what "the story is over" means — the
+ * townsfolk reached their aftermath the day the last page was written, and a
+ * side-tale added years later must never walk them back a stage.
+ */
+export function storyComplete(progress: Partial<Record<SagaId, number>> | undefined): boolean {
+  return ALL_SAGA_IDS.filter(id => SAGAS[id].founding || SAGAS[id].meta).every(id =>
+    sagaTold(progress, id),
+  );
 }
 
 /** The sagas a hero's board (and sheet) may show — locked metas stay hidden. */
@@ -148,6 +262,22 @@ export function visibleSagaIds(
   progress: Partial<Record<SagaId, number>> | undefined,
 ): SagaId[] {
   return ALL_SAGA_IDS.filter(id => !SAGAS[id].meta || metaUnlocked(progress));
+}
+
+/**
+ * Wave P — the arc Lastlight is currently living through: started, not yet
+ * finished. Pure and stateless (the storyStage precedent) — the town's dressing
+ * reads it every frame and nothing is ever saved. Ties break in declaration
+ * order, so the town's cloth never flickers between two live tales.
+ */
+export function liveSagaId(
+  progress: Partial<Record<SagaId, number>> | undefined,
+): SagaId | null {
+  for (const id of ALL_SAGA_IDS) {
+    const done = chaptersDone(progress, id);
+    if (done > 0 && done < SAGAS[id].quests.length) return id;
+  }
+  return null;
 }
 
 /* Sanity: every chapter id must exist in QUESTS (compile-time via QuestId,
@@ -160,4 +290,9 @@ for (const id of ALL_SAGA_IDS) {
   for (const q of saga.quests) {
     if (!QUESTS[q]?.saga) throw new Error(`saga ${id}: chapter ${q} not saga-flagged`);
   }
+}
+
+/* Wave P — the meta gate must always have something to gate on. */
+if (!ALL_SAGA_IDS.some(id => SAGAS[id].founding)) {
+  throw new Error('sagas: at least one founding saga must exist for the meta gate');
 }

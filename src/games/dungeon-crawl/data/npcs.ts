@@ -6,7 +6,7 @@
 // Rumors are the DM's voice: hints ride existing systems, teasers point at
 // the next chapter. Pure data; all text original.
 
-import { chaptersDone, SagaId, ALL_SAGA_IDS, SAGAS, metaUnlocked, allSagasTold } from './sagas';
+import { chaptersDone, SagaId, ALL_SAGA_IDS, SAGAS, metaUnlocked, storyComplete } from './sagas';
 
 export type NpcId = 'hollis' | 'mother-tallow' | 'cask' | 'pip' | 'the-quiet-scribe';
 
@@ -27,7 +27,9 @@ export function storyStage(
   hero: { level: number; sagas: Partial<Record<SagaId, number>> } | null,
 ): StoryStage {
   if (!hero) return 'arrival';
-  if (allSagasTold(hero.sagas)) return 'aftermath';
+  // Wave P — the CORE story (founding arcs + the last page), not every side
+  // tale: a veteran who reached the aftermath must never be walked back.
+  if (storyComplete(hero.sagas)) return 'aftermath';
   if (metaUnlocked(hero.sagas)) return 'the-page';
   const provenByDeeds = ALL_SAGA_IDS.some(
     id => !SAGAS[id].meta && chaptersDone(hero.sagas, id) > 0,

@@ -413,8 +413,9 @@ export class TileRenderer {
           ctx.fillStyle = accent;
           ctx.fillRect(px + 6, py - half - 5, 4, 4); // spearhead
           ctx.fillRect(px - 2, py - half + 2, 2, 2); // eye
-        } else if (id === 'cinder-hound') {
-          // v3 — cinder hound: low quadruped at a run, ember eye.
+        } else if (id === 'cinder-hound' || id === 'barrow-hound') {
+          // v3 — cinder hound: low quadruped at a run, ember eye. Wave P — the
+          // barrow hound shares the gait; the palette tells them apart.
           const gait = Math.sin(time * 16 + enemy.id) > 0 ? 1 : -1;
           ctx.fillStyle = body;
           ctx.fillRect(px - half + 1, py - 3, half * 2 - 2, 7); // body
@@ -438,6 +439,22 @@ export class TileRenderer {
         break;
       }
       case 'flit': {
+        if (enemy.config.id === 'lantern-wisp') {
+          // Wave P — a hanging lantern-flame with no lantern and no hand: a
+          // bobbing core, a corona, and a thin drip of light beneath it.
+          const bob = Math.round(Math.sin(time * 4 + enemy.id) * 2);
+          const pulse = 0.55 + 0.45 * Math.sin(time * 7 + enemy.id);
+          ctx.globalAlpha = 0.25 + 0.2 * pulse;
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 8, py - 8 + bob, 16, 16); // corona
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 4, py - 4 + bob, 8, 8); // core
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 2, py - 6 + bob, 4, 4); // the bright of it
+          ctx.fillRect(px - 1, py + 5 + bob, 2, 4); // the drip
+          break;
+        }
         // Bat — flapping wings.
         const flap = Math.sin(time * 18 + enemy.id) > 0 ? 3 : -1;
         ctx.fillStyle = body;
@@ -450,6 +467,24 @@ export class TileRenderer {
         break;
       }
       case 'ranged': {
+        if (enemy.config.id === 'brine-weird') {
+          // Wave P — a rope of standing water risen on end: a coiled base, a
+          // swaying column, and a blunt head that brightens as it draws back.
+          const sway = Math.round(Math.sin(time * 3 + enemy.id) * 3);
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 2, py + half - 6, half * 2 - 4, 5); // pooled base
+          ctx.fillRect(px - 3 + sway / 2, py - 2, 6, half + 2); // column
+          ctx.fillRect(px - 5 + sway, py - half + 2, 10, 8); // head
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 3 + sway, py - half + 4, 2, 2); // waterlight
+          ctx.fillRect(px + 1 + sway, py - half + 4, 2, 2);
+          if (enemy.windup > 0) {
+            const glint = 0.5 + 0.5 * Math.sin(time * 30);
+            ctx.fillStyle = `rgba(190, 232, 246, ${0.4 + glint * 0.5})`;
+            ctx.fillRect(px - 9 + sway, py - half - 4, 18, 3);
+          }
+          break;
+        }
         // Sorcerer — robe + hood; glows during windup.
         ctx.fillStyle = body;
         ctx.fillRect(px - 7, py - 4, 14, half * 2 - 6);
@@ -465,6 +500,24 @@ export class TileRenderer {
         break;
       }
       case 'bomber': {
+        if (enemy.config.id === 'cinder-bloat') {
+          // Wave P — a sagging sack of hot ash: it swells before it throws, and
+          // the seams glow through where the skin has gone thin.
+          const swell = enemy.windup > 0 ? 2 : Math.round(Math.sin(time * 2 + enemy.id));
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 2 - swell, py - 4 - swell, half * 2 - 4 + swell * 2, half + 2 + swell);
+          ctx.fillRect(px - 5, py - half + 3, 10, 7); // small mean head
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - half + 4, py + 2, half * 2 - 8, 2); // glowing seam
+          ctx.fillRect(px - 3, py - half + 5, 2, 2);
+          ctx.fillRect(px + 1, py - half + 5, 2, 2);
+          if (enemy.windup > 0) {
+            const spark = Math.floor(time * 20) % 2 === 0;
+            ctx.fillStyle = spark ? '#ffd24a' : '#ff7a1a';
+            ctx.fillRect(px + 2, py - half - 6, 6, 6); // the clot it means to throw
+          }
+          break;
+        }
         // Goblin bomber — squat body, satchel, raises a fizzing bomb to throw.
         ctx.fillStyle = body;
         ctx.fillRect(px - 7, py - 3, 14, half * 2 - 8);
@@ -695,6 +748,39 @@ export class TileRenderer {
     ctx.fillRect(px - 10, py - 15, 2, 2); // wax pins
     ctx.fillRect(px - 2, py - 15, 2, 2);
     ctx.fillRect(px + 6, py - 15, 2, 2);
+  }
+
+  /**
+   * Wave P — a saga banner hung on a Lastlight wall: rail, cloth, a pale sigil
+   * band, and a ragged hem that drifts. The sway is DERIVED from gameTime and
+   * the hanging point, so two cloths never breathe in unison and nothing here
+   * holds state (the Wave K view-only rule).
+   */
+  drawBanner(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    color: string,
+    accent: string,
+    time: number,
+  ): void {
+    const px = Math.round(x);
+    const py = Math.round(y);
+    const drift = Math.sin(time * 1.4 + px * 0.11) * 1.6;
+    // Rail.
+    ctx.fillStyle = '#54401f';
+    ctx.fillRect(px - 9, py - 12, 18, 3);
+    // Cloth, leaning with the draught.
+    ctx.fillStyle = color;
+    ctx.fillRect(px - 7 + Math.round(drift * 0.3), py - 9, 14, 18);
+    // Sigil band + trim.
+    ctx.fillStyle = accent;
+    ctx.fillRect(px - 5 + Math.round(drift * 0.5), py - 3, 10, 3);
+    ctx.fillRect(px - 2 + Math.round(drift * 0.5), py - 7, 4, 4);
+    // Ragged hem — the corner that never stops moving.
+    ctx.fillStyle = color;
+    ctx.fillRect(px - 7 + Math.round(drift), py + 9, 5, 3);
+    ctx.fillRect(px + 1 + Math.round(drift), py + 9, 5, 2 + Math.round(Math.abs(drift)));
   }
 
   drawShopItem(ctx: CanvasRenderingContext2D, item: ShopItemPlan, sold: boolean, time: number): void {

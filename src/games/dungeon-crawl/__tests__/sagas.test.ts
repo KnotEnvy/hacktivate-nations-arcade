@@ -96,9 +96,10 @@ function pressSpaceAfter(h: Harness, held: Set<string>, idleFrames: number): voi
 }
 
 describe('saga data contract', () => {
-  test('three authored sagas: flagged chapters, paired interludes, unique finales', () => {
+  test('five authored sagas: flagged chapters, paired interludes, unique finales', () => {
     // v5 Wave G — THE LAST PAGE meta-saga joins the two founding arcs.
-    expect(ALL_SAGA_IDS).toHaveLength(3);
+    // Wave P — a tale per biome: THE DROWNED CHOIR + THE ASH THAT REMEMBERS.
+    expect(ALL_SAGA_IDS).toHaveLength(5);
     for (const id of ALL_SAGA_IDS) {
       const saga = SAGAS[id];
       expect(saga.id).toBe(id);

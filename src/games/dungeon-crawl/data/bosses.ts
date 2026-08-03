@@ -17,7 +17,10 @@ export type BossKitId =
   | 'grave-warden'
   | 'cinder-regent'
   // v5 Wave G — THE LAST PAGE finale
-  | 'underscribe';
+  | 'underscribe'
+  // Wave P — the two new per-biome saga finales
+  | 'flood-cantor'
+  | 'grey-effigy';
 
 export interface BossKit {
   id: BossKitId;
@@ -121,6 +124,36 @@ export const UNIQUE_BOSS_KITS: readonly BossKit[] = [
     helmColor: '#12101c',
     crackColor: '#e8dcc0',
     eyeColor: '#fff3c4',
+  },
+  // Wave P — THE DROWNED CHOIR's finale: a standing column of black water that
+  // keeps the beat. It calls its congregation and answers in waves.
+  {
+    id: 'flood-cantor',
+    name: 'THE FLOOD CANTOR',
+    attackCycle: ['summon', 'spread', 'slam', 'spread'],
+    summons: ['drowned-one', 'brine-weird', 'deep-ooze'],
+    hpMult: 1.2,
+    speedMult: 0.95,
+    bodyColor: '#1e4a5c',
+    enragedColor: '#2f7a8f',
+    helmColor: '#10262f',
+    crackColor: '#bfe8f6',
+    eyeColor: '#e8fbff',
+  },
+  // Wave P — THE ASH THAT REMEMBERS' finale: everything the fire took, pressed
+  // back into one shape. It comes apart and reassembles somewhere else.
+  {
+    id: 'grey-effigy',
+    name: 'THE GREY EFFIGY',
+    attackCycle: ['teleport', 'slam', 'summon', 'charge'],
+    summons: ['cinder-bloat', 'shade', 'ember-wight'],
+    hpMult: 1.3,
+    speedMult: 0.9,
+    bodyColor: '#6e6a63',
+    enragedColor: '#8d857a',
+    helmColor: '#33302c',
+    crackColor: '#ffb347',
+    eyeColor: '#ffe0a8',
   },
 ];
 

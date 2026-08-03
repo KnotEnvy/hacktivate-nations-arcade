@@ -459,7 +459,10 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
   {
     id: 'dungeon_the_last_page',
     title: 'The Last Page',
-    description: 'Tell every saga the depths hold in a single session',
+    // Wave P — reworded, NOT re-valued: the depths hold five tales now, so the
+    // old "every saga" copy was false. Raising the threshold would have taken
+    // this back from players who already earned it.
+    description: 'Tell three sagas in a single session',
     icon: '🖋️',
     gameId: 'dungeon-crawl',
     category: 'skill',
@@ -523,6 +526,29 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     category: 'progression',
     requirement: { type: 'curses_lifted', value: 3 },
     reward: 300,
+    unlocked: false
+  },
+  // Wave P — the wider world (no new metric keys; both ride existing counters)
+  {
+    id: 'dungeon_the_wider_world',
+    title: 'The Wider World',
+    description: 'Tell every tale the depths hold in a single session',
+    icon: '🗺️',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'sagas_completed', value: 5 },
+    reward: 1500,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_full_menagerie',
+    title: 'The Full Menagerie',
+    description: 'Slay 15 different kinds of monster in one run',
+    icon: '🐾',
+    gameId: 'dungeon-crawl',
+    category: 'collection',
+    requirement: { type: 'unique_slain', value: 15 },
+    reward: 500,
     unlocked: false
   },
 ];

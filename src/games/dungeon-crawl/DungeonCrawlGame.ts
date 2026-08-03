@@ -38,6 +38,7 @@ import { BOSS, spawnWeightsForFloor } from './data/enemies';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
+import { liveSagaId, SAGAS, SagaId } from './data/sagas';
 import { RELIC_TUNING, RELICS } from './data/relics';
 import { SCROLLS, ScrollId } from './data/scrolls';
 import { bossItemWeights, ITEM_TUNING, rollItemDrop } from './data/items';
@@ -106,6 +107,8 @@ export class DungeonCrawlGame extends BaseGame {
   private plan!: FloorPlan;
   private map!: TileMap;
   private biome!: BiomePalette;
+  /** Wave P — the arc the town is currently dressed for (undefined = unread). */
+  private dressedFor: SagaId | null | undefined = undefined;
   private player = new Player();
   private enemies: Enemy[] = [];
   private boss: Boss | null = null;
@@ -577,6 +580,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.plan = this.town.plan;
     this.map = this.plan.map;
     this.biome = TOWN_PALETTE;
+    this.dressedFor = undefined; // Wave P — re-read the live arc on arrival
+    this.refreshTownDressing();
     this.enemies = [];
     this.pickupItems = [];
     this.hazards = [];
@@ -600,6 +605,20 @@ export class DungeonCrawlGame extends BaseGame {
     this.juice.startCurtain(); // Wave K — Lastlight fades in
     this.musicIntensity = 0.45;
     this.services?.audio?.setMusicIntensity?.(0.45);
+  }
+
+  /**
+   * Wave P — Lastlight wears the tale it is living through: while an arc is
+   * started-but-unfinished the square's torchlight leans toward its colour and
+   * its cloths hang on the walls. Memoized on the live arc id, so this costs a
+   * comparison per frame and repaints only when the story actually turns.
+   * VIEW ONLY — no gameplay reads the dressing.
+   */
+  private refreshTownDressing(): void {
+    const live = liveSagaId(this.progression.character()?.sagas);
+    if (live === this.dressedFor) return;
+    this.dressedFor = live;
+    this.biome = TownController.dressedPalette(live ? SAGAS[live] : null);
   }
 
   /** Whether the live world is Lastlight (for draws + HUD gold source). */
@@ -839,6 +858,7 @@ export class DungeonCrawlGame extends BaseGame {
 
   private updateTown(dt: number): void {
     const input = this.services?.input;
+    this.refreshTownDressing(); // Wave P — the square wears the live arc
     this.town.update({
       dt,
       input,
@@ -1540,6 +1560,13 @@ export class DungeonCrawlGame extends BaseGame {
       // Wave O — the temple keeper in pale vestments before the chapel door.
       this.tiles.drawMerchant(ctx, this.town.spots.temple.x, this.town.spots.temple.y, this.gameTime, '#d8d2c4', '#b89a4a');
       this.tiles.drawQuestBoard(ctx, this.town.spots.quests.x, this.town.spots.quests.y, this.gameTime);
+      // Wave P — the arc's cloth hangs while its tale is unfinished.
+      const live = this.dressedFor ? SAGAS[this.dressedFor].dressing : null;
+      if (live) {
+        for (const spot of this.town.banners) {
+          this.tiles.drawBanner(ctx, spot.x, spot.y, live.color, live.accent, this.gameTime);
+        }
+      }
     }
     for (const pickup of this.pickupItems) this.tiles.drawPickup(ctx, pickup, this.gameTime);
     for (const enemy of this.enemies) this.tiles.drawEnemy(ctx, enemy, this.gameTime);

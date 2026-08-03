@@ -50,6 +50,7 @@ describe('enemy config contract', () => {
   test('the restless dead are tagged for Turn Undead', () => {
     const undead = ALL_TYPE_IDS.filter(id => ENEMY_CONFIGS[id].undead);
     // v4 Wave D consciously added: bone-archer, drowned-one, ember-wight.
+    // Wave P consciously added: barrow-hound (the barrows kept their own dogs).
     expect(new Set(undead)).toEqual(
       new Set([
         'skeleton',
@@ -60,6 +61,7 @@ describe('enemy config contract', () => {
         'bone-archer',
         'drowned-one',
         'ember-wight',
+        'barrow-hound',
       ]),
     );
   });
@@ -75,11 +77,13 @@ describe('enemy config contract', () => {
 describe('per-biome spawn tables', () => {
   test('biome families stay home', () => {
     // Probe deep enough that every gate is open (floor 13+ = all gates passed).
+    // Wave P consciously added one member per family (slag-thrall, barrow-hound,
+    // brine-weird, cinder-bloat) — each stays as home-bound as its elders.
     const homes: Array<[string, EnemyTypeId[]]> = [
-      ['ember', ['fire-beetle', 'salamander']],
-      ['bone', ['zombie', 'ghoul', 'bone-archer']],
-      ['sunken', ['deep-ooze', 'lizardman', 'drowned-one']],
-      ['ash', ['shade', 'cinder-hound', 'ember-wight']],
+      ['ember', ['fire-beetle', 'salamander', 'slag-thrall']],
+      ['bone', ['zombie', 'ghoul', 'bone-archer', 'barrow-hound']],
+      ['sunken', ['deep-ooze', 'lizardman', 'drowned-one', 'brine-weird']],
+      ['ash', ['shade', 'cinder-hound', 'ember-wight', 'cinder-bloat']],
     ];
     for (const [home, family] of homes) {
       for (const biome of BIOMES) {

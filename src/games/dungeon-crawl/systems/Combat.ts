@@ -52,6 +52,12 @@ export type DeathCause =
   | 'drowned'
   | 'wight'
   | 'gargoyle'
+  // Wave P — THE WIDER WORLD
+  | 'slag_thrall'
+  | 'barrow_hound'
+  | 'brine_lash'
+  | 'cinder_bloat'
+  | 'lantern_wisp'
   | 'hazard'
   | 'explosion'
   | 'shockwave'
@@ -140,6 +146,17 @@ export function causeForEnemy(enemy: Enemy): DeathCause {
       return 'wight';
     case 'gargoyle':
       return 'gargoyle';
+    // Wave P — THE WIDER WORLD
+    case 'slag-thrall':
+      return 'slag_thrall';
+    case 'barrow-hound':
+      return 'barrow_hound';
+    case 'brine-weird':
+      return 'brine_lash';
+    case 'cinder-bloat':
+      return 'cinder_bloat';
+    case 'lantern-wisp':
+      return 'lantern_wisp';
   }
 }
 
