@@ -6,6 +6,7 @@
 // orchestrator behind the host callbacks.
 
 import { SoundName } from '@/services/AudioManager';
+import { BOON_TUNING } from '../data/boons';
 import { AbilityId, CLASS_TUNING } from '../data/classes';
 import { rollDice } from '../data/dice';
 import { EXPLOSIONS, HAZARDS, HIRELING, JUICE, PALETTE, PICKUPS, PLAYER, PotionBuff, SHOCKWAVE, TILE } from '../data/constants';
@@ -13,6 +14,7 @@ import { ALL_SCROLL_IDS, SCROLL_TUNING, ScrollId, SCROLLS } from '../data/scroll
 import { SPELL_TUNING, SpellId } from '../data/spells';
 import { STAT_TUNING } from '../data/stats';
 import { BOSS, MORALE, moraleBreakChance } from '../data/enemies';
+import { PLANE_TUNING, type PlaneLaw } from '../data/planes';
 import { ALL_RELIC_IDS, RELIC_TUNING, RelicId } from '../data/relics';
 import type { ShopProduct } from '../dungeon/DungeonGenerator';
 import { Rng } from '../dungeon/rng';
@@ -58,6 +60,19 @@ export type DeathCause =
   | 'brine_lash'
   | 'cinder_bloat'
   | 'lantern_wisp'
+  // Wave Q2 — THE PLANES
+  | 'void_lancer'
+  | 'star_husk'
+  | 'mote_swarm'
+  | 'brass_warden'
+  | 'sentry_ray'
+  | 'gear_hound'
+  | 'chaos_croaker'
+  | 'bone_raker'
+  | 'shape_eater'
+  | 'pit_wretch'
+  | 'barbed_sentinel'
+  | 'harrier_dart'
   | 'hazard'
   | 'explosion'
   | 'shockwave'
@@ -157,6 +172,31 @@ export function causeForEnemy(enemy: Enemy): DeathCause {
       return 'cinder_bloat';
     case 'lantern-wisp':
       return 'lantern_wisp';
+    // Wave Q2 — THE PLANES
+    case 'void-lancer':
+      return 'void_lancer';
+    case 'star-husk':
+      return 'star_husk';
+    case 'mote-swarm':
+      return 'mote_swarm';
+    case 'brass-warden':
+      return 'brass_warden';
+    case 'lantern-sentry':
+      return 'sentry_ray';
+    case 'gear-hound':
+      return 'gear_hound';
+    case 'chaos-croaker':
+      return 'chaos_croaker';
+    case 'bone-raker':
+      return 'bone_raker';
+    case 'shape-eater':
+      return 'shape_eater';
+    case 'pit-wretch':
+      return 'pit_wretch';
+    case 'barbed-sentinel':
+      return 'barbed_sentinel';
+    case 'ash-harrier':
+      return 'harrier_dart';
   }
 }
 
@@ -184,6 +224,12 @@ export interface CombatHost {
   floor(): number; // Wave N — morale weighs the hero's level against the floor
   heroLevel(): number; // Wave N — the living hero's level (1 when none)
   floorSpawnBaseline(): number; // Wave N — the floor's seeded pack size
+  /**
+   * Wave Q2 — the LAW in force where the hero is standing. An ordinary floor
+   * answers with an empty law, so every read below is a no-op in the depths.
+   * Combat never asks WHICH plane it is on, only what the rule is.
+   */
+  planeLaw(): PlaneLaw;
   onFoeRouted(): void; // Wave N — a foe broke for the first time (metric hook)
   revealMap(): void; // Scroll of Revelation — fog-of-war lifts
   crackWall(tx: number, ty: number): void; // v4 Wave C — a CrackedWall gives way
@@ -302,6 +348,30 @@ export class Combat {
       dealt += player.relicCount('grave-ward') * RELIC_TUNING.GRAVE_WARD_DAMAGE;
     }
 
+    // Wave Q1 — BREECH: some things shrug off honest steel (2e's "hit only by
+    // magical weapons"). A fighter deep enough into the ascent stops caring.
+    if (enemy.config.warded && player.boonCount('breech') > 0) {
+      dealt += BOON_TUNING.BREECH_DAMAGE;
+      this.host.particles.sparks(enemy.x, enemy.y, dirX, dirY, '#ffb0b0', 6);
+    }
+
+    // Wave Q1 — DEATH BLOW: one stroke is sometimes the whole fight. Only a
+    // sword blow, never against an elite or a boss (bosses are not Enemies at
+    // all), and it kills through the REAL path — the roll only sets the wound
+    // to whatever is left, so drops, splits, morale and every metric fire
+    // exactly as for any other kill.
+    if (
+      source === 'sword' &&
+      enemy.elite === null &&
+      player.boonCount('death-blow') > 0 &&
+      dealt < enemy.hp &&
+      this.host.rng().chance(BOON_TUNING.DEATH_BLOW_CHANCE)
+    ) {
+      dealt = enemy.hp;
+      this.host.particles.burst(enemy.x, enemy.y, '#e04b4b', 16, 150, 0.5);
+      this.host.floatingText.push(enemy.x, enemy.y - enemy.radius - 16, 'DEATH BLOW', '#e04b4b');
+    }
+
     enemy.hp -= dealt;
     enemy.flash = 0.15;
     enemy.aggro = true;
@@ -389,6 +459,22 @@ export class Combat {
       }
     }
 
+    // Wave Q2 — THE CHURNING's law: nothing holds its shape. What you killed
+    // has other drafts, and one of them may step through in its place. Capped
+    // at a single generation — a GATED foe never gates — so a room can never
+    // run away with itself, and it rides the same construction every other
+    // game-level spawn uses (level pressure included).
+    const law = this.host.planeLaw();
+    if (law.gating && !enemy.gated && !enemy.wandering && rng.chance(PLANE_TUNING.GATE_CHANCE)) {
+      const spot = this.host.findOpenSpotNear(enemy.x, enemy.y);
+      const kin = new Enemy(enemy.config.id, spot.x, spot.y, null, this.host.levelPressure());
+      kin.gated = true;
+      kin.aggro = true;
+      this.host.addEnemy(kin);
+      this.host.particles.ring(spot.x, spot.y, enemy.config.accent, 30, 0.35);
+      this.host.floatingText.push(spot.x, spot.y - 18, 'ANOTHER DRAFT', enemy.config.accent);
+    }
+
     // Wave N — THE LIVING DEPTHS: the fall rattles the pack. Every OTHER
     // living, non-dormant, non-elite, morale-flagged foe within PACK_RADIUS
     // rolls ONCE on the live rng to BREAK and run. The undead/mindless/mimic
@@ -403,6 +489,10 @@ export class Combat {
       this.host.floor(),
       aliveNonDormant,
       this.host.floorSpawnBaseline(),
+      // Wave Q1 — DREAD: an ascended hero is a story the pack has heard.
+      player.boonCount('dread') * BOON_TUNING.DREAD_MORALE_BONUS,
+      // Wave Q2 — THE BRASS MARCHES: under its law, nothing breaks at all.
+      law.unbroken,
     );
     let firstBreaker = true;
     for (const other of enemies) {
@@ -556,6 +646,12 @@ export class Combat {
         this.woundEnemy(enemy, CLASS_TUNING.TURN_UNDEAD_DAMAGE);
       } else {
         enemy.applyKnockback(dx / dist, dy / dist, CLASS_TUNING.TURN_UNDEAD_PUSH);
+        // Wave Q1 — SMITE: the wave stops merely shoving the living. The shove
+        // still lands first, so the turning reads the same; it just bites now.
+        if (player.boonCount('smite') > 0) {
+          this.host.particles.burst(enemy.x, enemy.y, '#ffe08a', 6, 80, 0.35);
+          this.woundEnemy(enemy, BOON_TUNING.SMITE_DAMAGE);
+        }
       }
     }
   }
@@ -751,7 +847,12 @@ export class Combat {
   }
 
   /** v4 Wave D — grimoire effects: the scroll library, parameterized by spell. */
-  castSpell(id: SpellId, scholarMult: number): void {
+  /**
+   * Wave Q1 — `sculptMult` (SPELL SCULPTING) widens a working's REACH and
+   * COUNT only; damage stays Intelligence's business. Threaded exactly like
+   * scholarMult so the boon lives in one scalar, not a dozen cases.
+   */
+  castSpell(id: SpellId, scholarMult: number, sculptMult = 1): void {
     const player = this.host.player();
     switch (id) {
       case 'burning-hands':
@@ -765,7 +866,7 @@ export class Combat {
           source: 'player',
           boom: {
             fuse: SPELL_TUNING.BURNING_HANDS_FUSE,
-            radius: SPELL_TUNING.BURNING_HANDS_RADIUS,
+            radius: SPELL_TUNING.BURNING_HANDS_RADIUS * sculptMult,
             damage:
               SPELL_TUNING.BURNING_HANDS_DAMAGE +
               player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE,
@@ -774,7 +875,7 @@ export class Combat {
         this.host.playSound('whoosh', 0.5);
         break;
       case 'frost-ray':
-        this.frostNova(SPELL_TUNING.FROST_RAY_RADIUS, SPELL_TUNING.FROST_RAY_STUN);
+        this.frostNova(SPELL_TUNING.FROST_RAY_RADIUS * sculptMult, SPELL_TUNING.FROST_RAY_STUN);
         break;
       case 'blink': {
         // A short step between heartbeats — lands on the nearest open tile.
@@ -819,9 +920,10 @@ export class Combat {
         const base = Math.atan2(player.faceY, player.faceX);
         const dmg =
           SPELL_TUNING.MAGIC_MISSILE_DAMAGE + player.statMods.int * STAT_TUNING.INT_SPELL_DAMAGE;
-        for (let i = 0; i < SPELL_TUNING.MAGIC_MISSILE_COUNT; i++) {
-          const a =
-            base + (i - (SPELL_TUNING.MAGIC_MISSILE_COUNT - 1) / 2) * SPELL_TUNING.MAGIC_MISSILE_SPREAD;
+        // Wave Q1 — sculpting adds darts to the fan (the count IS the spell).
+        const darts = Math.round(SPELL_TUNING.MAGIC_MISSILE_COUNT * sculptMult);
+        for (let i = 0; i < darts; i++) {
+          const a = base + (i - (darts - 1) / 2) * SPELL_TUNING.MAGIC_MISSILE_SPREAD;
           this.host.addProjectile(
             new Projectile(
               'dagger',
@@ -842,7 +944,7 @@ export class Combat {
       case 'web':
         // Sticky strands root the pack AHEAD — the nova verb, re-centered.
         this.frostNova(
-          SPELL_TUNING.WEB_RADIUS,
+          SPELL_TUNING.WEB_RADIUS * sculptMult,
           SPELL_TUNING.WEB_STUN,
           player.x + player.faceX * SPELL_TUNING.WEB_DIST,
           player.y + player.faceY * SPELL_TUNING.WEB_DIST,
@@ -1071,6 +1173,8 @@ export class Combat {
       throwBomb: (x, y, targetX, targetY) => this.throwBomb(x, y, targetX, targetY),
       onMimicWake: enemy => this.host.onMimicWake(enemy),
       playerHidden: player.hiddenTimer > 0,
+      // Wave Q2 — THE SILVER VOID: no line of sight required to be found.
+      noCover: this.host.planeLaw().noCover,
     };
     for (const enemy of enemies) {
       if (!enemy.alive) continue;

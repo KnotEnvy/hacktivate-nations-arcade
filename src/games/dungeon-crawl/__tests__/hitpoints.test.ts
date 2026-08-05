@@ -45,6 +45,7 @@ function fighterHero(overrides?: Partial<SavedHero>): SavedHero {
     lineage: 'human',
     hpRolls: [7, 2, 9],
     curse: null,
+    ascended: false,
     ...overrides,
   };
 }

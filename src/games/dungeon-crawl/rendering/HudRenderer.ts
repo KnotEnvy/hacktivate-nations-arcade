@@ -13,6 +13,7 @@ import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
 import { PROGRESSION } from '../data/progression';
 import { QUESTS, QuestId } from '../data/quests';
+import { planeFor } from '../data/planes';
 import { chaptersDone, currentChapter, SagaId, SAGAS, visibleSagaIds } from '../data/sagas';
 import { RELICS, RelicId } from '../data/relics';
 import {
@@ -831,6 +832,68 @@ export class HudRenderer {
   }
 
   /** Wave O — the temple: the rite of lifting + the priests' two wares. */
+  /**
+   * Wave Q2 — THE WAYDOOR: the four planar contracts and the road's next
+   * chapter, on the quest-board card language so the two read as siblings.
+   * Pure view — it is handed exactly which quests to show.
+   */
+  renderWaydoor(
+    ctx: CanvasRenderingContext2D,
+    questIds: readonly QuestId[],
+    selectedIndex: number,
+    roadChapters: { done: number; total: number },
+  ): void {
+    this.renderShopFrame(
+      ctx,
+      'THE WAYDOOR',
+      0,
+      '←→ chooses · SPACE steps through · E turns away',
+    );
+    ctx.textAlign = 'center';
+    ctx.fillStyle = PALETTE.textDim;
+    ctx.font = '12px monospace';
+    ctx.fillText(
+      `THE ASCENDANT'S ROAD — ${roadChapters.done}/${roadChapters.total} WALKED`,
+      VIEW.WIDTH / 2,
+      168,
+    );
+
+    const count = Math.max(1, questIds.length);
+    const cardW = count > 4 ? 140 : 170;
+    const cardH = 230;
+    const gap = count > 4 ? 12 : 20;
+    const startX = (VIEW.WIDTH - cardW * count - gap * (count - 1)) / 2;
+    const y = 196;
+
+    for (let i = 0; i < questIds.length; i++) {
+      const quest = QUESTS[questIds[i]];
+      const plane = quest.biomeId ? planeFor(quest.biomeId) : null;
+      const color = plane?.color ?? PALETTE.textWarm;
+      const x = startX + i * (cardW + gap);
+      this.shopCard(ctx, x, y, cardW, cardH, i === selectedIndex, color, i);
+
+      ctx.fillStyle = color;
+      ctx.font = 'bold 13px monospace';
+      this.wrapText(ctx, quest.name, x + cardW / 2, y + 40, cardW - 14, 15);
+      // The plane, and — the point of the whole wave — its LAW.
+      ctx.fillStyle = PALETTE.textDim;
+      ctx.font = '11px monospace';
+      this.wrapText(ctx, plane?.name ?? '', x + cardW / 2, y + 84, cardW - 14, 13);
+      ctx.fillStyle = plane?.accent ?? PALETTE.textWarm;
+      this.wrapText(ctx, plane?.lawLine ?? '', x + cardW / 2, y + 112, cardW - 18, 13);
+      ctx.fillStyle = PALETTE.textWarm;
+      this.wrapText(ctx, quest.blurb, x + cardW / 2, y + 156, cardW - 18, 13);
+
+      ctx.font = 'bold 12px monospace';
+      ctx.fillStyle = quest.saga ? '#cfe3ff' : PALETTE.gold;
+      ctx.fillText(
+        quest.saga ? 'THE ROAD' : `${quest.rewardGold}g`,
+        x + cardW / 2,
+        y + cardH - 18,
+      );
+    }
+  }
+
   renderTemple(
     ctx: CanvasRenderingContext2D,
     curse: CurseId | null,
@@ -839,9 +902,13 @@ export class HudRenderer {
     selectedIndex: number,
     packed: (id: ProvisionId) => boolean,
     gold: number,
+    // Wave Q2 — THE RITE OF ASCENSION: null when the hero has not reached the
+    // cap (the card is not there at all), otherwise its price and whether it
+    // has already been performed.
+    ascension: { price: number; done: boolean } | null = null,
   ): void {
     this.renderShopFrame(ctx, 'THE TEMPLE', gold, 'SPACE for the rite or the road · E steps away');
-    const count = 1 + provisionIds.length;
+    const count = 1 + (ascension ? 1 : 0) + provisionIds.length;
     const cardW = count > 3 ? 170 : 190; // four cards must still fit the view
     const cardH = 240;
     const gap = count > 3 ? 16 : 26;
@@ -880,13 +947,47 @@ export class HudRenderer {
       }
     }
 
+    // Wave Q2 — card 1, and only for a hero who has gone as far as a mortal
+    // can: THE RITE OF ASCENSION. The offering is priced off a whole life.
+    if (ascension) {
+      const x = startX + cardW + gap;
+      const color = ascension.done ? '#8a8a8a' : '#cfe3ff';
+      this.shopCard(ctx, x, y, cardW, cardH, selectedIndex === 1, color, 1);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 40px monospace';
+      ctx.fillText('✦', x + cardW / 2, y + 70);
+      ctx.font = 'bold 14px monospace';
+      this.wrapText(ctx, 'THE RITE OF ASCENSION', x + cardW / 2, y + 106, cardW - 16, 16);
+      ctx.fillStyle = PALETTE.textWarm;
+      ctx.font = '12px monospace';
+      this.wrapText(
+        ctx,
+        ascension.done
+          ? 'The ways stand open to you already'
+          : 'Offer up the worth of your whole life and the ways will open',
+        x + cardW / 2,
+        y + 146,
+        cardW - 24,
+        15,
+      );
+      ctx.font = 'bold 13px monospace';
+      if (ascension.done) {
+        ctx.fillStyle = PALETTE.textDim;
+        ctx.fillText('ASCENDED', x + cardW / 2, y + cardH - 20);
+      } else {
+        ctx.fillStyle = gold >= ascension.price ? PALETTE.gold : PALETTE.blood;
+        ctx.fillText(`${ascension.price}g`, x + cardW / 2, y + cardH - 20);
+      }
+    }
+
     // The wares ride the alchemist card recipe.
+    const wareOffset = 1 + (ascension ? 1 : 0);
     for (let i = 0; i < provisionIds.length; i++) {
       const provision = PROVISIONS[provisionIds[i]];
-      const x = startX + (i + 1) * (cardW + gap);
-      const selected = i + 1 === selectedIndex;
+      const x = startX + (i + wareOffset) * (cardW + gap);
+      const selected = i + wareOffset === selectedIndex;
 
-      this.shopCard(ctx, x, y, cardW, cardH, selected, provision.color, i + 1);
+      this.shopCard(ctx, x, y, cardW, cardH, selected, provision.color, i + wareOffset);
       ctx.fillStyle = provision.color;
       ctx.font = 'bold 40px monospace';
       ctx.fillText(provision.icon, x + cardW / 2, y + 70);
@@ -1153,11 +1254,18 @@ export class HudRenderer {
       ctx.fillText(text, x, y);
       return y + 22;
     };
-    const row = (text: string, x: number, y: number, color: string = PALETTE.textWarm): number => {
+    const row = (
+      text: string,
+      x: number,
+      y: number,
+      color: string = PALETTE.textWarm,
+      // Wave Q1 — a compact pitch for lists that grew with the level cap.
+      compact = false,
+    ): number => {
       ctx.fillStyle = color;
-      ctx.font = '13px monospace';
+      ctx.font = compact ? '11px monospace' : '13px monospace';
       ctx.fillText(text, x, y);
-      return y + 19;
+      return y + (compact ? 15 : 19);
     };
 
     // Left column: the record, the treasury, the smithy's work.
@@ -1200,10 +1308,20 @@ export class HudRenderer {
     // Right column: training and the grimoire.
     y = header('TRAINING', rightX, 196);
     const trained = Object.entries(hero.boons).filter(([, count]) => (count ?? 0) > 0);
+    // Wave Q1 — the ascent band can leave a hero holding a dozen-plus boons.
+    // Past eight the list tightens its pitch so TRAINING + the grimoire +
+    // trade-skills still fit the panel instead of walking off the bottom.
+    const denseTraining = trained.length > 8;
     if (trained.length === 0) y = row('— none yet —', rightX, y, PALETTE.textDim);
     for (const [id, count] of trained) {
       const boon = BOONS[id as BoonId];
-      y = row(`${boon.icon} ${boon.name}${(count ?? 0) > 1 ? ` ×${count}` : ''}`, rightX, y, boon.color);
+      y = row(
+        `${boon.icon} ${boon.name}${(count ?? 0) > 1 ? ` ×${count}` : ''}`,
+        rightX,
+        y,
+        boon.color,
+        denseTraining,
+      );
     }
     // v6 Wave J — martial classes keep a TECHNIQUES page, not a grimoire.
     const martial = spellNoun(classDef.id) === 'TECHNIQUE';

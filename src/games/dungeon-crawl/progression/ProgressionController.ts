@@ -118,6 +118,7 @@ export class ProgressionController {
       lineage: lineageId,
       hpRolls: [], // Wave L — level 1 is the die's maximum; rolls start at 2
       curse: null, // Wave O — a fresh hero is unburdened
+      ascended: false, // Wave Q2 — the ways are earned, never granted
     };
     this.payload.characters[classId] = hero;
     this.activeClass = classId;
@@ -159,9 +160,16 @@ export class ProgressionController {
   draftChoices(rng: Rng): DraftPick[] {
     const hero = this.character();
     if (!hero) return [];
-    const pool: DraftPick[] = ALL_BOON_IDS.filter(
-      id => (hero.boons[id] ?? 0) < BOONS[id].maxStacks,
-    ).map(id => ({ kind: 'boon' as const, id }));
+    // Wave Q1 — THE GREAT BOONS ride the same level BAND rule the grimoire
+    // uses: the card offers only once the level being REACHED meets minLevel,
+    // and a class-keyed boon only to that class. The ten original boons carry
+    // neither field, so a hero's first ten levels draft exactly as before.
+    const pool: DraftPick[] = ALL_BOON_IDS.filter(id => {
+      const def = BOONS[id];
+      if ((hero.boons[id] ?? 0) >= def.maxStacks) return false;
+      if (hero.level + 1 < (def.minLevel ?? 1)) return false;
+      return def.classId === undefined || def.classId === hero.classId;
+    }).map(id => ({ kind: 'boon' as const, id }));
     // v6 Wave J — level bands: a page drafts only once the level being
     // REACHED meets its minLevel (deep heroes draft deeper magic).
     for (const id of spellsForClass(hero.classId)) {

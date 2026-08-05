@@ -53,14 +53,20 @@ export class Lighting {
     camY: number,
     floor: number,
     lights: LightSource[],
+    // Wave Q2 — a plane is lit by what it IS, not by torches someone hung, so
+    // its palette may name its own darkness. Absent (every dungeon floor) =
+    // the floor-derived torchlit dark, unchanged.
+    darknessOverride?: number,
   ): void {
     if (!this.ensureBuffer(width, height) || !this.bctx || !this.buffer) return;
     const bctx = this.bctx;
 
-    const darkness = Math.min(
-      LIGHTING.DARKNESS_MAX,
-      LIGHTING.DARKNESS_BASE + LIGHTING.DARKNESS_PER_FLOOR * (floor - 1),
-    );
+    const darkness =
+      darknessOverride ??
+      Math.min(
+        LIGHTING.DARKNESS_MAX,
+        LIGHTING.DARKNESS_BASE + LIGHTING.DARKNESS_PER_FLOOR * (floor - 1),
+      );
 
     bctx.globalCompositeOperation = 'source-over';
     bctx.clearRect(0, 0, width, height);

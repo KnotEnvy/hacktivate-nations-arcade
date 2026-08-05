@@ -24,6 +24,27 @@ export interface SwordSwing {
   hitIds: Set<number>; // enemies already damaged by this swing
 }
 
+/**
+ * Wave Q1 — what KIND of harm is arriving, as far as the body cares. Kept
+ * deliberately cause-free (the DeathCause union stays Combat's) so Player
+ * never learns the bestiary: a trap plate, a blast, or a blow from something
+ * alive is the whole distinction any absorption needs.
+ */
+export type BlowKind = 'trap' | 'blast' | 'blow';
+
+/** Which absorption answered a blow, so the caller can play its feedback. */
+export type BlowAbsorb = 'stone-sense' | 'evasion' | 'blur' | null;
+
+/**
+ * The only place a DeathCause is boiled down to what the body cares about.
+ * Kept here beside BlowKind (and taking a plain string) so Player still never
+ * imports the cause union, and the funnel never re-derives this inline.
+ */
+export function blowKindFor(cause: string): BlowKind {
+  if (cause === 'hazard') return 'trap';
+  return cause === 'explosion' || cause === 'shockwave' ? 'blast' : 'blow';
+}
+
 export class Player {
   x = 0;
   y = 0;
@@ -194,9 +215,17 @@ export class Player {
     return this.spellCds.get(id) ?? 0;
   }
 
-  /** v5 Wave E — Intelligence returns spells sooner (per delta point). */
+  /**
+   * v5 Wave E — Intelligence returns spells sooner (per delta point).
+   * Wave Q1 — INNER FOCUS shortens every page the same way, for every class:
+   * a fighter's techniques are pages too (the Wave J rule).
+   */
   spellCooldownFull(baseSeconds: number): number {
-    return baseSeconds * Math.pow(STAT_TUNING.INT_SPELL_CD_MULT, this.statMods.int);
+    return (
+      baseSeconds *
+      Math.pow(STAT_TUNING.INT_SPELL_CD_MULT, this.statMods.int) *
+      Math.pow(BOON_TUNING.INNER_FOCUS_SPELL_CD_MULT, this.boonCount('inner-focus'))
+    );
   }
 
   startSpellCooldown(id: SpellId, seconds: number): void {
@@ -446,6 +475,20 @@ export class Player {
     );
   }
 
+  /**
+   * v4 — Scholar training deepens scroll magic where it sensibly can, and
+   * Wave Q1 — SPELL SCULPTING widens a working's reach and count (never its
+   * damage; that stays Intelligence's business). Both are pure boon reads, so
+   * they live on the hero rather than in the orchestrator that passes them on.
+   */
+  scholarMult(): number {
+    return this.boonCount('scholar') > 0 ? BOON_TUNING.SCHOLAR_MULT : 1;
+  }
+
+  sculptMult(): number {
+    return Math.pow(BOON_TUNING.SPELL_SCULPT_MULT, this.boonCount('spell-sculpting'));
+  }
+
   /** Wave O — gold drop count multiplier (kit × THE MISER'S SHADOW). */
   goldDropMult(): number {
     return this.kit.goldDropMult * (this.curse === 'misers-shadow' ? CURSE_TUNING.MISER_GOLD_MULT : 1);
@@ -459,20 +502,77 @@ export class Player {
     this.buffs.set(buff, PICKUPS.POTION_DURATION);
   }
 
-  /** Returns true if damage was applied (not absorbed / i-framed). */
-  takeDamage(amount: number): boolean {
-    if (this.invuln > 0) return false;
+  /**
+   * Wave Q1 — HARDINESS: a great boon of the ascent band. Every blow lands
+   * lighter, but a blow ALWAYS lands: the soak can never reduce a wound below
+   * 1, so no amount of training makes the hero untouchable.
+   */
+  hardinessSoak(): number {
+    return this.boonCount('hardiness') * BOON_TUNING.HARDINESS_SOAK;
+  }
+
+  /**
+   * Wave Q1 guardrail valve — the "did the blow find me at all?" chain, moved
+   * off the orchestrator and onto the body it is asking about. Every branch
+   * here reads only Player state (a bloodline, a boon, a relic) plus a roll,
+   * which is exactly why it belongs on Player; damagePlayer keeps the funnel
+   * and every consequence, and plays the feedback for whatever fired.
+   *
+   * ORDER IS THE CONTRACT: stone-sense is deterministic and goes first (it
+   * must not be spent on a blow a later roll would have dodged anyway), then
+   * EVASION, then the Blur Cloak. Only the new middle branch is new — a hero
+   * without EVASION consumes rng in exactly the order it always did.
+   */
+  absorbBlow(kind: BlowKind, rng: { chance(probability: number): boolean }): BlowAbsorb {
+    // Wave I — STONE-SENSE: the rock warns a dwarf of the first trap a floor.
+    if (kind === 'trap' && this.tryConsumeStoneSense()) return 'stone-sense';
+
+    // Wave Q1 — EVASION: 2e is explicit that the rogue's skill answers blasts
+    // and fixed-point missiles, NOT a creature's blow — hence the kind gate.
+    if (
+      kind !== 'blow' &&
+      this.boonCount('evasion') > 0 &&
+      this.invuln <= 0 &&
+      rng.chance(BOON_TUNING.EVASION_CHANCE)
+    ) {
+      return 'evasion';
+    }
+
+    // v3 — Blur Cloak: sometimes the blow finds only afterimage.
+    const blur = this.relicCount('blur-cloak');
+    if (blur > 0 && this.invuln <= 0) {
+      const dodge = Math.min(
+        RELIC_TUNING.BLUR_DODGE_CAP,
+        blur * RELIC_TUNING.BLUR_DODGE_PER_STACK,
+      );
+      if (rng.chance(dodge)) {
+        this.invuln = Math.max(this.invuln, RELIC_TUNING.BLUR_INVULN);
+        return 'blur';
+      }
+    }
+    return null;
+  }
+
+  /**
+   * The HP actually lost — 0 when the blow was absorbed or i-framed (so the
+   * old `if (!applied)` guard reads the same). Wave Q1 — HARDINESS soaks part
+   * of the wound here, and the caller shows THIS number, never the raw amount
+   * (the Wave L rule: floating numbers show what actually landed).
+   */
+  takeDamage(amount: number): number {
+    if (this.invuln > 0) return 0;
     if (this.buffs.has('stoneskin')) {
       this.buffs.delete('stoneskin'); // absorbs one hit, then shatters
       this.invuln = PLAYER.HIT_INVULN * 0.5;
-      return false;
+      return 0;
     }
-    this.hp = Math.max(0, this.hp - amount);
+    const dealt = Math.max(1, amount - this.hardinessSoak());
+    this.hp = Math.max(0, this.hp - dealt);
     this.invuln =
       PLAYER.HIT_INVULN *
       (1 + this.boonCount('blind-fighting') * BOON_TUNING.BLIND_FIGHT_INVULN_MULT);
     this.hitFlash = 0.4;
-    return true;
+    return dealt;
   }
 
   heal(amount: number): void {
@@ -634,6 +734,13 @@ export class Player {
       PLAYER.DASH_IFRAME_TAIL +
       cloak * RELIC_TUNING.SHADOW_CLOAK_IFRAME_BONUS;
     this.invuln = Math.max(this.invuln, iframes);
+    // Wave Q1 — SHADOW STEP: the thief comes out of the dash still unseen, so
+    // the very next strike counts as "from the shadows". No new mechanic — it
+    // reuses the hiddenTimer the backstab read already consults, and the
+    // strike clears it exactly as a Hide would.
+    if (this.boonCount('shadow-step') > 0) {
+      this.hiddenTimer = Math.max(this.hiddenTimer, BOON_TUNING.SHADOW_STEP_WINDOW);
+    }
     return true;
   }
 

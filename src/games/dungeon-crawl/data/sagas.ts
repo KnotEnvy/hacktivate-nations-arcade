@@ -13,7 +13,9 @@ export type SagaId =
   // Wave P — a tale per biome: the sunken vaults and the deep ash get theirs.
   | 'drowned-choir'
   | 'ash-remembers'
-  | 'the-last-page';
+  | 'the-last-page'
+  // Wave Q2 — the capstone arc, told past the gate.
+  | 'ascendants-road';
 
 /** Wave P — how Lastlight dresses itself while an arc is live (view only). */
 export interface SagaDressing {
@@ -36,6 +38,10 @@ export interface SagaDef {
   // gate reads THIS, not `!meta`, so later arcs can never re-lock a last page
   // a veteran already earned.
   founding?: boolean;
+  // Wave Q2 — told past the gate. A planar arc never appears on Lastlight's
+  // board or on the character sheet's saga list (the town cannot see another
+  // world); the Waydoor shows it, and only to a hero who has ascended.
+  planar?: boolean;
   dressing: SagaDressing;
 }
 
@@ -186,9 +192,56 @@ export const SAGAS: Record<SagaId, SagaDef> = {
         'the blank last page rolled in your pack. Write it yourself.',
     ],
   },
+  // Wave Q2 — THE ASCENDANT'S ROAD: what an ascended hero walks. Deliberately
+  // NOT founding (Wave P's veteran promise: a hero who earned THE LAST PAGE
+  // must never have it taken back) and NOT meta (it gates on the rite, not on
+  // other tales). It is simply somewhere else, and the town cannot see it.
+  'ascendants-road': {
+    id: 'ascendants-road',
+    name: "THE ASCENDANT'S ROAD",
+    blurb: 'Four worlds, arranged around something. Walk far enough to be worth answering.',
+    planar: true,
+    dressing: {
+      color: '#cfe3ff',
+      accent: '#b96bff',
+      banner: 'THE GATE STANDS OPEN',
+    },
+    quests: [
+      'the-first-step-out',
+      'the-measured-mile',
+      'the-unmaking-yard',
+      'the-quiet-beyond',
+    ],
+    interludes: [
+      'You came up out of twenty levels of dark into a day with no sun in ' +
+        'it, and stood there long enough to be embarrassed. Nothing hid from ' +
+        'you. Nothing could. Whatever put a lance in each of those islands ' +
+        'wanted to be found — and having found it, you understand the ' +
+        'invitation was never yours to accept or decline.',
+      'The Marches read out a list for eleven hours and never once repeated ' +
+        'a name. Yours was on it, far down, in the same hand as the rest. Not ' +
+        'a threat: an ENTRY. Somewhere there is a clerk who has been ' +
+        'expecting you since before Lastlight was walled, and who has already ' +
+        'ruled on what you are.',
+      'The yard was rows of drafts of things, and you walked most of a row ' +
+        'that was drafts of you: shorter, older, one with the wrong number of ' +
+        'hands, one that had clearly done better. You put none of them out of ' +
+        'their misery, which you will think about later. The finished one was ' +
+        'not in the yard. It is further on.',
+      'It answered. Not in words — the four planes turned out to be four ways ' +
+        'of saying one sentence slowly enough for a mortal to hear. Then it ' +
+        'was quiet, and the quiet was ordinary. You walked back down every ' +
+        'terrace and out into Lastlight at dusk, where someone lighting the ' +
+        'lamps did not look up. Nothing lies further out. There is still ' +
+        'tomorrow.',
+    ],
+  },
 };
 
 export const ALL_SAGA_IDS = Object.keys(SAGAS) as SagaId[];
+
+/** Wave Q2 — the arcs told past the gate (the Waydoor's road page). */
+export const PLANAR_SAGA_IDS = ALL_SAGA_IDS.filter(id => SAGAS[id].planar);
 
 /** The saga a quest belongs to, with its 0-based chapter index — or null. */
 export function sagaChapterForQuest(
@@ -257,11 +310,18 @@ export function storyComplete(progress: Partial<Record<SagaId, number>> | undefi
   );
 }
 
-/** The sagas a hero's board (and sheet) may show — locked metas stay hidden. */
+/**
+ * The sagas a hero's board (and sheet) may show — locked metas stay hidden.
+ * Wave Q2 — and PLANAR arcs never appear here at all: Lastlight's board is
+ * Lastlight's, and the road is told somewhere the town cannot see. The Waydoor
+ * lists it instead (PLANAR_SAGA_IDS), gated on the rite rather than on tales.
+ */
 export function visibleSagaIds(
   progress: Partial<Record<SagaId, number>> | undefined,
 ): SagaId[] {
-  return ALL_SAGA_IDS.filter(id => !SAGAS[id].meta || metaUnlocked(progress));
+  return ALL_SAGA_IDS.filter(
+    id => !SAGAS[id].planar && (!SAGAS[id].meta || metaUnlocked(progress)),
+  );
 }
 
 /**

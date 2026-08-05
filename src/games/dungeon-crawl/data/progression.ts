@@ -5,11 +5,29 @@
 
 import { ClassId } from './classes';
 
-export const LEVEL_CAP = 10;
+/**
+ * Wave Q1 — THE LONG ASCENT. The cap was 10 for the whole dungeon era; the
+ * planes want heroes who have gone twice as far (DM Option: High-Level
+ * Campaigns, Ch. 7 — past 10th level a character's growth changes KIND, not
+ * just magnitude). Levels 11-20 are that band; THE GREAT BOONS in data/boons.ts
+ * are what makes them feel different.
+ */
+export const LEVEL_CAP = 20;
 
-/** Cumulative XP required to BE level N (index = level; [0] and [1] are 0). */
+/**
+ * Cumulative XP required to BE level N (index = level; [0] and [1] are 0).
+ *
+ * Wave Q1 — the ascent's ten rows continue the curve's shape (each step costs
+ * a little more than the last) rather than 2e's doubling, which would price
+ * level 20 out of an arcade run. Level 20 lands at ~55k lifetime XP. THIS IS
+ * PLAYTEST KNOB #1: halve the ascent deltas if the climb drags.
+ */
 export const LEVEL_CURVE: readonly number[] = [
   0, 0, 150, 400, 800, 1400, 2200, 3200, 4500, 6200, 8400,
+  // The ascent: +2400 / +2800 / +3200 / +3700 / +4200 ...
+  10800, 13600, 16800, 20500, 24700,
+  // ... +4800 / +5400 / +6100 / +6800 / +7600
+  29500, 34900, 41000, 47800, 55400,
 ];
 
 export function levelForXp(xp: number): number {
@@ -40,24 +58,44 @@ export interface LevelGain {
 }
 
 /**
- * Gains arriving AT each level: index 0 = reaching level 2 ... index 8 = level
- * 10 (nine rows per class). Wave L — HP left these rows for the HIT DIE: every
- * level-up ROLLS the class die live and the hero keeps the roll (hpRolls on
- * the save). The rows now carry only the side benefits: thief stride, mage
- * mana-pool depth.
+ * Gains arriving AT each level: index 0 = reaching level 2 ... index 18 =
+ * level 20 (nineteen rows per class). Wave L — HP left these rows for the HIT
+ * DIE: every level-up ROLLS the class die live and the hero keeps the roll
+ * (hpRolls on the save). The rows carry only the side benefits: thief stride,
+ * mage mana-pool depth.
+ *
+ * Wave Q1 — the ascent's ten rows keep the SAME grammar rather than inventing
+ * a new one: the thief's stride still arrives every third level, the mage's
+ * pool every other. Fighter and cleric rows stay empty at 11-20 exactly as at
+ * 2-10 — their growth is the best hit dice in the game plus the boons they
+ * draft, and THE GREAT BOONS are the ascent's real reward for every class.
  */
 export const LEVEL_GAINS: Record<ClassId, readonly LevelGain[]> = {
-  fighter: [{}, {}, {}, {}, {}, {}, {}, {}, {}],
-  cleric: [{}, {}, {}, {}, {}, {}, {}, {}, {}],
+  fighter: [
+    {}, {}, {}, {}, {}, {}, {}, {}, {},
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+  ],
+  cleric: [
+    {}, {}, {}, {}, {}, {}, {}, {}, {},
+    {}, {}, {}, {}, {}, {}, {}, {}, {}, {},
+  ],
   thief: [
     {}, { speed: 0.03 }, {}, {},
     { speed: 0.03 }, {}, {},
     { speed: 0.03 }, {},
+    // The ascent: stride at 11, 14, 17.
+    { speed: 0.03 }, {}, {},
+    { speed: 0.03 }, {}, {},
+    { speed: 0.03 }, {}, {}, {},
   ],
   mage: [
     { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
     { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
     { daggerCap: 1 },
+    // The ascent: the pool deepens at 11, 13, 15, 17, 19.
+    { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
+    { daggerCap: 1 }, {}, { daggerCap: 1 }, {},
+    { daggerCap: 1 }, {},
   ],
 };
 
@@ -86,8 +124,12 @@ export const PROGRESSION = {
   ELITE_XP_MULT: 3,
   BOSS_XP: 200,
   // Level pressure: enemy hp scales with hero level so floor 1 stays honest.
+  // Wave Q1 — the cap rose with the level cap (it was 1.45, reached at level
+  // 10, which left an ascended hero walking through the old depths). The
+  // per-level rate is UNCHANGED, so a level-10 hero meets exactly the
+  // resistance it always did; only 11-20 pushes past the old ceiling.
   PRESSURE_HP_PER_LEVEL: 0.05,
-  PRESSURE_HP_CAP: 1.45,
+  PRESSURE_HP_CAP: 1.75,
   RETIRE_HOLD_SECONDS: 1.5, // hold R on the recap to retire the hero
 } as const;
 

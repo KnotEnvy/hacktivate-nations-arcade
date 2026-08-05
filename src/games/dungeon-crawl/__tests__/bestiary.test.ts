@@ -10,9 +10,19 @@ import {
   spawnWeightsForFloor,
 } from '@/games/dungeon-crawl/data/enemies';
 import { Enemy } from '@/games/dungeon-crawl/entities/Enemy';
+import { ALL_PLANE_IDS } from '@/games/dungeon-crawl/data/planes';
 import { causeForEnemy } from '@/games/dungeon-crawl/systems/Combat';
 
 const ALL_TYPE_IDS = Object.keys(ENEMY_CONFIGS) as EnemyTypeId[];
+
+/**
+ * Wave Q2 — the families that live past the gate. Derived from the plane
+ * tables themselves rather than hand-listed, so a new planar family joins this
+ * set automatically and a dungeon family can never sneak into it.
+ */
+const PLANAR_TYPES = new Set<EnemyTypeId>(
+  ALL_PLANE_IDS.flatMap(id => spawnWeightsForFloor(1, id).map(r => r.type)),
+);
 
 /** Types that can be picked for (floor, biome) — weight > 0 rows only. */
 function spawnableTypes(floor: number, biomeId: string): Set<EnemyTypeId> {
@@ -124,15 +134,37 @@ describe('per-biome spawn tables', () => {
     }
   });
 
-  test('every monster type is reachable on some floor within a long run', () => {
+  test('every DUNGEON monster type is reachable on some floor within a long run', () => {
     const seen = new Set<EnemyTypeId>();
     for (let floor = 1; floor <= 20; floor++) {
       for (const type of spawnableTypes(floor, biomeForFloor(floor).id)) seen.add(type);
     }
     // Everything except the split-spawn minis should appear in spawn tables.
+    // Wave Q2 — CONSCIOUS narrowing: the planar families are deliberately
+    // unreachable by descending. No amount of digging finds them; only a hero
+    // who has ascended and taken a planar contract ever meets one. That they
+    // are reachable through their OWN plane is asserted just below.
     for (const id of ALL_TYPE_IDS) {
       if (id === 'slime-mini' || id === 'ooze-mini') continue;
+      if (PLANAR_TYPES.has(id)) {
+        expect(seen.has(id)).toBe(false);
+        continue;
+      }
       expect(seen.has(id)).toBe(true);
+    }
+  });
+
+  test('every PLANAR type is reachable, and only through its own plane', () => {
+    const homes = new Map<EnemyTypeId, string[]>();
+    for (const planeId of ALL_PLANE_IDS) {
+      for (const type of spawnableTypes(1, planeId)) {
+        // A plane never fields anything from the depths.
+        expect(PLANAR_TYPES.has(type)).toBe(true);
+        homes.set(type, [...(homes.get(type) ?? []), planeId]);
+      }
+    }
+    for (const id of PLANAR_TYPES) {
+      expect(homes.get(id) ?? []).toHaveLength(1); // exactly one home, no tourists
     }
   });
 });

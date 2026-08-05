@@ -116,6 +116,8 @@ describe('DungeonCrawlGame characterization', () => {
           // Wave O metric contract (the temple and the curse)
           curses_suffered: 0,
           curses_lifted: 0,
+          planes_walked: 0,
+          lords_slain: 0,
         }),
       );
       expect(typeof s.rooms_explored).toBe('number');

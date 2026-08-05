@@ -330,6 +330,76 @@ export const DUNGEON_CRAWL_ACHIEVEMENTS: Achievement[] = [
     reward: 300,
     unlocked: false
   },
+  // Wave Q1 — THE LONG ASCENT: the cap rose 10 -> 20, so the two rungs above
+  // Living Legend. Both ride the EXISTING character_level key — no new metric.
+  // (Wave P's rule holds: the older level achievements keep their values.)
+  // Wave Q2 — THE PLANES. Two ride the new keys, two ride existing ones.
+  {
+    id: 'dungeon_ascended',
+    title: 'Ascended',
+    description: 'Perform the Rite of Ascension and open the ways',
+    icon: '✦',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'planes_walked', value: 1 },
+    reward: 1500,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_the_wider_multiverse',
+    title: 'The Wider Multiverse',
+    description: 'Stand in all four planes',
+    icon: '🌌',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'planes_walked', value: 4 },
+    reward: 2000,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_lordslayer',
+    title: 'Lordslayer',
+    description: 'Fell a lord of the planes',
+    icon: '👑',
+    gameId: 'dungeon-crawl',
+    category: 'skill',
+    requirement: { type: 'lords_slain', value: 1 },
+    reward: 1800,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_the_road_walked',
+    title: "The Road Walked",
+    description: "Complete every chapter of the Ascendant's Road",
+    icon: '🚪',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'sagas_completed', value: 6 },
+    reward: 3000,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_the_long_ascent',
+    title: 'The Long Ascent',
+    description: 'Raise your hero to level 15',
+    icon: '🗻',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'character_level', value: 15 },
+    reward: 600,
+    unlocked: false
+  },
+  {
+    id: 'dungeon_the_pinnacle',
+    title: 'The Pinnacle',
+    description: 'Raise your hero to level 20 — the height of mortal skill',
+    icon: '👑',
+    gameId: 'dungeon-crawl',
+    category: 'progression',
+    requirement: { type: 'character_level', value: 20 },
+    reward: 1200,
+    unlocked: false
+  },
   {
     id: 'dungeon_xp_hunter',
     title: 'Deeds Worth Telling',

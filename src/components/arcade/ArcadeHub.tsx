@@ -155,6 +155,8 @@ interface GameEndData {
   foes_routed?: number;
   curses_suffered?: number;
   curses_lifted?: number;
+  planes_walked?: number;
+  lords_slain?: number;
 }
 
 type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';

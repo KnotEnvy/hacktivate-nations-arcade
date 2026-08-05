@@ -79,6 +79,11 @@ export interface SavedHero {
   // Written at run end (recordDeath / openVictory); cleared only by the
   // temple's LIFT THE CURSE.
   curse: CurseId | null;
+  // Wave Q2 — THE RITE OF ASCENSION has been performed and the ways stand
+  // open. Additive field: absent on every older save, which sanitizes to
+  // false, so a veteran plays exactly as before and simply has a rite left to
+  // buy. Written ONLY by the temple's rite (never by a run).
+  ascended: boolean;
 }
 
 export interface SavePayloadV2 {
@@ -221,6 +226,7 @@ function sanitizeHero(raw: unknown, expectedClass: ClassId): SavedHero | null {
     lineage: asLineageId(hero.lineage),
     hpRolls,
     curse: asCurseId(hero.curse),
+    ascended: hero.ascended === true,
   };
 }
 

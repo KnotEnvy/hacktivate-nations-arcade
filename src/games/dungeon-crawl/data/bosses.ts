@@ -20,7 +20,13 @@ export type BossKitId =
   | 'underscribe'
   // Wave P — the two new per-biome saga finales
   | 'flood-cantor'
-  | 'grey-effigy';
+  | 'grey-effigy'
+  // Wave Q2 — THE PLANES: one lord per plane, plus what waits at the road's end
+  | 'silver-lance'
+  | 'brass-arbiter'
+  | 'shapeless-crown'
+  | 'pit-marshal'
+  | 'the-quiet-beyond';
 
 export interface BossKit {
   id: BossKitId;
@@ -154,6 +160,87 @@ export const UNIQUE_BOSS_KITS: readonly BossKit[] = [
     helmColor: '#33302c',
     crackColor: '#ffb347',
     eyeColor: '#ffe0a8',
+  },
+
+  // ===== Wave Q2 — THE PLANES: the lords =====
+  // One per plane, each fighting the way its plane thinks. Every one of them
+  // summons ONLY its own plane's natives — a lord that called on the dungeon's
+  // dead would undo the whole point of a separate population.
+  {
+    // THE SILVER LANCE: the Void's first raider, and still its best. It does
+    // not hide, because on its plane no one can.
+    id: 'silver-lance',
+    name: 'THE SILVER LANCE',
+    attackCycle: ['charge', 'spread', 'charge', 'summon'],
+    summons: ['void-lancer', 'mote-swarm'],
+    hpMult: 1.35,
+    speedMult: 1.15,
+    bodyColor: '#5d6b85',
+    enragedColor: '#8ea6cc',
+    helmColor: '#2b3245',
+    crackColor: '#e8f2ff',
+    eyeColor: '#ffffff',
+  },
+  {
+    // THE BRASS ARBITER: it does not rage, it RULES. Slow, immovable, and it
+    // never once takes a step backward — the Marches do not permit it.
+    id: 'brass-arbiter',
+    name: 'THE BRASS ARBITER',
+    attackCycle: ['slam', 'summon', 'slam', 'spread'],
+    summons: ['brass-warden', 'lantern-sentry', 'gear-hound'],
+    hpMult: 1.45,
+    speedMult: 0.8,
+    bodyColor: '#7a5c1e',
+    enragedColor: '#b8862a',
+    helmColor: '#2e2410',
+    crackColor: '#ffd98a',
+    eyeColor: '#fff6d8',
+  },
+  {
+    // THE SHAPELESS CROWN: a crown with nothing under it, wearing whatever is
+    // nearest. It teleports because standing still would be a commitment.
+    id: 'shapeless-crown',
+    name: 'THE SHAPELESS CROWN',
+    attackCycle: ['teleport', 'summon', 'homing', 'teleport'],
+    summons: ['chaos-croaker', 'shape-eater', 'bone-raker'],
+    hpMult: 1.4,
+    speedMult: 1.1,
+    bodyColor: '#5b3a72',
+    enragedColor: '#8f4fb0',
+    helmColor: '#2a1838',
+    crackColor: '#f0c8ff',
+    eyeColor: '#ffe4ff',
+  },
+  {
+    // THE PIT MARSHAL: it fights like an officer, not a monster — it spends
+    // its ranks first and comes forward only when they are gone.
+    id: 'pit-marshal',
+    name: 'THE PIT MARSHAL',
+    attackCycle: ['summon', 'spread', 'summon', 'charge'],
+    summons: ['pit-wretch', 'barbed-sentinel', 'ash-harrier'],
+    hpMult: 1.45,
+    speedMult: 0.95,
+    bodyColor: '#5c211b',
+    enragedColor: '#a33a24',
+    helmColor: '#2a0d0a',
+    crackColor: '#ff8a5a',
+    eyeColor: '#ffc48a',
+  },
+  {
+    // THE QUIET BEYOND: what the road ends at. Not a ruler of any plane — the
+    // thing all four are arranged around, which has been waiting for someone
+    // to walk far enough to be worth answering. The game's last fight.
+    id: 'the-quiet-beyond',
+    name: 'THE QUIET BEYOND',
+    attackCycle: ['teleport', 'summon', 'spread', 'slam', 'homing'],
+    summons: ['star-husk', 'shape-eater', 'barbed-sentinel'],
+    hpMult: 1.6,
+    speedMult: 1,
+    bodyColor: '#14161f',
+    enragedColor: '#2b2f45',
+    helmColor: '#080910',
+    crackColor: '#cfe3ff',
+    eyeColor: '#ffffff',
   },
 ];
 

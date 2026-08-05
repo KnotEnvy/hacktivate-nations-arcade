@@ -41,6 +41,12 @@ export interface EnemyUpdateContext {
   onMimicWake: (enemy: Enemy) => void;
   /** v3 — thief Hide in Shadows: aggro drops and cannot re-acquire. */
   playerHidden?: boolean;
+  /**
+   * Wave Q2 — THE SILVER VOID's law: nothing on this plane needs line of
+   * sight to find you. Absent everywhere else, so the depths behave exactly
+   * as they always have.
+   */
+  noCover?: boolean;
 }
 
 export class Enemy {
@@ -64,6 +70,9 @@ export class Enemy {
   stunned = 0; // v3 — Turn Undead freeze, seconds remaining
   fleeTimer = 0; // Wave N — seconds of routed flight remaining (> 0 = fleeing)
   wandering = false; // Wave N — a wandering pack left its lair (and its coin) behind
+  // Wave Q2 — THE CHURNING called this one through in place of something it
+  // killed. Set so the plane's law can never chain: a gated foe never gates.
+  gated = false;
   private routedOnce = false; // Wave N — has this foe EVER broken (metric once-only)
   dormant: boolean; // mimic only — looks like a chest until woken
   private wanderTimer = 0;
@@ -190,8 +199,12 @@ export class Enemy {
 
     // Aggro check — needs proximity, chasers also need line of sight once.
     // Wraiths sense through walls: proximity alone wakes them.
+    // Wave Q2 — under THE SILVER VOID's law there is no cover: the plane is
+    // one endless bright day and everything in it sees you the moment you are
+    // near enough. Range still applies — the law removes hiding, not distance.
     if (!this.aggro && !ctx.playerHidden && dist < this.config.aggroRange) {
       if (
+        ctx.noCover ||
         this.config.behavior === 'wraith' ||
         ctx.map.hasLineOfSight(this.x, this.y, ctx.playerX, ctx.playerY)
       ) {

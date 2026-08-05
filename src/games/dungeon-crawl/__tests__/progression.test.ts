@@ -57,6 +57,7 @@ function hero(overrides?: Partial<SavedHero>): SavedHero {
     // Wave L — a level-3 fighter carries two kept d10 rolls.
     hpRolls: [6, 6],
     curse: null,
+    ascended: false,
     ...overrides,
   };
 }
@@ -123,7 +124,9 @@ describe('level curve + gains', () => {
     expect(mid.frac).toBeLessThan(1);
   });
 
-  test('every class has nine gain rows; HP left them for the hit die (Wave L)', () => {
+  // Wave Q1 — CONSCIOUS rename only: the row count is LEVEL_CAP - 1, which is
+  // nineteen now. The assertions are untouched.
+  test('every class has a gain row per level-up; HP left them for the hit die (Wave L)', () => {
     for (const classId of ALL_CLASS_IDS) {
       expect(LEVEL_GAINS[classId]).toHaveLength(LEVEL_CAP - 1);
       const total = cumulativeGains(classId, LEVEL_CAP);
@@ -137,9 +140,13 @@ describe('level curve + gains', () => {
 });
 
 describe('boon contract', () => {
-  test('ten unique, fully authored boons with sensible stacks', () => {
-    expect(ALL_BOON_IDS).toHaveLength(10);
-    expect(new Set(ALL_BOON_IDS).size).toBe(10);
+  // Wave Q1 — CONSCIOUS update: 10 -> 20 boons (THE GREAT BOONS added the
+  // ascent band). The stack floor is unchanged in FORM — it still derives from
+  // LEVEL_CAP, which is exactly why raising the cap to 20 made this test fail
+  // until the ten new cards landed.
+  test('twenty unique, fully authored boons with sensible stacks', () => {
+    expect(ALL_BOON_IDS).toHaveLength(20);
+    expect(new Set(ALL_BOON_IDS).size).toBe(20);
     let totalStacks = 0;
     for (const id of ALL_BOON_IDS) {
       const def = BOONS[id];
@@ -149,7 +156,7 @@ describe('boon contract', () => {
       expect(def.maxStacks).toBeGreaterThanOrEqual(1);
       totalStacks += def.maxStacks;
     }
-    // Nine possible level-ups must always find three open choices.
+    // Nineteen possible level-ups must always find three open choices.
     expect(totalStacks).toBeGreaterThanOrEqual(LEVEL_CAP - 1 + 3);
   });
 });

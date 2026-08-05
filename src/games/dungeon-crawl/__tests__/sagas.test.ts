@@ -96,10 +96,11 @@ function pressSpaceAfter(h: Harness, held: Set<string>, idleFrames: number): voi
 }
 
 describe('saga data contract', () => {
-  test('five authored sagas: flagged chapters, paired interludes, unique finales', () => {
+  test('six authored sagas: flagged chapters, paired interludes, unique finales', () => {
     // v5 Wave G — THE LAST PAGE meta-saga joins the two founding arcs.
     // Wave P — a tale per biome: THE DROWNED CHOIR + THE ASH THAT REMEMBERS.
-    expect(ALL_SAGA_IDS).toHaveLength(5);
+    // Wave Q2 — THE ASCENDANT'S ROAD, told past the gate (5 -> 6).
+    expect(ALL_SAGA_IDS).toHaveLength(6);
     for (const id of ALL_SAGA_IDS) {
       const saga = SAGAS[id];
       expect(saga.id).toBe(id);
@@ -128,12 +129,25 @@ describe('saga data contract', () => {
     }
     // Chapters never leak onto the classic board page.
     for (const id of STANDALONE_QUEST_IDS) expect(QUESTS[id].saga).toBeUndefined();
-    // v5 Wave G — the meta-saga's finale is the new reward crown.
+    // v5 Wave G — the meta-saga's finale is the reward crown.
+    // Wave Q2 — CONSCIOUS restatement, at TWO tiers. Nothing was re-valued:
+    // THE UNDERSCRIBE still pays exactly what it always did and is still the
+    // crown of everything reachable from Lastlight. But the game now
+    // continues past Lastlight, and the end of THE ASCENDANT'S ROAD is the
+    // crown of the whole thing — a capstone that paid less than the tale
+    // below it would be the real defect.
     const crown = QUESTS['the-underscribe'];
     for (const id of ALL_QUEST_IDS) {
+      if (QUESTS[id].planar) continue;
       expect(crown.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
       expect(crown.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
     }
+    const beyond = QUESTS['the-quiet-beyond'];
+    for (const id of ALL_QUEST_IDS) {
+      expect(beyond.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
+      expect(beyond.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
+    }
+    expect(beyond.rewardGold).toBeGreaterThan(crown.rewardGold);
   });
 
   test('chapter-walk helpers', () => {
@@ -193,6 +207,7 @@ describe('the saga board page', () => {
         lineage: 'human',
         hpRolls: [],
         curse: null,
+        ascended: false, // Wave Q2
       },
       save: () => {},
       playSound: () => {},
@@ -200,6 +215,7 @@ describe('the saga board page', () => {
       depart: quest => departed.push(quest),
       pickRumor: pool => pool[0], // v5 Wave G — inn talk; unused on the board
       onCurseLifted: () => {}, // Wave O — temple metric; unused on the board
+      onAscended: () => {}, // Wave Q2 — rite metric; unused here
     };
   }
 

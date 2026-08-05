@@ -144,7 +144,7 @@ describe('the wider bestiary', () => {
 
 describe('a tale per biome', () => {
   test('five arcs, each anchored and fully authored', () => {
-    expect(ALL_SAGA_IDS).toHaveLength(5);
+    expect(ALL_SAGA_IDS).toHaveLength(6); // Wave Q2 added the planar road
     for (const id of ['drowned-choir', 'ash-remembers'] as SagaId[]) {
       const saga = SAGAS[id];
       expect(saga.quests).toHaveLength(3);
@@ -167,9 +167,19 @@ describe('a tale per biome', () => {
     expect(QUESTS['the-grey-effigy'].biomeId).toBe('ash');
   });
 
-  test('every arc now has dressing, and the meta arc reads last', () => {
+  test('every arc has dressing, and the meta arc still reads last ON THE BOARD', () => {
     for (const id of ALL_SAGA_IDS) expect(SAGAS[id].dressing.color).toMatch(/^#/);
-    expect(ALL_SAGA_IDS[ALL_SAGA_IDS.length - 1]).toBe('the-last-page');
+    // Wave Q2 — CONSCIOUS restatement. The planar road is declared after the
+    // meta arc, so the raw declaration order no longer ends at THE LAST PAGE.
+    // What the Wave P test was actually protecting is the BOARD's reading
+    // order — the capstone of Lastlight's story reads last on Lastlight's
+    // board — and that is now asserted directly, through the same helper the
+    // board uses. (The road is not on the board at all; see the planar tests.)
+    const board = visibleSagaIds({
+      'pale-procession': 3,
+      'undying-ember': 4,
+    });
+    expect(board[board.length - 1]).toBe('the-last-page');
   });
 
   test('the new finales pin unique kits that never enter the tier rotation', () => {
@@ -315,6 +325,7 @@ function heroWithSagas(sagas: Partial<Record<SagaId, number>>): SavedHero {
     lineage: 'human',
     hpRolls: [6, 6, 6, 6, 6],
     curse: null,
+    ascended: false, // Wave Q2
   };
 }
 

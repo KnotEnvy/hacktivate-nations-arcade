@@ -66,11 +66,28 @@ export class Inventory {
     return ALL_EQUIP_SLOTS.map(slot => worn[slot]).filter((id): id is ItemId => !!id);
   }
 
-  /** Merged flat effects of the RUN's worn set (Player folds read this). */
-  mergedEffects(): ReturnType<typeof mergeItemEffects> {
-    return mergeItemEffects(
+  /**
+   * Merged flat effects of the RUN's worn set (Player folds read this).
+   *
+   * Wave Q1 — SIGNATURE ITEM amplifies what is worn, and that is Inventory's
+   * business, not the orchestrator's: the caller hands in the multiplier its
+   * boon stacks earn (1 = untrained, and then this returns exactly what it
+   * always did). Ability-score bonuses ride the stat path and are deliberately
+   * NOT amplified — the boon deepens the gear, it does not re-roll the hero.
+   */
+  mergedEffects(signatureMult = 1): ReturnType<typeof mergeItemEffects> {
+    const merged = mergeItemEffects(
       ALL_EQUIP_SLOTS.map(slot => this.equipped[slot]).filter((id): id is ItemId => !!id),
     );
+    if (signatureMult === 1) return merged;
+    return {
+      ...merged,
+      damage: Math.round(merged.damage * signatureMult),
+      hp: Math.round(merged.hp * signatureMult),
+      speed: merged.speed * signatureMult,
+      knockback: Math.round(merged.knockback * signatureMult),
+      daggerCap: Math.round(merged.daggerCap * signatureMult),
+    };
   }
 
   /** What the screen browses: the run satchel below, the stash in town. */

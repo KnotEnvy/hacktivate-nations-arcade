@@ -3,7 +3,7 @@
 // same FloorPlan out. All world-space outputs are pixels; tile-space fields
 // are named tx/ty.
 
-import { TILE, FLOOR_GEN, SECRETS, SHOP, BIOMES, biomeForFloor, HazardStyle, CHESTS } from '../data/constants';
+import { TILE, FLOOR_GEN, SECRETS, SHOP, biomeForFloor, paletteById, HazardStyle, CHESTS } from '../data/constants';
 import {
   ELITES,
   EliteTrait,
@@ -126,8 +126,16 @@ export interface FloorOpts {
   biomeId?: string; // quests: fixed biome; default cycles by floor
 }
 
+/**
+ * Wave Q2 — the generator's ONLY planar change: a named palette may now be a
+ * PLANE as well as a dungeon biome (paletteById searches both tables). For
+ * every id that resolved before, this resolves identically; an unknown id
+ * still falls back to the floor's cycle. The generator learns nothing else
+ * about the planes — laws, families and reinforcements all apply at GAME
+ * level, exactly as nest packs and wandering monsters do.
+ */
 function biomeFor(floor: number, biomeId?: string) {
-  return (biomeId && BIOMES.find(b => b.id === biomeId)) || biomeForFloor(floor);
+  return paletteById(biomeId) ?? biomeForFloor(floor);
 }
 
 export function generateFloor(seed: number, floor: number, opts?: FloorOpts): FloorPlan {

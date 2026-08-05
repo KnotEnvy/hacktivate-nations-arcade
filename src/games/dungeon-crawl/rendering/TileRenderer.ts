@@ -98,6 +98,15 @@ export class TileRenderer {
           }
           case Tile.Wall:
           case Tile.TorchWall: {
+            // Wave Q2 — past the gate a solid tile is not masonry, it is where
+            // the plane stops. Nothing about it CHANGES (collision, line of
+            // sight, the stairs/key BFS and secret seals all read the same
+            // tile) — it simply reads as the edge of the world.
+            if (biome.style === 'void') {
+              this.drawVoid(ctx, px, py, tx, ty, biome);
+              if (tile === Tile.TorchWall) this.drawTorch(ctx, px, py, time, tx, ty, biome);
+              break;
+            }
             ctx.fillStyle = biome.wallFace;
             ctx.fillRect(px, py, TILE, TILE);
             ctx.fillStyle = biome.wallTop;
@@ -179,6 +188,38 @@ export class TileRenderer {
           }
         }
       }
+    }
+  }
+
+  /**
+   * Wave Q2 — the edge of the world. A flat well of the plane's own dark with
+   * a scatter of far lights, positioned by a hash of the TILE (never the
+   * clock), so the field is rock-steady as the camera moves and identical on
+   * every frame and every replay of the same floor. fillRect only — jest's
+   * canvas stub knows nothing fancier.
+   */
+  private drawVoid(
+    ctx: CanvasRenderingContext2D,
+    px: number,
+    py: number,
+    tx: number,
+    ty: number,
+    biome: BiomePalette,
+  ): void {
+    ctx.fillStyle = biome.wallFace;
+    ctx.fillRect(px, py, TILE, TILE);
+    // A cheap deterministic hash; the low bits scatter well enough for stars.
+    let h = (tx * 73856093) ^ (ty * 19349663);
+    h = (h ^ (h >>> 13)) >>> 0;
+    const stars = h % 3; // 0-2 far lights per tile: sparse, never a texture
+    for (let i = 0; i < stars; i++) {
+      h = (h * 1664525 + 1013904223) >>> 0;
+      const sx = px + (h % TILE);
+      h = (h * 1664525 + 1013904223) >>> 0;
+      const sy = py + (h % TILE);
+      const bright = (h >>> 16) % 4 === 0;
+      ctx.fillStyle = bright ? biome.flameInner : biome.wallTop;
+      ctx.fillRect(sx, sy, bright ? 2 : 1, bright ? 2 : 1);
     }
   }
 
@@ -363,6 +404,19 @@ export class TileRenderer {
           ctx.fillStyle = accent;
           ctx.fillRect(px - 4, py - 2, 3, 3);
           ctx.fillRect(px + 2, py - 2, 3, 3);
+        } else if (id === 'pit-wretch') {
+          // Wave Q2 — the legion's lowest rank: a low crawling mass that
+          // hauls itself forward. Deliberately pitiable, deliberately endless.
+          const haul = Math.sin(time * 3 + enemy.id) * 2;
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 2, py + 1, half * 2 - 4, half - 2); // bulk
+          ctx.fillRect(px - 4 + Math.round(haul), py - 4, 9, 7); // hunched fore
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 2 + Math.round(haul), py - 3, 2, 2); // one dull eye
+          // The arms it drags itself along on.
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half - 1 + Math.round(haul), py + 2, 4, 3);
+          ctx.fillRect(px + half - 3 - Math.round(haul), py + 2, 4, 3);
         } else if (id === 'fire-beetle') {
           // v3 — fire beetle: domed carapace, mandibles, pulsing glow glands.
           const scuttle = Math.sin(time * 14 + enemy.id) > 0 ? 1 : 0;
@@ -467,6 +521,25 @@ export class TileRenderer {
         break;
       }
       case 'ranged': {
+        if (enemy.config.id === 'lantern-sentry') {
+          // Wave Q2 — a hanging globe of light with a ruled brass ring around
+          // it. No body, no legs: the watchman IS the lamp, which is why
+          // seeing it and being seen by it are the same event.
+          const spin = Math.sin(time * 2 + enemy.id) * 3;
+          const pulse = 0.5 + 0.5 * Math.sin(time * 5 + enemy.id);
+          ctx.globalAlpha = 0.25 + 0.25 * pulse;
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 9, py - 9, 18, 18); // halo
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 5, py - 5, 10, 10); // the globe
+          ctx.fillStyle = accent;
+          ctx.fillRect(px - 2, py - 3, 4, 4); // its bright
+          // The ring, tipping as it turns.
+          ctx.fillStyle = '#8a6a24';
+          ctx.fillRect(px - 10, py - 1 + Math.round(spin), 20, 2);
+          break;
+        }
         if (enemy.config.id === 'brine-weird') {
           // Wave P — a rope of standing water risen on end: a coiled base, a
           // swaying column, and a blunt head that brightens as it draws back.
@@ -555,6 +628,22 @@ export class TileRenderer {
         break;
       }
       case 'armored': {
+        if (enemy.config.id === 'star-husk') {
+          // Wave Q2 — an emptied shell still walking its round, with the void
+          // showing through the seams where whatever wore it went.
+          ctx.fillStyle = body;
+          ctx.fillRect(px - half + 1, py - half + 1, half * 2 - 2, half * 2 - 2);
+          ctx.fillStyle = accent;
+          // Starlight in the cracks — fixed offsets, so it reads as damage
+          // rather than as sparkle.
+          ctx.fillRect(px - 6, py - half + 4, 2, 9);
+          ctx.fillRect(px + 3, py - 2, 2, 7);
+          ctx.fillRect(px - 2, py + 4, 6, 2);
+          ctx.fillStyle = '#05060e';
+          ctx.fillRect(px - 5, py - 5, 4, 4); // the hollow where a face was
+          ctx.fillRect(px + 2, py - 5, 4, 4);
+          break;
+        }
         // Knight — plate body, crest, and a shield on the facing side.
         ctx.fillStyle = body;
         ctx.fillRect(px - half + 2, py - half + 2, half * 2 - 4, half * 2 - 4);

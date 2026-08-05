@@ -36,7 +36,18 @@ export type QuestId =
   // Wave P — THE ASH THAT REMEMBERS chapters (the deep ash's own tale)
   | 'the-grey-drifts'
   | 'the-unburnt-door'
-  | 'the-grey-effigy';
+  | 'the-grey-effigy'
+  // Wave Q2 — THE PLANES: four standalone planar contracts (replayable, one
+  // per plane) reached ONLY through the Waydoor, and the four chapters of THE
+  // ASCENDANT'S ROAD.
+  | 'the-silver-reach'
+  | 'the-ruled-plain'
+  | 'the-unsettled'
+  | 'the-lowest-terrace'
+  | 'the-first-step-out'
+  | 'the-measured-mile'
+  | 'the-unmaking-yard'
+  | 'the-quiet-beyond';
 
 export interface QuestDef {
   id: QuestId;
@@ -52,6 +63,11 @@ export interface QuestDef {
   rewardGold: number; // banked on completion
   rewardXp: number;
   saga?: boolean; // chapter of a saga — off the classic board page
+  // Wave Q2 — posted at THE WAYDOOR, never on Lastlight's board. A planar
+  // contract is not "a harder contract"; it is somewhere else entirely, and
+  // the board must not learn it exists (an unascended hero would see a card it
+  // could never take). Saga chapters may ALSO be planar — the road is both.
+  planar?: boolean;
   bossKitId?: BossKitId; // pins a unique kit for the final arena
 }
 
@@ -403,9 +419,169 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     saga: true,
     bossKitId: 'grey-effigy',
   },
+
+  // ===== Wave Q2 — THE PLANES =====
+  // Four standalone contracts, one per plane, posted at the Waydoor and
+  // repeatable. minLevel is the cap because the rite is the real gate: you do
+  // not get here at all without having ascended.
+  'the-silver-reach': {
+    id: 'the-silver-reach',
+    name: 'THE SILVER REACH',
+    blurb: 'Islands adrift in an endless day. Something out there is claiming them.',
+    intro:
+      'There is no horizon and no night, only stone islands hanging in silver ' +
+      'light — and a rider going from one to the next, planting a lance in ' +
+      'each. Four crossings out. Take the lance back.',
+    floors: 4,
+    biomeId: 'silver-void',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 900,
+    rewardXp: 2600,
+    bossKitId: 'silver-lance',
+    planar: true,
+  },
+  'the-ruled-plain': {
+    id: 'the-ruled-plain',
+    name: 'THE RULED PLAIN',
+    blurb: 'A country drawn with a straightedge, still enforcing a verdict nobody remembers.',
+    intro:
+      'The Marches were measured once and have been holding the measurement ' +
+      'ever since. Somewhere at the centre a judgement is still being carried ' +
+      'out on a case long closed. Four squares in. Close it.',
+    floors: 4,
+    biomeId: 'brass-marches',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 900,
+    rewardXp: 2600,
+    bossKitId: 'brass-arbiter',
+    planar: true,
+  },
+  'the-unsettled': {
+    id: 'the-unsettled',
+    name: 'THE UNSETTLED',
+    blurb: 'Ground that has not decided what it is. Neither has anything standing on it.',
+    intro:
+      'Nothing here has finished being made, including the floor. Something ' +
+      'at the middle of it is trying on shapes and discarding them, and the ' +
+      'discards walk. Four drafts deep. End the revision.',
+    floors: 4,
+    biomeId: 'churning',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 900,
+    rewardXp: 2600,
+    bossKitId: 'shapeless-crown',
+    planar: true,
+  },
+  'the-lowest-terrace': {
+    id: 'the-lowest-terrace',
+    name: 'THE LOWEST TERRACE',
+    blurb: 'Cruelty with a filing system, and a garrison that is always relieved on time.',
+    intro:
+      'The Pit is terraced and every terrace is held. The garrison rotates on ' +
+      'a schedule older than Lastlight and has never once been late. Four ' +
+      'terraces down sits the officer who keeps the roster. Break the rota.',
+    floors: 4,
+    biomeId: 'the-pit',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 900,
+    rewardXp: 2600,
+    bossKitId: 'pit-marshal',
+    planar: true,
+  },
+
+  // THE ASCENDANT'S ROAD — four chapters, one per plane, ending past all of
+  // them. Saga chapters, so they live off the contract list and are reached
+  // through the Waydoor's road page.
+  'the-first-step-out': {
+    id: 'the-first-step-out',
+    name: 'THE FIRST STEP OUT',
+    blurb: 'The gate opens on nothing at all, and the nothing is bright.',
+    intro:
+      'You have been the deepest thing in the dark for so long that light ' +
+      'reads as danger. Three crossings into the silver, something is ' +
+      'watching you learn to walk again. Let it.',
+    floors: 3,
+    biomeId: 'silver-void',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 700,
+    rewardXp: 2200,
+    saga: true,
+    planar: true,
+  },
+  'the-measured-mile': {
+    id: 'the-measured-mile',
+    name: 'THE MEASURED MILE',
+    blurb: 'Somebody wrote the rules down. They are still being read aloud.',
+    intro:
+      'Every step of the Marches is exactly the length of the last one. Four ' +
+      'squares in, a voice is reading a list, and your name is somewhere on ' +
+      'it, some distance down. Get there before the reading does.',
+    floors: 4,
+    biomeId: 'brass-marches',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 800,
+    rewardXp: 2600,
+    saga: true,
+    planar: true,
+  },
+  'the-unmaking-yard': {
+    id: 'the-unmaking-yard',
+    name: 'THE UNMAKING YARD',
+    blurb: 'Where the drafts are kept. Some of them are yours.',
+    intro:
+      'The Churning keeps what it rejected. Four drafts deep the discards are ' +
+      'stacked in rows, and near the end of one row you find a shape with ' +
+      'your face on it, unfinished. Do not look for the finished one.',
+    floors: 4,
+    biomeId: 'churning',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 900,
+    rewardXp: 3000,
+    saga: true,
+    planar: true,
+  },
+  'the-quiet-beyond': {
+    id: 'the-quiet-beyond',
+    name: 'THE QUIET BEYOND',
+    blurb: 'Past the last terrace, where the four planes are pointed. Something has been waiting.',
+    intro:
+      'Down the terraces, past the last held stair, the Pit simply stops — ' +
+      'and beyond the stopping is a quiet the four planes are all arranged ' +
+      'around, like chairs at a table. It has waited a long time for someone ' +
+      'to walk far enough to be worth answering. Five terraces. Go and be ' +
+      'answered.',
+    floors: 5,
+    biomeId: 'the-pit',
+    bossTier: 6,
+    minLevel: 20,
+    rewardGold: 1500,
+    rewardXp: 4000,
+    saga: true,
+    planar: true,
+    bossKitId: 'the-quiet-beyond',
+  },
 };
 
 export const ALL_QUEST_IDS = Object.keys(QUESTS) as QuestId[];
 
 /** The classic board page: every quest that is not a saga chapter. */
-export const STANDALONE_QUEST_IDS = ALL_QUEST_IDS.filter(id => !QUESTS[id].saga);
+/**
+ * The classic board page: every quest that is neither a saga chapter nor
+ * planar. Wave Q2 — the planar exclusion matters as much as the saga one: the
+ * board is Lastlight's, and Lastlight cannot post work in another world.
+ */
+export const STANDALONE_QUEST_IDS = ALL_QUEST_IDS.filter(
+  id => !QUESTS[id].saga && !QUESTS[id].planar,
+);
+
+/** Wave Q2 — the Waydoor's contract list: planar, and not part of the road. */
+export const PLANAR_CONTRACT_IDS = ALL_QUEST_IDS.filter(
+  id => QUESTS[id].planar && !QUESTS[id].saga,
+);

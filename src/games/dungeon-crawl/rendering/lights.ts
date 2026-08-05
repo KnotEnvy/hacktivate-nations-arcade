@@ -41,6 +41,10 @@ export function gatherLights(view: LightGatherView): LightSource[] {
       lights.push({ x: enemy.x, y: enemy.y, radius: 70, flicker: 0.6 });
     } else if (enemy.config.id === 'lantern-wisp') {
       lights.push({ x: enemy.x, y: enemy.y, radius: 90, flicker: 0.9 });
+    } else if (enemy.config.id === 'lantern-sentry') {
+      // Wave Q2 — the Brass Marches' watchman IS the lamp. Steadier than the
+      // wisp's lure and brighter: the Marches do not sneak up on anyone.
+      lights.push({ x: enemy.x, y: enemy.y, radius: 120, flicker: 0.2 });
     }
   }
   if (!view.stairsLocked) {
@@ -59,4 +63,36 @@ export function gatherLights(view: LightGatherView): LightSource[] {
     lights.push({ x: view.boss.x, y: view.boss.y, radius: 130, flicker: 1 });
   }
   return lights;
+}
+
+/**
+ * Wave Q2 valve — the whole darkness pass, not just the gather. This block was
+ * always view assembly (the Wave C rule, and the reason gatherLights lives
+ * here at all); the orchestrator was still holding the composite half of it.
+ * Now it hands over what it knows and this file owns the look end to end.
+ *
+ * `darkness` is the live palette's override: a plane is lit by what it IS, so
+ * it names its own light. Undefined on every dungeon floor, which keeps the
+ * floor-derived torchlit dark exactly as it was.
+ */
+export interface DarknessView extends LightGatherView {
+  /** Wave K — transient explosion/spell flashes, appended after the gather. */
+  flashLights: readonly LightSource[];
+  camX: number;
+  camY: number;
+  width: number;
+  height: number;
+  floor: number;
+  /** The live palette's override; undefined on every dungeon floor. */
+  darkness: number | undefined;
+}
+
+export function renderDarkness(
+  ctx: CanvasRenderingContext2D,
+  lighting: Lighting,
+  view: DarknessView,
+): void {
+  const lights = gatherLights(view);
+  lights.push(...view.flashLights);
+  lighting.render(ctx, view.width, view.height, view.camX, view.camY, view.floor, lights, view.darkness);
 }

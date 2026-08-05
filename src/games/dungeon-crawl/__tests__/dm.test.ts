@@ -42,6 +42,7 @@ function heroFixture(
     lineage: 'human',
     hpRolls: [],
     curse: null,
+    ascended: false, // Wave Q2
   };
 }
 
@@ -79,6 +80,7 @@ function townCtx(
       return pool[0];
     },
     onCurseLifted: () => {}, // Wave O — temple metric; unused at the inn/board
+    onAscended: () => {}, // Wave Q2 — rite metric; unused here
   };
 }
 
@@ -208,14 +210,23 @@ describe('meta-saga gating helpers', () => {
     ).toBe(true);
   });
 
-  test('visibleSagaIds hides locked meta arcs and nothing else', () => {
+  test('visibleSagaIds hides locked meta arcs — and every planar arc, always', () => {
     const visible = visibleSagaIds({});
     for (const id of visible) expect(SAGAS[id].meta).toBeUndefined();
     const earned = visibleSagaIds({
       'pale-procession': paleTold,
       'undying-ember': emberTold,
     });
-    expect(earned).toEqual(ALL_SAGA_IDS);
+    // Wave Q2 — CONSCIOUS narrowing: telling the founding tales unlocks the
+    // meta arc exactly as before, but a PLANAR arc is not "locked content" the
+    // board is withholding — it is somewhere Lastlight's board cannot see, so
+    // no amount of story ever puts it there. The Waydoor lists it instead.
+    const expected = ALL_SAGA_IDS.filter(id => !SAGAS[id].planar);
+    expect(earned).toEqual(expected);
+    expect(expected.length).toBeLessThan(ALL_SAGA_IDS.length); // a planar arc exists
+    for (const id of visibleSagaIds({ 'ascendants-road': 4 })) {
+      expect(SAGAS[id].planar).toBeUndefined();
+    }
   });
 });
 

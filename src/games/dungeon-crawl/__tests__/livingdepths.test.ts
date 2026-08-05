@@ -46,6 +46,17 @@ const FLAGGED: EnemyTypeId[] = [
   // and knows what it is full of. The thrall is mindless, the weird elemental,
   // the wisp malevolent, the hound undead — none of them can break.
   'cinder-bloat',
+  // Wave Q2 consciously added FOUR of its twelve, and the choices are the
+  // planes' characters: a Void raider raids rather than dies for the silver;
+  // the Churning's croaker and raker are alive and chaos is not loyalty; the
+  // Pit's harrier is a skirmisher and skirmishers know when to go. Everything
+  // else past the gate is made, empty, mindless or under a law that forbids
+  // breaking — note THE BRASS MARCHES fields no flagged type at all, which is
+  // its law stated in data as well as in code.
+  'void-lancer',
+  'chaos-croaker',
+  'bone-raker',
+  'ash-harrier',
 ];
 
 /** A frictionless map + context so a lone Enemy's flight can be simulated. */
@@ -184,7 +195,10 @@ interface GameInternals {
   };
   combat: { killEnemy(enemy: Enemy): void };
   rest: { prompt(): { text: string; ok: boolean } | null };
-  spawnWanderingPack(): void;
+  // Wave Q2 — the pack spawn moved onto systems/Reinforcements (the camp die
+  // and THE PIT's ranks are the same act on different clocks). The tests
+  // drive the system directly, which is also what Rest's host now calls.
+  reinforcements: { spawnPack(sub?: string): void };
   damagePlayer(amount: number, cause: string): void;
 }
 
@@ -481,7 +495,7 @@ describe('wandering monsters', () => {
     const game = enterDepths(h, held);
     game.enemies.length = 0;
 
-    game.spawnWanderingPack();
+    game.reinforcements.spawnPack();
 
     expect(game.enemies.length).toBeGreaterThanOrEqual(REST.PACK_MIN);
     expect(game.enemies.length).toBeLessThanOrEqual(REST.PACK_MAX);
@@ -587,7 +601,7 @@ describe('wandering monsters', () => {
     expect(metrics(h).foes_routed).toBe(1);
   });
 
-  test('spawnWanderingPack places the pack far from the live player', () => {
+  test('the pack spawns far from the live player', () => {
     const h = initGame(new DungeonCrawlGame());
     const held = startWithClass(h, 'Digit1');
     const game = enterDepths(h, held);
@@ -597,7 +611,7 @@ describe('wandering monsters', () => {
     game.player.y = 3 * 32;
     game.plan.rooms = [roomAt(34, 24)]; // center well past SPAWN_MIN_DIST from the hero
 
-    game.spawnWanderingPack();
+    game.reinforcements.spawnPack();
 
     const { x: px, y: py } = game.player;
     expect(game.enemies.length).toBeGreaterThan(0);

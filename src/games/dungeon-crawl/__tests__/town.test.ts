@@ -69,11 +69,13 @@ describe('quest data contract', () => {
   test('five standalone quests on the classic board, endless included', () => {
     // v4 Wave C — saga chapters joined QUESTS but stay OFF the classic page.
     // v5 Wave G — THE LAST PAGE meta-saga adds three more (12 -> 15).
-    // Wave P — two per-biome arcs add six more (15 -> 21); the classic page
-    // still holds exactly its original five.
+    // Wave P — two per-biome arcs add six more (15 -> 21).
+    // Wave Q2 — THE PLANES adds eight (21 -> 29): four planar contracts and
+    // the road's four chapters. The classic page STILL holds exactly its
+    // original five — planar work is posted at the Waydoor, never in town.
     expect(STANDALONE_QUEST_IDS).toHaveLength(5);
-    expect(ALL_QUEST_IDS).toHaveLength(21);
-    expect(new Set(ALL_QUEST_IDS).size).toBe(21);
+    expect(ALL_QUEST_IDS).toHaveLength(29);
+    expect(new Set(ALL_QUEST_IDS).size).toBe(29);
     expect(QUESTS.endless.floors).toBe(0);
     for (const id of STANDALONE_QUEST_IDS) {
       expect(QUESTS[id].saga).toBeUndefined();

@@ -7,7 +7,7 @@
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest } from '@/lib/types';
 import {
-  BIOMES,
+  paletteById,
   BiomePalette,
   biomeForFloor,
   COMBAT,
@@ -17,7 +17,6 @@ import {
   PALETTE,
   PICKUPS,
   PLAYER,
-  REST,
   TILE,
   VIEW,
 } from './data/constants';
@@ -34,7 +33,7 @@ import { CURSES } from './data/curses';
 import { Hireling } from './entities/Hireling';
 import { RecapFlow } from './progression/RecapFlow';
 import { ALL_LINEAGE_IDS, LINEAGES } from './data/lineages';
-import { BOSS, spawnWeightsForFloor } from './data/enemies';
+import { BOSS } from './data/enemies';
 import { PROGRESSION } from './data/progression';
 import { bossKitById } from './data/bosses';
 import { QuestDef } from './data/quests';
@@ -56,7 +55,9 @@ import { Enemy } from './entities/Enemy';
 import { Hazard } from './entities/Hazard';
 import { Pickup } from './entities/Pickup';
 import { Projectile } from './entities/Projectile';
-import { Player } from './entities/Player';
+import { isPlaneId, planeLawFor } from './data/planes';
+import { Reinforcements } from './systems/Reinforcements';
+import { blowKindFor, Player } from './entities/Player';
 import { Urn } from './entities/Urn';
 import { Combat, DeathCause } from './systems/Combat';
 import { FloatingTextSystem } from './systems/FloatingText';
@@ -69,10 +70,10 @@ import { PickupResolver } from './systems/PickupResolver';
 import { ScreenShake } from './systems/ScreenShake';
 import { SecretRooms } from './systems/SecretRooms';
 import { MerchantShop } from './systems/MerchantShop';
-import { pickWanderType, Rest, wanderSpawnSpot } from './systems/Rest';
+import { Rest } from './systems/Rest';
 import { ThiefSkills } from './systems/ThiefSkills';
 import { HudRenderer } from './rendering/HudRenderer';
-import { gatherLights } from './rendering/lights';
+import { renderDarkness } from './rendering/lights';
 import { TileRenderer } from './rendering/TileRenderer';
 
 type GameState =
@@ -159,6 +160,8 @@ export class DungeonCrawlGame extends BaseGame {
     floor: () => this.floor,
     heroLevel: () => this.progression.character()?.level ?? 1,
     floorSpawnBaseline: () => this.plan.enemies.length,
+    // Wave Q2 — the law where the hero is standing (empty in the depths).
+    planeLaw: () => planeLawFor(this.biome.id),
     onFoeRouted: () => {
       this.foesRouted++;
       this.trackStat('foes_routed', this.foesRouted);
@@ -309,13 +312,29 @@ export class DungeonCrawlGame extends BaseGame {
     floorCleared: () =>
       (!this.boss || !this.boss.alive) && this.enemies.every(e => !e.alive || e.dormant),
     heal: amount => this.combat.healPlayer(amount),
-    spawnWanderingPack: () => this.spawnWanderingPack(),
+    spawnWanderingPack: () => this.reinforcements.spawnPack(),
     particles: this.particles,
     playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
     floatText: (x, y, text, color) => this.floatingText.push(x, y, text, color),
   });
 
+  /** Wave Q2 valve — "the floor sends more monsters" (camp die + THE PIT). */
+  private reinforcements = new Reinforcements({
+    rng: () => this.rng,
+    plan: () => this.plan,
+    floor: () => this.floor,
+    biomeId: () => this.biome.id,
+    playerPos: () => ({ x: this.player.x, y: this.player.y }),
+    levelPressure: () => this.progression.levelPressure(),
+    addEnemy: enemy => this.enemies.push(enemy),
+    showBanner: (text, sub) => this.showBanner(text, sub),
+    playSound: (name, volume) => this.services?.audio?.playSound?.(name, { volume }),
+  });
+
   // Run stats (extendedGameData / achievements).
+  // Wave Q2 — distinct planes entered this run, and the plane-lords felled.
+  private planesWalked = new Set<string>();
+  private lordsSlain = 0;
   private floor = 1;
   private enemiesSlain = 0;
   private goldCollected = 0;
@@ -540,6 +559,8 @@ export class DungeonCrawlGame extends BaseGame {
     this.foesRouted = 0;
     this.cursesSuffered = 0;
     this.cursesLifted = 0;
+    this.planesWalked.clear();
+    this.lordsSlain = 0;
     this.inventory.reset();
     this.combo = 1;
     this.killChain = 0;
@@ -647,8 +668,12 @@ export class DungeonCrawlGame extends BaseGame {
       questFloors > 0 ? { forceBoss: isFinal, biomeId: quest!.biomeId ?? undefined } : undefined,
     );
     this.map = this.plan.map;
-    this.biome =
-      (quest?.biomeId && BIOMES.find(b => b.id === quest.biomeId)) || biomeForFloor(this.floor);
+    // Wave Q2 — resolves planes as well as dungeon biomes (paletteById), so
+    // the view matches whatever the generator just built.
+    this.biome = paletteById(quest?.biomeId) ?? biomeForFloor(this.floor);
+    // Wave Q2 — how much of the wider multiverse this run has actually stood in.
+    if (isPlaneId(this.biome.id))
+      this.trackStat('planes_walked', this.planesWalked.add(this.biome.id).size);
     // v4 — level pressure: the hero's legend hardens the opposition.
     const pressure = this.progression.levelPressure();
     this.enemies = this.plan.enemies.map(s => new Enemy(s.type, s.x, s.y, s.elite, pressure));
@@ -881,6 +906,8 @@ export class DungeonCrawlGame extends BaseGame {
         this.cursesLifted++;
         this.trackStat('curses_lifted', this.cursesLifted);
       },
+      // Wave Q2 — the rite is done; the ways stand open from here on.
+      onAscended: () => this.refreshTownDressing(),
     });
     this.updateCamera();
     this.minimap.reveal(
@@ -1037,6 +1064,11 @@ export class DungeonCrawlGame extends BaseGame {
       moveHeld,
     );
 
+    // --- Wave Q2: THE PIT's law — the legion is relieved on schedule, and it
+    //     does not care whether you have stopped to rest. Never on a lord's
+    //     floor: that arena is its own fight.
+    this.reinforcements.tickLegion(dt, !!planeLawFor(this.biome.id).ranks && !this.plan.isBossFloor);
+
     // --- Combo decay.
     if (this.comboTimer > 0) {
       this.comboTimer -= dt;
@@ -1070,10 +1102,11 @@ export class DungeonCrawlGame extends BaseGame {
     this.updateMusicIntensity();
   }
 
+
   /** v3 wave 3 — one-shot scroll effects. The satchel empties after the cast. */
   private castScroll(id: ScrollId): void {
     this.showBanner(SCROLLS[id].name, SCROLLS[id].blurb);
-    this.combat.castScroll(id, this.scholarMult());
+    this.combat.castScroll(id, this.player.scholarMult());
   }
 
   // ------------------------------------------------------------ v4 the grimoire
@@ -1093,7 +1126,7 @@ export class DungeonCrawlGame extends BaseGame {
       return;
     }
     this.player.startSpellCooldown(id, SPELLS[id].cooldown);
-    this.combat.castSpell(id, this.scholarMult());
+    this.combat.castSpell(id, this.player.scholarMult(), this.player.sculptMult());
     this.spellsCast++;
     this.trackStat('spells_cast', this.spellsCast);
   }
@@ -1106,9 +1139,17 @@ export class DungeonCrawlGame extends BaseGame {
     this.showBanner(SPELLS[spells[this.activeSpellIndex]].name, 'READIED — V TO CAST');
   }
 
-  /** v5 Wave F — re-fold worn equipment + effective scores into the player. */
+  /**
+   * v5 Wave F — re-fold worn equipment + effective scores into the player.
+   * Wave Q1 — SIGNATURE ITEM's amplification lives in Inventory (it owns the
+   * worn set); the orchestrator only hands over the multiplier the boon earns.
+   */
   private refreshItemFolds(): void {
-    this.player.applyEquipment(this.inventory.mergedEffects());
+    this.player.applyEquipment(
+      this.inventory.mergedEffects(
+        this.player.boonCount('signature-item') > 0 ? BOON_TUNING.SIGNATURE_ITEM_MULT : 1,
+      ),
+    );
     this.player.setStatMods(this.progression.equippedStatDeltas(this.inventory.equippedIds()));
   }
 
@@ -1133,33 +1174,6 @@ export class DungeonCrawlGame extends BaseGame {
    * and flagged `wandering`, so killEnemy scatters no lair gold. Their arrival
    * re-blocks rest; their deaths re-allow it.
    */
-  private spawnWanderingPack(): void {
-    const rows = spawnWeightsForFloor(this.floor, this.biome.id).filter(
-      r => r.weight > 0 && r.type !== 'mimic',
-    );
-    if (rows.length === 0) return;
-    const type = pickWanderType(this.rng, rows);
-    const count = this.rng.int(REST.PACK_MIN, REST.PACK_MAX);
-    const pressure = this.progression.levelPressure();
-    for (let i = 0; i < count; i++) {
-      const spot = wanderSpawnSpot(this.rng, this.plan.rooms, this.map, this.player.x, this.player.y);
-      const foe = new Enemy(type, spot.x, spot.y, null, pressure);
-      foe.aggro = true; // they smelled the fire
-      foe.wandering = true; // no lair treasure
-      this.enemies.push(foe);
-    }
-    this.showBanner(
-      this.rng.chance(0.5) ? 'SOMETHING COMES' : 'THE DARK HAS FOOTSTEPS',
-      'THE FIRE DREW EYES',
-    );
-    this.services?.audio?.playSound?.('whoosh', { volume: 0.5 });
-  }
-
-  /** v4 — Scholar training deepens scroll magic where it sensibly can. */
-  private scholarMult(): number {
-    return this.player.boonCount('scholar') > 0 ? BOON_TUNING.SCHOLAR_MULT : 1;
-  }
-
 
   // ------------------------------------------------------------ combat
 
@@ -1209,6 +1223,10 @@ export class DungeonCrawlGame extends BaseGame {
     this.progression.grantXp(PROGRESSION.BOSS_XP);
     this.trackStat('xp_earned', this.progression.sessionXp);
     this.uniqueBossKits.add(boss.kit.id);
+    // Wave Q2 — a LORD is any boss felled under a plane's law. There is no
+    // separate lord entity: the planes' finales are Bosses like any other,
+    // pinned to their unique kits, so this reads where they were fought.
+    if (isPlaneId(this.biome.id)) this.trackStat('lords_slain', ++this.lordsSlain);
     this.registerKill(BOSS.SCORE);
     this.score += COMBAT.BOSS_BONUS;
     this.services?.audio?.triggerMusicStinger?.('success');
@@ -1254,32 +1272,32 @@ export class DungeonCrawlGame extends BaseGame {
   /** Single damage funnel for the player. */
   private damagePlayer(amount: number, cause: DeathCause): void {
     if (this.state !== 'playing') return;
-    // Wave I — STONE-SENSE: the rock warns a dwarf of the first trap each
-    // floor (deterministic, so it fires before any dodge roll).
-    if (cause === 'hazard' && this.player.tryConsumeStoneSense()) {
+    // Wave Q1 valve — the absorption chain (stone-sense / EVASION / Blur
+    // Cloak) is Player state asking about Player state, so it lives there now.
+    // The funnel and every consequence below are unchanged; the orchestrator
+    // only says what KIND of harm arrived and plays what answered it.
+    const absorbed = this.player.absorbBlow(blowKindFor(cause), this.rng);
+    if (absorbed === 'stone-sense') {
       this.services?.audio?.playSound?.('collision', { volume: 0.25 });
       this.particles.burst(this.player.x, this.player.y, '#9aa0a8', 10, 90, 0.4);
       return;
     }
-    // v3 — Blur Cloak: sometimes the blow finds only afterimage.
-    const blur = this.player.relicCount('blur-cloak');
-    if (blur > 0 && this.player.invuln <= 0) {
-      const dodge = Math.min(
-        RELIC_TUNING.BLUR_DODGE_CAP,
-        blur * RELIC_TUNING.BLUR_DODGE_PER_STACK,
-      );
-      if (this.rng.chance(dodge)) {
-        this.player.invuln = Math.max(this.player.invuln, RELIC_TUNING.BLUR_INVULN);
-        this.services?.audio?.playSound?.('whoosh', { volume: 0.3 });
-        this.particles.burst(this.player.x, this.player.y, '#8fd8ff', 8, 90, 0.4);
-        return;
+    if (absorbed) {
+      this.services?.audio?.playSound?.('whoosh', { volume: 0.3 });
+      this.particles.burst(this.player.x, this.player.y, '#8fd8ff', 10, 100, 0.45);
+      if (absorbed === 'evasion') {
+        this.floatingText.push(this.player.x, this.player.y - 18, 'EVADED', '#8fd8ff');
       }
+      return;
     }
+    // Wave Q1 — the applied amount, not the raw roll: HARDINESS soaks part of
+    // the blow inside takeDamage, and the Wave L rule is that the number over
+    // the hero's head is what ACTUALLY landed.
     const applied = this.player.takeDamage(amount);
     if (!applied) return;
     this.rest.onPlayerDamaged(); // Wave N — a wound that lands breaks camp
     // Wave L — the wound reads in blood over the hero's head.
-    this.floatingText.push(this.player.x, this.player.y - 18, `-${amount}`, PALETTE.blood, 1.15);
+    this.floatingText.push(this.player.x, this.player.y - 18, `-${applied}`, PALETTE.blood, 1.15);
     this.damageTakenThisFloor = true;
     this.killChain = 0;
     this.combo = 1;
@@ -1523,6 +1541,9 @@ export class DungeonCrawlGame extends BaseGame {
       // Wave O — the temple and the curse.
       curses_suffered: this.cursesSuffered,
       curses_lifted: this.cursesLifted,
+      // Wave Q2 — THE PLANES.
+      planes_walked: this.planesWalked.size,
+      lords_slain: this.lordsSlain,
     };
   }
 
@@ -1575,15 +1596,17 @@ export class DungeonCrawlGame extends BaseGame {
     }
     if (this.boss?.alive) this.tiles.drawBoss(ctx, this.boss, this.gameTime);
 
-    this.renderCombatEffects(ctx);
+    this.tiles.drawProjectiles(ctx, this.projectiles);
+    this.combat.renderEffects(ctx, this.gameTime);
 
     if (this.state !== 'recap') this.tiles.drawPlayer(ctx, this.player, this.gameTime);
     this.particles.render(ctx);
     this.floatingText.render(ctx); // Wave L — combat numbers ride world space
     ctx.restore();
 
-    // Darkness + torchlight (screen space); gathering lives in rendering/lights.
-    const lights = gatherLights({
+    // Darkness + torchlight (screen space) — assembly AND composite live in
+    // rendering/lights.ts; the orchestrator only says what is on screen.
+    renderDarkness(ctx, this.lighting, {
       player: this.player,
       torches: this.plan.torches,
       enemies: this.enemies,
@@ -1592,15 +1615,14 @@ export class DungeonCrawlGame extends BaseGame {
       merchant: this.merchantShop.merchant(),
       townSpots: this.inTownWorld() ? this.town.spots : null,
       boss: this.boss,
+      flashLights: this.juice.lights(),
+      camX: this.camX - offset.x,
+      camY: this.camY - offset.y,
+      width: VIEW.WIDTH,
+      height: VIEW.HEIGHT,
+      floor: this.floor,
+      darkness: this.biome.darkness, // a plane is lit by what it IS
     });
-    lights.push(...this.juice.lights()); // Wave K — explosion/spell flash-lights
-    this.lighting.render(ctx, VIEW.WIDTH, VIEW.HEIGHT, this.camX - offset.x, this.camY - offset.y, this.floor, lights);
-  }
-
-  /** World-space combat FX: projectiles in TileRenderer, booms/waves in Combat. */
-  private renderCombatEffects(ctx: CanvasRenderingContext2D): void {
-    this.tiles.drawProjectiles(ctx, this.projectiles);
-    this.combat.renderEffects(ctx, this.gameTime);
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {

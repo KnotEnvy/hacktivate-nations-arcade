@@ -33,7 +33,11 @@ export const PLAYER = {
   HITBOX: 20, // square, centered
   SPEED: 150, // px/s
   MAX_HP: 6, // pre-pick neutral pool (DEFAULT_KIT only; classes bring hit dice)
-  HP_CAP: 120, // Wave L — 2e pools: a safety ceiling (god-roll d10 = 100), not a balance lever
+  // Wave L — 2e pools: a safety ceiling, not a balance lever. Wave Q1 raised
+  // it with the level cap: a god-rolled level-20 fighter is 10 + 19x10 = 200
+  // before CON, gear and Toughness, and the ceiling must never be what stops
+  // an honest pool.
+  HP_CAP: 240,
   LOW_HP_FRAC: 0.25, // Wave L — "bloodied": danger stinger + HUD vignette gate
   REVIVE_FRAC: 0.25, // Wave L — phoenix/survivor/luck return at this share of the pool
   HIT_INVULN: 1.0, // seconds of i-frames after damage
@@ -268,6 +272,20 @@ export interface BiomePalette {
   flameOuter: string;
   flameInner: string;
   hazardStyle: HazardStyle;
+  /**
+   * Wave Q2 — how the solid tiles READ. 'stone' (the default, and every
+   * dungeon biome) is masonry. 'void' is the edge of the world: the tile is
+   * still solid in every way that matters — collision, line of sight, the
+   * stairs/key BFS, secret-room seals — it simply is not a wall any more, it
+   * is where the plane stops. A RENDERING choice only.
+   */
+  style?: 'stone' | 'void';
+  /**
+   * Wave Q2 — overrides the floor-derived darkness. The dungeon leaves this
+   * absent and keeps its torchlit dark; a plane may be lit by its own nature
+   * (the Silver Void has no night to fall).
+   */
+  darkness?: number;
 }
 
 /**
@@ -341,9 +359,93 @@ export const BIOMES: readonly BiomePalette[] = [
   },
 ];
 
+/**
+ * Wave Q2 — THE PLANES' palettes. They live BESIDE the biome table and are
+ * deliberately NOT in it: `biomeForFloor` cycles BIOMES by floor number, so
+ * appending a plane there would silently re-shuffle which dungeon biome every
+ * floor lands in (pinned by test from both sides). Planar floors are reached
+ * only by a quest that names one, which resolves through `paletteById`.
+ *
+ * Every one of them is `style: 'void'` — past the gate the world stops having
+ * walls and starts having edges — and each carries its own light, because a
+ * plane is lit by what it IS, not by torches someone hung.
+ */
+export const PLANE_PALETTES: readonly BiomePalette[] = [
+  {
+    // Endless silver day over drifting islands. Nothing to hide behind.
+    id: 'silver-void',
+    floorA: '#3a4152',
+    floorB: '#343b4b',
+    floorCrack: '#2a3040',
+    wallTop: '#0b0d18',
+    wallFace: '#070812',
+    wallEdge: '#05060e',
+    flameOuter: '#cfe3ff',
+    flameInner: '#ffffff',
+    hazardStyle: 'spikes',
+    style: 'void',
+    darkness: 0.14,
+  },
+  {
+    // Machined plains under a brass sky, ruled and ruled again.
+    id: 'brass-marches',
+    floorA: '#4a3c22',
+    floorB: '#43361e',
+    floorCrack: '#332818',
+    wallTop: '#12100a',
+    wallFace: '#0d0b07',
+    wallEdge: '#080705',
+    flameOuter: '#ffc24a',
+    flameInner: '#ffe9a8',
+    hazardStyle: 'vent',
+    style: 'void',
+    darkness: 0.42,
+  },
+  {
+    // Raw possibility. The ground is a rumour and it changes its mind.
+    id: 'churning',
+    floorA: '#3d2a4e',
+    floorB: '#372447',
+    floorCrack: '#2a1a38',
+    wallTop: '#0f0818',
+    wallFace: '#0b0612',
+    wallEdge: '#07040d',
+    flameOuter: '#b96bff',
+    flameInner: '#f0c8ff',
+    hazardStyle: 'spikes',
+    style: 'void',
+    darkness: 0.5,
+  },
+  {
+    // Ordered cruelty, terraced downward. The legion keeps the stairs.
+    id: 'the-pit',
+    floorA: '#40201c',
+    floorB: '#391c19',
+    floorCrack: '#2a1310',
+    wallTop: '#140705',
+    wallFace: '#0e0504',
+    wallEdge: '#080302',
+    flameOuter: '#ff5a2a',
+    flameInner: '#ffb066',
+    hazardStyle: 'vent',
+    style: 'void',
+    darkness: 0.6,
+  },
+];
+
+/**
+ * The dungeon's four-biome cycle, by floor number. Wave Q2 — this reads BIOMES
+ * and only BIOMES, forever: the planes are never part of the rotation.
+ */
 export function biomeForFloor(floor: number): BiomePalette {
   const idx = (((floor - 1) % BIOMES.length) + BIOMES.length) % BIOMES.length;
   return BIOMES[idx];
+}
+
+/** Wave Q2 — a palette by id, dungeon or planar. Null when nothing matches. */
+export function paletteById(id: string | null | undefined): BiomePalette | null {
+  if (!id) return null;
+  return BIOMES.find(b => b.id === id) ?? PLANE_PALETTES.find(p => p.id === id) ?? null;
 }
 
 // Retro palette — deep stone + ember accents. Tile renderer and HUD share it.

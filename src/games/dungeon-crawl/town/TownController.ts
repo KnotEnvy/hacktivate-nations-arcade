@@ -7,6 +7,8 @@
 // Reaches the game only through the narrow TownCtx.
 
 import { SoundName } from '@/services/AudioManager';
+import { ascensionPrice, planesOpen } from '../data/planes';
+import { LEVEL_CAP } from '../data/progression';
 import { BiomePalette, mixHex } from '../data/constants';
 import { CURSE_TUNING, CURSES } from '../data/curses';
 import {
@@ -19,8 +21,15 @@ import {
   TEMPLE_PROVISION_IDS,
 } from '../data/gear';
 import { ALL_NPC_IDS, NPCS, storyStage } from '../data/npcs';
-import { QUESTS, QuestDef, STANDALONE_QUEST_IDS } from '../data/quests';
-import { currentChapter, SagaDef, SAGAS, visibleSagaIds } from '../data/sagas';
+import { PLANAR_CONTRACT_IDS, QUESTS, QuestDef, QuestId, STANDALONE_QUEST_IDS } from '../data/quests';
+import {
+  chaptersDone,
+  currentChapter,
+  PLANAR_SAGA_IDS,
+  SagaDef,
+  SAGAS,
+  visibleSagaIds,
+} from '../data/sagas';
 import { FloorPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
 import { Player } from '../entities/Player';
@@ -54,7 +63,16 @@ export const TOWN_PALETTE: BiomePalette = {
   hazardStyle: 'vent',
 };
 
-export type TownOverlay = 'none' | 'quests' | 'smith' | 'alchemist' | 'inn' | 'temple';
+export type TownOverlay =
+  | 'none'
+  | 'quests'
+  | 'smith'
+  | 'alchemist'
+  | 'inn'
+  | 'temple'
+  // Wave Q2 — THE WAYDOOR: the sixth station. Present in the square only for
+  // a hero who has performed the rite; before that the arch is a blank stone.
+  | 'waydoor';
 type TownStation = Exclude<TownOverlay, 'none'> | 'gate';
 
 export interface TownInput {
@@ -86,6 +104,8 @@ export interface TownCtx {
   pickRumor(pool: readonly string[]): string;
   /** Wave O — the temple lifted a curse (the game keeps the counter). */
   onCurseLifted(): void;
+  /** Wave Q2 — the rite was performed (metric hook). */
+  onAscended(): void;
 }
 
 const INTERACT_RADIUS = 34;
@@ -133,6 +153,8 @@ export class TownController {
         return 'THE LAST LANTERN — press E';
       case 'temple':
         return 'THE TEMPLE — press E';
+      case 'waydoor':
+        return 'THE WAYDOOR — press E';
       case 'gate':
         return 'THE DEPTHS GATE — press E to choose a quest';
       default:
@@ -149,6 +171,8 @@ export class TownController {
       this.updateInn(ctx);
     } else if (this.overlay === 'temple') {
       this.updateTemple(ctx);
+    } else if (this.overlay === 'waydoor') {
+      this.updateWaydoor(ctx);
     } else {
       this.updateShop(ctx, this.overlay);
     }
@@ -171,7 +195,12 @@ export class TownController {
     // Nearest station in reach.
     this.nearStation = null;
     let best = INTERACT_RADIUS;
+    // Wave Q2 — the Waydoor is simply not there for a hero who has not
+    // performed the rite: it never becomes the nearest station, so it has no
+    // prompt and E cannot open it. One gate, read from the save.
+    const waysOpen = planesOpen(ctx.hero, LEVEL_CAP);
     for (const station of Object.keys(this.spots) as TownStation[]) {
+      if (station === 'waydoor' && !waysOpen) continue;
       const spot = this.spots[station];
       const dist = Math.hypot(spot.x - player.x, spot.y - player.y);
       if (dist < best) {
@@ -196,7 +225,9 @@ export class TownController {
             ? 'inn'
             : this.nearStation === 'temple'
               ? 'temple'
-              : 'quests';
+              : this.nearStation === 'waydoor'
+                ? 'waydoor'
+                : 'quests';
     if (this.overlay === 'inn') this.rollRumor(ctx);
   }
 
@@ -357,7 +388,11 @@ export class TownController {
   private updateTemple(ctx: TownCtx): void {
     const { input } = ctx;
     if (!input) return;
-    this.navigate(ctx, 1 + TEMPLE_PROVISION_IDS.length);
+    // Wave Q2 — card 1 is THE RITE OF ASCENSION, and it only exists for a
+    // hero who has reached the cap: below it the temple has nothing to say
+    // about the planes, so the card is not there to be selected at all.
+    const riteOffered = TownController.ascensionOffered(ctx.hero);
+    this.navigate(ctx, 1 + (riteOffered ? 1 : 0) + TEMPLE_PROVISION_IDS.length);
 
     if (this.closeRequested(ctx)) return;
 
@@ -388,7 +423,82 @@ export class TownController {
       ctx.showBanner('THE CURSE LIFTS', `${lifted.name} BURNS AWAY IN THE TEMPLE FLAME`);
       return;
     }
-    this.buyProvision(ctx, hero, TEMPLE_PROVISION_IDS[this.selection - 1]);
+    if (riteOffered && this.selection === 1) {
+      if (hero.ascended) {
+        ctx.playSound('error', 0.35);
+        ctx.showBanner('THE RITE OF ASCENSION', 'THE WAYS ALREADY STAND OPEN TO YOU');
+        return;
+      }
+      const price = ascensionPrice(hero.xp);
+      if (hero.gold < price) {
+        ctx.playSound('error', 0.4);
+        ctx.showBanner('THE OFFERING IS SHORT', `THE RITE ASKS ${price} GOLD OF A LIFE LIKE YOURS`);
+        return;
+      }
+      hero.gold -= price;
+      hero.ascended = true;
+      ctx.save();
+      ctx.onAscended();
+      ctx.playSound('powerup', 0.6);
+      ctx.showBanner('THE WAYS OPEN', 'THE WAYDOOR STANDS IN THE SQUARE — GO AND SEE');
+      return;
+    }
+    const wareIndex = this.selection - 1 - (riteOffered ? 1 : 0);
+    this.buyProvision(ctx, hero, TEMPLE_PROVISION_IDS[wareIndex]);
+  }
+
+  /**
+   * Wave Q2 — the temple speaks of the planes only to a hero who has gone as
+   * far as a mortal can. Pure, so the renderer and the update path agree
+   * without either of them re-deriving the rule.
+   */
+  static ascensionOffered(hero: SavedHero | null): boolean {
+    return !!hero && hero.level >= LEVEL_CAP;
+  }
+
+  // ---------------------------------------------------------------- waydoor
+
+  /**
+   * Wave Q2 — THE WAYDOOR. The four planar contracts, then the road's next
+   * chapter when one is open. Departing runs through the SAME depart(quest)
+   * path the board uses, so provisions, briefings, saving and the whole
+   * expedition lifecycle are the ones already proven — the Waydoor only
+   * decides WHICH quest, never how one starts.
+   */
+  private updateWaydoor(ctx: TownCtx): void {
+    const { input } = ctx;
+    if (!input) return;
+    const offered = TownController.waydoorOffers(ctx.hero);
+    this.navigate(ctx, Math.max(1, offered.length));
+
+    if (this.closeRequested(ctx)) return;
+
+    const confirm =
+      input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
+    if (!confirm || ctx.edges.confirmWas) return;
+    const quest = offered[this.selection];
+    if (!quest) {
+      ctx.playSound('error', 0.35);
+      return;
+    }
+    ctx.depart(QUESTS[quest]);
+  }
+
+  /**
+   * What the Waydoor is showing: every planar contract, then the road's
+   * current chapter if the road is still being walked. Pure and static so the
+   * renderer and the update path can never disagree about which card is which.
+   */
+  static waydoorOffers(hero: SavedHero | null): QuestId[] {
+    const offers: QuestId[] = [...PLANAR_CONTRACT_IDS];
+    for (const sagaId of PLANAR_SAGA_IDS) {
+      const next = currentChapter(hero?.sagas, sagaId);
+      // A finished road may be walked again from its last chapter, exactly as
+      // a told saga may relive its finale.
+      if (next) offers.push(next);
+      else offers.push(SAGAS[sagaId].quests[SAGAS[sagaId].quests.length - 1]);
+    }
+    return offers;
   }
 
   /** The rite's price grows with the hero (deep pockets, deep burdens). */
@@ -453,7 +563,16 @@ export class TownController {
         this.selection,
         id => hero?.provisions.includes(id) ?? false,
         hero?.gold ?? 0,
+        TownController.ascensionOffered(hero)
+          ? { price: ascensionPrice(hero!.xp), done: hero!.ascended }
+          : null,
       );
+    } else if (this.overlay === 'waydoor') {
+      const road = PLANAR_SAGA_IDS[0];
+      hud.renderWaydoor(ctx, TownController.waydoorOffers(hero), this.selection, {
+        done: chaptersDone(hero?.sagas, road),
+        total: SAGAS[road].quests.length,
+      });
     }
   }
 
@@ -520,6 +639,11 @@ function buildTown(): {
   }
   map.set(5, 5, Tile.Door);
 
+  // Wave Q2 — THE WAYDOOR: a free-standing arch on the east wall, away from
+  // every other station and its door. It is masonry like anything else here —
+  // whether it is OPEN is a property of the hero, not of the town.
+  for (let ty = 10; ty <= 12; ty++) map.set(24, ty, Tile.Wall);
+
   // Wave O — the Temple: a small chapel across the square, south door too.
   for (let ty = 2; ty <= 4; ty++) {
     for (let tx = 19; tx <= 23; tx++) {
@@ -553,6 +677,8 @@ function buildTown(): {
     inn: center(5, 6),
     // Wave O — the temple keeper stands before the chapel's south door.
     temple: center(21, 5),
+    // Wave Q2 — the arch's threshold, stood in front of rather than entered.
+    waydoor: center(23, 11),
     gate: center(gateTile.tx, gateTile.ty),
   };
 

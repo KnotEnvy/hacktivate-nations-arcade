@@ -36,7 +36,22 @@ export type EnemyTypeId =
   | 'barrow-hound'
   | 'brine-weird'
   | 'cinder-bloat'
-  | 'lantern-wisp';
+  | 'lantern-wisp'
+  // Wave Q2 — THE PLANES: three natives per plane. These share NO floor with
+  // the dungeon's population; a planar floor's spawn table replaces the core
+  // rather than adding to it.
+  | 'void-lancer'
+  | 'star-husk'
+  | 'mote-swarm'
+  | 'brass-warden'
+  | 'lantern-sentry'
+  | 'gear-hound'
+  | 'chaos-croaker'
+  | 'bone-raker'
+  | 'shape-eater'
+  | 'pit-wretch'
+  | 'barbed-sentinel'
+  | 'ash-harrier';
 
 export type EnemyBehavior =
   | 'wander'
@@ -132,15 +147,32 @@ export const MORALE = {
  * break more readily; a healthy pack facing a peer mostly holds. `baseline` is
  * the floor's seeded pack size (guarded: <= 0 means no below-strength bonus).
  */
+/**
+ * The law, designed ONCE — the sweep and every test read this and nothing
+ * else. Wave Q1 added `dread`: the ascent-band boon of the same name feeds its
+ * bonus in HERE rather than adjusting the roll at the call site, so there is
+ * still exactly one place where a pack's nerve is decided (and the CHANCE_CAP
+ * still has the final word, so no amount of dread routs a room outright).
+ */
 export function moraleBreakChance(
   heroLevel: number,
   floor: number,
   alive: number,
   baseline: number,
+  dread = 0,
+  // Wave Q2 — THE BRASS MARCHES' law: nothing here breaks. It lands as a
+  // short-circuit INSIDE the law rather than a skipped sweep at the call site,
+  // so "what are the odds this pack runs" still has exactly one answer in the
+  // codebase — and on that plane the answer is none.
+  unbroken = false,
 ): number {
+  if (unbroken) return 0;
   const belowStrength = baseline > 0 && alive < baseline / 2 ? MORALE.BELOW_HALF_BONUS : 0;
   const overmatch = MORALE.HERO_LEVEL_BONUS * Math.max(0, heroLevel - floor);
-  return Math.min(MORALE.CHANCE_CAP, MORALE.BASE_CHANCE + belowStrength + overmatch);
+  return Math.min(
+    MORALE.CHANCE_CAP,
+    MORALE.BASE_CHANCE + belowStrength + overmatch + Math.max(0, dread),
+  );
 }
 
 export interface EnemyConfig {
@@ -166,6 +198,12 @@ export interface EnemyConfig {
   // turns against them. NEVER on the undead, the mindless (slimes/oozes) or the
   // mimic (an ambusher has no nerve to lose) — pinned by test.
   morale?: true;
+  // Wave Q1 — WARDED: 2e's "hit only by magical weapons". Honest steel still
+  // wounds these (the arcade never makes a foe unkillable), but a fighter who
+  // has taken BREECH in the ascent band bites them properly. Carried by the
+  // half-real: the wraith, the shade, the stone-skinned gargoyle. Q2's planar
+  // families inherit the flag — that is what makes BREECH the planar key.
+  warded?: true;
 }
 
 export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
@@ -302,6 +340,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#b9c8e8',
     accent: '#3a4a6e',
     undead: true,
+    warded: true, // Wave Q1 — half here at best
   },
   // ===== v3 biome families =====
   'fire-beetle': {
@@ -407,6 +446,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#5a5a72',
     accent: '#9a7bff',
     undead: true,
+    warded: true, // Wave Q1 — a cast shadow with teeth
   },
   'cinder-hound': {
     id: 'cinder-hound',
@@ -502,6 +542,7 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     color: '#8a8a92',
     accent: '#c9c9d2',
     morale: true, // Wave N
+    warded: true, // Wave Q1 — living stone turns an honest edge
   },
   // ===== Wave P — THE WIDER WORLD =====
   // Each biome gains the member its threat grammar was missing: ember had no
@@ -585,6 +626,225 @@ export const ENEMY_CONFIGS: Record<EnemyTypeId, EnemyConfig> = {
     // No morale: it does not fight for anything, so it has nothing to lose.
     // The game gives this one real light — the lure IS the monster.
   },
+
+  // ===== Wave Q2 — THE PLANES =====
+  // Three natives per plane, each cast for the role its plane's LAW needs.
+  // Numbers sit a clear step above the deep dungeon: these are met by heroes
+  // who have ascended, and every one of them is `warded` unless the fiction
+  // insists otherwise — which is what makes a fighter's BREECH the key.
+
+  // --- THE SILVER VOID: raiders of an endless bright nothing. No cover for
+  // them either, so they are FAST and they come from anywhere.
+  'void-lancer': {
+    id: 'void-lancer',
+    behavior: 'chase',
+    hp: 7,
+    speed: 132,
+    size: 20,
+    touchDamage: { n: 1, d: 6 },
+    score: 120,
+    xp: 70,
+    goldDrop: [2, 5],
+    aggroRange: 340,
+    color: '#8fa6c8',
+    accent: '#e8f2ff',
+    warded: true,
+    morale: true, // a raider raids; it does not die for the silver
+  },
+  'star-husk': {
+    id: 'star-husk',
+    behavior: 'armored',
+    hp: 12,
+    speed: 48,
+    size: 26,
+    // Wave Q2 — 1d8: spiky, and still no heavier on average than a boss's
+    // touch (hitpoints.test pins that no ordinary foe out-hits a boss).
+    touchDamage: { n: 1, d: 8 },
+    score: 150,
+    xp: 88,
+    goldDrop: [3, 6],
+    aggroRange: 260,
+    color: '#39404f',
+    accent: '#cfe3ff', // starlight in the cracks of something long empty
+    warded: true,
+    // No morale: whatever wore this is not home.
+  },
+  'mote-swarm': {
+    id: 'mote-swarm',
+    behavior: 'flit',
+    hp: 4,
+    speed: 150,
+    size: 14,
+    touchDamage: { n: 1, d: 4 },
+    score: 90,
+    xp: 52,
+    goldDrop: [1, 3],
+    aggroRange: 320,
+    color: '#dfe9ff',
+    accent: '#ffffff',
+    warded: true,
+    // No morale: a swarm has no one in it to lose their nerve.
+  },
+
+  // --- THE BRASS MARCHES: made things that were told to hold the line and
+  // were never told anything else. Nothing here breaks, by law and by nature.
+  'brass-warden': {
+    id: 'brass-warden',
+    behavior: 'armored',
+    hp: 14,
+    speed: 52,
+    size: 28,
+    // Nothing that is not a boss may out-hit a boss's blow (hitpoints.test
+    // pins it). The Marches' weight is in its HP, not its swing.
+    touchDamage: { n: 1, d: 8 },
+    score: 165,
+    xp: 96,
+    goldDrop: [3, 7],
+    aggroRange: 250,
+    color: '#8a6a24',
+    accent: '#ffd98a',
+    warded: true,
+    // Mindless by construction — and under the Marches' law it could not
+    // break even if there were anyone inside to be afraid.
+  },
+  'lantern-sentry': {
+    id: 'lantern-sentry',
+    behavior: 'ranged',
+    hp: 6,
+    speed: 60,
+    size: 18,
+    touchDamage: { n: 1, d: 3 },
+    boltCause: 'sentry_ray',
+    boltDamage: { n: 1, d: 6 },
+    score: 130,
+    xp: 76,
+    goldDrop: [2, 5],
+    aggroRange: 340,
+    color: '#ffd98a',
+    accent: '#fff6d8',
+    warded: true,
+    // It carries its own light (rendering/lights.ts) — a watchman that IS the
+    // lamp. Seeing it and being seen by it are the same event.
+  },
+  'gear-hound': {
+    id: 'gear-hound',
+    behavior: 'chase',
+    hp: 6,
+    speed: 128,
+    size: 18,
+    touchDamage: { n: 1, d: 4, plus: 1 },
+    score: 100,
+    xp: 60,
+    goldDrop: [1, 4],
+    aggroRange: 320,
+    color: '#9a7a34',
+    accent: '#e8c46a',
+    warded: true,
+  },
+
+  // --- THE CHURNING: chaos with teeth. These are the ones that call their own
+  // kin through after them (the plane's law, not their own trick).
+  'chaos-croaker': {
+    id: 'chaos-croaker',
+    behavior: 'chase',
+    hp: 9,
+    speed: 104,
+    size: 24,
+    touchDamage: { n: 1, d: 6, plus: 1 },
+    score: 135,
+    xp: 80,
+    goldDrop: [2, 5],
+    aggroRange: 300,
+    color: '#a04a5e',
+    accent: '#ffb0c8',
+    warded: true,
+    morale: true, // it is alive, and chaos is not loyalty
+  },
+  'bone-raker': {
+    id: 'bone-raker',
+    behavior: 'armored',
+    hp: 11,
+    speed: 66,
+    size: 24,
+    touchDamage: { n: 1, d: 8 },
+    score: 150,
+    xp: 88,
+    goldDrop: [3, 6],
+    aggroRange: 280,
+    color: '#4a5aa0',
+    accent: '#c8d4ff',
+    warded: true,
+    morale: true,
+  },
+  'shape-eater': {
+    id: 'shape-eater',
+    behavior: 'wraith',
+    hp: 8,
+    speed: 74,
+    size: 22,
+    touchDamage: { n: 1, d: 8 },
+    score: 155,
+    xp: 92,
+    goldDrop: [2, 6],
+    aggroRange: 300,
+    color: '#6a4a86',
+    accent: '#d8a8ff',
+    warded: true,
+    // Walks through what little the plane has settled on being.
+  },
+
+  // --- THE PIT: the legion. Ranks, discipline, and a bottomless supply.
+  'pit-wretch': {
+    id: 'pit-wretch',
+    behavior: 'chase',
+    hp: 5,
+    speed: 40,
+    size: 22,
+    touchDamage: { n: 1, d: 4 },
+    score: 70,
+    xp: 40,
+    goldDrop: [0, 2],
+    aggroRange: 240,
+    color: '#8a7a5a',
+    accent: '#c8b890',
+    // Neither warded nor morale-flagged: the lowest rank of the legion is
+    // barely present enough to be afraid, and plain steel does for it. It is
+    // the plane's chaff, and there is always more.
+  },
+  'barbed-sentinel': {
+    id: 'barbed-sentinel',
+    behavior: 'armored',
+    hp: 13,
+    speed: 58,
+    size: 26,
+    touchDamage: { n: 1, d: 8 }, // same ceiling as every other non-boss
+    score: 160,
+    xp: 94,
+    goldDrop: [3, 7],
+    aggroRange: 270,
+    color: '#6a2a24',
+    accent: '#ff8a5a',
+    warded: true,
+    // No morale: it is the rank that holds while the others are relieved.
+  },
+  'ash-harrier': {
+    id: 'ash-harrier',
+    behavior: 'ranged',
+    hp: 7,
+    speed: 96,
+    size: 18,
+    touchDamage: { n: 1, d: 4 },
+    boltCause: 'harrier_dart',
+    boltDamage: { n: 1, d: 6 },
+    score: 125,
+    xp: 74,
+    goldDrop: [2, 5],
+    aggroRange: 340,
+    color: '#8a3a2a',
+    accent: '#ffb066',
+    warded: true,
+    morale: true, // it is a skirmisher, and skirmishers know when to go
+  },
 };
 
 // Ranged-enemy tuning shared by Enemy.ts.
@@ -613,7 +873,42 @@ export interface SpawnWeightRow {
   weight: number;
 }
 
+/**
+ * Wave Q2 — a plane's population REPLACES the dungeon core rather than adding
+ * to it. Nothing that crawls the Ember Depths has any business past the gate:
+ * no slimes, no skeletons, no bats. Each plane fields exactly its own three,
+ * and there are no floor gates — a hero only reaches a plane by ascending, so
+ * the gate is the level cap, not the depth.
+ */
+const PLANE_SPAWN_ROWS: Record<string, readonly SpawnWeightRow[]> = {
+  'silver-void': [
+    { type: 'void-lancer', weight: 5 },
+    { type: 'star-husk', weight: 3 },
+    { type: 'mote-swarm', weight: 4 },
+  ],
+  'brass-marches': [
+    { type: 'brass-warden', weight: 4 },
+    { type: 'lantern-sentry', weight: 4 },
+    { type: 'gear-hound', weight: 4 },
+  ],
+  churning: [
+    { type: 'chaos-croaker', weight: 5 },
+    { type: 'bone-raker', weight: 4 },
+    { type: 'shape-eater', weight: 3 },
+  ],
+  'the-pit': [
+    // The chaff outnumbers the ranks — that is what a legion looks like.
+    { type: 'pit-wretch', weight: 6 },
+    { type: 'barbed-sentinel', weight: 3 },
+    { type: 'ash-harrier', weight: 4 },
+  ],
+};
+
 export function spawnWeightsForFloor(floor: number, biomeId: string): SpawnWeightRow[] {
+  // Wave Q2 — past the gate, the plane's own three and nothing else.
+  const planar = PLANE_SPAWN_ROWS[biomeId];
+  if (planar) return planar.map(row => ({ ...row }));
+
   // Common core — the depths' shared population. Floor gates unchanged from v2.
   const rows: SpawnWeightRow[] = [
     { type: 'slime', weight: Math.max(1, 6 - floor) },
