@@ -11,6 +11,13 @@ const routes = [
 export { default } from '@/dev/level-editor/LevelEditor';
 `,
   },
+  {
+    filePath: path.join(rootDir, 'src', 'app', 'dev', 'dungeon-crawl', 'page.tsx'),
+    content: `// ${marker}: created by scripts/sync-dev-routes.js.
+// Production verification commands remove this file before type-check/build.
+export { default } from '@/dev/dungeon-capture/DungeonCapture';
+`,
+  },
 ];
 
 const removeEmptyParents = (startDir, stopDir) => {

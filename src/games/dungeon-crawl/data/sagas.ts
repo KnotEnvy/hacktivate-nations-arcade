@@ -214,7 +214,7 @@ export const SAGAS: Record<SagaId, SagaDef> = {
     ],
     interludes: [
       'You came up out of twenty levels of dark into a day with no sun in ' +
-        'it, and stood there long enough to be embarrassed. Nothing hid from ' +
+        'it, and stood there long enough to feel unhidden. Nothing hid from ' +
         'you. Nothing could. Whatever put a lance in each of those islands ' +
         'wanted to be found — and having found it, you understand the ' +
         'invitation was never yours to accept or decline.',
@@ -226,7 +226,7 @@ export const SAGAS: Record<SagaId, SagaDef> = {
       'The yard was rows of drafts of things, and you walked most of a row ' +
         'that was drafts of you: shorter, older, one with the wrong number of ' +
         'hands, one that had clearly done better. You put none of them out of ' +
-        'their misery, which you will think about later. The finished one was ' +
+        'their misery. That will follow you. The finished one was ' +
         'not in the yard. It is further on.',
       'It answered. Not in words — the four planes turned out to be four ways ' +
         'of saying one sentence slowly enough for a mortal to hear. Then it ' +

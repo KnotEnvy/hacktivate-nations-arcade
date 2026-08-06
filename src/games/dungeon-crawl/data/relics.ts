@@ -92,7 +92,7 @@ export const RELICS: Record<RelicId, RelicDef> = {
   'shadow-cloak': {
     id: 'shadow-cloak',
     name: 'SHADOW CLOAK',
-    blurb: 'Faster dash, longer dash i-frames',
+    blurb: 'A quicker dash, and longer unseen inside it',
     icon: '§',
     color: '#9a7bff',
   },

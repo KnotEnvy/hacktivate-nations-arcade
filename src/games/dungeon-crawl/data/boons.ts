@@ -97,7 +97,7 @@ export const BOONS: Record<BoonId, BoonDef> = {
   haggler: {
     id: 'haggler',
     name: 'HAGGLER',
-    blurb: 'Merchants knock 10% off',
+    blurb: 'Merchants cut a tenth from every price',
     icon: '⚖',
     color: '#ffd24a',
     maxStacks: 2,

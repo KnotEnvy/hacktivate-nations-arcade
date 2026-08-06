@@ -23,7 +23,8 @@
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui",
     "e2e:install": "playwright install",
-    "e2e:report": "playwright show-report"
+    "e2e:report": "playwright show-report",
+    "capture": "playwright test dungeon-capture --project=chromium"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.86.0",

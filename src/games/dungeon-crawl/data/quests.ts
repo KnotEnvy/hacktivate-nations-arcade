@@ -16,6 +16,12 @@ export type QuestId =
   | 'sunken-vaults'
   | 'ashen-court'
   | 'endless'
+  // Wave R — the VETERAN TIER: one harder contract per dungeon biome, posted
+  // in place of its novice counterpart once the hero is worth the work.
+  | 'the-stokehold'
+  | 'the-deep-muster'
+  | 'the-black-locks'
+  | 'the-long-burning'
   // v4 Wave C — THE PALE PROCESSION chapters
   | 'the-shallow-graves'
   | 'the-silent-march'
@@ -146,6 +152,78 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     minLevel: 1,
     rewardGold: 0,
     rewardXp: 0,
+  },
+  // ---- Wave R — THE VETERAN TIER ----
+  // Four contracts, one per dungeon biome, each the escalation of its novice
+  // counterpart: more floors, a harder finale, and pay that reads as a step up.
+  // The board swaps them in for the novice four at VETERAN_BOARD_LEVEL.
+  // Rewards are ceilinged BELOW THE QUIET BEYOND (1500g / 4000xp): repeatable
+  // field work funds the climb, but nothing repeatable may out-pay the crown
+  // of the whole thing. bossTier stops at 6 for the same reason — a veteran
+  // finale is never harder than a lord of a plane.
+  'the-stokehold': {
+    id: 'the-stokehold',
+    name: 'THE STOKEHOLD',
+    blurb: 'The warrens were only the chimney. Go down to the fire.',
+    intro:
+      'You put a stoker out once and the shafts still breathe hot. The ' +
+      'warrens were never the fire — they are its flue. Five floors under ' +
+      'them something is fed on a schedule. Find the hands that feed it. ' +
+      'Take them off the shovel.',
+    floors: 5,
+    biomeId: 'ember',
+    bossTier: 5,
+    minLevel: 15,
+    rewardGold: 1200,
+    rewardXp: 2500,
+  },
+  'the-deep-muster': {
+    id: 'the-deep-muster',
+    name: 'THE DEEP MUSTER',
+    blurb: 'What you broke was the front rank. Go and meet the rest.',
+    intro:
+      'The galleries fill again, and this time they fill in step. What you ' +
+      'broke was a front rank. Six floors down, in a hall cut for exactly ' +
+      'this, a deeper muster is drilled by something that counts aloud. ' +
+      'Interrupt the count.',
+    floors: 6,
+    biomeId: 'bone',
+    bossTier: 5,
+    minLevel: 15,
+    rewardGold: 1300,
+    rewardXp: 2900,
+  },
+  'the-black-locks': {
+    id: 'the-black-locks',
+    name: 'THE BLACK LOCKS',
+    blurb: 'The vaults were the shallow end. Go down and shut the gates.',
+    intro:
+      'The flood did not simply arrive. Below the vaults stand the gates ' +
+      'the old order built to hold the water back, and every one of them is ' +
+      'open — held open. Seven floors down, in the dark beneath the dark, ' +
+      'something keeps the locks. Close them.',
+    floors: 7,
+    biomeId: 'sunken',
+    bossTier: 6,
+    minLevel: 15,
+    rewardGold: 1400,
+    rewardXp: 3200,
+  },
+  'the-long-burning': {
+    id: 'the-long-burning',
+    name: 'THE LONG BURNING',
+    blurb: 'The court fell. The burning did not.',
+    intro:
+      'You unseated a court and the ash never noticed. Past the throne the ' +
+      'burning simply continues, older than the flame that claimed it, ' +
+      'patient as weather. Eight floors of grey, and no crown at the end of ' +
+      'them — only the fire that was there first. Go down until it ends.',
+    floors: 8,
+    biomeId: 'ash',
+    bossTier: 6,
+    minLevel: 15,
+    rewardGold: 1500,
+    rewardXp: 3600,
   },
   // ---- THE PALE PROCESSION (saga, 3 chapters) ----
   'the-shallow-graves': {
@@ -585,3 +663,41 @@ export const STANDALONE_QUEST_IDS = ALL_QUEST_IDS.filter(
 export const PLANAR_CONTRACT_IDS = ALL_QUEST_IDS.filter(
   id => QUESTS[id].planar && !QUESTS[id].saga,
 );
+
+// ===== Wave R — what the board is showing today =====
+// The contracts pinned in Lastlight are a FIXED FIVE: four biome contracts and
+// THE ENDLESS DEPTHS. At VETERAN_BOARD_LEVEL the four biome cards swap for
+// their veteran counterparts — the board posts work worth a veteran's time,
+// not more work. Nothing else on the board moves: sagas keep their own page,
+// planar contracts keep the Waydoor, and no earned progress is touched.
+// These lists are explicit (not derived) because the board's shape is a
+// design promise, not a consequence: a fifth standalone quest must be placed
+// here deliberately or it does not get a card.
+
+/** The four contracts a young hero is offered. */
+export const NOVICE_CONTRACT_IDS: readonly QuestId[] = [
+  'embers-below',
+  'bone-galleries',
+  'sunken-vaults',
+  'ashen-court',
+];
+
+/** Their veteran counterparts, biome for biome. */
+export const VETERAN_CONTRACT_IDS: readonly QuestId[] = [
+  'the-stokehold',
+  'the-deep-muster',
+  'the-black-locks',
+  'the-long-burning',
+];
+
+/** The level at which the board stops offering novice work. */
+export const VETERAN_BOARD_LEVEL = 15;
+
+/**
+ * The quest board's cards, in order, for a hero of this level: ALWAYS exactly
+ * five — the biome four for the hero's tier, then THE ENDLESS DEPTHS.
+ */
+export function boardQuestIds(level: number): QuestId[] {
+  const contracts = level >= VETERAN_BOARD_LEVEL ? VETERAN_CONTRACT_IDS : NOVICE_CONTRACT_IDS;
+  return [...contracts, 'endless'];
+}

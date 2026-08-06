@@ -1743,7 +1743,16 @@ export class DungeonCrawlGame extends BaseGame {
         satchelCount: this.inventory.satchel.length,
       });
     }
-    if (this.bannerTimer > 0) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
+    // The banner is a WORLD notification — it announces a floor or an arrival
+    // OVER THE SCENE, so it belongs to the two states that draw the world. It
+    // must never paint across a full-screen overlay: before this guard,
+    // arriving in town and opening the sheet within the banner's life wrote
+    // "WELCOME TO LASTLIGHT" straight across the hero's record.
+    // NOTE the town clause: the six station overlays (board, smith, alchemist,
+    // inn, temple, waydoor) are SUB-MODES of state 'town', tracked on
+    // town.overlay — so checking the state alone still painted the banner
+    // across every one of them.
+    if (this.bannerTimer > 0 && (this.state === 'playing' || (this.state === 'town' && this.town.overlay === 'none'))) this.hud.renderBanner(ctx, this.bannerText, this.bannerSub, this.bannerTimer);
     if (this.state === 'title') {
       this.hud.renderTitle(ctx, this.gameTime);
     }

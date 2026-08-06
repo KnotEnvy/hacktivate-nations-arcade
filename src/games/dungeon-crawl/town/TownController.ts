@@ -16,12 +16,13 @@ import {
   ALL_GEAR_IDS,
   GEAR,
   GEAR_TUNING,
+  masterworkSealed,
   PROVISIONS,
   ProvisionId,
   TEMPLE_PROVISION_IDS,
 } from '../data/gear';
 import { ALL_NPC_IDS, NPCS, storyStage } from '../data/npcs';
-import { PLANAR_CONTRACT_IDS, QUESTS, QuestDef, QuestId, STANDALONE_QUEST_IDS } from '../data/quests';
+import { boardQuestIds, PLANAR_CONTRACT_IDS, QUESTS, QuestDef, QuestId } from '../data/quests';
 import {
   chaptersDone,
   currentChapter,
@@ -278,15 +279,17 @@ export class TownController {
       return;
     }
 
-    const count = STANDALONE_QUEST_IDS.length;
-    this.navigate(ctx, count);
+    // Wave R — the board posts for the hero standing in front of it: five
+    // cards always, veteran contracts once they are earned.
+    const posted = boardQuestIds(ctx.hero?.level ?? 1);
+    this.navigate(ctx, posted.length);
 
     if (this.closeRequested(ctx)) return;
 
     const confirm =
       input.isKeyPressed('Space') || input.isKeyPressed('Enter') || input.isKeyPressed('KeyJ');
     if (confirm && !ctx.edges.confirmWas) {
-      const quest = QUESTS[STANDALONE_QUEST_IDS[this.selection]];
+      const quest = QUESTS[posted[this.selection]];
       this.departWithWarning(ctx, quest);
     }
   }
@@ -346,6 +349,17 @@ export class TownController {
         ctx.showBanner(gear.name, 'FULLY FORGED — NOTHING MORE TO ADD');
         return;
       }
+      // Wave S — the smith's second refusal, in the same shape as the first:
+      // masterwork work is not begun for a hand below the fifteenth level, and
+      // nothing is spent when he turns it down.
+      if (masterworkSealed(tier, hero.level)) {
+        ctx.playSound('error', 0.35);
+        ctx.showBanner(
+          gear.name,
+          `MASTERWORK — NO HAND BELOW LEVEL ${GEAR_TUNING.MASTERWORK_LEVEL} MAY CARRY IT`,
+        );
+        return;
+      }
       const price = gear.prices[tier];
       if (hero.gold < price) {
         ctx.playSound('error', 0.4);
@@ -355,7 +369,8 @@ export class TownController {
       hero.gear[gear.id] = tier + 1;
       ctx.save();
       ctx.playSound('success', 0.5);
-      ctx.showBanner(gear.name, `TIER ${tier + 1} — WORN FROM THE NEXT EXPEDITION ON`);
+      const forged = tier + 1 === GEAR_TUNING.MAX_TIER ? 'MASTERWORK' : `TIER ${tier + 1}`;
+      ctx.showBanner(gear.name, `${forged} — WORN FROM THE NEXT EXPEDITION ON`);
     } else {
       this.buyProvision(ctx, hero, ALCHEMIST_PROVISION_IDS[this.selection]);
     }
@@ -540,12 +555,19 @@ export class TownController {
           hero?.level ?? 1,
         );
       } else {
-        hud.renderQuestBoard(ctx, STANDALONE_QUEST_IDS, this.selection, hero?.level ?? 1);
+        hud.renderQuestBoard(ctx, boardQuestIds(hero?.level ?? 1), this.selection, hero?.level ?? 1);
       }
     } else if (this.overlay === 'inn') {
       hud.renderInn(ctx, ALL_NPC_IDS, this.selection, this.innRumor);
     } else if (this.overlay === 'smith') {
-      hud.renderSmith(ctx, ALL_GEAR_IDS, this.selection, id => hero?.gear[id] ?? 0, hero?.gold ?? 0);
+      hud.renderSmith(
+        ctx,
+        ALL_GEAR_IDS,
+        this.selection,
+        id => hero?.gear[id] ?? 0,
+        hero?.gold ?? 0,
+        hero?.level ?? 1,
+      );
     } else if (this.overlay === 'alchemist') {
       hud.renderAlchemist(
         ctx,

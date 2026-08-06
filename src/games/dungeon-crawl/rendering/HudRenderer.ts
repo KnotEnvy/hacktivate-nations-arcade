@@ -8,7 +8,7 @@ import { CAUSE_HINTS, CAUSE_LABELS } from '../data/causes';
 import { CLASSES, ClassId } from '../data/classes';
 import { COMBAT, JUICE, OVERLAY, PALETTE, PICKUPS, PLAYER, PotionBuff, VIEW } from '../data/constants';
 import { CURSES, CurseId } from '../data/curses';
-import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, PROVISIONS, ProvisionId } from '../data/gear';
+import { ALL_GEAR_IDS, GEAR, GEAR_TUNING, GearId, masterworkSealed, PROVISIONS, ProvisionId } from '../data/gear';
 import { LINEAGES, LineageId } from '../data/lineages';
 import { NPCS, NpcId } from '../data/npcs';
 import { PROGRESSION } from '../data/progression';
@@ -748,6 +748,7 @@ export class HudRenderer {
     selectedIndex: number,
     tierOf: (id: GearId) => number,
     gold: number,
+    level: number, // Wave S — the masterwork tier is sealed below LEVEL 15
   ): void {
     this.renderShopFrame(ctx, 'THE BLACKSMITH', gold, 'SPACE buys the next tier · E steps away');
     const cardW = 168;
@@ -772,22 +773,21 @@ export class HudRenderer {
       ctx.font = '11px monospace';
       this.wrapText(ctx, gear.blurb, x + cardW / 2, y + 134, cardW - 20, 14);
 
-      // Tier pips.
+      // Tier pips — the row stays centred whatever MAX_TIER is (12 wide, 20 apart).
       const pipY = y + 186;
       for (let t = 0; t < GEAR_TUNING.MAX_TIER; t++) {
         ctx.fillStyle = t < tier ? gear.color : '#3a3226';
-        ctx.fillRect(x + cardW / 2 - 26 + t * 20, pipY, 12, 8);
+        ctx.fillRect(x + cardW / 2 - (GEAR_TUNING.MAX_TIER * 20 - 8) / 2 + t * 20, pipY, 12, 8);
       }
 
+      // Three footers, one line of type: forged out, sealed until the smith
+      // will begin the masterwork, or the price of the next tier.
       ctx.font = 'bold 13px monospace';
-      if (maxed) {
-        ctx.fillStyle = PALETTE.textDim;
-        ctx.fillText('FULLY FORGED', x + cardW / 2, y + cardH - 20);
-      } else {
-        const price = gear.prices[tier];
-        ctx.fillStyle = gold >= price ? PALETTE.gold : PALETTE.blood;
-        ctx.fillText(`${price}g`, x + cardW / 2, y + cardH - 20);
-      }
+      const price = gear.prices[tier];
+      const sealed = masterworkSealed(tier, level);
+      const seal = `SEALED · LEVEL ${GEAR_TUNING.MASTERWORK_LEVEL}`;
+      ctx.fillStyle = maxed || sealed ? PALETTE.textDim : gold >= price ? PALETTE.gold : PALETTE.blood;
+      ctx.fillText(maxed ? 'FULLY FORGED' : sealed ? seal : `${price}g`, x + cardW / 2, y + cardH - 20);
     }
   }
 
@@ -818,7 +818,7 @@ export class HudRenderer {
       this.wrapText(ctx, provision.name, x + cardW / 2, y + 106, cardW - 16, 16);
       ctx.fillStyle = PALETTE.textWarm;
       ctx.font = '12px monospace';
-      this.wrapText(ctx, provision.blurb, x + cardW / 2, y + 146, cardW - 24, 15);
+      this.wrapText(ctx, provision.blurb, x + cardW / 2, y + 146, cardW - 24, 15, 4);
 
       ctx.font = 'bold 13px monospace';
       if (packed(provision.id)) {
@@ -909,9 +909,16 @@ export class HudRenderer {
   ): void {
     this.renderShopFrame(ctx, 'THE TEMPLE', gold, 'SPACE for the rite or the road · E steps away');
     const count = 1 + (ascension ? 1 : 0) + provisionIds.length;
-    const cardW = count > 3 ? 170 : 190; // four cards must still fit the view
     const cardH = 240;
     const gap = count > 3 ? 16 : 26;
+    // THE FINALE — derive the width from the room actually available so the row
+    // can NEVER overflow the view. The old `count > 3 ? 170 : 190` bracket was
+    // written when four cards was the maximum; Wave Q2's rite of ascension made
+    // five possible, at which point the row measured 914px against an 800px
+    // view and clipped 57px off BOTH edges — the leftmost card lost the end of
+    // every line and the rightmost was cut mid-word.
+    const margin = 24;
+    const cardW = Math.floor(Math.min(190, (VIEW.WIDTH - margin * 2 - gap * (count - 1)) / count));
     const startX = (VIEW.WIDTH - cardW * count - gap * (count - 1)) / 2;
     const y = 190;
 
@@ -936,6 +943,7 @@ export class HudRenderer {
         y + 146,
         cardW - 24,
         15,
+        4, // the blurb owns four lines; the price row sits at cardH - 20
       );
       ctx.font = 'bold 13px monospace';
       if (curse) {
@@ -969,6 +977,7 @@ export class HudRenderer {
         y + 146,
         cardW - 24,
         15,
+        4, // the blurb owns four lines; the price row sits at cardH - 20
       );
       ctx.font = 'bold 13px monospace';
       if (ascension.done) {
@@ -995,7 +1004,7 @@ export class HudRenderer {
       this.wrapText(ctx, provision.name, x + cardW / 2, y + 106, cardW - 16, 16);
       ctx.fillStyle = PALETTE.textWarm;
       ctx.font = '12px monospace';
-      this.wrapText(ctx, provision.blurb, x + cardW / 2, y + 146, cardW - 24, 15);
+      this.wrapText(ctx, provision.blurb, x + cardW / 2, y + 146, cardW - 24, 15, 4);
 
       ctx.font = 'bold 13px monospace';
       if (packed(provision.id)) {
@@ -1715,14 +1724,22 @@ export class HudRenderer {
     y: number,
     maxWidth: number,
     lineHeight: number,
+    // THE FINALE — an optional line budget. Without one a long blurb in a
+    // narrow card simply kept wrapping downward and drew straight through the
+    // price row beneath it ("a cursed 45gne is refused"). Callers that sit
+    // above something else pass the number of lines they actually own.
+    maxLines = Number.POSITIVE_INFINITY,
   ): void {
     const words = text.split(' ');
     let line = '';
     let cursorY = y;
+    let drawn = 0;
     for (const word of words) {
       const candidate = line.length > 0 ? `${line} ${word}` : word;
       if (ctx.measureText && ctx.measureText(candidate).width > maxWidth && line.length > 0) {
+        if (drawn + 1 >= maxLines) return void ctx.fillText(`${line}…`, x, cursorY);
         ctx.fillText(line, x, cursorY);
+        drawn++;
         line = word;
         cursorY += lineHeight;
       } else {

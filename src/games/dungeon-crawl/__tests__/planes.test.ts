@@ -31,6 +31,7 @@ import {
 import { LEVEL_CAP } from '@/games/dungeon-crawl/data/progression';
 import {
   ALL_QUEST_IDS,
+  boardQuestIds,
   PLANAR_CONTRACT_IDS,
   QUESTS,
   STANDALONE_QUEST_IDS,
@@ -319,8 +320,16 @@ describe('the lords and the eight new quests', () => {
     expect(new Set(PLANAR_CONTRACT_IDS.map(id => QUESTS[id].biomeId))).toEqual(
       new Set(ALL_PLANE_IDS),
     );
-    // The classic board still holds exactly its original five.
-    expect(STANDALONE_QUEST_IDS).toHaveLength(5);
+    // Wave R — the veteran tier doubled the authored contracts (5 -> 9), but
+    // it added NOTHING planar: STANDALONE_QUEST_IDS is still planar-free, and
+    // what the board shows is still exactly five cards at any level.
+    expect(STANDALONE_QUEST_IDS).toHaveLength(9);
+    for (const id of STANDALONE_QUEST_IDS) expect(QUESTS[id].planar).toBeUndefined();
+    for (const level of [1, 14, 15, LEVEL_CAP]) {
+      const posted = boardQuestIds(level);
+      expect(posted).toHaveLength(5);
+      for (const id of planarIds) expect(posted).not.toContain(id);
+    }
   });
 
   test("the road walks all four planes and ends past them", () => {

@@ -3,7 +3,7 @@
 // for hero, monsters, boss and loot. No assets — everything is fillRect art.
 
 import { CLASSES } from '../data/classes';
-import { BiomePalette, PALETTE, TILE } from '../data/constants';
+import { BiomePalette, PALETTE, TILE, mixHex } from '../data/constants';
 import { ITEMS } from '../data/items';
 import { ShopItemPlan } from '../dungeon/DungeonGenerator';
 import { Tile, TileMap } from '../dungeon/TileMap';
@@ -77,9 +77,19 @@ export class TileRenderer {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const tile = map.get(tx, ty);
-        if (tile === Tile.Void) continue;
         const px = tx * TILE;
         const py = ty * TILE;
+        if (tile === Tile.Void) {
+          // THE FINALE — the out-of-bounds used to be SKIPPED outright, which
+          // left pure-black rectangles that read as unrendered holes rather
+          // than as anything at all (rubric R2.4). It is not one thing in both
+          // worlds: on a plane it genuinely IS the edge of the world and takes
+          // the same starfield as the void walls, but in the dungeon it is
+          // solid unlit bedrock, where stars would be nonsense.
+          if (biome.style === 'void') this.drawVoid(ctx, px, py, tx, ty, biome);
+          else this.drawBedrock(ctx, px, py, tx, ty, biome);
+          continue;
+        }
         switch (tile) {
           case Tile.Floor: {
             const h = tileHash(tx, ty);
@@ -198,6 +208,35 @@ export class TileRenderer {
    * every frame and every replay of the same floor. fillRect only — jest's
    * canvas stub knows nothing fancier.
    */
+  /**
+   * THE FINALE — the dungeon's out-of-bounds: solid rock the torches never
+   * reach. Deliberately NOT pure black (that reads as a missing tile) and
+   * deliberately NOT the starfield (that belongs to the planes): the biome's
+   * own wall tone taken most of the way down, with a sparse deterministic
+   * grain so a large expanse still reads as a surface rather than a void.
+   */
+  private drawBedrock(
+    ctx: CanvasRenderingContext2D,
+    px: number,
+    py: number,
+    tx: number,
+    ty: number,
+    biome: BiomePalette,
+  ): void {
+    ctx.fillStyle = mixHex(biome.wallFace, '#000000', 0.62);
+    ctx.fillRect(px, py, TILE, TILE);
+    // Same cheap hash as the starfield — per TILE, never the clock, so it is
+    // rock-steady under a moving camera and identical on every replay.
+    let h = (tx * 83492791) ^ (ty * 29874361);
+    h = (h ^ (h >>> 13)) >>> 0;
+    if (h % 3 !== 0) return; // most tiles stay plain; grain is an accent
+    ctx.fillStyle = mixHex(biome.wallFace, '#000000', 0.48);
+    const gx = px + (h % TILE);
+    h = (h * 1664525 + 1013904223) >>> 0;
+    const gy = py + (h % TILE);
+    ctx.fillRect(gx, gy, 3, 2);
+  }
+
   private drawVoid(
     ctx: CanvasRenderingContext2D,
     px: number,
@@ -431,8 +470,9 @@ export class TileRenderer {
           ctx.fillRect(px - 4, py - 1, 3, 3); // the glands that light the warrens
           ctx.fillRect(px + 2, py - 1, 3, 3);
           ctx.fillRect(px - 1, py + half - 5, 3, 3);
-        } else if (id === 'zombie') {
-          // v3 — zombie: lurching shambler, arms out, one dead eye.
+        } else if (id === 'zombie' || id === 'drowned-one') {
+          // v3 — zombie: lurching shambler, arms out, one dead eye. THE FINALE
+          // — the drowned one shares the lurch; the palette tells them apart.
           const lurch = Math.round(Math.sin(time * 3 + enemy.id) * 2);
           ctx.fillStyle = body;
           ctx.fillRect(px - 6 + lurch, py - 4, 12, half * 2 - 6);
@@ -443,8 +483,9 @@ export class TileRenderer {
           ctx.fillRect(px - 6 + lurch, py + 2, 12, 3);
           ctx.fillStyle = '#e8f6d8';
           ctx.fillRect(px - 2 + lurch, py - half + 3, 2, 2);
-        } else if (id === 'ghoul') {
-          // v3 — ghoul: hunched low, long claws, pale hungry eyes.
+        } else if (id === 'ghoul' || id === 'chaos-croaker') {
+          // v3 — ghoul: hunched low, long claws, pale hungry eyes. THE FINALE
+          // — the croaker squats on the same frame; its colours are its own.
           const crouch = Math.round(Math.abs(Math.sin(time * 10 + enemy.id)) * 2);
           ctx.fillStyle = body;
           ctx.fillRect(px - 6, py - half + 6 + crouch, 12, half * 2 - 8 - crouch);
@@ -467,9 +508,11 @@ export class TileRenderer {
           ctx.fillStyle = accent;
           ctx.fillRect(px + 6, py - half - 5, 4, 4); // spearhead
           ctx.fillRect(px - 2, py - half + 2, 2, 2); // eye
-        } else if (id === 'cinder-hound' || id === 'barrow-hound') {
+        } else if (id === 'cinder-hound' || id === 'barrow-hound' || id === 'gear-hound') {
           // v3 — cinder hound: low quadruped at a run, ember eye. Wave P — the
-          // barrow hound shares the gait; the palette tells them apart.
+          // barrow hound shares the gait; the palette tells them apart. THE
+          // FINALE — so does the Brass Marches' gear-hound, which was reading
+          // as a floating ribcage with no legs at all.
           const gait = Math.sin(time * 16 + enemy.id) > 0 ? 1 : -1;
           ctx.fillStyle = body;
           ctx.fillRect(px - half + 1, py - 3, half * 2 - 2, 7); // body
@@ -479,6 +522,21 @@ export class TileRenderer {
           ctx.fillRect(px + half - 5, py + 4, 3, 4 - gait);
           ctx.fillStyle = accent;
           ctx.fillRect(px + half - 4, py - 6, 2, 2);
+        } else if (id === 'void-lancer') {
+          // THE FINALE — the Silver Void's lancer, its most common native. It
+          // fell through to the skeleton fallback and read as a floating
+          // ribcage carrying nothing at all. Drawn on the lizardman's
+          // spear-bearer frame but with its OWN colours: that branch hardcodes
+          // green scale banding and a brown haft, which would drag warm
+          // dungeon tones into a cold plane (rubric R2.3).
+          const thrust = Math.round(Math.abs(Math.sin(time * 4 + enemy.id)) * 3);
+          ctx.fillStyle = body;
+          ctx.fillRect(px - 5, py - 4, 10, half * 2 - 6); // narrow torso
+          ctx.fillRect(px - 4, py - half, 8, 7); // head
+          ctx.fillStyle = accent;
+          ctx.fillRect(px + 7, py - half - 2 - thrust, 2, half * 2 + 2); // lance haft
+          ctx.fillRect(px + 6, py - half - 5 - thrust, 4, 4); // lance head
+          ctx.fillRect(px - 2, py - half + 2, 2, 2); // eye
         } else {
           // Skeleton: rib-cage stack + skull.
           ctx.fillStyle = body;

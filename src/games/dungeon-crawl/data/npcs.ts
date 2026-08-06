@@ -140,23 +140,27 @@ export const NPCS: Record<NpcId, NpcDef> = {
     icon: '♨',
     color: '#7ae0a8',
     rumors: {
+      // THE FINALE — Pip stays the youngest voice in Lastlight, but the voice
+      // is Lastlight's: dry, plain, present tense. The old lines carried
+      // ALL-CAPS punchlines and stacked exclamations that made him the one
+      // character speaking from a different game.
       arrival: [
-        'A delver swears the Guardians carry treasure now! Real finds! Wearable ones! Cross my heart!',
-        'Do not tell Hollis, but I saw a rat steal a whole candle. Straight down the well. STRAIGHT DOWN.',
-        'The smith can make your boots faster. FASTER. BOOTS.',
+        'A delver swears the Guardians carry treasure now. Real finds, things you can wear. I believe her.',
+        'Do not tell Hollis — I saw a rat carry a whole candle down the well. It did not come back up.',
+        'The smith can quicken your stride now. I watched him do it. I want boots like that.',
       ],
       delving: [
-        'They say past the eighth floor something flies through the dark with a face like a chimney!',
-        'A lady paid her tab with a ring she found in an URN. An urn! I checked ours. Just dust.',
-        'If a wall has cracks in it, delvers blow it up! On purpose! I want to be a delver.',
+        'They say past the eighth floor, something flies the dark with a face like a chimney.',
+        'A woman paid her tab with a ring pulled from an urn. I checked ours after. Only dust.',
+        'Delvers blow open a cracked wall on purpose, they say. I want to be a delver.',
       ],
       'the-page': [
-        'The quiet man’s candle burns GREEN some nights. I watched through the keyhole. Green!',
-        'Everyone says you finished both stories! Nobody finishes both! What happens NOW?',
+        'The quiet man’s candle burns green some nights. I have watched it through the keyhole.',
+        'They say you finished both stories. No one finishes both. I do not know what comes next.',
       ],
       aftermath: [
-        'You are the one from the stories now. Both of them. All THREE of them!',
-        'The quiet man left me his spare inkwell. It is empty. It is my favorite thing I own.',
+        'You are the one from the stories now. Both of them. All three, if you count the last.',
+        'The quiet man left me his spare inkwell. It is empty. I keep it anyway.',
       ],
     },
   },

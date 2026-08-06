@@ -1,5 +1,5 @@
 // ===== src/games/dungeon-crawl/data/gear.ts =====
-// v4 Wave B — Lastlight's shops. The BLACKSMITH sells permanent gear (three
+// v4 Wave B — Lastlight's shops. The BLACKSMITH sells permanent gear (four
 // tiers per track, bought with banked gold, saved on the hero). The ALCHEMIST
 // sells one-expedition provisions applied at the gate. Pure data; Player.ts
 // folds gear, the game applies provisions. All text original.
@@ -12,7 +12,9 @@ export interface GearDef {
   blurb: string;
   icon: string;
   color: string;
-  prices: readonly [number, number, number]; // banked gold per tier
+  // Wave S — four entries now: the fourth is the MASTERWORK price, and it is
+  // meant to be banked toward rather than bought in passing.
+  prices: readonly [number, number, number, number]; // banked gold per tier
 }
 
 export const GEAR: Record<GearId, GearDef> = {
@@ -22,7 +24,7 @@ export const GEAR: Record<GearId, GearDef> = {
     blurb: '+1 melee damage per tier — honest steel',
     icon: '⚔',
     color: '#cfd6e0',
-    prices: [120, 280, 550],
+    prices: [120, 280, 550, 1200],
   },
   armor: {
     id: 'armor',
@@ -30,7 +32,7 @@ export const GEAR: Record<GearId, GearDef> = {
     blurb: '+4 HP per tier, hammered to your frame',
     icon: '⛨',
     color: '#8a93a6',
-    prices: [100, 240, 480],
+    prices: [100, 240, 480, 1100],
   },
   boots: {
     id: 'boots',
@@ -38,7 +40,7 @@ export const GEAR: Record<GearId, GearDef> = {
     blurb: '+4% stride per tier',
     icon: '≫',
     color: '#7ae0ff',
-    prices: [90, 220, 440],
+    prices: [90, 220, 440, 1000],
   },
   quiver: {
     id: 'quiver',
@@ -46,20 +48,34 @@ export const GEAR: Record<GearId, GearDef> = {
     blurb: '+2 dagger cap and +2 to start, per tier',
     icon: '⇶',
     color: '#e8dcbc',
-    prices: [80, 180, 360],
+    prices: [80, 180, 360, 900],
   },
 };
 
 export const ALL_GEAR_IDS = Object.keys(GEAR) as GearId[];
 
 export const GEAR_TUNING = {
-  MAX_TIER: 3,
+  // Wave S — the MASTERWORK tier. Every fold in Player.ts is tier * constant,
+  // so the fourth tier is worth exactly one more step of its track; what makes
+  // it an endgame purchase is the price and the level the smith demands.
+  MAX_TIER: 4,
+  MASTERWORK_LEVEL: 15,
   BLADE_DAMAGE: 1, // per tier
   ARMOR_HP: 4, // Wave L — re-priced for hit-die pools
   BOOTS_SPEED: 0.04,
   QUIVER_CAP: 2,
   QUIVER_START: 2,
 } as const;
+
+/**
+ * Wave S — the smith will not begin masterwork work for a hand that has not
+ * reached the fifteenth level. True ONLY when the next tier is the masterwork
+ * one: a finished track is fully forged, not sealed. Pure, so the counter and
+ * the card read the same rule instead of each deriving it.
+ */
+export function masterworkSealed(tier: number, level: number): boolean {
+  return tier === GEAR_TUNING.MAX_TIER - 1 && level < GEAR_TUNING.MASTERWORK_LEVEL;
+}
 
 // ---------------------------------------------------------------- provisions
 

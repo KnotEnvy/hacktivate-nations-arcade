@@ -43,6 +43,12 @@ tmp-next-dev*
 
 # Generated local-only development routes
 src/app/dev/level-editor/page.tsx
+src/app/dev/dungeon-crawl/page.tsx
+
+# THE TUNING FINALE — visual capture output (regenerate with `npm run capture`)
+.captures/
+test-results/
+playwright-report/
 
 DOCS/ADD2ndEdition/*
 

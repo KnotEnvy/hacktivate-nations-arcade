@@ -12,7 +12,7 @@ export const CAUSE_LABELS: Record<DeathCause, string> = {
   sorcerer_bolt: 'STRUCK BY SORCERY',
   knight: 'CRUSHED BY A KNIGHT',
   mimic: 'EATEN BY A MIMIC',
-  bomber: 'MUGGED BY A BOMBER',
+  bomber: 'BLOWN OPEN BY A BOMBER',
   wraith: 'CHILLED BY A WRAITH',
   beetle: 'PINCERED BY A FIRE BEETLE',
   zombie: 'DRAGGED DOWN BY A ZOMBIE',

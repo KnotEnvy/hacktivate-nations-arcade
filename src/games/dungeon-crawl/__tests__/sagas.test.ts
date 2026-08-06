@@ -9,6 +9,7 @@ import {
   QUESTS,
   QuestDef,
   STANDALONE_QUEST_IDS,
+  VETERAN_CONTRACT_IDS,
 } from '@/games/dungeon-crawl/data/quests';
 import {
   ALL_SAGA_IDS,
@@ -136,9 +137,19 @@ describe('saga data contract', () => {
     // continues past Lastlight, and the end of THE ASCENDANT'S ROAD is the
     // crown of the whole thing — a capstone that paid less than the tale
     // below it would be the real defect.
+    // Wave R — SECOND conscious restatement, same shape as Wave Q2's. THE
+    // UNDERSCRIBE is the crown of the TALE, and it still out-pays every quest
+    // that tale competes with: the story chapters and the contracts a hero
+    // takes while telling it. What it no longer out-pays is the veteran
+    // contract tier, which is deliberate — that tier is repeatable field work
+    // posted five levels ABOVE the finale, and it exists to fund the long
+    // climb to the rite. The invariant that actually protects the endgame is
+    // the absolute one below, and it is untouched: NOTHING in the game,
+    // veteran contracts included, out-pays THE QUIET BEYOND.
     const crown = QUESTS['the-underscribe'];
     for (const id of ALL_QUEST_IDS) {
       if (QUESTS[id].planar) continue;
+      if (VETERAN_CONTRACT_IDS.includes(id)) continue;
       expect(crown.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
       expect(crown.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
     }
@@ -148,6 +159,13 @@ describe('saga data contract', () => {
       expect(beyond.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
     }
     expect(beyond.rewardGold).toBeGreaterThan(crown.rewardGold);
+    // The carve-out is bounded: veteran work out-pays the tale, never the end
+    // of the road, and never by a margin that makes the finale look small.
+    for (const id of VETERAN_CONTRACT_IDS) {
+      expect(QUESTS[id].rewardGold).toBeGreaterThan(crown.rewardGold);
+      expect(QUESTS[id].rewardGold).toBeLessThanOrEqual(beyond.rewardGold);
+      expect(QUESTS[id].rewardXp).toBeLessThan(beyond.rewardXp);
+    }
   });
 
   test('chapter-walk helpers', () => {
