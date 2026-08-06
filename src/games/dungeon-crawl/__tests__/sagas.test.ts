@@ -137,20 +137,25 @@ describe('saga data contract', () => {
     // continues past Lastlight, and the end of THE ASCENDANT'S ROAD is the
     // crown of the whole thing — a capstone that paid less than the tale
     // below it would be the real defect.
-    // Wave R — SECOND conscious restatement, same shape as Wave Q2's. THE
-    // UNDERSCRIBE is the crown of the TALE, and it still out-pays every quest
-    // that tale competes with: the story chapters and the contracts a hero
-    // takes while telling it. What it no longer out-pays is the veteran
-    // contract tier, which is deliberate — that tier is repeatable field work
-    // posted five levels ABOVE the finale, and it exists to fund the long
-    // climb to the rite. The invariant that actually protects the endgame is
-    // the absolute one below, and it is untouched: NOTHING in the game,
-    // veteran contracts included, out-pays THE QUIET BEYOND.
+    // Wave R — the owner RESOLVED the open decision on 2026-08-06 by raising
+    // THE UNDERSCRIBE (1000 -> 1600g) rather than letting veteran contracts
+    // out-pay it. The Wave R carve-out below is therefore GONE, and this pin
+    // is back to its original shape in gold: the crown of the TALE out-pays
+    // every non-planar quest in the game, veteran contracts included.
+    //
+    // GOLD AND XP ARE TWO SEPARATE LADDERS, and that is the deliberate part.
+    // THE UNDERSCRIBE is a minLevel 10 chapter; giving it the veteran tier's
+    // 2500-3600 XP to match its purse would blow a hole in the ascent curve
+    // the finale is built around. So the tale pays the richest PURSE and
+    // repeatable level-15 field work pays the most EXPERIENCE. Both
+    // directions are pinned, so neither can drift without a test failing.
     const crown = QUESTS['the-underscribe'];
     for (const id of ALL_QUEST_IDS) {
       if (QUESTS[id].planar) continue;
-      if (VETERAN_CONTRACT_IDS.includes(id)) continue;
+      // The gold crown, with NO carve-out.
       expect(crown.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
+      // XP is the other ladder — veterans are asserted separately below.
+      if (VETERAN_CONTRACT_IDS.includes(id)) continue;
       expect(crown.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
     }
     const beyond = QUESTS['the-quiet-beyond'];
@@ -158,12 +163,15 @@ describe('saga data contract', () => {
       expect(beyond.rewardGold).toBeGreaterThanOrEqual(QUESTS[id].rewardGold);
       expect(beyond.rewardXp).toBeGreaterThanOrEqual(QUESTS[id].rewardXp);
     }
+    // Raising the crown FORCED the road's end up with it (1500 -> 1800), or
+    // the absolute invariant would have inverted. Pin the ordering strictly so
+    // a future crown raise cannot silently overtake it.
     expect(beyond.rewardGold).toBeGreaterThan(crown.rewardGold);
-    // The carve-out is bounded: veteran work out-pays the tale, never the end
-    // of the road, and never by a margin that makes the finale look small.
+    // The veteran tier sits BELOW the tale's purse and ABOVE its experience —
+    // bounded on both sides so neither ladder can quietly collapse.
     for (const id of VETERAN_CONTRACT_IDS) {
-      expect(QUESTS[id].rewardGold).toBeGreaterThan(crown.rewardGold);
-      expect(QUESTS[id].rewardGold).toBeLessThanOrEqual(beyond.rewardGold);
+      expect(QUESTS[id].rewardGold).toBeLessThan(crown.rewardGold);
+      expect(QUESTS[id].rewardXp).toBeGreaterThan(crown.rewardXp);
       expect(QUESTS[id].rewardXp).toBeLessThan(beyond.rewardXp);
     }
   });

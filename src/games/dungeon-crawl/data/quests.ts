@@ -390,7 +390,15 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     biomeId: 'ash',
     bossTier: 6,
     minLevel: 10,
-    rewardGold: 1000,
+    // 1000 -> 1600 (owner's call, 2026-08-06). The veteran contract tier tops
+    // out at 1500g, and the crown of THE LAST PAGE has to out-pay the work a
+    // hero takes WHILE telling it. XP deliberately stays at 1200: this is a
+    // minLevel 10 chapter, and handing it the veteran tier's 2500-3600 would
+    // blow a hole in the ascent curve the whole finale is built around. The
+    // tale pays the richest PURSE; repeatable level-15 field work pays the
+    // most EXPERIENCE. Those are two different ladders and sagas.test pins
+    // both directions.
+    rewardGold: 1600,
     rewardXp: 1200,
     saga: true,
     bossKitId: 'underscribe',
@@ -639,7 +647,12 @@ export const QUESTS: Record<QuestId, QuestDef> = {
     biomeId: 'the-pit',
     bossTier: 6,
     minLevel: 20,
-    rewardGold: 1500,
+    // 1500 -> 1800, FORCED by raising THE UNDERSCRIBE to 1600. This is not a
+    // buff anyone asked for on its own merits: the absolute invariant is that
+    // NOTHING in the game out-pays the end of the road, and the old 1500 was
+    // already tied with the top veteran contract, leaving no headroom above
+    // the new crown. Raise the crown, and the road's end has to move with it.
+    rewardGold: 1800,
     rewardXp: 4000,
     saga: true,
     planar: true,
