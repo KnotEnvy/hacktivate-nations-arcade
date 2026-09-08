@@ -11,20 +11,28 @@ describe('Button', () => {
   it('applies the default variant and medium size classes', () => {
     render(<Button>Default</Button>);
     const button = screen.getByRole('button', { name: 'Default' });
-    expect(button).toHaveClass('bg-primary-600');
+    expect(button).toHaveClass('bg-brand');
     expect(button).toHaveClass('h-10');
   });
 
   it('applies the secondary variant classes', () => {
     render(<Button variant="secondary">Secondary</Button>);
-    expect(screen.getByRole('button', { name: 'Secondary' })).toHaveClass(
-      'bg-secondary-600'
-    );
+    expect(screen.getByRole('button', { name: 'Secondary' })).toHaveClass('bg-surface-2');
+  });
+
+  it('applies the coin variant classes for currency actions', () => {
+    render(<Button variant="coin">Unlock</Button>);
+    expect(screen.getByRole('button', { name: 'Unlock' })).toHaveClass('bg-coin');
   });
 
   it('applies the outline variant classes', () => {
     render(<Button variant="outline">Outline</Button>);
     expect(screen.getByRole('button', { name: 'Outline' })).toHaveClass('border');
+  });
+
+  it('stretches to full width when block is set', () => {
+    render(<Button block>Wide</Button>);
+    expect(screen.getByRole('button', { name: 'Wide' })).toHaveClass('w-full');
   });
 
   it.each([

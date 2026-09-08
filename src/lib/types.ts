@@ -7,6 +7,18 @@ import type { AchievementService } from '@/services/AchievementService';
 
 export type InputType = 'keyboard' | 'touch' | 'gamepad';
 
+/** Shelf category used to group and filter the arcade library. */
+export type GameCategory =
+  | 'Action'
+  | 'Arcade'
+  | 'Puzzle'
+  | 'Shooter'
+  | 'Sports'
+  | 'Adventure'
+  | 'Racing'
+  | 'Strategy'
+  | 'RPG';
+
 export interface GameManifest {
   id: string;           // unique kebab-case
   title: string;
@@ -15,6 +27,8 @@ export interface GameManifest {
   assetBudgetKB: number; // ≤ 300
   tier: number;         // unlock tier (0 = default)
   description?: string;
+  category?: GameCategory; // library filter + card label
+  tagline?: string;        // one short line for dense card layouts
 }
 
 export interface Services {

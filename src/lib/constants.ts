@@ -25,6 +25,16 @@ export const TIER_GAME_COST_INCREMENTS = {
   4: 20000,
 } as const;
 
+// Display names for the unlock ladder. Deliberately about the cabinet, not the
+// catalog, so they stay true as games move between tiers.
+export const TIER_LABELS: Record<number, string> = {
+  0: 'Free Play',
+  1: 'Coin Op',
+  2: 'Main Floor',
+  3: 'Back Room',
+  4: 'The Vault',
+};
+
 export const ECONOMY = {
   SCORE_TO_COINS_RATIO: 100, // floor(score/100)
   PICKUP_COIN_VALUE: 10,

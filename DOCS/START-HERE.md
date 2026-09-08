@@ -90,6 +90,41 @@ Tests are written and exercised while **building** a game or subsystem. Once a f
 
 **Do not add the development suite to the CI gate — the lean gate is a deliberate choice to keep builds fast.**
 
+## September 8, 2026 — Harness UI & Menu Flow Pass
+
+The shell outside the games was taken from rough-draft to a single design system.
+Read `DOCS/UI_Review_and_Suggestions.md` before touching any harness UI — it is
+now the design-system handoff, not the old retro-CRT proposal (that direction was
+reviewed and rejected).
+
+- Design tokens live in the `@theme` block of `src/app/globals.css`. Tailwind v4
+  here has no `@config`, so the old `tailwind.config.mjs` was dead and has been
+  deleted; classes such as `bg-primary-600` and `arcade.*` never rendered.
+- New shared primitives under `src/components/ui`: `Panel`, `Chip`/`Tag`,
+  `ProgressBar`, `StatTile`, `Icon` (stroke icon set replacing emoji navigation)
+  and `Menu`, plus a rebuilt `Button`.
+- `GameCarousel` is gone. The game selection screen is now `GameLibrary`
+  (featured card, search, category and status filters, tier shelves, card grid),
+  with its browsing rules extracted to the pure module `src/lib/gameLibrary.ts`.
+- `src/data/Games.ts` entries gained `category` and `tagline`; fill both in for
+  every new game. Tier display names live in `TIER_LABELS` in `src/lib/constants.ts`.
+- `ArcadeHub` is composed from `HubHeader`, `HubGate`, `HubNotifications` and
+  `SyncStatus`; five header buttons collapsed into one overflow menu.
+- `ThemedGameCanvas` gained a real end-of-run summary with *Play again* and
+  *Back to hub*; a finished run previously had no way forward.
+- `npm run dev` now also serves `/dev/hub-preview`, a mock-state harness for
+  reviewing the menus without a Supabase project. It is stripped before
+  type-check, lint and build like the other dev routes.
+
+Verified on September 8, 2026:
+
+- `npm run type-check`, `npm run lint`, `npm test -- --runInBand` (10-test
+  release approval suite) and `npm run build` all pass
+- `npm run test:dev -- --runInBand` passes at 754 tests (was 754 before the pass:
+  the `GameCarousel` suite was replaced by `GameLibrary` + `gameLibrary` suites)
+- `npm run e2e` arcade-smoke passes (3/3) against the signed-out access boundary
+- production build reports `/` at 105 kB first-load JS (was 103 kB)
+
 ## What To Work On Next
 
 Highest-value remaining work:

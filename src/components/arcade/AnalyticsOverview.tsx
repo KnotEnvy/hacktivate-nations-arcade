@@ -1,3 +1,4 @@
+// ===== src/components/arcade/AnalyticsOverview.tsx =====
 'use client';
 
 import { useEffect, useState } from 'react';
@@ -7,9 +8,33 @@ import {
   type PlayerMetrics,
   type ConversionMetrics,
 } from '@/services/Analytics';
+import { Panel, PanelHeader } from '@/components/ui/Panel';
+import { Tag } from '@/components/ui/Chip';
 
 interface AnalyticsOverviewProps {
   analyticsOwnerId?: string | null;
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-card border border-line bg-surface-2 px-3 py-2.5">
+      <div className="tabular truncate text-sm font-bold capitalize text-ink">
+        {value}
+      </div>
+      <div className="mt-0.5 text-[11px] text-ink-faint">{label}</div>
+    </div>
+  );
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+        {title}
+      </h4>
+      <div className="grid grid-cols-2 gap-2">{children}</div>
+    </div>
+  );
 }
 
 export function AnalyticsOverview({ analyticsOwnerId }: AnalyticsOverviewProps) {
@@ -30,115 +55,72 @@ export function AnalyticsOverview({ analyticsOwnerId }: AnalyticsOverviewProps) 
 
   if (!insights || !conversion || !metrics) return null;
 
+  const percent = (value: number) => `${Math.round(value * 100)}%`;
+
   return (
-    <div className="arcade-panel">
-      <h3 className="text-lg font-bold text-white mb-4">📊 Analytics Overview</h3>
-      <div className="space-y-4 text-sm">
-        <div>
-          <h4 className="font-semibold text-purple-400 mb-2">Player Insights</h4>
-          <div className="grid grid-cols-2 gap-2 mb-2">
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">{insights.skillLevel}</div>
-              <div className="text-gray-400 text-xs">Skill Level</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300 capitalize">
-                {insights.preferredGameLength}
-              </div>
-              <div className="text-gray-400 text-xs">Preferred Length</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg col-span-2">
-              <div className="font-bold text-purple-300">
-                {insights.mostPlayedGame}
-              </div>
-              <div className="text-gray-400 text-xs">Most Played Game</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg col-span-2">
-              <div className="font-bold text-purple-300">
-                {Math.round(insights.averageScore)}
-              </div>
-              <div className="text-gray-400 text-xs">Average Score</div>
-            </div>
+    <Panel>
+      <PanelHeader
+        eyebrow="This device"
+        title="Play insights"
+        actions={<Tag tone="brand">{insights.skillLevel}</Tag>}
+      />
+
+      <div className="mt-4 space-y-4">
+        <Group title="Your play">
+          <Metric label="Games played" value={metrics.gamesPlayed} />
+          <Metric label="Play time" value={`${Math.floor(metrics.totalPlayTime / 60000)}m`} />
+          <Metric
+            label="Avg session"
+            value={`${Math.round(metrics.averageSessionLength / 60000)}m`}
+          />
+          <Metric label="Average score" value={Math.round(insights.averageScore)} />
+          <Metric label="Favourite game" value={metrics.favoriteGame} />
+          <Metric label="Preferred length" value={insights.preferredGameLength} />
+        </Group>
+
+        <Group title="Engagement">
+          <Metric label="Start rate" value={percent(conversion.gameStartRate)} />
+          <Metric label="Completion rate" value={percent(conversion.completionRate)} />
+          <Metric label="Return rate" value={percent(conversion.retentionRate)} />
+          <Metric label="Spend rate" value={percent(conversion.monetizationRate)} />
+        </Group>
+
+        {insights.improvementAreas.length > 0 && (
+          <div>
+            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+              Tips
+            </h4>
+            <ul className="space-y-1.5">
+              {insights.improvementAreas.map(area => (
+                <li
+                  key={area}
+                  className="flex gap-2 text-[13px] leading-relaxed text-ink-muted"
+                >
+                  <span aria-hidden className="text-brand-bright">
+                    •
+                  </span>
+                  {area}
+                </li>
+              ))}
+            </ul>
           </div>
-          {insights.improvementAreas.length > 0 && (
-            <div className="text-gray-400">
-              <div className="mb-1 font-semibold text-purple-400">
-                Improvement Areas
-              </div>
-              <ul className="list-disc list-inside ml-2">
-                {insights.improvementAreas.map((area) => (
-                  <li key={area}>{area}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-        <div>
-          <h4 className="font-semibold text-purple-400 mb-2">Conversion Metrics</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">
-                {(conversion.gameStartRate * 100).toFixed(0)}%
-              </div>
-              <div className="text-gray-400 text-xs">Start Rate</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">
-                {(conversion.completionRate * 100).toFixed(0)}%
-              </div>
-              <div className="text-gray-400 text-xs">Completion Rate</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">
-                {(conversion.retentionRate * 100).toFixed(0)}%
-              </div>
-              <div className="text-gray-400 text-xs">Return Rate</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">
-                {(conversion.monetizationRate * 100).toFixed(0)}%
-              </div>
-              <div className="text-gray-400 text-xs">Spend Rate</div>
-            </div>
-          </div>
-        </div>
-        <div>
-          <h4 className="font-semibold text-purple-400 mb-2">Player Metrics</h4>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">{metrics.gamesPlayed}</div>
-              <div className="text-gray-400 text-xs">Games Played</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">{Math.floor(metrics.totalPlayTime / 60000)}m</div>
-              <div className="text-gray-400 text-xs">Play Time</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">{Math.round(metrics.averageSessionLength / 60000)}m</div>
-              <div className="text-gray-400 text-xs">Avg Session</div>
-            </div>
-            <div className="bg-gray-800 p-2 rounded-lg">
-              <div className="font-bold text-purple-300">{metrics.favoriteGame}</div>
-              <div className="text-gray-400 text-xs">Favorite Game</div>
-            </div>
-          </div>
-        </div>
+        )}
+
         {recommended.length > 0 && (
           <div>
-            <h4 className="font-semibold text-purple-400 mb-2">Recommended Games</h4>
-            <div className="flex flex-wrap gap-2">
-              {recommended.map((g) => (
-                <span
-                  key={g}
-                  className="bg-gray-800 text-gray-300 px-2 py-1 rounded-lg"
-                >
-                  {g}
-                </span>
+            <h4 className="mb-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+              Recommended next
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {recommended.map(gameId => (
+                <Tag key={gameId} tone="neutral">
+                  {gameId}
+                </Tag>
               ))}
             </div>
           </div>
         )}
       </div>
-    </div>
+    </Panel>
   );
 }

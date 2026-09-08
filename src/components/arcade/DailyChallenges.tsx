@@ -3,6 +3,11 @@
 
 import { useEffect, useState } from 'react';
 import { Challenge, ChallengeService } from '@/services/ChallengeService';
+import { Panel, PanelHeader } from '@/components/ui/Panel';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Icon } from '@/components/ui/Icon';
+import { Tag } from '@/components/ui/Chip';
+import { cn, formatCoins } from '@/lib/utils';
 
 interface DailyChallengesProps {
   challengeService: ChallengeService;
@@ -13,7 +18,7 @@ export function DailyChallenges({ challengeService }: DailyChallengesProps) {
 
   useEffect(() => {
     setChallenges(challengeService.getChallenges());
-    const unsubscribe = challengeService.onChallengesChanged((newChallenges) => {
+    const unsubscribe = challengeService.onChallengesChanged(newChallenges => {
       setChallenges(newChallenges);
     });
 
@@ -23,76 +28,92 @@ export function DailyChallenges({ challengeService }: DailyChallengesProps) {
   }, [challengeService]);
 
   const dailyChallenges = challenges.filter(c => c.type === 'daily');
-  
+
   if (dailyChallenges.length === 0) {
     return (
-      <div className="arcade-panel">
-        <h3 className="text-lg font-bold text-white mb-4">Daily Challenges</h3>
-        <p className="text-gray-300">No challenges available</p>
-      </div>
+      <Panel>
+        <PanelHeader eyebrow="Resets at midnight" title="Daily challenges" />
+        <p className="mt-4 text-sm text-ink-muted">No challenges available</p>
+      </Panel>
     );
   }
 
+  const completedCount = dailyChallenges.filter(c => c.completed).length;
+  const allDone = completedCount === dailyChallenges.length;
+
   return (
-    <div className="arcade-panel" data-testid="daily-challenges">
-      <h3 className="text-lg font-bold text-white mb-4">🎯 Daily Challenges</h3>
-      
-      <div className="space-y-3">
-        {dailyChallenges.map(challenge => (
-          <div
-            key={challenge.id}
-            className={`p-3 rounded-lg border transition-all ${
-              challenge.completed
-                ? 'bg-green-900 border-green-500 opacity-75'
-                : 'bg-gray-800 border-gray-600 hover:border-gray-500'
-            }`}
-          >
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <h4 className={`font-semibold ${
-                  challenge.completed ? 'text-green-300' : 'text-white'
-                }`}>
-                  {challenge.title}
-                  {challenge.completed && ' ✅'}
-                </h4>
-                <p className="text-sm text-gray-300">{challenge.description}</p>
-              </div>
-              <div className="text-right">
-                <div className="text-yellow-400 font-bold">+{challenge.reward}</div>
-                <div className="text-xs text-gray-400">coins</div>
-              </div>
-            </div>
-            
-            {/* Progress bar */}
+    <Panel testId="daily-challenges">
+      <PanelHeader
+        eyebrow="Resets at midnight"
+        title="Daily challenges"
+        actions={
+          <Tag tone={allDone ? 'good' : 'neutral'}>
+            {allDone && <Icon name="check" size={11} />}
+            {completedCount}/{dailyChallenges.length}
+          </Tag>
+        }
+      />
+
+      <div className="mt-4 space-y-2.5">
+        {dailyChallenges.map(challenge => {
+          const percent = Math.round(
+            Math.min(100, (challenge.progress / challenge.target) * 100)
+          );
+
+          return (
             <div
-              className="w-full bg-gray-700 rounded-full h-2 mb-2"
-              role="progressbar"
-              aria-label={`${challenge.title} progress`}
-              aria-valuemin={0}
-              aria-valuemax={challenge.target}
-              aria-valuenow={Math.min(challenge.progress, challenge.target)}
+              key={challenge.id}
+              className={cn(
+                'rounded-card border p-3.5 transition-colors',
+                challenge.completed
+                  ? 'border-good/25 bg-good-dim/40'
+                  : 'border-line bg-surface-2'
+              )}
             >
-              <div
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  challenge.completed ? 'bg-green-500' : 'bg-blue-500'
-                }`}
-                style={{
-                  width: `${Math.min(100, (challenge.progress / challenge.target) * 100)}%`
-                }}
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4
+                    className={cn(
+                      'text-sm font-bold leading-tight',
+                      challenge.completed ? 'text-good' : 'text-ink'
+                    )}
+                  >
+                    {challenge.title}
+                    {challenge.completed && ' ✅'}
+                  </h4>
+                  <p className="mt-1 text-[13px] leading-relaxed text-ink-muted">
+                    {challenge.description}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="tabular text-sm font-bold text-coin">
+                    +{formatCoins(challenge.reward)}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide text-ink-faint">
+                    coins
+                  </div>
+                </div>
+              </div>
+
+              <ProgressBar
+                className="mt-3"
+                size="sm"
+                value={challenge.progress}
+                max={challenge.target}
+                tone={challenge.completed ? 'good' : 'brand'}
+                label={`${challenge.title} progress`}
               />
+
+              <div className="tabular mt-2 flex justify-between text-[11px] text-ink-faint">
+                <span>
+                  {challenge.progress} / {challenge.target}
+                </span>
+                <span>{percent}%</span>
+              </div>
             </div>
-            
-            <div className="flex justify-between text-xs text-gray-400">
-              <span>{challenge.progress} / {challenge.target}</span>
-              <span>{Math.round((challenge.progress / challenge.target) * 100)}%</span>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
-      
-      <div className="mt-4 text-xs text-gray-400 text-center">
-        Challenges reset daily at midnight
-      </div>
-    </div>
+    </Panel>
   );
 }

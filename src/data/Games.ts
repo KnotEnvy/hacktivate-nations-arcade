@@ -1,6 +1,9 @@
 // ===== src/data/Games.ts =====
 import type { GameManifest } from '@/lib/types';
 
+// `category` and `tagline` drive the arcade library UI: category is the filter
+// and the card's shelf label, tagline is the one-line pitch used where the full
+// description would not fit. Keep both filled in for every new entry.
 export const AVAILABLE_GAMES: GameManifest[] = [
   // Tier 0
   {
@@ -10,6 +13,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 50,
     tier: 0,
+    category: 'Action',
+    tagline: 'Run, jump, never stop',
     description: 'Jump and collect coins in this fast-paced endless runner!'
   },
   {
@@ -19,6 +24,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
+    category: 'Arcade',
+    tagline: 'Grow long, stay alive',
     description: 'Classic snake action. Coming soon!'
   },
   {
@@ -28,6 +35,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
+    category: 'Puzzle',
+    tagline: 'Read the board, dodge the boom',
     description: 'Clear the board without hitting mines!'
   },
   {
@@ -37,6 +46,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 60,
     tier: 0,
+    category: 'Arcade',
+    tagline: 'One paddle, one wall',
     description: 'Break bricks with a paddle.'
   },
   {
@@ -46,6 +57,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['touch'],
     assetBudgetKB: 60,
     tier: 0,
+    category: 'Puzzle',
+    tagline: 'Find every pair',
     description: 'Flip cards to find pairs!'
   },
   {
@@ -55,6 +68,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['touch'],
     assetBudgetKB: 60,
     tier: 0,
+    category: 'Action',
+    tagline: 'Pure reflex, one thumb',
     description: 'Tap to dodge obstacles.'
   },
 
@@ -66,6 +81,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 75,
     tier: 1,
+    category: 'Puzzle',
+    tagline: 'Stack, clear, repeat',
     description: 'Match blocks to clear lines.'
   },
   {
@@ -75,6 +92,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 1,
+    category: 'Puzzle',
+    tagline: 'Chain gems into combos',
     description: 'Match colorful gems in this addictive puzzle game! Build combos and create special gems!'
   },
   {
@@ -84,6 +103,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 1,
+    category: 'Arcade',
+    tagline: 'Timing is the whole game',
     description: 'Stack blocks with precision timing! Build the tallest tower you can!'
   },
   {
@@ -93,6 +114,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 90,
     tier: 1,
+    category: 'Sports',
+    tagline: 'Nine holes, one perfect line',
     description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
   },
   {
@@ -102,6 +125,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 50,
     tier: 1,
+    category: 'Puzzle',
+    tagline: 'Match three, clear the board',
     description: 'Pop bubbles by matching 3 or more! Chain combos and use power-ups to clear the board!'
   },
 
@@ -113,6 +138,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 100,
     tier: 2,
+    category: 'Sports',
+    tagline: 'Ten frames of pin physics',
     description: 'Master the lanes with physics-based bowling! Features realistic pin action, oil patterns, and classic 10-frame scoring.'
   },
   {
@@ -122,6 +149,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 100,
     tier: 2,
+    category: 'Shooter',
+    tagline: 'Hold the line against the waves',
     description: "Defend Earth from waves of alien ships in this fast-paced shooter!"
   },
   {
@@ -131,6 +160,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 120,
     tier: 2,
+    category: 'Shooter',
+    tagline: 'Drift, turn, blast rocks',
     description: 'Blast space rocks in this retro shooter!'
   },
   {
@@ -140,6 +171,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 120,
     tier: 2,
+    category: 'Arcade',
+    tagline: 'Traffic, rivers, hungry crocs',
     description: 'Guide your frog across busy roads and treacherous rivers! Dodge traffic, ride logs, avoid hungry crocs, and reach the lily pads!'
   },
   {
@@ -149,6 +182,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 130,
     tier: 2,
+    category: 'Adventure',
+    tagline: 'Swordplay, traps, a golden owl',
     description: 'A Prince of Persia-style adventure! Master sword combat, dodge deadly traps, and race against time to find the legendary Golden Owl!'
   },
   {
@@ -158,6 +193,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 130,
     tier: 2,
+    category: 'Racing',
+    tagline: 'Vehicular combat at speed',
     description: 'Spy-Hunter style vehicular combat racer. Dodge enemies, collect weapons, survive the highway.'
   },
 
@@ -169,6 +206,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 160,
     tier: 3,
+    category: 'RPG',
+    tagline: 'Descend the Ember Depths',
     description: 'Descend the Ember Depths! Torchlit procedural dungeons, sword-and-dagger combat, relic drafts, and the Ember Guardian waiting below.'
   },
   {
@@ -178,6 +217,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 160,
     tier: 3,
+    category: 'Shooter',
+    tagline: 'Aim drills against the clock',
     description: 'Coming soon!'
   },
   {
@@ -187,6 +228,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 180,
     tier: 3,
+    category: 'Puzzle',
+    tagline: 'Match tiles, win battles',
     description: 'Coming soon!'
   },
   {
@@ -196,6 +239,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 200,
     tier: 3,
+    category: 'Sports',
+    tagline: 'Fast breaks on thin ice',
     description: 'Coming soon!'
   },
   {
@@ -205,6 +250,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 200,
     tier: 3,
+    category: 'Strategy',
+    tagline: 'Build the line, hold the line',
     description: 'Coming soon!'
   },
 
@@ -216,6 +263,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 250,
     tier: 4,
+    category: 'Action',
+    tagline: 'Run-and-gun, left to right',
     description: 'Coming soon!'
   },
   {
@@ -225,6 +274,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 250,
     tier: 4,
+    category: 'Strategy',
+    tagline: 'Plant, tend, turn a profit',
     description: 'Coming soon!'
   },
   {
@@ -234,6 +285,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard'],
     assetBudgetKB: 260,
     tier: 4,
+    category: 'Action',
+    tagline: 'Last fighter standing',
     description: 'Coming soon!'
   },
   {
@@ -243,6 +296,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['touch'],
     assetBudgetKB: 260,
     tier: 4,
+    category: 'RPG',
+    tagline: 'Solve puzzles, level a party',
     description: 'Coming soon!'
   },
   {
@@ -252,6 +307,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 280,
     tier: 4,
+    category: 'Arcade',
+    tagline: 'Hit every beat on time',
     description: 'Coming soon!'
   }
 ];

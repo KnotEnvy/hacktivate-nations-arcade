@@ -278,11 +278,11 @@ export function LeaderboardsTab({
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-5">
+      <div className="rounded-panel border border-line bg-surface p-5 shadow-panel">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h2 className="text-2xl font-bold text-white">Leaderboards</h2>
-            <p className="text-sm text-gray-300 mt-1">
+            <h2 className="font-display text-2xl font-bold text-ink">Leaderboards</h2>
+            <p className="mt-1 text-sm text-ink-muted">
               Browse top score entries by game, tier, and season.
             </p>
           </div>
@@ -291,10 +291,10 @@ export function LeaderboardsTab({
               <button
                 key={p.id}
                 onClick={() => setPeriod(p.id)}
-                className={`px-3 py-2 rounded-full text-sm font-semibold border transition-colors ${
+                className={`h-9 rounded-full border px-3.5 text-[13px] font-semibold transition-colors ${
                   period === p.id
-                    ? 'bg-white text-gray-900 border-white'
-                    : 'bg-white/5 text-white border-white/10 hover:bg-white/10'
+                    ? 'border-brand/50 bg-brand-dim text-ink'
+                    : 'border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:text-ink'
                 }`}
               >
                 {p.label}
@@ -302,10 +302,10 @@ export function LeaderboardsTab({
             ))}
             <button
               onClick={() => setShowUnlockedOnly(v => !v)}
-              className={`px-3 py-2 rounded-full text-sm font-semibold border transition-colors ${
+              className={`h-9 rounded-full border px-3.5 text-[13px] font-semibold transition-colors ${
                 showUnlockedOnly
-                  ? 'bg-purple-500/30 text-white border-purple-400/40'
-                  : 'bg-white/5 text-white border-white/10 hover:bg-white/10'
+                  ? 'border-brand/50 bg-brand-dim text-ink'
+                  : 'border-line bg-surface-2 text-ink-muted hover:border-line-strong hover:text-ink'
               }`}
               title="Filter to unlocked games"
             >
@@ -316,27 +316,27 @@ export function LeaderboardsTab({
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <aside className="lg:col-span-4 rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4">
+        <aside className="lg:col-span-4 rounded-panel border border-line bg-surface p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <div className="text-sm font-bold text-white">Games</div>
-            <div className="text-xs text-gray-400">{filteredGames.length} total</div>
+            <div className="text-sm font-bold text-ink">Games</div>
+            <div className="text-xs text-ink-faint">{filteredGames.length} total</div>
           </div>
           <div className="mb-3">
             <input
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder="Search games (name, id, tier)"
-              className="w-full rounded-xl bg-black/30 border border-white/10 px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/60"
+              className="h-10 w-full rounded-control border border-line bg-surface-2 px-3 text-sm text-ink placeholder:text-ink-faint transition-colors hover:border-line-strong focus:border-brand/60 focus:outline-none"
             />
           </div>
           <div className="max-h-[520px] overflow-y-auto custom-scrollbar pr-1 space-y-4">
             {gamesByTier.map(([tier, tierGames]) => (
               <div key={tier}>
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs uppercase tracking-wider text-gray-300">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
                     Tier {tier}
                   </div>
-                  <div className="text-xs text-gray-500">{tierGames.length}</div>
+                  <div className="text-xs text-ink-faint">{tierGames.length}</div>
                 </div>
                 <div className="space-y-2">
                   {tierGames.map(game => {
@@ -346,13 +346,13 @@ export function LeaderboardsTab({
                       <button
                         key={game.id}
                         onClick={() => setSelectedGameId(game.id)}
-                        className={`w-full text-left flex items-center gap-3 rounded-xl border px-3 py-2 transition-colors ${
+                        className={`flex w-full items-center gap-3 rounded-card border px-3 py-2 text-left transition-colors ${
                           active
-                            ? 'bg-purple-500/25 border-purple-400/40'
-                            : 'bg-black/20 border-white/10 hover:bg-white/5'
+                            ? 'border-brand/50 bg-brand-dim'
+                            : 'border-line bg-surface-2 hover:border-line-strong'
                         }`}
                       >
-                        <div className="relative h-10 w-10 rounded-lg overflow-hidden border border-white/10 bg-black/30 flex-shrink-0">
+                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-line bg-surface-2">
                           <Image
                             src={game.thumbnail}
                             alt={game.title}
@@ -362,13 +362,13 @@ export function LeaderboardsTab({
                           />
                         </div>
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-white truncate">
+                          <div className="truncate text-sm font-semibold text-ink">
                             {game.title}
                           </div>
-                          <div className="text-xs text-gray-400 flex items-center gap-2">
+                          <div className="flex items-center gap-2 text-xs text-ink-faint">
                             <span className="truncate">{game.id}</span>
                             {!unlocked && (
-                              <span className="px-2 py-0.5 rounded-full bg-black/40 border border-white/10 text-gray-300">
+                              <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-ink-muted">
                                 Locked
                               </span>
                             )}
@@ -384,11 +384,11 @@ export function LeaderboardsTab({
         </aside>
 
         <section className="lg:col-span-8 space-y-4">
-          <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-5">
+          <div className="rounded-panel border border-line bg-surface p-5 shadow-panel">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-4 min-w-0">
                 {selectedGame && (
-                  <div className="relative h-14 w-14 rounded-xl overflow-hidden border border-white/10 bg-black/30 flex-shrink-0">
+                  <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-card border border-line bg-surface-2">
                     <Image
                       src={selectedGame.thumbnail}
                       alt={selectedGame.title}
@@ -399,21 +399,21 @@ export function LeaderboardsTab({
                   </div>
                 )}
                 <div className="min-w-0">
-                  <div className="text-xs uppercase tracking-wider text-gray-400">
+                  <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
                     {periods.find(p => p.id === period)?.label} leaderboard
                   </div>
-                  <div className="text-xl font-bold text-white truncate">
+                  <div className="truncate font-display text-xl font-bold text-ink">
                     {selectedGame?.title ?? selectedGameId}
                   </div>
-                  <div className="text-sm text-gray-300 flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
                     <span>Tier {selectedGame?.tier ?? '?'}</span>
                     {!selectedUnlocked && (
-                      <span className="px-2 py-0.5 rounded-full bg-black/40 border border-white/10 text-gray-300 text-xs">
+                      <span className="rounded-full border border-line bg-surface-2 px-2 py-0.5 text-xs text-ink-muted">
                         Locked
                       </span>
                     )}
                     {showPlaceholder && (
-                      <span className="px-2 py-0.5 rounded-full bg-white/10 border border-white/10 text-gray-200 text-xs">
+                      <span className="rounded-full border border-brand/40 bg-brand-dim px-2 py-0.5 text-xs text-brand-bright">
                         Sample
                       </span>
                     )}
@@ -424,33 +424,33 @@ export function LeaderboardsTab({
                 <button
                   onClick={() => onPlayGame(selectedGameId)}
                   disabled={!selectedUnlocked}
-                  className={`px-4 py-2 rounded-lg font-semibold text-sm border transition-colors ${
+                  className={`h-10 rounded-control px-4 text-sm font-semibold transition-colors ${
                     selectedUnlocked
-                      ? 'bg-white text-gray-900 border-white hover:bg-gray-100'
-                      : 'bg-white/5 text-gray-400 border-white/10 cursor-not-allowed'
+                      ? 'bg-brand text-white hover:bg-brand-bright'
+                      : 'cursor-not-allowed border border-line bg-surface-2 text-ink-faint'
                   }`}
                 >
                   Play {selectedGame?.title ?? 'Game'}
                 </button>
                 {!selectedUnlocked && (
-                  <div className="text-xs text-gray-400">Unlock it in the Games tab.</div>
+                  <div className="text-xs text-ink-faint">Unlock it in the Games tab.</div>
                 )}
               </div>
             </div>
           </div>
 
           {!signedIn && !authDisabled && (
-            <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-5">
+            <div className="rounded-panel border border-line bg-surface p-5 shadow-panel">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div>
-                  <div className="text-white font-bold">Sign in to post and view real scores</div>
-                  <div className="text-sm text-gray-300 mt-1">
+                  <div className="font-bold text-ink">Sign in to post and view real scores</div>
+                  <div className="mt-1 text-sm text-ink-muted">
                     Until then, enjoy the sample leaderboard layout.
                   </div>
                 </div>
                 <button
                   onClick={onRequestSignIn}
-                  className="px-4 py-2 rounded-lg bg-white text-gray-900 font-semibold hover:bg-gray-100 transition-colors"
+                  className="h-10 shrink-0 rounded-control bg-brand px-4 font-semibold text-white transition-colors hover:bg-brand-bright"
                 >
                   Sign in
                 </button>
@@ -459,26 +459,26 @@ export function LeaderboardsTab({
           )}
 
           {authDisabled && (
-            <div className="rounded-2xl bg-orange-500/10 border border-orange-400/30 backdrop-blur p-5 text-orange-100">
+            <div className="rounded-panel border border-warn/30 bg-surface p-5 text-warn">
               Supabase not configured; leaderboards are unavailable in offline mode.
             </div>
           )}
 
           {signedIn && !authDisabled && !supabaseService && (
-            <div className="rounded-2xl bg-orange-500/10 border border-orange-400/30 backdrop-blur p-5 text-orange-100">
+            <div className="rounded-panel border border-warn/30 bg-surface p-5 text-warn">
               Supabase not configured; leaderboards are unavailable.
             </div>
           )}
 
           <div className="space-y-4">
             {loading && (
-              <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-5 text-gray-200">
+              <div className="rounded-panel border border-line bg-surface p-5 text-ink-muted shadow-panel">
                 Loading leaderboard…
               </div>
             )}
 
             {error && (
-              <div className="rounded-2xl bg-red-500/10 border border-red-400/30 backdrop-blur p-5 text-red-100">
+              <div className="rounded-panel border border-bad/30 bg-bad-dim p-5 text-bad">
                 {error}
               </div>
             )}
@@ -486,9 +486,9 @@ export function LeaderboardsTab({
             {!loading && !error && (
               <>
                 {canLoad && normalizedRows.length === 0 && (
-                  <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4 text-gray-200">
-                    <div className="text-sm font-bold text-white">No scores yet</div>
-                    <div className="text-xs text-gray-300 mt-1">
+                  <div className="rounded-panel border border-line bg-surface p-4 text-ink-muted">
+                    <div className="text-sm font-bold text-ink">No scores yet</div>
+                    <div className="mt-1 text-xs text-ink-muted">
                       Be the first to post a score for this game/period.
                     </div>
                   </div>
@@ -498,32 +498,32 @@ export function LeaderboardsTab({
                   {topThree.map((row, index) => (
                     <div
                       key={keyForRow(row, index)}
-                      className="rounded-2xl bg-gradient-to-br from-white/10 to-white/5 border border-white/10 backdrop-blur p-4"
+                      className="rounded-panel border border-line bg-surface-2 p-4"
                     >
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-bold text-white">#{row.rank}</div>
-                        <div className="text-xs text-gray-300">
+                        <div className="text-sm font-bold text-ink">#{row.rank}</div>
+                        <div className="text-xs text-ink-muted">
                           {row.created_at ? new Date(row.created_at).toLocaleDateString() : ''}
                         </div>
                       </div>
                       <div className="mt-3 flex items-center gap-3">
                         {row.avatar ? (
-                          <div className="h-10 w-10 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-xl">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface-3 text-xl">
                             {row.avatar}
                           </div>
                         ) : (
-                          <div className="h-10 w-10 rounded-full bg-black/30 border border-white/10 flex items-center justify-center text-white font-bold">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-line bg-surface-3 font-bold text-ink">
                             {initials(row.username ?? 'Arcader') || 'A'}
                           </div>
                         )}
                         <div className="min-w-0">
-                          <div className="text-white font-semibold truncate">
+                          <div className="truncate font-semibold text-ink">
                             {row.username || 'Arcader'}
                           </div>
-                          <div className="text-xs text-gray-400">{row.user_id.slice(0, 6)}…</div>
+                          <div className="text-xs text-ink-faint">{row.user_id.slice(0, 6)}…</div>
                         </div>
                       </div>
-                      <div className="mt-3 text-2xl font-extrabold text-yellow-200">
+                      <div className="tabular mt-3 font-display text-2xl font-bold text-coin">
                         {formatNumber(row.score)}
                       </div>
                     </div>
@@ -532,7 +532,7 @@ export function LeaderboardsTab({
                     Array.from({ length: 3 - topThree.length }).map((_, idx) => (
                       <div
                         key={`empty-${idx}`}
-                        className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur p-4 text-gray-400"
+                        className="rounded-panel border border-dashed border-line bg-surface p-4 text-ink-faint"
                       >
                         <div className="text-sm font-bold">No entry yet</div>
                         <div className="text-xs mt-1">Be the first to post a score.</div>
@@ -540,33 +540,33 @@ export function LeaderboardsTab({
                     ))}
                 </div>
 
-                <div className="rounded-2xl bg-white/5 border border-white/10 backdrop-blur overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                    <div className="text-sm font-bold text-white">Top 25</div>
-                    <div className="text-xs text-gray-400">
+                <div className="overflow-hidden rounded-panel border border-line bg-surface">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+                    <div className="text-sm font-bold text-ink">Top 25</div>
+                    <div className="text-xs text-ink-faint">
                       {periods.find(p => p.id === period)?.label}
                     </div>
                   </div>
-                  <div className="divide-y divide-white/10">
+                  <div className="divide-y divide-[color:var(--color-line)]">
                     {rest.map((row, index) => (
                       <div
                         key={keyForRow(row, index)}
                         className="px-4 py-3 flex items-center justify-between"
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-10 text-purple-200 font-bold">#{row.rank}</div>
+                          <div className="tabular w-10 font-bold text-ink-faint">#{row.rank}</div>
                           <div className="min-w-0">
-                            <div className="text-white font-semibold truncate">
+                            <div className="truncate font-semibold text-ink">
                               {row.username || 'Arcader'}
                             </div>
-                            <div className="text-xs text-gray-500">{row.user_id.slice(0, 6)}…</div>
+                            <div className="text-xs text-ink-faint">{row.user_id.slice(0, 6)}…</div>
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-lg text-yellow-200 font-bold">
+                          <div className="tabular text-lg font-bold text-coin">
                             {formatNumber(row.score)}
                           </div>
-                          <div className="text-xs text-gray-500">
+                          <div className="text-xs text-ink-faint">
                             {row.created_at ? new Date(row.created_at).toLocaleDateString() : ''}
                           </div>
                         </div>
@@ -574,7 +574,7 @@ export function LeaderboardsTab({
                     ))}
 
                     {canLoad && normalizedRows.length > 0 && normalizedRows.length <= 3 && (
-                      <div className="px-4 py-4 text-sm text-gray-300">
+                      <div className="px-4 py-4 text-sm text-ink-muted">
                         Only a few scores have been posted so far. Keep playing!
                       </div>
                     )}

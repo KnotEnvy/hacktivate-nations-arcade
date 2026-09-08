@@ -11,9 +11,19 @@ import { AchievementService } from '@/services/AchievementService';
 import { UserService } from '@/services/UserServices';
 import type { AudioManager, SoundName } from '@/services/AudioManager';
 import { ECONOMY } from '@/lib/constants';
-import { GameCarousel } from './GameCarousel';
+import { formatCoins } from '@/lib/utils';
+import { GameLibrary } from './GameLibrary';
 import { CurrencyDisplay } from './CurrencyDisplay';
 import { CompactPlayerBadge, UserProfile } from './UserProfiles';
+import { HubHeader, type ArcadeTab } from './HubHeader';
+import { HubNotifications, type HubNotification } from './HubNotifications';
+import { SyncStatus } from './SyncStatus';
+import { AccountLoading, AuthUnavailable, SignInGate } from './HubGate';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { MenuItem } from '@/components/ui/Menu';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { StatTile } from '@/components/ui/StatTile';
 import { useSupabaseAuth } from '@/hooks/useSupabaseAuth';
 import { useArcadeUnlockState } from '@/hooks/useArcadeUnlockState';
 import { useArcadeSupabaseSync } from '@/hooks/useArcadeSupabaseSync';
@@ -159,8 +169,6 @@ interface GameEndData {
   lords_slain?: number;
 }
 
-type ArcadeTab = 'games' | 'leaderboards' | 'challenges' | 'achievements' | 'profile';
-
 const TRUSTED_SESSION_CORE_FIELDS = new Set([
   'score',
   'pickups',
@@ -230,13 +238,12 @@ export function ArcadeHub() {
     []
   );
   // Notifications
-  const [notifications, setNotifications] = useState<Array<{
-    id: string;
-    type: 'achievement' | 'challenge' | 'levelup';
-    title: string;
-    message: string;
-    timestamp: Date;
-  }>>([]);
+  const [notifications, setNotifications] = useState<HubNotification[]>([]);
+  // Per-game play history, read from the account's analytics store so the
+  // library can lead with whatever the player was last in the middle of.
+  const [gameActivity, setGameActivity] = useState<
+    Record<string, { plays: number; lastPlayed: number }>
+  >({});
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showAudioSettings, setShowAudioSettings] = useState(false);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -627,6 +634,40 @@ export function ArcadeHub() {
       localStorage.setItem('hacktivate-onboarding-shown', 'true');
     }
   }, []);
+
+  // Refresh play history whenever the player returns to the hub, so the
+  // library's featured card reflects the run that just finished. Analytics is
+  // imported lazily to keep it out of the first-load bundle.
+  useEffect(() => {
+    if (!session || !showHub) {
+      return;
+    }
+
+    let cancelled = false;
+    void import('@/services/Analytics')
+      .then(async ({ Analytics }) => {
+        const analytics = new Analytics(session.user.id);
+        await analytics.init();
+        if (cancelled) return;
+        setGameActivity(
+          Object.fromEntries(
+            analytics
+              .getGameActivity()
+              .map(entry => [
+                entry.gameId,
+                { plays: entry.plays, lastPlayed: entry.lastPlayed },
+              ])
+          )
+        );
+      })
+      .catch(error => {
+        console.warn('Failed to read play history:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session, showHub]);
 
   const requireSignedIn = useCallback(() => {
     if (session) {
@@ -1132,14 +1173,6 @@ export function ArcadeHub() {
     alert('\u{1F3AE} All progress reset! Welcome back to the beginning.');
   };
 
-  const tabButtons: Array<{ id: ArcadeTab; label: string; icon: string }> = [
-    { id: 'games', label: 'Games', icon: '\u{1F3AE}' },
-    { id: 'leaderboards', label: 'Leaderboards', icon: '\u{1F3C6}' },
-    { id: 'challenges', label: 'Challenges', icon: '\u{1F3AF}' },
-    { id: 'achievements', label: 'Achievements', icon: '\u{1F3C5}' },
-    { id: 'profile', label: 'Profile', icon: '\u{1F464}' }
-  ];
-
   const welcomeName =
     profile?.username ||
     session?.user.email?.split('@')[0] ||
@@ -1167,442 +1200,273 @@ export function ArcadeHub() {
   const unlockedReleasedTierCount = releasedTiers.filter(tier => unlockedTiers.includes(tier)).length;
   const unlockedGameCount = unlockedGames.filter(isGameImplemented).length;
 
+
   return (
     <div
-      className="relative min-h-screen overflow-x-hidden bg-[linear-gradient(135deg,#050816_0%,#10172a_44%,#24073f_100%)] px-4 py-5 text-white"
+      className="relative min-h-screen overflow-x-hidden bg-canvas px-4 pb-16 text-ink"
       data-testid="arcade-root"
     >
-      <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 opacity-45">
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.04)_1px,transparent_1px)] bg-[size:44px_44px]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,transparent_0%,rgba(34,211,238,0.08)_48%,transparent_100%)]" />
-      </div>
-      {/* Header */}
-      <header className="sticky top-3 z-40 mx-auto mb-6 flex max-w-7xl flex-col gap-3 rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-3 shadow-[0_18px_45px_rgba(0,0,0,0.38)] backdrop-blur-xl lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-col leading-tight">
-            <h1 className="font-arcade text-xl font-bold text-white md:text-2xl">
-              Hacktivate Nations Arcade
-            </h1>
-            <div className="text-xs text-cyan-100/70">
-              Earn coins • Unlock tiers • Chase highscores
-            </div>
-          </div>
-          {!showHub && (
-            <button
-              onClick={handleBackToHub}
-              className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-            >
-              {'\u2190 Back to Hub'}
-            </button>
-          )}
-          <button
-            onClick={() => setShowOnboarding(true)}
-            className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-          >
-            Help
-          </button>
-          <button
-            onClick={() => {
-              void ensureAudioInitialized().then(manager => {
-                manager.playSound('click');
-                setShowAudioSettings(true);
-              });
-            }}
-            className="rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
-          >
-            Audio
-          </button>
-          {/* Debug buttons for development */}
-          {process.env.NODE_ENV === 'development' && session && (
-            <div className="flex gap-1">
-              <button
-                onClick={() => currencyService.addCoins(500, 'debug_test')}
-                className="bg-green-600 hover:bg-green-700 text-white text-xs px-2 py-1 rounded"
-                title="Add 500 coins"
-              >
-                +500
-              </button>
-              <button
-                onClick={() => currencyService.addCoins(2000, 'debug_unlock')}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs px-2 py-1 rounded"
-                title="Add 2000 coins (debug)"
-              >
-                +2K
-              </button>
-              <button
-                onClick={resetProgress}
-                className="bg-orange-600 hover:bg-orange-700 text-white text-xs px-2 py-1 rounded"
-                title="Reset all progress"
-              >
-                Reset
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-          {!authDisabled ? (
-            <div className="text-left sm:text-right">
-              <div className="text-sm font-semibold text-white">
-                {session ? `Signed in as ${welcomeName}` : 'Sign in required'}
-              </div>
-              <div className="flex justify-end gap-2">
-                {session ? (
-                  <button
-                    onClick={() => signOut()}
-                    className="text-xs text-cyan-100 underline hover:text-white"
-                  >
-                    Sign out
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setShowAuthModal(true)}
-                    className="text-xs text-cyan-100 underline hover:text-white"
-                  >
-                    Open sign in
-                  </button>
-                )}
-              </div>
-              {session && pendingSyncCount > 0 && (
-                <div className="text-[11px] text-amber-200 mt-1 max-w-[260px]">
-                  <div>
-                    {isSyncingPending
-                      ? `Syncing ${pendingSyncCount} pending change${pendingSyncCount === 1 ? '' : 's'}...`
-                      : isBrowserOffline
-                        ? `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} waiting for reconnect`
-                        : syncDiagnostics.failedCount > 0
-                          ? `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} queued after ${syncDiagnostics.highestRetryCount} failed sync attempt${syncDiagnostics.highestRetryCount === 1 ? '' : 's'}`
-                          : `${pendingSyncCount} change${pendingSyncCount === 1 ? '' : 's'} queued for sync`}
-                  </div>
-                  {syncDiagnostics.lastError && (
-                    <div className="text-[10px] text-red-200 mt-1">
-                      Last sync error: {syncDiagnostics.lastError}
-                    </div>
-                  )}
-                  {!isSyncingPending && (
-                    <button
-                      onClick={() => {
-                        void retryPendingSyncs();
-                      }}
-                      disabled={isBrowserOffline}
-                      className="text-[10px] text-purple-100 underline hover:text-white disabled:text-gray-400 disabled:no-underline mt-1"
-                    >
-                      {isBrowserOffline ? 'Retry unavailable offline' : 'Retry sync now'}
-                    </button>
-                  )}
-                </div>
-              )}
-              {session &&
-                guestSaveOffers.map(offer => (
-                  <div
-                    key={offer.gameId}
-                    className="text-[11px] text-emerald-200 mt-1 max-w-[260px]"
-                  >
-                    <div>
-                      Found a guest {offer.title} save on this device. Bring it
-                      into your account?
-                    </div>
-                    <div className="flex gap-3 mt-1">
-                      <button
-                        onClick={() => resolveGuestSaveOffer(offer.gameId, true)}
-                        className="text-[10px] text-emerald-100 underline hover:text-white"
-                      >
-                        Bring it with me
-                      </button>
-                      <button
-                        onClick={() => resolveGuestSaveOffer(offer.gameId, false)}
-                        className="text-[10px] text-gray-300 underline hover:text-white"
-                      >
-                        Leave it
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              {authError && (
-                <div className="text-[11px] text-red-200 mt-1 max-w-[220px]">
-                  {authError}
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-right text-xs text-orange-200 max-w-[200px]">
-              Supabase not configured; authentication is required.
-            </div>
-          )}
-          {session && (
+      {/* A single soft brand wash at the top of the page. No texture, no grid —
+          the content is the interface. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(80%_100%_at_50%_0%,rgba(124,107,255,0.14),transparent_70%)]"
+      />
+
+      <HubHeader
+        activeTab={activeTab}
+        onTabChange={tab => {
+          if (activeTab !== tab) {
+            playUiSound('click');
+            setActiveTab(tab);
+          }
+        }}
+        showTabs={showHub && !showAuthGate && !showAuthUnavailable && !showAccountLoading}
+        inGame={!showHub}
+        onBackToHub={handleBackToHub}
+        signedIn={!!session}
+        authDisabled={authDisabled}
+        playerName={welcomeName}
+        onOpenAuth={() => setShowAuthModal(true)}
+        onSignOut={() => signOut()}
+        onOpenHelp={() => setShowOnboarding(true)}
+        onOpenAudio={() => {
+          void ensureAudioInitialized().then(manager => {
+            manager.playSound('click');
+            setShowAudioSettings(true);
+          });
+        }}
+        syncSlot={
+          session ? (
+            <SyncStatus
+              pendingCount={pendingSyncCount}
+              isSyncing={isSyncingPending}
+              isOffline={isBrowserOffline}
+              diagnostics={syncDiagnostics}
+              onRetry={() => {
+                void retryPendingSyncs();
+              }}
+            />
+          ) : null
+        }
+        walletSlot={
+          session ? <CurrencyDisplay currencyService={currencyService} /> : null
+        }
+        playerSlot={
+          session ? (
+            <CompactPlayerBadge
+              userService={userService}
+              onOpenProfile={() => {
+                playUiSound('click');
+                setShowHub(true);
+                setActiveTab('profile');
+              }}
+            />
+          ) : null
+        }
+        devMenuItems={
+          process.env.NODE_ENV === 'development' && session ? (
             <>
-              <CompactPlayerBadge
-                userService={userService}
-                onOpenProfile={() => {
-                  playUiSound('click');
-                  setShowHub(true);
-                  setActiveTab('profile');
-                }}
-              />
-              <CurrencyDisplay currencyService={currencyService} />
+              <MenuItem
+                icon={<Icon name="coin" size={16} />}
+                onClick={() => currencyService.addCoins(500, 'debug_test')}
+              >
+                Add 500 coins
+              </MenuItem>
+              <MenuItem
+                icon={<Icon name="coin" size={16} />}
+                onClick={() => currencyService.addCoins(2000, 'debug_unlock')}
+              >
+                Add 2,000 coins
+              </MenuItem>
+              <MenuItem
+                icon={<Icon name="replay" size={16} />}
+                tone="danger"
+                onClick={resetProgress}
+              >
+                Reset all progress
+              </MenuItem>
             </>
-          )}
-        </div>
-      </header>
+          ) : null
+        }
+      />
 
-      {/* Notifications */}
-      {notifications.length > 0 && (
-        <div className="fixed top-4 right-4 z-50 space-y-2">
-          {notifications.map(notification => (
-            <div
-              key={notification.id}
-              className={`p-3 rounded-xl shadow-lg border bg-gray-900/80 backdrop-blur text-white animate-in slide-in-from-right ${
-                notification.type === 'achievement' ? 'border-yellow-500' :
-                notification.type === 'levelup' ? 'border-purple-500' :
-                'border-blue-500'
-              }`}
-            >
-              <div className="font-bold text-sm">{notification.title}</div>
-              <div className="text-xs text-gray-300">{notification.message}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      <HubNotifications
+        notifications={notifications}
+        onDismiss={id =>
+          setNotifications(previous => previous.filter(entry => entry.id !== id))
+        }
+      />
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto" data-testid="arcade-hub">
+      <main className="mx-auto max-w-7xl" data-testid="arcade-hub">
         {showAccountLoading ? (
-          <div className="mx-auto max-w-3xl rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-8 text-center text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-            <div className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">
-              Account Sync
-            </div>
-            <h2 className="mt-4 text-3xl font-black">Loading your arcade profile</h2>
-            <p className="mt-3 text-sm text-gray-300">
-              Pulling down your wallet, unlocks, challenges, and achievements before the
-              arcade opens.
-            </p>
-          </div>
+          <AccountLoading />
         ) : showAuthUnavailable ? (
-          <div className="mx-auto max-w-3xl rounded-3xl border border-orange-400/30 bg-orange-500/10 backdrop-blur-xl p-8 text-center text-orange-100 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-            <div className="text-xs uppercase tracking-[0.3em] text-orange-200/80">
-              Authentication Unavailable
-            </div>
-            <h2 className="mt-4 text-3xl font-black text-white">
-              This build cannot open the arcade right now
-            </h2>
-            <p className="mt-3 text-sm text-orange-100/90">
-              Supabase auth is not configured. Production access now requires a signed-in
-              account, so the guest path has been removed.
-            </p>
-          </div>
+          <AuthUnavailable />
         ) : showAuthGate ? (
-          <div className="mx-auto max-w-4xl rounded-3xl border border-white/10 bg-black/30 backdrop-blur-xl p-8 md:p-10 text-white shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
-            <div className="grid gap-8 lg:grid-cols-[1.25fr_0.75fr] lg:items-center">
-              <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-cyan-200/80">
-                  Production Access
-                </div>
-                <h2 className="mt-4 text-3xl md:text-5xl font-black leading-tight">
-                  Sign in to enter the arcade
-                </h2>
-                <p className="mt-4 max-w-2xl text-sm md:text-base text-gray-300 leading-relaxed">
-                  Guest play has been retired. Every session now runs against an authenticated
-                  player record so wallet balance, unlocks, achievements, challenges, and
-                  leaderboards stay tied to the correct account.
-                </p>
-                <div className="mt-6 grid gap-3 md:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
-                      Wallet
-                    </div>
-                    <div className="mt-2 text-sm text-gray-200">
-                      Trusted coin balance and unlock state.
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
-                      Progress
-                    </div>
-                    <div className="mt-2 text-sm text-gray-200">
-                      Challenges, achievements, and stats follow your account.
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                    <div className="text-xs uppercase tracking-wide text-cyan-200/80">
-                      Leaderboards
-                    </div>
-                    <div className="mt-2 text-sm text-gray-200">
-                      Scores post under the signed-in player identity.
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-5">
-                  <div className="text-xs uppercase tracking-[0.22em] text-cyan-100/70">
-                    Sign In Required
-                  </div>
-                  <h3 className="mt-3 text-2xl font-black leading-tight text-white">
-                    Use an approved account to continue
-                  </h3>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-300">
-                    This arcade now requires sign in. Use your assigned account to access
-                    progress, leaderboards, and sync.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="mt-5 w-full rounded-xl bg-white text-gray-950 py-3 font-semibold hover:bg-gray-100 transition-colors"
-                >
-                  Open sign in
-                </button>
-                <div className="mt-3 text-xs text-gray-400 leading-relaxed">
-                  Use one of the provisioned accounts for testing, or your assigned development
-                  account while we finish launch hardening.
-                </div>
-                {authError && (
-                  <div className="mt-4 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                    {authError}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <SignInGate onOpenAuth={() => setShowAuthModal(true)} authError={authError} />
         ) : showHub ? (
           <div className="space-y-6">
-            {/* Tab Navigation */}
-            <div className="flex justify-center lg:justify-start">
-              <div className="flex max-w-full gap-1 overflow-x-auto rounded-2xl border border-white/10 bg-slate-950/60 p-1 shadow-[0_14px_34px_rgba(0,0,0,0.28)] backdrop-blur">
-                {tabButtons.map(tab => (
-                  <button
-                    key={tab.id}
-                    data-testid={`arcade-tab-${tab.id}`}
-                    onClick={() => {
-                      if (activeTab !== tab.id) {
-                        playUiSound('click');
-                        setActiveTab(tab.id);
-                      }
-                    }}
-                    className={`min-h-11 shrink-0 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all ${
-                      activeTab === tab.id
-                        ? 'bg-gradient-to-r from-cyan-300 via-purple-400 to-amber-200 text-slate-950 shadow'
-                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    {tab.icon} {tab.label}
-                  </button>
-                ))}
+            {authError && (
+              <div className="rounded-control border border-bad/30 bg-bad-dim px-4 py-3 text-sm text-bad">
+                {authError}
               </div>
-            </div>
+            )}
 
-            {/* Tab Content */}
-            <div>
-              {activeTab === 'games' && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
-                        Daily Challenges
-                      </div>
-                      <div className="mt-2 flex items-baseline gap-2">
-                        <div className="text-3xl font-black text-white">
-                          {dailyCompleted}/{daily.length}
-                        </div>
-                        <div className="text-sm text-slate-300">complete</div>
-                      </div>
+            {guestSaveOffers.map(offer => (
+              <div
+                key={offer.gameId}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-control border border-good/30 bg-good-dim px-4 py-3"
+              >
+                <div className="text-sm text-ink">
+                  <span className="font-semibold">Local {offer.title} save found.</span>{' '}
+                  <span className="text-ink-muted">
+                    Bring it into your account, or leave it on this device?
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => resolveGuestSaveOffer(offer.gameId, true)}
+                  >
+                    Bring it with me
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => resolveGuestSaveOffer(offer.gameId, false)}
+                  >
+                    Leave it
+                  </Button>
+                </div>
+              </div>
+            ))}
+
+            {activeTab === 'games' && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <StatTile
+                    label="Balance"
+                    value={formatCoins(currentCoins)}
+                    suffix="coins"
+                    tone="coin"
+                    footer={
+                      <div className="text-xs text-ink-faint">{nextUnlockMessage}</div>
+                    }
+                  />
+                  <StatTile
+                    label="Games unlocked"
+                    value={unlockedGameCount}
+                    suffix={`/ ${PLAYABLE_GAME_CATALOG.length}`}
+                    footer={
+                      <ProgressBar
+                        value={unlockedGameCount}
+                        max={PLAYABLE_GAME_CATALOG.length}
+                        size="sm"
+                        label="Games unlocked"
+                      />
+                    }
+                  />
+                  <StatTile
+                    label="Tiers open"
+                    value={unlockedReleasedTierCount}
+                    suffix={`/ ${releasedTiers.length}`}
+                    footer={
+                      <ProgressBar
+                        value={unlockedReleasedTierCount}
+                        max={releasedTiers.length}
+                        size="sm"
+                        label="Tiers unlocked"
+                      />
+                    }
+                  />
+                  <StatTile
+                    label="Daily challenges"
+                    value={dailyCompleted}
+                    suffix={`/ ${daily.length}`}
+                    tone={
+                      daily.length > 0 && dailyCompleted === daily.length ? 'good' : 'ink'
+                    }
+                    footer={
                       <button
+                        type="button"
                         onClick={() => {
                           playUiSound('click');
                           setActiveTab('challenges');
                         }}
-                        className="mt-4 min-h-11 w-full rounded-xl border border-white/10 bg-white/10 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/15"
+                        className="text-xs font-semibold text-brand-bright underline-offset-4 hover:underline"
                       >
-                        View Challenges
+                        View challenges
                       </button>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
-                        Unlock Progress
-                      </div>
-                      <div className="mt-2 text-3xl font-black text-white">
-                        {unlockedGameCount}/{PLAYABLE_GAME_CATALOG.length}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-300">released games unlocked</div>
-                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold text-white/90">
-                        {nextUnlockMessage}
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-white/10 bg-slate-950/55 p-4 backdrop-blur">
-                      <div className="text-xs uppercase tracking-wider text-cyan-100/70">
-                        Balance
-                      </div>
-                      <div className="mt-2 text-3xl font-black text-amber-200">
-                        {currentCoins}
-                      </div>
-                      <div className="mt-1 text-sm text-slate-300">coins available</div>
-                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-center text-sm font-semibold text-white/90">
-                        Tiers open: {unlockedReleasedTierCount}/{releasedTiers.length}
-                      </div>
-                    </div>
-                  </div>
-                  <GameCarousel
-                    games={AVAILABLE_GAMES}
-                    unlockedTiers={unlockedTiers}
-                    unlockedGames={unlockedGames}
-                    currentCoins={currentCoins}
-                    onGameSelect={handleGameSelect}
-                    onTierUnlock={handleTierUnlock}
-                    onGameUnlock={handleGameUnlock}
+                    }
                   />
                 </div>
-              )}
 
-              {activeTab === 'leaderboards' && (
-                <div className="space-y-4">
-                  <LeaderboardsTab
-                    supabaseService={supabaseService}
-                    signedIn={!!session}
-                    authDisabled={authDisabled}
-                    games={PLAYABLE_GAME_CATALOG}
-                    unlockedTiers={unlockedTiers}
-                    unlockedGames={unlockedGames}
-                    onPlayGame={(gameId) => void handleGameSelect(gameId)}
-                    onRequestSignIn={() => setShowAuthModal(true)}
-                  />
-                </div>
-              )}
+                <GameLibrary
+                  games={AVAILABLE_GAMES}
+                  unlockedTiers={unlockedTiers}
+                  unlockedGames={unlockedGames}
+                  currentCoins={currentCoins}
+                  activity={gameActivity}
+                  onGameSelect={handleGameSelect}
+                  onTierUnlock={handleTierUnlock}
+                  onGameUnlock={handleGameUnlock}
+                />
+              </div>
+            )}
 
-              {activeTab === 'challenges' && (
+            {activeTab === 'leaderboards' && (
+              <LeaderboardsTab
+                supabaseService={supabaseService}
+                signedIn={!!session}
+                authDisabled={authDisabled}
+                games={PLAYABLE_GAME_CATALOG}
+                unlockedTiers={unlockedTiers}
+                unlockedGames={unlockedGames}
+                onPlayGame={gameId => void handleGameSelect(gameId)}
+                onRequestSignIn={() => setShowAuthModal(true)}
+              />
+            )}
+
+            {activeTab === 'challenges' && (
+              <div className="mx-auto max-w-3xl">
                 <DailyChallenges challengeService={challengeService} />
-              )}
+              </div>
+            )}
 
-              {activeTab === 'achievements' && (
-                <AchievementPanel achievementService={achievementService} />
-              )}
+            {activeTab === 'achievements' && (
+              <AchievementPanel achievementService={achievementService} />
+            )}
 
-              {activeTab === 'profile' && (
-                <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.6fr)]">
-                  <UserProfile userService={userService} />
-                  <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-                    <DailyChallenges challengeService={challengeService} />
-                    <AchievementPanel achievementService={achievementService} />
-                    <AnalyticsOverview analyticsOwnerId={session?.user.id} />
-                  </div>
+            {activeTab === 'profile' && (
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.6fr)]">
+                <UserProfile userService={userService} />
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <DailyChallenges challengeService={challengeService} />
+                  <AchievementPanel achievementService={achievementService} />
+                  <AnalyticsOverview analyticsOwnerId={session?.user.id} />
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         ) : audioManager ? (
-          <div className="flex justify-center">
-            <ThemedGameCanvas 
-              game={currentGame} 
-              currencyService={currencyService}
-              audioManager={audioManager}
-              achievementService={achievementService}
-              analyticsOwnerId={session?.user.id}
-              onGameEnd={handleGameEnd}
-            />
-          </div>
+          <ThemedGameCanvas
+            game={currentGame}
+            currencyService={currencyService}
+            audioManager={audioManager}
+            achievementService={achievementService}
+            analyticsOwnerId={session?.user.id}
+            onGameEnd={handleGameEnd}
+            onExit={handleBackToHub}
+          />
         ) : (
-          <div className="flex justify-center text-white">Loading audio engine...</div>
+          <div className="flex items-center justify-center gap-3 py-24 text-sm text-ink-muted">
+            <span className="loading-spinner h-5 w-5" />
+            Starting the audio engine…
+          </div>
         )}
       </main>
+
       {showOnboarding && (
         <OnboardingOverlay onClose={() => setShowOnboarding(false)} />
       )}

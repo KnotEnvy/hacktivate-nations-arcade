@@ -1,65 +1,108 @@
-﻿import Link from 'next/link';
+import Link from 'next/link';
+import { TIER_LABELS } from '@/lib/constants';
+import { getTierGameIncrement, getTierUnlockCost } from '@/lib/unlocks';
+import { formatCoins } from '@/lib/utils';
 
 export const metadata = {
   title: 'How to Play - HacktivateNations Arcade',
 };
 
+const TIERS = [0, 1, 2, 3, 4];
+
 export default function InstructionsPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4 text-gray-200">
-      <div className="max-w-3xl mx-auto space-y-8">
-        <h1 className="text-3xl font-bold text-center text-white">How to Play</h1>
+    <main className="min-h-screen bg-canvas px-4 py-12 text-ink">
+      <div className="mx-auto max-w-2xl">
+        <Link
+          href="/"
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-muted transition-colors hover:text-ink"
+        >
+          ← Back to Arcade
+        </Link>
 
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Getting Started</h2>
-          <p>
-            Play games to earn{' '}
-            <span className="text-yellow-400 font-bold">coins</span>. Use coins to unlock new tiers,
-            then unlock games within those tiers, and customize your profile.
+        <h1 className="mt-6 font-display text-3xl font-bold text-ink">How to Play</h1>
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+          The arcade is one shared progression loop: play games, earn coins, open more
+          of the cabinet.
+        </p>
+
+        <section className="mt-10 space-y-3">
+          <h2 className="text-lg font-bold text-ink">Getting started</h2>
+          <p className="text-sm leading-relaxed text-ink-muted">
+            Play games to earn <span className="font-semibold text-coin">coins</span>.
+            Coins unlock tiers, then the games inside them. Endless Runner is free from
+            the start, so you always have somewhere to begin.
           </p>
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Game Tiers</h2>
-          <p>Tiers open up more games to purchase and play:</p>
-          <ul className="list-disc list-inside space-y-1">
-            <li>Tier 0 is open by default, and the Runner game is free.</li>
-            <li>Unlock Tier 1 for 2,000 coins, Tier 2 for 5,000, Tier 3 for 10,000, and Tier 4 for 20,000.</li>
-            <li>After a tier is unlocked, buy its games one by one. Each tier has its own pricing curve (Tier 0 +100 per game, Tier 1 +1000, Tier 2 +5000, etc.).</li>
-          </ul>
+        <section className="mt-8 space-y-3">
+          <h2 className="text-lg font-bold text-ink">The unlock ladder</h2>
+          <p className="text-sm leading-relaxed text-ink-muted">
+            A tier is a shelf. Open the shelf first, then buy the games on it. Each
+            purchase inside a tier raises the price of the next one on that same shelf.
+          </p>
+
+          <div className="overflow-hidden rounded-panel border border-line">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-surface-2 text-[11px] font-bold uppercase tracking-[0.12em] text-ink-faint">
+                <tr>
+                  <th className="px-4 py-2.5">Tier</th>
+                  <th className="px-4 py-2.5">Opens for</th>
+                  <th className="px-4 py-2.5">Each game adds</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[color:var(--color-line)] bg-surface">
+                {TIERS.map(tier => (
+                  <tr key={tier}>
+                    <td className="px-4 py-2.5 font-semibold text-ink">
+                      {tier} · {TIER_LABELS[tier]}
+                    </td>
+                    <td className="tabular px-4 py-2.5 text-ink-muted">
+                      {tier === 0
+                        ? 'Open by default'
+                        : `${formatCoins(getTierUnlockCost(tier))} coins`}
+                    </td>
+                    <td className="tabular px-4 py-2.5 text-ink-muted">
+                      +{formatCoins(getTierGameIncrement(tier))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Game Types</h2>
-          <p>
-            The arcade features a variety of retro-inspired games like Endless Runner and Block Puzzle.
-            More games will be added over time.
+        <section className="mt-8 space-y-3">
+          <h2 className="text-lg font-bold text-ink">Daily challenges</h2>
+          <p className="text-sm leading-relaxed text-ink-muted">
+            Three challenges refresh every day. Each pays bonus coins, and clearing all
+            three applies a 1.5× coin multiplier.
           </p>
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Daily Challenges</h2>
-          <p>
-            Every day you receive three random challenges. Complete them for bonus coins. Finishing all
-            challenges applies a 1.5x coin multiplier.
+        <section className="mt-8 space-y-3">
+          <h2 className="text-lg font-bold text-ink">Achievements</h2>
+          <p className="text-sm leading-relaxed text-ink-muted">
+            One-time milestones across every game in the arcade. Each pays out once,
+            and they are the fastest route to the higher tiers.
           </p>
         </section>
 
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Achievements</h2>
-          <p>Unlock one-time achievements to earn extra coins and show off your skills.</p>
-        </section>
-
-        <section className="space-y-2">
-          <h2 className="text-xl font-bold text-purple-300">Player Profile</h2>
-          <p>
-            Your profile tracks level, play time, coins earned and more. Customize your avatar and view
-            detailed stats in the Profile tab.
+        <section className="mt-8 space-y-3">
+          <h2 className="text-lg font-bold text-ink">Your profile</h2>
+          <p className="text-sm leading-relaxed text-ink-muted">
+            Level, play time, coins earned and per-game stats live on your account and
+            follow you to any device you sign in on.
           </p>
         </section>
 
-        <div className="text-center pt-4">
-          <Link href="/" className="arcade-button inline-block">Back to Arcade</Link>
+        <div className="mt-12">
+          <Link
+            href="/"
+            className="inline-flex h-11 items-center rounded-control bg-brand px-5 font-semibold text-white transition-colors hover:bg-brand-bright"
+          >
+            Start playing
+          </Link>
         </div>
       </div>
     </main>

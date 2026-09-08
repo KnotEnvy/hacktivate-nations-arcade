@@ -1,10 +1,72 @@
 @import "tailwindcss";
 
-:root {
-  --background: #0a0a0a;
-  --foreground: #ededed;
+/* ==========================================================================
+   Arcade design tokens
+   --------------------------------------------------------------------------
+   Tailwind v4 reads its theme from this @theme block (there is no @config in
+   this project, so tailwind.config.mjs is not the source of truth). Anything
+   declared here becomes a real utility: --color-surface -> bg-surface /
+   text-surface / border-surface, --radius-panel -> rounded-panel, and so on.
 
-  /* Keep legacy theme tokens but back them with only three loaded families. */
+   The palette is a single dark neutral ramp plus one brand accent. Colour is
+   information here, not decoration: violet marks the primary action, amber is
+   always currency, emerald is always "earned/complete", red is always a
+   problem. Everything else is neutral.
+   ========================================================================== */
+@theme {
+  /* Neutral ramp — canvas is the page, surfaces stack upward from it. */
+  --color-canvas: #0a0b0f;
+  --color-canvas-deep: #06070a;
+  --color-surface: #101219;
+  --color-surface-2: #161923;
+  --color-surface-3: #1e222e;
+
+  /* Hairlines. Borders carry structure; they never glow. */
+  --color-line: rgba(255, 255, 255, 0.07);
+  --color-line-strong: rgba(255, 255, 255, 0.13);
+
+  /* Text ramp. */
+  --color-ink: #edeff5;
+  --color-ink-muted: #a2a9b8;
+  --color-ink-faint: #6d7484;
+
+  /* Accents. */
+  --color-brand: #7c6bff;
+  --color-brand-bright: #9182ff;
+  --color-brand-dim: #2a2450;
+  --color-coin: #f0b429;
+  --color-coin-dim: #3a2c0d;
+  --color-good: #34d399;
+  --color-good-dim: #0e3a2c;
+  --color-warn: #fbbf24;
+  --color-bad: #f87171;
+  --color-bad-dim: #3d1a1a;
+
+  /* Type. Inter runs the UI, Orbitron is display-only (wordmark, headline
+     numerals), JetBrains Mono carries anything the player reads as a value. */
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-orbitron), var(--font-inter), system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
+
+  --radius-panel: 1rem;
+  --radius-card: 0.875rem;
+  --radius-control: 0.625rem;
+
+  /* Shadows are soft and low-contrast — depth comes from surface value, not
+     from drop shadow. */
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.28);
+  --shadow-raised: 0 2px 4px rgba(0, 0, 0, 0.42), 0 18px 44px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 8px 12px rgba(0, 0, 0, 0.35), 0 28px 64px rgba(0, 0, 0, 0.5);
+
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+:root {
+  --background: var(--color-canvas);
+  --foreground: var(--color-ink);
+
+  /* Per-game themes (src/lib/gameThemes.ts) still reference these legacy font
+     tokens; they resolve to the three families the app actually loads. */
   --font-exo: var(--font-inter), system-ui, sans-serif;
   --font-source-code-pro: var(--font-jetbrains-mono), ui-monospace, monospace;
   --font-space-mono: var(--font-jetbrains-mono), ui-monospace, monospace;
@@ -24,81 +86,106 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings are tight and confident; the body copy stays quiet. */
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: -0.011em;
+}
+
+/* Anything the player reads as a *number* gets tabular figures so values stop
+   jittering as they tick up mid-run. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 .font-arcade {
-  font-family: var(--font-orbitron), var(--font-inter), system-ui, sans-serif;
+  font-family: var(--font-display);
 }
 
-/* Arcade component styles using standard Tailwind classes */
-.arcade-button {
-  @apply bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white font-bold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95;
+/* --------------------------------------------------------------------------
+   Focus
+   Keyboard focus is always visible and always the same shape.
+   -------------------------------------------------------------------------- */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-brand-bright);
+  outline-offset: 2px;
+  border-radius: var(--radius-control);
 }
 
+/* --------------------------------------------------------------------------
+   Legacy component classes
+   Kept so surfaces this pass does not touch (dev level editor, instructions,
+   error/loading routes) stay coherent instead of stranded on the old look.
+   New UI should use the <Panel>/<Button> primitives in src/components/ui.
+   -------------------------------------------------------------------------- */
 .arcade-panel {
-  @apply bg-gradient-to-br from-gray-900 to-gray-800 border-2 border-purple-500 rounded-xl p-6 backdrop-blur-sm;
-  box-shadow: 0 0 5px rgb(139 92 246), 0 0 10px rgb(139 92 246), 0 0 15px rgb(139 92 246);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-panel);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-panel);
 }
 
-.game-card {
-  @apply bg-white/5 border border-white/10 rounded-2xl overflow-hidden transition-all duration-300 cursor-pointer hover:bg-white/10 hover:border-purple-400/60 transform hover:-translate-y-1;
+.arcade-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  background-color: var(--color-brand);
+  color: #fff;
+  font-weight: 600;
+  padding: 0.625rem 1.125rem;
+  border-radius: var(--radius-control);
+  transition:
+    background-color 0.16s var(--ease-out-soft),
+    transform 0.16s var(--ease-out-soft);
 }
 
-.game-card:hover {
-  box-shadow:
-    0 10px 28px rgba(0, 0, 0, 0.45),
-    0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 0 24px rgba(139, 92, 246, 0.35);
+.arcade-button:hover {
+  background-color: var(--color-brand-bright);
+}
+
+.arcade-button:active {
+  transform: translateY(1px);
 }
 
 .currency-display {
-  @apply bg-gradient-to-r from-yellow-500 to-amber-500 text-black font-bold px-4 py-2 rounded-full shadow-lg;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  background-color: var(--color-coin-dim);
+  border: 1px solid rgba(240, 180, 41, 0.28);
+  color: var(--color-coin);
+  font-weight: 700;
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
 }
 
 .loading-spinner {
-  @apply animate-spin rounded-full border-4 border-gray-300 border-t-purple-500;
+  border: 3px solid var(--color-line-strong);
+  border-top-color: var(--color-brand);
+  border-radius: 999px;
+  animation: spin 0.8s linear infinite;
 }
 
-/* Game card thumbnail effects */
-.game-card .aspect-square {
-  position: relative;
-  overflow: hidden;
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.game-card .aspect-square img {
-  transition: transform 0.3s ease, filter 0.3s ease;
-}
-
-.game-card:hover .aspect-square img {
-  transform: scale(1.05);
-}
-
-/* Focus states for accessibility */
-.arcade-button:focus,
-.game-card:focus {
-  outline: 2px solid rgba(139, 92, 246, 0.8);
-  outline-offset: 2px;
-}
-
-.game-card .aspect-square::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(6, 182, 212, 0.1) 100%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: 1;
-}
-
-.game-card:hover .aspect-square::before {
-  opacity: 1;
-}
-
-/* Shimmer loading effect for images */
+/* --------------------------------------------------------------------------
+   Motion
+   Short, single-direction, ease-out. Nothing bounces.
+   -------------------------------------------------------------------------- */
 @keyframes shimmer {
   0% {
     background-position: -200px 0;
@@ -110,30 +197,99 @@ body {
 }
 
 .thumbnail-loading {
-  background: linear-gradient(90deg, #374151 0px, #4B5563 100px, #374151 200px);
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-2) 0px,
+    var(--color-surface-3) 100px,
+    var(--color-surface-2) 200px
+  );
   background-size: 200px 100%;
-  animation: shimmer 1.5s infinite;
+  animation: shimmer 1.4s infinite;
 }
 
-/* Custom scrollbar styling */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-rise-in {
+  animation: rise-in 0.22s var(--ease-out-soft) both;
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.24s var(--ease-out-soft) both;
+}
+
+@keyframes coin-tick {
+  0% {
+    transform: none;
+  }
+
+  40% {
+    transform: translateY(-3px);
+  }
+
+  100% {
+    transform: none;
+  }
+}
+
+.animate-coin-tick {
+  animation: coin-tick 0.42s var(--ease-out-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Scrollbars
+   -------------------------------------------------------------------------- */
 .custom-scrollbar {
-  scrollbar-color: #8B5CF6 #1F2937;
-  /* thumb color track color */
+  scrollbar-color: var(--color-surface-3) transparent;
+  scrollbar-width: thin;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
   height: 8px;
   width: 8px;
-
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #1F2937;
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background-color: #8B5CF6;
-  border-radius: 4px;
+  background-color: var(--color-surface-3);
+  border-radius: 999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-color: #2b3040;
+}
+
+/* Horizontal rails that should not advertise their scrollbar. */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -146,10 +302,7 @@ body {
     transition-duration: 0.01ms !important;
   }
 
-  .arcade-button,
-  .game-card,
-  .game-card:hover,
-  .game-card:hover .aspect-square img {
+  .arcade-button:active {
     transform: none !important;
   }
 }

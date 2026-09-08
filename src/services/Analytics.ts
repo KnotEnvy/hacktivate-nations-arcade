@@ -54,6 +54,14 @@ export interface ConversionMetrics {
   monetizationRate: number;
 }
 
+export interface GameActivityEntry {
+  gameId: string;
+  plays: number;
+  lastPlayed: number;
+  totalTime: number;
+  coinsEarned: number;
+}
+
 export interface PlayerInsights {
   skillLevel: 'beginner' | 'intermediate' | 'advanced' | 'expert';
   mostPlayedGame: string;
@@ -278,6 +286,22 @@ export class Analytics {
       })
       .map(([gameId]) => gameId)
       .slice(0, 3);
+  }
+
+  /**
+   * Per-game play history, most recently played first. The arcade library uses
+   * this to surface a "jump back in" card and to sort by recent activity.
+   */
+  getGameActivity(): GameActivityEntry[] {
+    return Object.entries(this.metrics.gameStats)
+      .map(([gameId, stats]) => ({
+        gameId,
+        plays: stats.plays,
+        lastPlayed: stats.lastPlayed,
+        totalTime: stats.totalTime,
+        coinsEarned: stats.coinsEarned,
+      }))
+      .sort((a, b) => b.lastPlayed - a.lastPlayed);
   }
 
   private computeFavoriteGame(): string {

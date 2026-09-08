@@ -10,6 +10,7 @@ HacktivateNations Arcade is a Next.js + TypeScript arcade hub for modular retro 
 - The production UX is sign-in-first; the old guest gameplay/profile flow is no longer the intended path.
 - PWA install/offline claims are intentionally disabled until the required assets and service-worker surface are complete.
 - The production home route uses a lightweight boot shell and loads the full arcade hub, Supabase auth/sync clients, and procedural audio system dynamically for faster startup.
+- The harness UI (hub shell, game selection, run shell) runs on a single design system defined in the `@theme` block of `src/app/globals.css`; see `DOCS/UI_Review_and_Suggestions.md`. There is no `tailwind.config.mjs` — Tailwind v4 reads the theme from the stylesheet.
 
 ## Installation
 
@@ -59,7 +60,7 @@ If adding or replacing a game later:
 1. Create the game folder under `src/games/<id>`
 2. Implement the `GameModule` interface or extend `src/games/shared/BaseGame.ts`
 3. Register the game in `src/games/registry.ts`
-4. Align the catalog entry in `src/data/Games.ts`
+4. Align the catalog entry in `src/data/Games.ts`, including its `category` and `tagline` (the arcade library uses both)
 5. Add the thumbnail under `public/games/<id>/<id>-thumb.svg`
 6. Verify the end-of-game payload reports the score, reward, and any stats needed for shared progression/analytics
 7. Run the verification commands and test the game through the signed-in hub
@@ -77,6 +78,7 @@ If you are replacing an existing coming-soon catalog entry, keep the id aligned 
 - `npm run test:dev -- --runInBand` runs the broader development-era Jest suites when you need them
 - `npm run build` creates a production build
 - `npm run e2e` runs the optional Playwright browser smoke tests
+- `npm run dev` also serves `/dev/hub-preview`, a mock-state harness for reviewing the menus without Supabase (stripped before build)
 
 The current deploy gate is:
 

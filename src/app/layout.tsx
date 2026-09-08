@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  themeColor: '#8B5CF6',
+  themeColor: '#0a0b0f',
 };
 
 export default function RootLayout({
@@ -33,7 +33,7 @@ export default function RootLayout({
 
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} ${fontVariables} antialiased bg-gray-900 text-white custom-scrollbar`}>
+      <body className={`${inter.className} ${fontVariables} custom-scrollbar bg-canvas text-ink antialiased`}>
         <div id="root">{children}</div>
       </body>
     </html>

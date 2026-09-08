@@ -1,9 +1,10 @@
-﻿// ===== src/components/arcade/CurrencyDisplay.tsx =====
+// ===== src/components/arcade/CurrencyDisplay.tsx =====
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CurrencyService } from '@/services/CurrencyService';
-import { formatNumber } from '@/lib/utils';
+import { Icon } from '@/components/ui/Icon';
+import { cn, formatCoins } from '@/lib/utils';
 
 interface CurrencyDisplayProps {
   currencyService?: CurrencyService;
@@ -11,7 +12,8 @@ interface CurrencyDisplayProps {
 
 export function CurrencyDisplay({ currencyService }: CurrencyDisplayProps) {
   const [coins, setCoins] = useState(0);
-  const [animate, setAnimate] = useState(false);
+  const [delta, setDelta] = useState<number | null>(null);
+  const previousRef = useRef(0);
 
   useEffect(() => {
     const service = currencyService ?? new CurrencyService();
@@ -19,29 +21,47 @@ export function CurrencyDisplay({ currencyService }: CurrencyDisplayProps) {
       service.init();
     }
 
-    setCoins(service.getCurrentCoins());
+    const initial = service.getCurrentCoins();
+    previousRef.current = initial;
+    setCoins(initial);
 
-    const unsubscribe = service.onCoinsChanged((newCoins) => {
+    const unsubscribe = service.onCoinsChanged(newCoins => {
+      const change = newCoins - previousRef.current;
+      previousRef.current = newCoins;
       setCoins(newCoins);
-      setAnimate(true);
-      setTimeout(() => setAnimate(false), 600);
+      if (change !== 0) {
+        setDelta(change);
+        window.setTimeout(() => setDelta(null), 1400);
+      }
     });
 
     return unsubscribe;
   }, [currencyService]);
 
   return (
-    <div
-      className={`currency-display transition-all duration-300 ${
-        animate ? 'animate-bounce scale-110' : ''
-      }`}
-    >
-      <span className="mr-2" aria-hidden>
-        {'\u{1F4B0}'}
-      </span>
-      <span className="font-mono" aria-label="Coins">
-        {formatNumber(coins)}
-      </span>
+    <div className="relative">
+      <div
+        className={cn(
+          'currency-display h-9 text-sm',
+          delta !== null && 'animate-coin-tick'
+        )}
+      >
+        <Icon name="coin" size={14} />
+        <span className="tabular" aria-label="Coins">
+          {formatCoins(coins)}
+        </span>
+      </div>
+      {delta !== null && (
+        <span
+          aria-hidden
+          className={cn(
+            'animate-rise-in pointer-events-none absolute -top-4 right-1 text-xs font-bold',
+            delta > 0 ? 'text-good' : 'text-bad'
+          )}
+        >
+          {delta > 0 ? `+${formatCoins(delta)}` : formatCoins(delta)}
+        </span>
+      )}
     </div>
   );
 }

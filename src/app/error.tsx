@@ -16,31 +16,35 @@ export default function Error({
   }, [error]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-4">
-      <div className="text-center max-w-md">
-        <div className="text-6xl mb-4">🎮💥</div>
-        <h2 className="text-2xl font-bold text-white mb-4">Oops! Game Crashed</h2>
-        <p className="text-gray-300 mb-6">
-          Something went wrong with the arcade. Don&apos;t worry, we can try to restart it!
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-4">
+      <div className="w-full max-w-md rounded-panel border border-line bg-surface p-8 text-center shadow-panel">
+        <h2 className="font-display text-xl font-bold text-ink">
+          The arcade hit a snag
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink-muted">
+          Something went wrong loading this screen. Restarting usually clears it, and
+          your progress is saved to your account.
         </p>
-        <div className="space-y-3">
-          <Button onClick={reset} className="arcade-button w-full">
-            Restart Arcade
+        <div className="mt-6 space-y-2">
+          <Button block onClick={reset}>
+            Restart arcade
           </Button>
-          <Button 
-            onClick={() => window.location.href = '/'} 
-            variant="outline"
-            className="w-full"
+          <Button
+            block
+            variant="secondary"
+            onClick={() => {
+              window.location.href = '/';
+            }}
           >
-            Go to Home
+            Back to home
           </Button>
         </div>
         {process.env.NODE_ENV === 'development' && (
           <details className="mt-6 text-left">
-            <summary className="cursor-pointer text-sm text-gray-400">
-              Error Details (Development)
+            <summary className="cursor-pointer text-xs font-semibold text-ink-faint">
+              Error details (development)
             </summary>
-            <pre className="mt-2 text-xs text-red-400 bg-black bg-opacity-50 p-3 rounded overflow-auto custom-scrollbar">
+            <pre className="custom-scrollbar mt-2 overflow-auto rounded-control bg-canvas-deep p-3 text-xs text-bad">
               {error.message}
             </pre>
           </details>

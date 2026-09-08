@@ -12,13 +12,13 @@ describe('CurrencyDisplay', () => {
     expect(screen.getByLabelText('Coins')).toHaveTextContent('250');
   });
 
-  it('formats large balances using formatNumber', () => {
+  it('formats large balances as grouped coin amounts', () => {
     const service = new CurrencyService();
     service.setBalance(12_345);
 
     render(<CurrencyDisplay currencyService={service} />);
 
-    expect(screen.getByLabelText('Coins')).toHaveTextContent('12.3K');
+    expect(screen.getByLabelText('Coins')).toHaveTextContent('12,345');
   });
 
   it('updates and animates when the service emits a balance change', () => {
@@ -31,20 +31,22 @@ describe('CurrencyDisplay', () => {
       const wrapper = container.querySelector('.currency-display') as HTMLElement;
 
       expect(screen.getByLabelText('Coins')).toHaveTextContent('10');
-      expect(wrapper).not.toHaveClass('animate-bounce');
+      expect(wrapper).not.toHaveClass('animate-coin-tick');
 
       act(() => {
         service.setBalance(99);
       });
 
       expect(screen.getByLabelText('Coins')).toHaveTextContent('99');
-      expect(wrapper).toHaveClass('animate-bounce');
+      expect(wrapper).toHaveClass('animate-coin-tick');
+      // The delta readout tells the player what just changed.
+      expect(screen.getByText('+89')).toBeInTheDocument();
 
-      // The animation flag clears after the 600ms timeout.
+      // The animation flag clears once the tick timeout elapses.
       act(() => {
-        jest.advanceTimersByTime(600);
+        jest.advanceTimersByTime(1400);
       });
-      expect(wrapper).not.toHaveClass('animate-bounce');
+      expect(wrapper).not.toHaveClass('animate-coin-tick');
     } finally {
       jest.useRealTimers();
     }

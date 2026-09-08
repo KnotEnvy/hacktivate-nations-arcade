@@ -27,4 +27,8 @@
 ## Commit & Pull Request Guidelines
 - Follow the existing history: concise, present-tense summaries under ~72 chars (e.g., `cleaned up registry`, `added e2e for runner`); include scope when helpful.
 - PRs should describe the change, link issues, list commands run (lint/type-check/tests/e2e), and attach screenshots or recordings for UI/gameplay tweaks.
-- When adding a game: create `src/games/<id>`, implement `GameModule`/`BaseGame`, register in `src/games/registry.ts`, and add `public/games/<id>/<id>-thumb.svg` (512×512). Reuse services (`AudioManager`, `InputManager`, `CurrencyService`, etc.) instead of bespoke wiring.
+- When adding a game: create `src/games/<id>`, implement `GameModule`/`BaseGame`, register in `src/games/registry.ts`, add `public/games/<id>/<id>-thumb.svg` (512×512), and fill in `category` and `tagline` on its `src/data/Games.ts` entry (the arcade library filters and card labels use them). Reuse services (`AudioManager`, `InputManager`, `CurrencyService`, etc.) instead of bespoke wiring.
+
+## Harness UI
+- Design tokens live in the `@theme` block of `src/app/globals.css` (Tailwind v4, no `@config` — there is no `tailwind.config.mjs`). Build new surfaces from the primitives in `src/components/ui` (`Panel`, `Button`, `Chip`/`Tag`, `ProgressBar`, `StatTile`, `Icon`, `Menu`) rather than hand-rolled class strings, and read `DOCS/UI_Review_and_Suggestions.md` first.
+- Review menu changes at `/dev/hub-preview` (dev-only route, mock state, no Supabase needed).

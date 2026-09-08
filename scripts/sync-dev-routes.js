@@ -18,6 +18,13 @@ export { default } from '@/dev/level-editor/LevelEditor';
 export { default } from '@/dev/dungeon-capture/DungeonCapture';
 `,
   },
+  {
+    filePath: path.join(rootDir, 'src', 'app', 'dev', 'hub-preview', 'page.tsx'),
+    content: `// ${marker}: created by scripts/sync-dev-routes.js.
+// Production verification commands remove this file before type-check/build.
+export { default } from '@/dev/hub-preview/HubPreview';
+`,
+  },
 ];
 
 const removeEmptyParents = (startDir, stopDir) => {
@@ -58,6 +65,12 @@ const clean = () => {
     force: true,
     recursive: true,
   });
+
+  // A previous `npm run dev` leaves a generated route validator that still
+  // imports the dev pages. Once they are removed it fails type-check with
+  // "Cannot find module ../../src/app/dev/...", which looks like a real error
+  // but is only a stale artifact. Next regenerates it on the next dev/build.
+  fs.rmSync(path.join(rootDir, '.next', 'types', 'validator.ts'), { force: true });
 };
 
 const command = process.argv[2];

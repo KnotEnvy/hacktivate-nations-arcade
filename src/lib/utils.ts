@@ -20,3 +20,11 @@ export function formatNumber(num: number): string {
   }
   return num.toString();
 }
+
+/**
+ * Coin amounts are money: always grouped, never abbreviated. `formatNumber`
+ * (1.2K) stays for dense score readouts where width matters more than precision.
+ */
+export function formatCoins(num: number): string {
+  return Math.round(num).toLocaleString('en-US');
+}
