@@ -10,7 +10,7 @@
       ".claude/CLAUDE.md (team workflow: plan first, spec in tasks/todo.md, verify before done)",
       "DOCS/START-HERE.md (arcade-wide state + the LEAN testing philosophy - do not fatten CI)",
       "This file, top to bottom - it is the single source of truth for the game",
-      "tasks/todo.md - CAREFUL, THERE ARE TWO. The LIVE one is the OUTER tasks/todo.md at the repo's PARENT directory (untracked, no git safety net - back it up before editing). The inner hacktivate-nations-arcade/tasks/todo.md is a tracked decoy frozen at Wave G; never write there.",
+      "tasks/todo.md - the LIVE one is the OUTER tasks/todo.md at the repo's PARENT directory (untracked, no git safety net - back it up before editing). The inner hacktivate-nations-arcade/tasks/todo.md decoy that used to sit alongside it was archived on 2026-09-16 to DOCS/archive/dungeon-crawl-wave-a-b-todo.md; the repo no longer has a tasks/ directory, so any tasks/todo.md you find is the outer live one.",
       "src/games/dungeon-crawl/DungeonCrawlGame.ts (orchestrator - start here for code)"
     ]
   },

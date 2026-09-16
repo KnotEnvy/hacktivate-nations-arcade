@@ -1,8 +1,8 @@
 # Start Here
 
-Last updated: July 12, 2026
+Last updated: September 16, 2026
 
-This is the minimal handoff set for the next team. The production-hardening pass, Speed Racer implementation, procedural audio pass, and startup-performance pass are complete. The remaining work before public launch is deployment-readiness review, signed-in browser smoke testing, and final production operations.
+This is the minimal handoff set for the next team. The production-hardening pass, Speed Racer implementation, procedural audio pass, startup-performance pass, and the harness UI/menu-flow pass are all complete. The remaining work before public launch is per-game polish, signed-in browser QA, and final production operations.
 
 ## July 12 Platform Hardening Update
 
@@ -19,13 +19,25 @@ This is the minimal handoff set for the next team. The production-hardening pass
 ## Read Order
 
 1. `README.md`
-2. `DOCS/PROJECT-RELEARN-HANDOFF-2026-04-13.md`
-3. `DOCS/ActionPlan.md`
-4. `DOCS/VERCEL-PRODUCTION-RUNBOOK.md` if you are assisting in any vercel production tasks
-5. `DOCS/AUDIO-SYSTEM-HANDOFF.md` if you are touching music, sound effects, the audio settings modal, or launch/hub music
-6. `DOCS/UserSystemsHandoff.md` if you are touching auth, persistence, Supabase, progression sync, analytics ownership, or local-save boundaries
-7. `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` if you need to change the live Supabase schema or verify the trusted progression RPC path
-8. `src/games/dungeon-crawl/Crawler_handoff.json` if you are touching Dungeon Crawl — it is the single source of truth for the game's v3/v4 AD&D transformation, the remaining wave specs (Sagas, Supabase save promotion), and its metric/achievement contracts. Note: its reference library (`DOCS/ADD2ndEdition/`) is gitignored and must be obtained from the project owner.
+2. `DOCS/PROJECT-RELEARN-HANDOFF-2026-04-13.md` — broad current-state handoff
+3. This file's "What To Work On Next"
+
+Then, only what your task touches:
+
+- `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md` — **read before any harness UI work** (design tokens, the `components/ui` primitives, the game library, the hub and run shells)
+- `DOCS/GAME_ENHANCEMENT_GUIDE.md` — if you are polishing an individual game's visuals
+- `DOCS/AUDIO-SYSTEM-HANDOFF.md` — music, sound effects, the audio settings modal, launch/hub music
+- `DOCS/UserSystemsHandoff.md` — auth, persistence, Supabase, progression sync, analytics ownership, local-save boundaries
+- `DOCS/SUPABASE-PRODUCTION-RUNBOOK.md` — changing live Supabase schema or verifying the trusted progression RPC path
+- `DOCS/VERCEL-PRODUCTION-RUNBOOK.md` — any Vercel production task
+- `DOCS/Test101.md` — the quality gate and what it deliberately does not run
+- `DOCS/leveling.md` — the XP curve
+- `DOCS/self-hosting-beta.md` — Docker + Caddy self-hosting
+- `DOCS/HacktivateNations Arcade - Product Requirements Document v2.md` — product intent
+- `src/games/dungeon-crawl/Crawler_handoff.json` — if you are touching Dungeon Crawl; it is the single source of truth for the game's v3/v4 AD&D transformation and its metric/achievement contracts. Note: its reference library (`DOCS/ADD2ndEdition/`) is gitignored and must be obtained from the project owner.
+
+`DOCS/archive/` holds superseded planning docs and finished build todos. Nothing
+there describes the current repo — see `DOCS/archive/README.md`.
 
 ## Current Verified Repo State
 
@@ -85,7 +97,7 @@ Verified on May 28, 2026 after the test-coverage + CI-realignment pass:
 Tests are written and exercised while **building** a game or subsystem. Once a feature ships, the production gate does not re-run the full development-era suite — it confirms the platform builds, the release-critical paths pass, and (via manual QA) that games load and play correctly. Concretely:
 
 - **Production / deploy gate (fast, the only CI gate):** `npm run type-check`, `npm run lint`, `npm test -- --runInBand` (10-test release-approval suite), `npm run build`.
-- **Development suite (situational):** `npm run test:dev -- --runInBand` (323 tests) — run when actively building or changing a subsystem, not as a release gate.
+- **Development suite (situational):** `npm run test:dev -- --runInBand` (749 tests) — run when actively building or changing a subsystem, not as a release gate.
 - **Platform / gameplay correctness:** verified by manual signed-in browser QA and the optional Playwright `browser-smoke` job (`workflow_dispatch`).
 
 **Do not add the development suite to the CI gate — the lean gate is a deliberate choice to keep builds fast.**
@@ -93,7 +105,7 @@ Tests are written and exercised while **building** a game or subsystem. Once a f
 ## September 8, 2026 — Harness UI & Menu Flow Pass
 
 The shell outside the games was taken from rough-draft to a single design system.
-Read `DOCS/UI_Review_and_Suggestions.md` before touching any harness UI — it is
+Read `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md` before touching any harness UI — it is
 now the design-system handoff, not the old retro-CRT proposal (that direction was
 reviewed and rejected).
 
@@ -120,8 +132,8 @@ Verified on September 8, 2026:
 
 - `npm run type-check`, `npm run lint`, `npm test -- --runInBand` (10-test
   release approval suite) and `npm run build` all pass
-- `npm run test:dev -- --runInBand` passes at 754 tests (was 754 before the pass:
-  the `GameCarousel` suite was replaced by `GameLibrary` + `gameLibrary` suites)
+- `npm run test:dev -- --runInBand` passes (the `GameCarousel` suite was replaced
+  by the `GameLibrary` component and `gameLibrary` logic suites)
 - `npm run e2e` arcade-smoke passes (3/3) against the signed-out access boundary
 - production build reports `/` at 105 kB first-load JS (was 103 kB)
 
@@ -129,26 +141,46 @@ Verified on September 8, 2026:
 
 Highest-value remaining work:
 
-1. Run signed-in browser QA against the deployed preview and production candidates.
-   - Verify auth, wallet updates, leaderboard writes, achievements, daily challenges, analytics ownership, queued sync retry, audio unlock/playback, Speed Racer, and sign-out/sign-in account reset
-2. Finish release-only operational decisions.
+1. **Per-game polish rounds.** The harness pass is done; the individual games
+   are the remaining rough edges. `DOCS/GAME_ENHANCEMENT_GUIDE.md` is the
+   reference, and `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md` defines the shell they sit
+   inside. Each game owns its own internal art direction.
+2. **Signed-in browser QA** against the deployed preview and production
+   candidates. Verify auth, wallet updates, leaderboard writes, achievements,
+   daily challenges, analytics ownership, queued sync retry, audio
+   unlock/playback, and sign-out/sign-in account reset. The automated gate
+   deliberately does not cover a signed-in gameplay session.
+3. **Release-only operational decisions.**
    - Decide whether placeholder leaderboard rows remain acceptable in production
    - Add monitoring/error tracking if that is still part of launch scope
-   - Rotate Supabase keys if any prior real values were shared outside the current secure deployment setup
-3. Keep the live Supabase project, `supabase/001_init.sql`, and `src/lib/supabase.types.ts` aligned after any future SQL change.
-4. Run the deploy gate before promotion: `npm.cmd run type-check`, `npm.cmd run lint`, `npm.cmd test -- --runInBand`, and `npm.cmd run build`. Use `npm.cmd run test:dev -- --runInBand` only when actively changing a subsystem and you want the broader development-era Jest coverage.
+   - Rotate Supabase keys if any prior real values were shared outside the
+     current secure deployment setup
+4. **Keep the live Supabase project, `supabase/001_init.sql`, and
+   `src/lib/supabase.types.ts` aligned** after any future SQL change.
 
-## Docs To Ignore Unless You Need Deep History
+Known smaller items:
 
-These are not the right starting point for day-to-day execution:
+- `AudioSettings.tsx` (1,809 lines) is the last major surface not on the design
+  system, and is the largest file flagged by the `max-lines` warning.
+- The shared `public/games/coming-soon-thumb.svg` is a plain grey box, so
+  unbuilt games render an icon placeholder in the library instead of art.
 
-- `DOCS/DevelopmentPlan.md`
-- `DOCS/DevelopmentPlan_2.md`
-- `DOCS/BUBBLE-POP-SESSION-HANDOFF.md`
-- `DOCS/FROG-HOP-SESSION-HANDOFF.md`
-- `DOCS/UI_Review_and_Suggestions.md`
-- `DOCS/Test101.md`
-- `DOCS/projectSetup.md`
-- the Product Requirements document in `DOCS/`
+## Verification
 
-Use those only if you need historical context for a specific subsystem or product decision.
+Run the deploy gate before promotion:
+
+```bash
+npm run type-check
+npm run lint
+npm test -- --runInBand
+npm run build
+```
+
+Use `npm run test:dev -- --runInBand` (749 tests) only when actively changing a
+subsystem and you want the broader development-era coverage — it is not a
+release gate. `npm run e2e` is a manual browser smoke check.
+
+While reviewing harness UI, `npm run dev` also serves `/dev/hub-preview`, which
+mounts the real menu components against mock state so they can be inspected
+without a Supabase project. Dev-only routes are stripped before type-check,
+lint and build.

@@ -33,7 +33,7 @@ This is the current orientation doc for the Hacktivate Arcade user systems. It i
 - Persistent sync outbox: `src/services/SupabaseSyncOutbox.ts`
 - Auth hook: `src/hooks/useSupabaseAuth.ts`
 - Signed-in sync hook: `src/hooks/useArcadeSupabaseSync.ts`
-- Auth UI: `src/components/auth/AuthModal.tsx`, `src/components/auth/WelcomeBanner.tsx`
+- Auth UI: `src/components/auth/AuthModal.tsx`, and the gate screens in `src/components/arcade/HubGate.tsx`
 - Auth callback: `src/app/auth/callback/page.tsx`
 - Supabase API wrapper: `src/services/SupabaseArcadeService.ts`
 - Hub integration: `src/components/arcade/ArcadeHub.tsx`

@@ -153,9 +153,9 @@ so it never ships. Use it for screenshots and layout review in future UI passes.
 
 ## 9. Known follow-ups
 
-- `WelcomeBanner`, `LeaderboardPanel` and `GameThemePreview` are no longer
-  imported anywhere. They were left in place (and unstyled) rather than deleted
-  in this pass — decide whether to delete them or wire them back in.
+- ~~`WelcomeBanner`, `LeaderboardPanel` and `GameThemePreview` are unused.~~
+  Deleted in the September 16, 2026 repo cleanup; recover from git history if
+  any of them is ever wanted back.
 - The `coming-soon` thumbnail asset is a plain grey "COMING SOON" box, so cards
   for unbuilt games render an icon placeholder instead of the image. Real
   roadmap art would be better.

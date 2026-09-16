@@ -153,7 +153,7 @@ The current best references are:
 
 - `DOCS/START-HERE.md`
 - `README.md`
-- `DOCS/ActionPlan.md`
+- `DOCS/archive/ActionPlan.md` (archived September 2026; superseded by `DOCS/START-HERE.md`)
 - `DOCS/UserSystemsHandoff.md`
 - live code
 

@@ -10,7 +10,7 @@ HacktivateNations Arcade is a Next.js + TypeScript arcade hub for modular retro 
 - The production UX is sign-in-first; the old guest gameplay/profile flow is no longer the intended path.
 - PWA install/offline claims are intentionally disabled until the required assets and service-worker surface are complete.
 - The production home route uses a lightweight boot shell and loads the full arcade hub, Supabase auth/sync clients, and procedural audio system dynamically for faster startup.
-- The harness UI (hub shell, game selection, run shell) runs on a single design system defined in the `@theme` block of `src/app/globals.css`; see `DOCS/UI_Review_and_Suggestions.md`. There is no `tailwind.config.mjs` — Tailwind v4 reads the theme from the stylesheet.
+- The harness UI (hub shell, game selection, run shell) runs on a single design system defined in the `@theme` block of `src/app/globals.css`; see `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md`. There is no `tailwind.config.mjs` — Tailwind v4 reads the theme from the stylesheet.
 
 ## Installation
 
