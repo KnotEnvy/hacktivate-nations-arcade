@@ -35,7 +35,8 @@ export class Player {
   private isJumping = false;
   private isSliding = false;
   private slideDuration = 0;
-  private slideMaxDuration = 0.55;
+  /** A tapped slide still lasts this long, so the move is never a no-op. */
+  private slideMinDuration = 0.28;
   private groundY: number;
   private worldWidth: number;
 
@@ -121,7 +122,14 @@ export class Player {
 
     if (this.isSliding) {
       this.slideDuration += dt;
-      if (this.slideDuration >= this.slideMaxDuration || !downPressed) {
+      // A slide lasts as long as the button is held.
+      //
+      // It used to stop dead at 0.55s whatever the player was doing, and
+      // because starting one needs a fresh press, holding DOWN through a run
+      // of barriers stood the runner straight up into the second one. Sliding
+      // is not a free dodge — a blocker still stops it and a pit still opens
+      // under it — so there is no reason to cap it.
+      if (!downPressed && this.slideDuration >= this.slideMinDuration) {
         this.endSlide();
       }
     }

@@ -154,7 +154,7 @@ export class Boss {
     this.bossType = BOSS_TYPE_BY_THEME[themeLevel % 5];
     this.config = BOSS_CONFIGS[this.bossType];
 
-    this.position = new Vector2(x, groundY - 168);
+    this.position = new Vector2(x, groundY - 210);
     this.size = new Vector2(112, 112);
     this.velocity = new Vector2(-50, 0);
 
@@ -227,7 +227,7 @@ export class Boss {
 
         // Subtle hover during the name card, in the same band the fight uses
         // so the boss does not jump position when the intro ends.
-        this.position.y = this.groundY - 152 + Math.sin(this.animationTime * 3) * 5;
+        this.position.y = this.groundY - 196 + Math.sin(this.animationTime * 3) * 5;
 
         if (this.introTimer >= this.introNameTime) {
           this.introPhase = 'ready';
@@ -364,16 +364,22 @@ export class Boss {
     // Vertical wave motion
     // The hover band is set by the JUMP ARC, not by taste.
     //
-    // A full-hold jump peaks about 128px up, so the runner's feet top out
-    // near groundY - 128. For a stomp to be possible the boss's top edge has
-    // to dip below that at the bottom of its wave — and for the fight to have
-    // rhythm it has to rise out of reach at the top. With a 112px body,
-    // -152 +/- 36 puts the top between groundY-188 and groundY-116: reachable
-    // on the downbeat, out of reach on the upbeat.
+    // Measured: a tapped jump lifts the runner 86px, a full-hold one 183px.
+    // The band has to satisfy three things at once —
+    //
+    //   reachable   the top edge dips inside 183px at the bottom of the wave
+    //   survivable  the BOTTOM edge stays above a standing runner's head, or
+    //               simply being near the boss at its low point is a free hit
+    //               (this is what made the fight feel unfair: the body came
+    //               down to the floor and there was nowhere to stand)
+    //   rhythmic    the top rises back out of reach, so timing matters
+    //
+    // -196 +/- 40 on a 112px body puts the top between groundY-236 and
+    // groundY-156 and the underside between groundY-124 and groundY-44.
     const waveSpeed = this.phase === 'rage' ? 2 : 1.5;
-    const waveAmplitude = this.phase === 'rage' ? 42 : 36;
+    const waveAmplitude = this.phase === 'rage' ? 46 : 40;
     this.targetY =
-      this.groundY - 152 + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
+      this.groundY - 196 + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
 
     const dy = this.targetY - this.position.y;
     this.position.y += dy * dt * 3;

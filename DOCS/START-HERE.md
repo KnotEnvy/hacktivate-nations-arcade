@@ -145,12 +145,15 @@ live in `src/games/runner/RECAP.md`; the short version:
 - The world, the cast, the chrome and the feel were all reworked. The HUD moved
   to `src/games/runner/systems/HudRenderer.ts` and now runs on the design system
   in `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md`.
-- Ten live bugs were fixed along the way, several of them rules rather than
+- Nineteen live bugs were fixed along the way, most of them rules rather than
   pixels: the "slide under it" barrier could not be slid under, pits were
-  harmless, spawn gaps shrank below a jump arc as the run sped up, and the base
-  HUD was drawing over the game's own.
-- 18 fairness tests now pin those rules (`npm run test:dev -- src/games/runner`).
-  They assert the invariants, not the tuning numbers.
+  harmless, spawn gaps shrank below a jump arc as the run sped up, the base HUD
+  drew over the game's own, boss contact ignored the invulnerability window so
+  three lives could go in a fifth of a second, and hover drones floated above a
+  standing runner's head.
+- 21 tests now pin those rules (`npm run test:dev -- src/games/runner`). They
+  assert the invariants, not the tuning numbers — including a reflex bot that
+  plays a full run and has to clear a boss every time.
 - A dev-only capture harness mirrors the Dungeon Crawl one:
   `npx playwright test runner-capture --project=chromium` writes one PNG per
   scene to `.captures/runner/`, including magnified crops of the runner. Like

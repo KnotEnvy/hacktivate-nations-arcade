@@ -211,12 +211,22 @@ export class ParallaxSystem {
         const sx = this.canvasWidth * 0.68;
         const sy = this.groundY - 252;
         this.drawGlowOrb(ctx, sx, sy, 66, '#FFF1C0', '#FF8A3D', 260);
-        // A light path spilling down toward the horizon.
-        const path = ctx.createLinearGradient(0, sy, 0, this.groundY);
-        path.addColorStop(0, 'rgba(255, 170, 90, 0.30)');
+        // A light path spilling down toward the horizon. Drawn as a radial
+        // wash rather than a rectangle with a vertical gradient — that
+        // version had hard left and right edges and read as a pale box
+        // hanging in the sky.
+        ctx.save();
+        ctx.translate(sx, sy);
+        ctx.scale(1, (this.groundY - sy) / 150);
+        const path = ctx.createRadialGradient(0, 0, 10, 0, 0, 150);
+        path.addColorStop(0, 'rgba(255, 170, 90, 0.26)');
+        path.addColorStop(0.6, 'rgba(255, 170, 90, 0.08)');
         path.addColorStop(1, 'rgba(255, 170, 90, 0)');
         ctx.fillStyle = path;
-        ctx.fillRect(sx - 120, sy, 240, this.groundY - sy);
+        ctx.beginPath();
+        ctx.arc(0, 0, 150, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
         break;
       }
       case 'moon': {

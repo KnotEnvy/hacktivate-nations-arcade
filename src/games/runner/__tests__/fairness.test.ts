@@ -289,8 +289,10 @@ describe('bosses stay inside the jump arc', () => {
       // Reachable: at the bottom of its wave the boss's top edge is within
       // the arc the player can actually reach.
       expect(GROUND_Y - lowestTop).toBeLessThan(peak);
-      // And it never buries itself in the ground.
-      expect(deepestBottom).toBeLessThanOrEqual(GROUND_Y + 1);
+      // And its underside stays clear of a standing runner's head, so there
+      // is somewhere to stand while lining the stomp up.
+      const standingTop = GROUND_Y - 30;
+      expect(deepestBottom).toBeLessThan(standingTop);
     }
   );
 

@@ -31,6 +31,21 @@ These were live in the shipped build:
 | The tutorial never spawned a barrier | "Slide under the barriers" with no barrier on screen |
 | Boss intro ran 5.4s (a 3.1s approach at 80px/s) | Five long waits per lap before a fight could start |
 
+A second round, found by putting a bot on the controls rather than by reading
+the code (`__tests__/playability.test.ts`):
+
+| Bug | Effect on the player |
+| --- | --- |
+| Boss contact ignored the post-hit invulnerability window | One bad approach drained all three lives in about a fifth of a second |
+| The boss's body dipped to the floor at the bottom of its hover | There was nowhere to stand near it; proximity alone was a hit |
+| Stomping required *falling*, and the body hung low | A jump that rose into the boss always cost a life, so the fight's own mechanic was a trap |
+| No cooldown between stomps | The bounce re-entered the hitbox and drained the health bar in a few frames |
+| Slides stopped dead at 0.55s and needed a fresh press to restart | Holding DOWN through consecutive barriers stood the runner up into the second one |
+| Hover drones sat at `groundY - 84` | Their box cleared a standing runner entirely; they only ever threatened someone mid-jump |
+| Paired spike beds left a 32px gap | Narrower than the runner, so not a landing spot, but wide enough to drop a short jump onto the second bed |
+| Flyers cruise at jump-apex height and ignored ground spacing | An enemy could sit exactly where a forced jump had to go |
+| `distance` accrued at full rate during a boss fight | A player could camp in a fight they had no intention of winning and farm score by dodging |
+
 ### The world
 
 `ParallaxSystem` was rebuilt around **seamless cached strips**. Each depth band
@@ -129,7 +144,20 @@ They pin the *rules*, not the tuning numbers:
 - coyote time and jump buffering both fire
 - the jump arc matches at 30fps and 144fps
 - every boss dips inside the measured jump arc at the bottom of its hover wave,
-  never sinks into the floor, and rises out of reach at the top
+  keeps its underside clear of a standing runner's head, and rises out of reach
+  at the top
+
+`playability.test.ts` adds three more that check the rules add up rather than
+each holding alone. A reflex bot — see a hazard, react to it, no foresight —
+drives a full run and has to clear at least one boss and reach stage 2 every
+time. Doing nothing has to end the run, but not immediately. The bot is
+deliberately dumb, so what it reaches is close to a floor on what a person can
+reach: if a tuning change drops it, the run got unfair rather than harder.
+
+The boss fight's intended answer, which the bot executes and the HUD states:
+the damage box is the bottom 45% inset 28% from each side, so **jump at the
+boss's flank and come down on its wide top**. Standing under a monster is
+still a hit.
 
 ### Looking at it
 

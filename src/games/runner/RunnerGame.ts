@@ -1,6 +1,7 @@
 // ===== src/games/runner/RunnerGame.ts (ENHANCED) =====
 import { BaseGame } from '@/games/shared/BaseGame';
 import { GameManifest, GameScore } from '@/lib/types';
+import { Rectangle } from '@/games/shared/utils/Vector2';
 import { Player } from './entities/Player';
 import { Obstacle, ObstacleType } from './entities/Obstacle';
 import { Coin } from './entities/Coin';
@@ -150,6 +151,8 @@ export class RunnerGame extends BaseGame {
 
   /** Frames of frozen simulation left, for hit impact. */
   private hitStopTimer: number = 0;
+  /** Seconds before the boss can be stomped again. */
+  private bossHitCooldown: number = 0;
   /** Countdown on the red edge flash after a hit. */
   private hurtFlashTimer: number = 0;
 
@@ -234,6 +237,7 @@ export class RunnerGame extends BaseGame {
     this.updateMusic();
 
     if (this.hurtFlashTimer > 0) this.hurtFlashTimer = Math.max(0, this.hurtFlashTimer - dt);
+    if (this.bossHitCooldown > 0) this.bossHitCooldown = Math.max(0, this.bossHitCooldown - dt);
 
     // Hit-stop freezes the SIMULATION only. The HUD clock and the music above
     // keep running, so the pause reads as impact rather than as a stall.
@@ -321,8 +325,13 @@ export class RunnerGame extends BaseGame {
     this.handlePlayerEffects(jumpStarted, landing, slideStarted);
 
 
-    // Update game speed and distance
-    const baseIncrement = this.gameSpeed * dt * 100;
+    // Update game speed and distance.
+    //
+    // A boss fight is fought in place, so the odometer only trickles. Left at
+    // the full rate a player could camp in a fight they had no intention of
+    // winning and farm score indefinitely just by dodging — distance is
+    // supposed to mean distance.
+    const baseIncrement = this.gameSpeed * dt * 100 * (this.boss ? 0.2 : 1);
     this.distance += baseIncrement;
     // A smooth, CAPPED ramp. The old `1 + floor(distance/1000) * 0.2` had no
     // ceiling, so a long run eventually outran its own jump arc.
@@ -699,9 +708,12 @@ export class RunnerGame extends BaseGame {
     // Two blockers close enough to read as one hazard, cleared by a single
     // held jump. Spaced by a fixed screen distance, never by wall time.
     if (roll < 0.14 + d * 0.1 && far > 900) {
+      // Two beds ABUTTING, not spaced. At 118 they left a 32px gap — narrower
+      // than the runner, so it was not a place you could land, but wide enough
+      // that a short jump dropped you onto the second bed.
       this.spawnObstacle(50, 'spike');
-      this.spawnObstacle(118, 'spike');
-      this.spawnCoinArc(84, 3, 74);
+      this.spawnObstacle(86, 'spike');
+      this.spawnCoinArc(70, 3, 84);
       return;
     }
 
@@ -783,12 +795,14 @@ export class RunnerGame extends BaseGame {
       o => Math.abs(o.position.x - spawnX) < 150
     );
 
-    if (this.distance > 500 && Math.random() < 0.35 + d * 0.25) {
+    // Flyers cruise at jump-apex height, so one placed over a ground hazard
+    // puts an enemy exactly where a forced jump has to go. Both aerials wait
+    // for clear ground.
+    if (this.distance > 500 && clearOfGround && Math.random() < 0.35 + d * 0.25) {
       this.spawnFlyingEnemy();
+      return;
     }
 
-    // The hover drone is stompable, so it is safe to place near the floor —
-    // but only where the player is not already mid-commitment.
     if (this.distance > 800 && clearOfGround && Math.random() < 0.3 + d * 0.25) {
       this.spawnHoverEnemy();
     }
@@ -1379,7 +1393,10 @@ export class RunnerGame extends BaseGame {
 
   private spawnHoverEnemy(): void {
     const x = this.canvas.width + 50;
-    const y = this.groundY - 84;
+    // At groundY - 84 the drone's box cleared a standing runner entirely, so
+    // it was only ever a hazard to someone already mid-jump. Down here it is
+    // a genuine obstacle: jump it, or land on it and pop it.
+    const y = this.groundY - 48;
     this.hoverEnemies.push(
       new HoverEnemy(x, y, this.environmentSystem.getCurrentTheme())
     );
@@ -1580,48 +1597,61 @@ export class RunnerGame extends BaseGame {
       }
     }
 
-    // Check boss collision (player can damage boss by jumping on it from above)
-    if (this.boss && !this.boss.isDefeated()) {
-      const bossBounds = this.boss.getBounds();
-      if (playerBounds.intersects(bossBounds)) {
-        // Stomp detection: player is falling AND player's center is above boss's top half
-        // This is more forgiving - allows stomping even when falling fast
-        const playerCenterY = this.player.position.y + this.player.size.y / 2;
-        const bossMidY = bossBounds.y + bossBounds.height / 2;
-        const isFalling = this.player.velocity.y > 0;
-        const isAboveBossCenter = playerCenterY < bossMidY;
+    // Boss contact.
+    //
+    // The boss is split into two boxes rather than one:
+    //
+    //   STOMP  the top 55% of the body, full width. Touching it hurts the
+    //          boss, whichever way the runner is moving. The old rule also
+    //          required falling, which meant a jump that rose into the boss
+    //          always cost a life — and since the body hangs low, that was the
+    //          default result of jumping at one.
+    //   BODY   the bottom 45%, inset by 28% on each side. This is the part
+    //          that hurts: stand under a monster and you get hit. Insetting it
+    //          leaves the flanks clear, so the answer is to jump at the boss's
+    //          EDGE and come down on the wide top.
+    //
+    // Damage from the boss also respects the post-hit invulnerability window.
+    // It did not before, so a single bad approach drained all three lives in
+    // about a fifth of a second.
+    if (this.boss && !this.boss.isDefeated() && this.bossHitCooldown <= 0) {
+      const b = this.boss.getBounds();
+      const stompBox = new Rectangle(b.x, b.y, b.width, b.height * 0.55);
+      const bodyBox = new Rectangle(
+        b.x + b.width * 0.28,
+        b.y + b.height * 0.55,
+        b.width * 0.44,
+        b.height * 0.45
+      );
 
-        if (isFalling && isAboveBossCenter) {
-          this.boss.takeDamage(1);
-          this.player.velocity.y = -10; // Stronger bounce for better feel
+      if (playerBounds.intersects(stompBox)) {
+        this.boss.takeDamage(1);
+        this.player.velocity.y = -10;
+        // Without a cooldown the bounce re-enters the same box next frame and
+        // drains the whole health bar in a handful of frames.
+        this.bossHitCooldown = 0.4;
 
-          // Impact ring on boss hit
-          this.particles.createImpactRing(
-            this.boss.position.x + this.boss.size.x / 2,
-            this.boss.position.y,
-            'boss'
-          );
+        this.particles.createImpactRing(
+          this.boss.position.x + this.boss.size.x / 2,
+          this.boss.position.y,
+          'boss'
+        );
+        this.particles.createBossHitEffect(
+          this.boss.position.x + this.boss.size.x / 2,
+          this.boss.position.y + this.boss.size.y / 2,
+          this.boss.getBossType()
+        );
 
-          // Boss hit particles
-          this.particles.createBossHitEffect(
-            this.boss.position.x + this.boss.size.x / 2,
-            this.boss.position.y + this.boss.size.y / 2,
-            this.boss.getBossType()
-          );
-
-          this.screenShake.shake(5, 0.15);
-          this.services.audio.playSound('coin');
-          this.pickups += 2; // Bonus coins for hitting boss
-
-          // Boss defeat is now handled via bossDefeatedForTheme flag
-        } else if (!isInvincible) {
-          // Side/bottom collision - use takeDamage to respect lives system
-          this.takeDamage();
-          return;
-        }
+        this.screenShake.shake(6, 0.16);
+        this.hitStopTimer = 0.05;
+        this.services.audio.playSound('hit');
+        this.pickups += 2;
+      } else if (canTakeDamage && playerBounds.intersects(bodyBox)) {
+        this.takeDamage();
+        return;
       }
     }
-    
+
     // Check coin collisions
     for (let i = this.coins.length - 1; i >= 0; i--) {
       const coin = this.coins[i];
@@ -1824,6 +1854,7 @@ export class RunnerGame extends BaseGame {
     this.deathAnimationScale = 1;
     this.hitStopTimer = 0;
     this.hurtFlashTimer = 0;
+    this.bossHitCooldown = 0;
     this.currentTrack = null;
     this.maxSpeedReached = 1;
     this.stageBannerTimer = 0;
