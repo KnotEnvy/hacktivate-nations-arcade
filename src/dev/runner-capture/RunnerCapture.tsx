@@ -89,7 +89,12 @@ interface GameInternals {
   distance: number;
   lives: number;
   gameSpeed: number;
-  boss: { health: number; maxHealth: number; takeDamage(n: number): void } | null;
+  boss: {
+    health: number;
+    maxHealth: number;
+    position: { x: number; y: number };
+    takeDamage(n: number): void;
+  } | null;
   bossProjectiles: unknown[];
   groundPounds: unknown[];
   bossDefeatedForTheme: boolean;
@@ -131,6 +136,8 @@ export interface RunnerCaptureControl {
   loupe(x: number, y: number, w: number, h: number): void;
   /** Blit a magnified crop centred on the runner, wherever they are. */
   loupePlayer(w?: number, h?: number): void;
+  /** Blit a magnified crop centred on the live boss. */
+  loupeBoss(w?: number, h?: number): void;
   state(): string;
   theme(): number;
   distance(): number;
@@ -312,6 +319,16 @@ export default function RunnerCapture() {
         control.loupe(
           Math.max(0, Math.min(canvas.width - w, pos.x + 16 - w / 2)),
           Math.max(0, Math.min(canvas.height - h, pos.y + 16 - h / 2)),
+          w,
+          h
+        );
+      },
+      loupeBoss: (w = 300, h = 240) => {
+        const boss = internals().boss;
+        if (!boss) return;
+        control.loupe(
+          Math.max(0, Math.min(canvas.width - w, boss.position.x + 56 - w / 2)),
+          Math.max(0, Math.min(canvas.height - h, boss.position.y + 56 - h / 2)),
           w,
           h
         );

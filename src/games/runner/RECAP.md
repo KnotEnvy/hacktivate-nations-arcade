@@ -182,14 +182,19 @@ why the gate stays lean.
 
 ## Still open
 
-- The forest stage is the least legible of the five: everything in it is green,
-  and the treant has to fight its own background. More value separation between
-  the canopy bands would help.
-- `ComboFlash` milestones stop at 30. A player who chains past that gets no
-  further acknowledgement.
 - Endless mode past stage 5 re-uses the same five stages with a boss HP bump
   (+50% every five bosses). It works, but nothing new is introduced.
 - The charge attack returns the boss to `baseX` at a fixed rate and can look
   stiff next to the other attacks.
 - Power-up drop weighting is flat across the four types; a player who wants a
   particular one cannot influence it.
+
+## One balance call worth a second opinion
+
+`ComboSystem` gained a **4x coin tier at a chain of twenty**, on top of the
+existing 1x / 2x / 3x. `pickups` converts straight into arcade currency through
+`CurrencyService.calculateGameReward`, so this is an economy knob and not only a
+score one. The reasoning: the table used to stop at 3x for a chain of ten, which
+left nothing to play for past ten coins in the arcade's headline game, and a
+single hit resets the chain. If the arcade's payout needs to come down, the
+whole table is four lines in `ComboSystem.addCoin`.

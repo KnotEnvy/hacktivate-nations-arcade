@@ -33,6 +33,7 @@ interface RunnerCaptureControl {
   setEvent(event: string): void;
   loupe(x: number, y: number, w: number, h: number): void;
   loupePlayer(w?: number, h?: number): void;
+  loupeBoss(w?: number, h?: number): void;
   state(): string;
   theme(): number;
   distance(): number;
@@ -132,7 +133,10 @@ test.describe('runner capture', () => {
         window.__rc!.step(120);
       });
       await shot(`21-boss-${i}-${THEMES[i]}-rage`);
-      await zoom(`22z-boss-${i}-${THEMES[i]}`, 420, 330, 380, 230);
+      await page.evaluate(() => window.__rc!.loupeBoss());
+      await loupe.screenshot({
+        path: path.join(OUT, `22z-boss-${i}-${THEMES[i]}.png`),
+      });
     }
 
     // 3b. The stage-clear screen, by finishing a boss off.

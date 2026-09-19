@@ -196,18 +196,22 @@ const PALETTES: Record<EnvironmentTheme, ThemePalette> = {
   forest: {
     id: 'forest',
     name: 'Deep Canopy',
+    // Forest was the least legible stage: everything in it sat in one narrow
+    // green value band, so the canopy walls, the trees and the boss all read
+    // as the same wash. Widening the sky's range front to back is what gives
+    // the depth bands something to separate against.
     sky: [
-      { at: 0, color: '#0E2019' },
-      { at: 0.38, color: '#1C3A28' },
-      { at: 0.7, color: '#3A6640' },
-      { at: 1, color: '#7FA765' },
+      { at: 0, color: '#08150F' },
+      { at: 0.36, color: '#1B3A26' },
+      { at: 0.68, color: '#437A48' },
+      { at: 1, color: '#A5C982' },
     ],
-    haze: 'rgba(127, 167, 101, 1)',
+    haze: 'rgba(165, 201, 130, 1)',
     celestial: 'shafts',
     skyline: 'canopy',
-    ridgeFar: '#77A268',
-    ridgeMid: '#3E6844',
-    ridgeNear: '#1B3323',
+    ridgeFar: '#6E9A5E',
+    ridgeMid: '#37603C',
+    ridgeNear: '#16291C',
     foliageDark: '#16301F',
     foliageMid: '#25512F',
     foliageLight: '#3E7A3F',

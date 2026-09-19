@@ -10,19 +10,22 @@ export class ComboFlash {
   private textScaleTarget: number = 1;
 
   private lastMilestone: number = 0;
-  private milestones: number[] = [5, 10, 15, 20, 25, 30];
+  /** Every fifth coin in a chain is a milestone, with no upper bound. */
+  private readonly milestoneStep: number = 5;
 
   trigger(combo: number): void {
-    // Check if we hit a new milestone
-    for (const milestone of this.milestones) {
-      if (combo >= milestone && this.lastMilestone < milestone) {
-        this.flashPhase = 'in';
-        this.timer = 0;
-        this.textScale = 1.5; // Pop effect
-        this.lastMilestone = milestone;
-        break;
-      }
-    }
+    // The old version held a fixed list ending at 30, so a player who chained
+    // past it got no further acknowledgement — exactly the player who most
+    // deserves one.
+    const milestone = Math.floor(combo / this.milestoneStep) * this.milestoneStep;
+    if (milestone < this.milestoneStep || milestone <= this.lastMilestone) return;
+
+    this.flashPhase = 'in';
+    this.timer = 0;
+    // The pop grows a little with the chain, then settles, so a deep combo
+    // reads as bigger without becoming obnoxious.
+    this.textScale = 1.4 + Math.min(0.5, milestone / 100);
+    this.lastMilestone = milestone;
   }
 
   resetMilestones(): void {

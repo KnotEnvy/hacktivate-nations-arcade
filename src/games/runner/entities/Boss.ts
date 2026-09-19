@@ -90,7 +90,10 @@ const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     primaryColor: '#16A34A',
     secondaryColor: '#166534',
     glowColor: '#4ADE80',
-    eyeColor: '#DCFCE7'
+    // Amber, not near-white: in the carved sockets a white disc reads as an
+    // eyeball stuck on a tree, where a warm one reads as something burning
+    // inside it.
+    eyeColor: '#FDBA74'
   }
 };
 

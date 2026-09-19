@@ -12,8 +12,17 @@ export class ComboSystem {
     this.comboTimer = this.comboTimeLimit;
     if (this.combo > this.maxCombo) this.maxCombo = this.combo;
     
-    // Calculate multiplier based on combo
-    if (this.combo >= 10) {
+    // Coin multiplier tiers.
+    //
+    // NOTE: `pickups` converts straight into arcade currency
+    // (CurrencyService.calculateGameReward), so this table is an economy knob,
+    // not just a score one. It used to stop at 3x for a chain of 10, which
+    // left nothing to play for past ten coins. The 4x tier asks for twenty
+    // unbroken pickups — and a single hit resets the chain — so it is earned.
+    // Dial it back here if the arcade's payout needs to come down.
+    if (this.combo >= 20) {
+      this.multiplier = 4;
+    } else if (this.combo >= 10) {
       this.multiplier = 3;
     } else if (this.combo >= 5) {
       this.multiplier = 2;
