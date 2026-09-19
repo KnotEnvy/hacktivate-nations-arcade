@@ -1,5 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
+// Sandboxed/self-hosted runners often ship a Chromium that does not match the
+// build Playwright would download. Point this at that binary to use it instead;
+// unset (the normal case) it changes nothing.
+const chromiumExecutable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 60_000,
@@ -22,7 +27,12 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        ...(chromiumExecutable
+          ? { launchOptions: { executablePath: chromiumExecutable } }
+          : {}),
+      },
     },
     // Enable more browsers later as needed
     // { name: 'firefox', use: { ...devices['Desktop Firefox'] } },

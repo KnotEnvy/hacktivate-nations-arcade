@@ -58,6 +58,11 @@ export class ComboSystem {
     return this.comboTimer;
   }
 
+  /** The full window, so the HUD can draw the drain bar to scale. */
+  getTimeLimit(): number {
+    return this.comboTimeLimit;
+  }
+
   getMaxCombo(): number {
     return this.maxCombo;
   }

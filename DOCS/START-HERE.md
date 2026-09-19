@@ -137,12 +137,37 @@ Verified on September 8, 2026:
 - `npm run e2e` arcade-smoke passes (3/3) against the signed-out access boundary
 - production build reports `/` at 105 kB first-load JS (was 103 kB)
 
+## September 19, 2026 — Endless Runner polish round
+
+The first per-game polish round is done, on the tier-0 headliner. Full notes
+live in `src/games/runner/RECAP.md`; the short version:
+
+- The world, the cast, the chrome and the feel were all reworked. The HUD moved
+  to `src/games/runner/systems/HudRenderer.ts` and now runs on the design system
+  in `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md`.
+- Ten live bugs were fixed along the way, several of them rules rather than
+  pixels: the "slide under it" barrier could not be slid under, pits were
+  harmless, spawn gaps shrank below a jump arc as the run sped up, and the base
+  HUD was drawing over the game's own.
+- 18 fairness tests now pin those rules (`npm run test:dev -- src/games/runner`).
+  They assert the invariants, not the tuning numbers.
+- A dev-only capture harness mirrors the Dungeon Crawl one:
+  `npx playwright test runner-capture --project=chromium` writes one PNG per
+  scene to `.captures/runner/`, including magnified crops of the runner. Like
+  the dungeon capture spec it is deliberately NOT in the CI gate.
+- `playwright.config.ts` honours `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, for
+  sandboxed runners whose Chromium build does not match Playwright's download.
+
+Verified on September 19, 2026: `npm run type-check`, `npm run lint`,
+`npm test -- --runInBand` (10-test release approval suite), `npm run build`, and
+`npm run test:dev -- --runInBand` (767 tests) all pass.
+
 ## What To Work On Next
 
 Highest-value remaining work:
 
-1. **Per-game polish rounds.** The harness pass is done; the individual games
-   are the remaining rough edges. `DOCS/GAME_ENHANCEMENT_GUIDE.md` is the
+1. **Per-game polish rounds.** The harness pass is done and Endless Runner has
+   had its round; the other games are the remaining rough edges. `DOCS/GAME_ENHANCEMENT_GUIDE.md` is the
    reference, and `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md` defines the shell they sit
    inside. Each game owns its own internal art direction.
 2. **Signed-in browser QA** against the deployed preview and production

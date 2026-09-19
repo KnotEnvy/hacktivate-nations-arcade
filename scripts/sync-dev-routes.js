@@ -19,6 +19,13 @@ export { default } from '@/dev/dungeon-capture/DungeonCapture';
 `,
   },
   {
+    filePath: path.join(rootDir, 'src', 'app', 'dev', 'runner', 'page.tsx'),
+    content: `// ${marker}: created by scripts/sync-dev-routes.js.
+// Production verification commands remove this file before type-check/build.
+export { default } from '@/dev/runner-capture/RunnerCapture';
+`,
+  },
+  {
     filePath: path.join(rootDir, 'src', 'app', 'dev', 'hub-preview', 'page.tsx'),
     content: `// ${marker}: created by scripts/sync-dev-routes.js.
 // Production verification commands remove this file before type-check/build.

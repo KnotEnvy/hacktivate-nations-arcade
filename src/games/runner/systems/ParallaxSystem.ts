@@ -1,831 +1,1184 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-// ===== src/games/runner/systems/ParallaxSystem.ts (FULL DETAIL - ANIMATION FIXED) =====
-import { EnvironmentTheme } from './EnvironmentSystem';
+// ===== src/games/runner/systems/ParallaxSystem.ts =====
+//
+// Six depth bands, drawn back to front:
+//
+//   sky features (celestial body, stars)  static
+//   clouds                                0.08
+//   far silhouettes                       0.14
+//   mid hills / structures                0.30
+//   near props                            0.55
+//   ground detail                         1.00
+//
+// Every band except the sky is a SEAMLESS STRIP: its content is generated once
+// into an offscreen canvas whose left and right edges line up, then blitted
+// twice per frame. That buys three things at once —
+//
+//   * no shimmer. The old system seeded element size and type from the element's
+//     SCREEN position, so a tree changed shape as it scrolled. Strip-local
+//     seeding is fixed for the life of the strip.
+//   * detail is free. A strip is drawn on theme change, not 60 times a second,
+//     so the bands can carry far more geometry than a per-frame renderer could.
+//   * ridges tile because their height functions are built from integer
+//     harmonics of the strip width, so h(0) === h(width).
+//
+// If an offscreen canvas is unavailable (jsdom, exotic embeds) every band falls
+// back to drawing straight to the passed context.
 
-type ThemeColors = any;
+import {
+  EnvironmentSystem,
+  EnvironmentTheme,
+  ThemePalette,
+} from './EnvironmentSystem';
 
-interface ParallaxLayer {
-  speed: number;
-  zIndex: number;
+interface Band {
   name: string;
-  renderMethod: (ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme) => void;
+  speed: number;
+  /** Where the strip sits vertically, relative to the canvas top. */
+  top: number;
+  height: number;
+  draw: (ctx: CanvasRenderingContext2D, p: ThemePalette, width: number) => void;
 }
 
+interface Mote {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  size: number;
+  life: number;
+  maxLife: number;
+  phase: number;
+}
+
+/** Stable hash → [0, 1). Used for per-element variation inside a strip. */
+const hash = (n: number): number => {
+  const s = Math.sin(n * 127.1 + 311.7) * 43758.5453;
+  return s - Math.floor(s);
+};
+
 export class ParallaxSystem {
-  private layers: ParallaxLayer[] = [];
   private canvasWidth: number;
   private canvasHeight: number;
   private groundY: number;
-  private distance: number = 0;
-  
+  private distance = 0;
+  private time = 0;
+
+  private bands: Band[] = [];
+  /** One cached strip per band, rebuilt whenever the theme changes. */
+  private strips = new Map<string, HTMLCanvasElement>();
+  private stripTheme: EnvironmentTheme | null = null;
+
+  private motes: Mote[] = [];
+  private moteBudget = 0;
+
+  /** Strips are twice the canvas so repeats stay off-screen for a long while. */
+  private get stripWidth(): number {
+    return this.canvasWidth * 2;
+  }
+
   constructor(canvasWidth: number, canvasHeight: number, groundY: number) {
     this.canvasWidth = canvasWidth;
     this.canvasHeight = canvasHeight;
     this.groundY = groundY;
-    this.initializeLayers();
-  }
-  
-  private initializeLayers(): void {
-    // Layer 1: Far Background Mountains/Skyline - Full panoramic view
-    this.layers.push({
-      name: 'background',
-      speed: 0.05,
-      zIndex: 1,
-      renderMethod: this.renderBackgroundLayer.bind(this)
-    });
-    
-    // Layer 2: Mid-distance detailed landscape
-    this.layers.push({
-      name: 'midground',
-      speed: 0.15,
-      zIndex: 2,
-      renderMethod: this.renderMidgroundLayer.bind(this)
-    });
-    
-    // Layer 3: Detailed cloud formations
-    this.layers.push({
-      name: 'clouds',
-      speed: 0.25,
-      zIndex: 3,
-      renderMethod: this.renderCloudLayer.bind(this)
-    });
-    
-    // Layer 4: Rich foreground elements
-    this.layers.push({
-      name: 'foreground',
-      speed: 0.4,
-      zIndex: 4,
-      renderMethod: this.renderForegroundLayer.bind(this)
-    });
-    
-    // Layer 5: Detailed ground textures
-    this.layers.push({
-      name: 'ground-details',
-      speed: 1.0,
-      zIndex: 5,
-      renderMethod: this.renderGroundDetailLayer.bind(this)
-    });
-  }
-  
-  /**
-   * Advance the parallax layers by the given distance delta.
-   * Using a delta keeps the internal distance small and avoids
-   * precision issues when the game runs for a long time.
-   */
-  update(delta: number): void {
-    this.distance += delta;
+    this.buildBands();
   }
 
-  /** Reset parallax scroll distance. */
-    reset(): void {
-    this.distance = 0;
+  private buildBands(): void {
+    const sky = this.groundY;
+    this.bands = [
+      {
+        name: 'clouds',
+        speed: 0.08,
+        top: 0,
+        height: Math.max(80, sky * 0.55),
+        draw: (ctx, p, w) => this.drawClouds(ctx, p, w, Math.max(80, sky * 0.55)),
+      },
+      {
+        name: 'far',
+        speed: 0.14,
+        top: sky - 330,
+        height: 330,
+        draw: (ctx, p, w) => this.drawFar(ctx, p, w, 330),
+      },
+      {
+        name: 'mid',
+        speed: 0.3,
+        top: sky - 190,
+        height: 190,
+        draw: (ctx, p, w) => this.drawMid(ctx, p, w, 190),
+      },
+      {
+        name: 'near',
+        speed: 0.55,
+        top: sky - 90,
+        height: 92,
+        draw: (ctx, p, w) => this.drawNear(ctx, p, w, 90),
+      },
+    ];
   }
-  
+
+  /**
+   * @param delta distance the world scrolled this frame, in world units
+   * @param dt    seconds elapsed, for animation that is not scroll-driven
+   */
+  update(delta: number, dt = delta / 6000): void {
+    this.distance += delta;
+    this.time += dt;
+    this.updateMotes(dt, delta);
+  }
+
+  reset(): void {
+    this.distance = 0;
+    this.time = 0;
+    this.motes = [];
+  }
+
   render(ctx: CanvasRenderingContext2D, theme: EnvironmentTheme): void {
-    this.layers.forEach(layer => {
-      const layerWidth = this.canvasWidth * 2; // Same as before
-      const offset = (this.distance * layer.speed) % layerWidth; // Same calculation
-      
+    const palette = EnvironmentSystem.paletteFor(theme);
+
+    if (this.stripTheme !== theme) {
+      this.strips.clear();
+      this.stripTheme = theme;
+      this.motes = [];
+    }
+
+    this.renderSky(ctx, palette);
+
+    for (const band of this.bands) {
+      this.renderBand(ctx, band, palette);
+    }
+
+    this.renderMotes(ctx, palette);
+  }
+
+  // ---------------------------------------------------------------- sky ----
+
+  /** Sky gradient plus whatever hangs in it. Drawn every frame; it is cheap. */
+  private renderSky(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
+    const gradient = ctx.createLinearGradient(0, 0, 0, this.groundY);
+    for (const stop of p.sky) gradient.addColorStop(stop.at, stop.color);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, this.canvasWidth, this.groundY);
+
+    if (p.celestial === 'moon') this.drawStars(ctx, p);
+    this.drawCelestial(ctx, p);
+
+    // Horizon haze: the single strongest depth cue. Everything drawn after this
+    // sits in front of it, everything painted into it recedes.
+    const haze = ctx.createLinearGradient(0, this.groundY - 220, 0, this.groundY);
+    haze.addColorStop(0, this.withAlpha(p.haze, 0));
+    haze.addColorStop(1, this.withAlpha(p.haze, 0.55));
+    ctx.fillStyle = haze;
+    ctx.fillRect(0, this.groundY - 220, this.canvasWidth, 220);
+  }
+
+  private drawStars(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
+    // Stars drift a hair slower than the clouds, so the sky has depth too.
+    const drift = (this.distance * 0.02) % this.canvasWidth;
+    const horizon = this.groundY - 120;
+    for (let i = 0; i < 90; i++) {
+      const x = (hash(i) * this.canvasWidth * 2 - drift) % (this.canvasWidth * 2);
+      const sx = x < 0 ? x + this.canvasWidth * 2 : x;
+      if (sx > this.canvasWidth) continue;
+      const y = hash(i + 500) * horizon;
+      // Twinkle: a slow per-star phase, never all at once.
+      const twinkle = 0.45 + 0.55 * Math.abs(Math.sin(this.time * 1.4 + i));
+      const size = hash(i + 900) > 0.88 ? 2 : 1;
+      // Fade stars out toward the bright horizon.
+      const depth = 1 - y / horizon;
+      ctx.globalAlpha = twinkle * (0.25 + depth * 0.65);
+      ctx.fillStyle = hash(i + 1300) > 0.85 ? '#BFD7FF' : '#FFFFFF';
+      ctx.fillRect(sx, y, size, size);
+    }
+    ctx.globalAlpha = 1;
+
+    void p;
+  }
+
+  private drawCelestial(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
+    // Parked high and right, drifting only a little — it reads as very distant.
+    const drift = (this.distance * 0.01) % (this.canvasWidth * 4);
+    const x = this.canvasWidth * 0.76 - drift * 0.06;
+    const wrapped = ((x % (this.canvasWidth * 1.6)) + this.canvasWidth * 1.6) %
+      (this.canvasWidth * 1.6);
+
+    switch (p.celestial) {
+      case 'sun':
+        this.drawGlowOrb(ctx, wrapped, 92, 34, '#FFF6C9', '#FFD35B', 130);
+        break;
+      case 'setting-sun': {
+        // Low, huge, and sitting right on the haze line.
+        const sx = this.canvasWidth * 0.68;
+        const sy = this.groundY - 252;
+        this.drawGlowOrb(ctx, sx, sy, 66, '#FFF1C0', '#FF8A3D', 260);
+        // A light path spilling down toward the horizon.
+        const path = ctx.createLinearGradient(0, sy, 0, this.groundY);
+        path.addColorStop(0, 'rgba(255, 170, 90, 0.30)');
+        path.addColorStop(1, 'rgba(255, 170, 90, 0)');
+        ctx.fillStyle = path;
+        ctx.fillRect(sx - 120, sy, 240, this.groundY - sy);
+        break;
+      }
+      case 'moon': {
+        const mx = this.canvasWidth * 0.78;
+        const my = 96;
+        this.drawGlowOrb(ctx, mx, my, 30, '#FFFFFF', '#CFE0FF', 120);
+        // Craters, bitten out of the disc rather than painted on top.
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(mx, my, 30, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.fillStyle = 'rgba(150, 170, 210, 0.45)';
+        const craters: [number, number, number][] = [
+          [-9, -7, 7],
+          [8, 4, 9],
+          [-4, 12, 5],
+          [13, -11, 4],
+        ];
+        for (const [cx, cy, r] of craters) {
+          ctx.beginPath();
+          ctx.arc(mx + cx, my + cy, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+        break;
+      }
+      case 'white-sun': {
+        const sx = this.canvasWidth * 0.72;
+        this.drawGlowOrb(ctx, sx, 74, 26, '#FFFFFF', '#FFF0B8', 190);
+        // Heat shimmer: faint horizontal bands wobbling above the dunes.
+        ctx.globalAlpha = 0.12;
+        ctx.fillStyle = '#FFFFFF';
+        for (let i = 0; i < 6; i++) {
+          const y = this.groundY - 40 - i * 9;
+          const wob = Math.sin(this.time * 1.6 + i * 1.3) * 12;
+          ctx.fillRect(wob, y, this.canvasWidth, 2);
+        }
+        ctx.globalAlpha = 1;
+        break;
+      }
+      case 'shafts': {
+        // God rays cutting down through the canopy.
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        for (let i = 0; i < 5; i++) {
+          const baseX = (i / 5) * this.canvasWidth + 60;
+          const sway = Math.sin(this.time * 0.35 + i) * 18;
+          const grad = ctx.createLinearGradient(0, 0, 0, this.groundY);
+          grad.addColorStop(0, 'rgba(198, 236, 150, 0.16)');
+          grad.addColorStop(0.7, 'rgba(198, 236, 150, 0.05)');
+          grad.addColorStop(1, 'rgba(198, 236, 150, 0)');
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.moveTo(baseX - 22 + sway, 0);
+          ctx.lineTo(baseX + 22 + sway, 0);
+          ctx.lineTo(baseX + 96 + sway, this.groundY);
+          ctx.lineTo(baseX + 20 + sway, this.groundY);
+          ctx.closePath();
+          ctx.fill();
+        }
+        ctx.restore();
+        break;
+      }
+    }
+  }
+
+  private drawGlowOrb(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    radius: number,
+    core: string,
+    edge: string,
+    glowRadius: number
+  ): void {
+    const glow = ctx.createRadialGradient(x, y, radius * 0.4, x, y, glowRadius);
+    glow.addColorStop(0, this.withAlpha(edge, 0.45));
+    glow.addColorStop(0.5, this.withAlpha(edge, 0.14));
+    glow.addColorStop(1, this.withAlpha(edge, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, glowRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    const disc = ctx.createRadialGradient(
+      x - radius * 0.3,
+      y - radius * 0.3,
+      0,
+      x,
+      y,
+      radius
+    );
+    disc.addColorStop(0, core);
+    disc.addColorStop(1, edge);
+    ctx.fillStyle = disc;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // -------------------------------------------------------------- bands ----
+
+  private renderBand(
+    ctx: CanvasRenderingContext2D,
+    band: Band,
+    p: ThemePalette
+  ): void {
+    const width = this.stripWidth;
+    const offset = ((this.distance * band.speed) % width + width) % width;
+    const strip = this.getStrip(band, p);
+
+    if (strip) {
+      ctx.drawImage(strip, -offset, band.top);
+      ctx.drawImage(strip, -offset + width, band.top);
+      return;
+    }
+
+    // No offscreen canvas: draw the band straight into the frame instead.
+    for (let tile = 0; tile < 2; tile++) {
       ctx.save();
-      layer.renderMethod(ctx, offset, theme);
+      ctx.translate(-offset + tile * width, band.top);
+      band.draw(ctx, p, width);
+      ctx.restore();
+    }
+  }
+
+  private getStrip(band: Band, p: ThemePalette): HTMLCanvasElement | null {
+    const cached = this.strips.get(band.name);
+    if (cached) return cached;
+
+    const canvas = this.makeCanvas(this.stripWidth, band.height);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    band.draw(ctx, p, this.stripWidth);
+    this.strips.set(band.name, canvas);
+    return canvas;
+  }
+
+  private makeCanvas(width: number, height: number): HTMLCanvasElement | null {
+    try {
+      if (typeof document === 'undefined') return null;
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width);
+      canvas.height = Math.ceil(height);
+      // jsdom hands back the shared stub for every canvas, so a strip drawn
+      // there would be blitted over the real frame. Only trust a context that
+      // actually belongs to this element.
+      if (canvas.getContext('2d') === null) return null;
+      return canvas;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * A seamless ridge height at strip fraction `t`, built from integer
+   * harmonics so height(0) === height(1).
+   */
+  private ridge(t: number, harmonics: [number, number, number][]): number {
+    let total = 0;
+    for (const [freq, amp, phase] of harmonics) {
+      total += Math.sin(t * Math.PI * 2 * freq + phase) * amp;
+    }
+    return total;
+  }
+
+  private fillRidge(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    bandHeight: number,
+    baseHeight: number,
+    harmonics: [number, number, number][],
+    color: string,
+    step = 8
+  ): void {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, bandHeight);
+    for (let x = 0; x <= width; x += step) {
+      const h = baseHeight + this.ridge(x / width, harmonics);
+      ctx.lineTo(x, bandHeight - h);
+    }
+    ctx.lineTo(width, bandHeight);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** Jagged variant: straight segments between sampled peaks, for rock. */
+  private fillCrags(
+    ctx: CanvasRenderingContext2D,
+    width: number,
+    bandHeight: number,
+    baseHeight: number,
+    harmonics: [number, number, number][],
+    color: string,
+    seed: number,
+    step = 26
+  ): void {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(0, bandHeight);
+    const count = Math.round(width / step);
+    for (let i = 0; i <= count; i++) {
+      const t = i / count;
+      // hash on i, wrapped, so the last sample matches the first.
+      const jitter = (hash((i % count) + seed) - 0.5) * baseHeight * 0.38;
+      const h = baseHeight + this.ridge(t, harmonics) + jitter;
+      ctx.lineTo(t * width, bandHeight - h);
+    }
+    ctx.lineTo(width, bandHeight);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ------------------------------------------------------------ far band ---
+
+  private drawFar(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    switch (p.skyline) {
+      case 'peaks':
+        this.drawPeaks(ctx, p, width, h);
+        break;
+      case 'crags':
+        this.drawCrags(ctx, p, width, h);
+        break;
+      case 'city':
+        this.drawCity(ctx, p, width, h);
+        break;
+      case 'dunes':
+        this.drawDunes(ctx, p, width, h);
+        break;
+      case 'canopy':
+        this.drawCanopy(ctx, p, width, h);
+        break;
+    }
+  }
+
+  private drawPeaks(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    // Three ranges, each nearer one darker and lower — aerial perspective.
+    const ranges: [string, number, [number, number, number][]][] = [
+      [p.ridgeFar, 250, [[2, 46, 0.4], [5, 20, 1.9], [9, 9, 3.1]]],
+      [p.ridgeMid, 190, [[3, 40, 2.2], [6, 16, 0.6], [11, 7, 4.4]]],
+      [p.ridgeNear, 130, [[2, 34, 4.1], [7, 14, 2.8], [13, 6, 1.2]]],
+    ];
+
+    ranges.forEach(([color, base, harmonics], i) => {
+      this.fillRidge(ctx, width, h, base, harmonics, color, 6);
+
+      // Snowcaps on the two farthest ranges only.
+      if (i > 1) return;
+      ctx.save();
+      ctx.globalAlpha = 0.55 - i * 0.2;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      let drawing = false;
+      for (let x = 0; x <= width; x += 6) {
+        const peak = base + this.ridge(x / width, harmonics);
+        const snowLine = base + 28;
+        if (peak > snowLine) {
+          if (!drawing) {
+            ctx.moveTo(x, h - peak);
+            drawing = true;
+          }
+          ctx.lineTo(x, h - peak);
+        } else if (drawing) {
+          ctx.lineTo(x, h - snowLine);
+          drawing = false;
+        }
+      }
+      ctx.lineTo(width, h - base);
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     });
   }
-  
-  // LAYER 1: Far Background - Full panoramic mountains/skylines (SAME DETAIL, FIXED ANIMATION)
-  private renderBackgroundLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
-    const layerWidth = this.canvasWidth * 2;
-    const colors = this.getBackgroundColors(theme);
-    
-    ctx.globalAlpha = 0.8; // Much more visible (was 0.4)
-    
-    // Render the background twice for seamless tiling (SAME AS BEFORE)
-    for (let tile = 0; tile < 2; tile++) {
-      const tileX = -offset + (tile * layerWidth);
-      
-      switch (theme) {
-        case 'day':
-          this.renderDayMountains(ctx, tileX, colors);
-          break;
-        case 'sunset':
-          this.renderSunsetMountains(ctx, tileX, colors);
-          break;
-        case 'night':
-          this.renderNightSkyline(ctx, tileX, colors);
-          break;
-        case 'desert':
-          this.renderDesertDunes(ctx, tileX, colors);
-          break;
-        case 'forest':
-          this.renderForestRidges(ctx, tileX, colors);
-          break;
-      }
-    }
-    
-    ctx.globalAlpha = 1;
-  }
-  
-  private renderDayMountains(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Multiple overlapping mountain ranges - MUCH LARGER SCALE
-    const ranges = [
-      { peaks: 4, height: 180, color: colors.far },      // Was 60, now 180
-      { peaks: 5, height: 240, color: colors.mid },      // Was 80, now 240  
-      { peaks: 3, height: 300, color: colors.near }      // Was 100, now 300
+
+  private drawCrags(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    const ranges: [string, number, number][] = [
+      [p.ridgeFar, 220, 11],
+      [p.ridgeMid, 165, 57],
+      [p.ridgeNear, 105, 131],
     ];
-    
-    ranges.forEach((range, rangeIndex) => {
-      ctx.fillStyle = range.color;
-      ctx.globalAlpha = 0.5 + rangeIndex * 0.15; // Much more visible (was 0.2 + rangeIndex * 0.1)
-      
-      ctx.beginPath();
-      ctx.moveTo(x, this.groundY);
-      
-      for (let i = 0; i <= range.peaks; i++) {
-        // FIXED: Use consistent seed for deterministic peaks
-        const peakX = x + (i / range.peaks) * this.canvasWidth * 2;
-        const seedValue = Math.floor(peakX / 100) * 1.3; // Deterministic seed
-        const peakY = this.groundY - range.height - Math.sin(seedValue) * 30;
-        const valleyY = this.groundY - range.height * 0.6 - Math.cos(seedValue * 0.8) * 20;
-        
-        ctx.lineTo(peakX, peakY);
-        if (i < range.peaks) {
-          ctx.lineTo(peakX + this.canvasWidth / range.peaks * 0.5, valleyY);
-        }
-      }
-      
-      ctx.lineTo(x + this.canvasWidth * 2, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    });
-  }
-  
-  private renderSunsetMountains(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Dramatic silhouettes with sun disk (SAME AS BEFORE)
-    
-    // Sun disk
-    const sunX = x + this.canvasWidth * 1.5;
-    const sunY = this.groundY - 120;
-    const gradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 50);
-    gradient.addColorStop(0, 'rgba(255, 200, 100, 0.8)');
-    gradient.addColorStop(1, 'rgba(255, 100, 50, 0.3)');
-    
-    ctx.fillStyle = gradient;
-    ctx.beginPath();
-    ctx.arc(sunX, sunY, 50, 0, Math.PI * 2);
-    ctx.fill();
-    
-    // Layered mountain silhouettes - MUCH TALLER
-    const layers = [
-      { height: 360, opacity: 0.8 },  // Was 120, now 360
-      { height: 270, opacity: 0.6 },  // Was 90, now 270
-      { height: 180, opacity: 0.4 }   // Was 60, now 180
-    ];
-    
-    layers.forEach((layer, i) => {
-      ctx.fillStyle = colors.silhouette;
-      ctx.globalAlpha = layer.opacity;
-      
-      ctx.beginPath();
-      ctx.moveTo(x, this.groundY);
-      
-      // Create dramatic jagged peaks (FIXED: deterministic)
-      for (let px = 0; px <= this.canvasWidth * 2; px += 80) {
-        const seedValue = Math.floor((x + px) / 100) * 0.01 + i; // Deterministic
-        const peakHeight = layer.height + Math.sin(seedValue) * 40;
-        ctx.lineTo(x + px, this.groundY - peakHeight);
-      }
-      
-      ctx.lineTo(x + this.canvasWidth * 2, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    });
-  }
-  
-  private renderNightSkyline(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // City skyline with lit windows (SAME AS BEFORE)
-    ctx.fillStyle = colors.buildings;
-    ctx.globalAlpha = 0.8;
-    
-    // Create building silhouettes
-    for (let bx = 0; bx < this.canvasWidth * 2; bx += 40) {
-      // FIXED: Deterministic building heights - MUCH TALLER
-      const buildingIndex = Math.floor((x + bx) / 40);
-      const buildingHeight = 180 + (buildingIndex % 7) * 45; // Was 60 + % 7 * 15, now much taller
-      const buildingWidth = 30 + (buildingIndex % 3) * 8; // Deterministic
-      
-      // Building outline
-      ctx.fillRect(x + bx, this.groundY - buildingHeight, buildingWidth, buildingHeight);
-      
-      // Lit windows
-      ctx.fillStyle = 'rgba(255, 255, 200, 0.6)';
-      for (let floor = 0; floor < buildingHeight; floor += 12) {
-        for (let window = 0; window < buildingWidth; window += 8) {
-          // FIXED: Deterministic window lighting
-          if ((buildingIndex + Math.floor(floor/12) + Math.floor(window/8)) % 3 !== 0) {
-            ctx.fillRect(x + bx + window + 2, this.groundY - buildingHeight + floor + 2, 4, 6);
-          }
-        }
-      }
-      
-      ctx.fillStyle = colors.buildings;
-    }
-    
-    // Add stars (FIXED: deterministic pattern)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    for (let star = 0; star < 30; star++) {
-      const starX = x + (star * 43) % (this.canvasWidth * 2);
-      const starY = 20 + (star * 17) % (this.groundY - 150);
-      const size = (star % 5 === 0) ? 2 : 1; // Deterministic size
-      ctx.fillRect(starX, starY, size, size);
-    }
-  }
-  
-  private renderDesertDunes(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Rolling sand dunes (SAME AS BEFORE)
-    ctx.fillStyle = colors.dunes;
-    
-    const duneCount = 6;
-    for (let d = 0; d < duneCount; d++) {
-      const duneWidth = this.canvasWidth / duneCount * 2;
-      // FIXED: Deterministic dune height - MUCH LARGER
-      const seedValue = Math.floor((x + d * duneWidth) / 200) * 0.7;
-      const duneHeight = 120 + Math.sin(seedValue) * 90; // Was 40 + sin * 30, now much larger
-      
-      ctx.globalAlpha = 0.3 + d * 0.05;
-      ctx.beginPath();
-      ctx.moveTo(x + d * duneWidth * 0.7, this.groundY);
-      
-      // Smooth dune curves
-      ctx.quadraticCurveTo(
-        x + d * duneWidth * 0.7 + duneWidth * 0.5,
-        this.groundY - duneHeight,
-        x + d * duneWidth * 0.7 + duneWidth,
-        this.groundY - duneHeight * 0.3
+    ranges.forEach(([color, base, seed], i) => {
+      this.fillCrags(
+        ctx,
+        width,
+        h,
+        base,
+        [[2, 34, 1.1 + i], [5, 15, 3.3]],
+        color,
+        seed,
+        30 - i * 6
       );
-      
-      ctx.lineTo(x + d * duneWidth * 0.7 + duneWidth, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-    }
+    });
   }
-  
-  private renderForestRidges(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Forested ridges with dense tree line - MUCH TALLER
-    const ridges = [
-      { height: 300, density: 0.8 }, // Was 100, now 300
-      { height: 210, density: 0.6 }, // Was 70, now 210
-      { height: 150, density: 0.4 }  // Was 50, now 150
+
+  private drawCity(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    // Two building ranks. The back rank is hazier and taller, the front is
+    // darker and carries the lit windows.
+    const ranks: [string, number, number, number, string][] = [
+      [p.ridgeFar, 190, 34, 0, '#6C86D8'],
+      [p.ridgeNear, 140, 46, 700, '#FFD98A'],
     ];
-    
-    ridges.forEach((ridge, ridgeIndex) => {
-      ctx.fillStyle = colors.ridges![ridgeIndex];
-      ctx.globalAlpha = 0.7 - ridgeIndex * 0.15; // More visible (was 0.4 - ridgeIndex * 0.1)
-      
-      // Base ridge shape
-      ctx.beginPath();
-      ctx.moveTo(x, this.groundY);
-      
-      for (let rx = 0; rx <= this.canvasWidth * 2; rx += 20) {
-        // FIXED: Deterministic ridge shape
-        const seedValue = Math.floor((x + rx) / 100) * 0.02;
-        const ridgeY = this.groundY - ridge.height - Math.sin(seedValue) * 20;
-        ctx.lineTo(x + rx, ridgeY);
-      }
-      
-      ctx.lineTo(x + this.canvasWidth * 2, this.groundY);
-      ctx.closePath();
-      ctx.fill();
-      
-      // Tree line on ridge
-      ctx.fillStyle = colors.trees;
-      for (let tx = 0; tx < this.canvasWidth * 2; tx += 8) {
-        // FIXED: Deterministic tree placement
-        const treeIndex = Math.floor((x + tx) / 8);
-        if ((treeIndex % 10) < ridge.density * 10) { // Deterministic density
-          const seedValue = Math.floor((x + tx) / 100) * 0.02;
-          const baseY = this.groundY - ridge.height - Math.sin(seedValue) * 20;
-          const treeHeight = 45 + (treeIndex % 3) * 15; // Deterministic height - MUCH TALLER (was 15 + % 3 * 5)
-          ctx.fillRect(x + tx, baseY - treeHeight, 2, treeHeight);
+
+    ranks.forEach(([color, maxHeight, slot, seed, windowColor], rank) => {
+      const count = Math.round(width / slot);
+      for (let i = 0; i < count; i++) {
+        const r = hash(i + seed);
+        const bw = slot * (0.62 + hash(i + seed + 77) * 0.3);
+        const bh = 55 + r * maxHeight;
+        const x = (i / count) * width;
+        const y = h - bh;
+
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, bw, bh);
+
+        // Roof furniture: an aerial, a water tank, or a stepped crown.
+        const crown = hash(i + seed + 200);
+        if (crown > 0.78) {
+          ctx.fillRect(x + bw * 0.45, y - 16, 2, 16);
+          ctx.fillStyle = '#EF4444';
+          ctx.fillRect(x + bw * 0.45 - 1, y - 18, 4, 3);
+          ctx.fillStyle = color;
+        } else if (crown > 0.6) {
+          ctx.fillRect(x + bw * 0.2, y - 8, bw * 0.6, 8);
         }
-      }
-    });
-  }
-  
-  // LAYER 2: Mid-ground detailed landscape (ALL ORIGINAL DETAIL PRESERVED)
-  private renderMidgroundLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
-    const layerWidth = this.canvasWidth * 2;
-    ctx.globalAlpha = 0.85; // More visible (was 0.7)
-    
-    for (let tile = 0; tile < 2; tile++) {
-      const tileX = -offset + (tile * layerWidth);
-      this.renderMidgroundElements(ctx, tileX, theme);
-    }
-    
-    ctx.globalAlpha = 1;
-  }
-  
-  private renderMidgroundElements(ctx: CanvasRenderingContext2D, x: number, theme: EnvironmentTheme): void {
-    const colors = this.getMidgroundColors(theme);
-    
-    // Create varied landscape elements across the full width (SAME AS BEFORE)
-    for (let mx = 0; mx < this.canvasWidth * 2; mx += 60) {
-      const elementIndex = Math.floor((x + mx) / 60); // FIXED: Deterministic based on world position
-      const elementType = elementIndex % 4;
-      
-      switch (elementType) {
-        case 0: // Large trees - BIGGER TREES
-          const treeSize = 45 + (elementIndex % 3) * 15; // FIXED: Much larger (was 25 + % 3 * 5)
-          this.renderDetailedTree(ctx, x + mx, colors, treeSize);
-          break;
-        case 1: // Rock formations
-          this.renderRockFormation(ctx, x + mx, colors);
-          break;
-        case 2: // Small grove
-          if (theme === 'forest') {
-            this.renderTreeGrove(ctx, x + mx, colors);
+
+        // Windows, only on the front rank — the back rank stays a silhouette.
+        if (rank === 0) continue;
+        ctx.fillStyle = windowColor;
+        for (let fy = y + 8; fy < h - 8; fy += 11) {
+          for (let fx = x + 4; fx < x + bw - 5; fx += 9) {
+            const lit = hash(Math.round(fx) * 31 + Math.round(fy) * 7 + seed);
+            if (lit < 0.42) continue;
+            ctx.globalAlpha = 0.35 + lit * 0.5;
+            // A few windows run cold blue instead of warm.
+            ctx.fillStyle = lit > 0.93 ? '#7DD3FC' : windowColor;
+            ctx.fillRect(fx, fy, 4, 5);
           }
-          break;
-        case 3: // Theme-specific elements
-          this.renderThemeElement(ctx, x + mx, theme, colors);
-          break;
+        }
+        ctx.globalAlpha = 1;
       }
-    }
-  }
-  
-  private renderDetailedTree(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, size: number): void {
-    const treeY = this.groundY - size * 1.5;
-    
-    // Trunk with texture (SAME AS BEFORE)
-    ctx.fillStyle = colors.trunk;
-    const trunkWidth = size * 0.15;
-    ctx.fillRect(x - trunkWidth/2, treeY + size, trunkWidth, size * 0.5);
-    
-    // Trunk texture lines
-    ctx.strokeStyle = colors.trunkDark;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.moveTo(x - trunkWidth/4, treeY + size + i * 8);
-      ctx.lineTo(x + trunkWidth/4, treeY + size + i * 8);
-      ctx.stroke();
-    }
-    
-    // Layered canopy (SAME AS BEFORE)
-    const canopyLayers = [
-      { radius: size * 0.6, offset: 0, color: colors.canopyDark },
-      { radius: size * 0.5, offset: -3, color: colors.canopyMid },
-      { radius: size * 0.4, offset: -6, color: colors.canopyLight }
-    ];
-    
-    canopyLayers.forEach(layer => {
-      ctx.fillStyle = layer.color;
-      ctx.beginPath();
-      ctx.arc(x, treeY + layer.offset, layer.radius, 0, Math.PI * 2);
-      ctx.fill();
     });
   }
-  
-  private renderRockFormation(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Multiple rock clusters (SAME AS BEFORE)
-    for (let r = 0; r < 3; r++) {
-      const rockX = x + r * 8;
-      const rockIndex = Math.floor(rockX / 8); // FIXED: Deterministic size
-      const rockSize = 8 + (rockIndex % 3) * 4;
-      const rockY = this.groundY - rockSize;
-      
-      ctx.fillStyle = colors.rock;
-      ctx.fillRect(rockX, rockY, rockSize, rockSize);
-      
-      // Rock highlight
-      ctx.fillStyle = colors.rockHighlight;
-      ctx.fillRect(rockX, rockY, rockSize * 0.3, rockSize * 0.3);
-    }
+
+  private drawDunes(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    const ranges: [string, number, [number, number, number][]][] = [
+      [p.ridgeFar, 150, [[1, 44, 0.2], [3, 22, 2.4]]],
+      [p.ridgeMid, 108, [[2, 38, 3.1], [5, 14, 0.9]]],
+      [p.ridgeNear, 66, [[3, 26, 1.7], [6, 11, 4.2]]],
+    ];
+
+    ranges.forEach(([color, base, harmonics], i) => {
+      this.fillRidge(ctx, width, h, base, harmonics, color, 4);
+
+      // A lit crest along each dune's spine, sun side only.
+      ctx.save();
+      ctx.globalAlpha = 0.3 - i * 0.07;
+      ctx.strokeStyle = '#FFF6DC';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let x = 0; x <= width; x += 4) {
+        const y = h - base - this.ridge(x / width, harmonics);
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    });
   }
-  
-  private renderTreeGrove(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Cluster of small trees (SAME AS BEFORE)
-    for (let t = 0; t < 4; t++) {
-      const treeX = x + t * 12;
-      const treeIndex = Math.floor(treeX / 12); // FIXED: Deterministic size
-      const treeSize = 15 + (treeIndex % 3) * 3;
-      this.renderDetailedTree(ctx, treeX, colors, treeSize);
-    }
-  }
-  
-  private renderThemeElement(ctx: CanvasRenderingContext2D, x: number, theme: EnvironmentTheme, colors: ThemeColors): void {
-    switch (theme) {
-      case 'desert':
-        // Cactus (SAME AS BEFORE)
-        ctx.fillStyle = colors.cactus;
-        const cactusIndex = Math.floor(x / 60); // FIXED: Deterministic height
-        const cactusHeight = 60 + (cactusIndex % 3) * 20; // MUCH TALLER (was 30 + % 3 * 10)
-        ctx.fillRect(x, this.groundY - cactusHeight, 6, cactusHeight);
-        // Cactus arms
-        ctx.fillRect(x - 8, this.groundY - cactusHeight * 0.7, 8, 4);
-        ctx.fillRect(x + 6, this.groundY - cactusHeight * 0.5, 8, 4);
-        break;
-      case 'night':
-        // Lamp post (SAME AS BEFORE)
-        ctx.fillStyle = colors.post;
-        ctx.fillRect(x, this.groundY - 60, 3, 60); // TALLER lamp post (was 40)
-        // Light
-        ctx.fillStyle = 'rgba(255, 255, 200, 0.8)';
+
+  private drawCanopy(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    // Receding walls of forest: a soft ridge, then a lumpy treeline on top of
+    // it so the horizon reads as foliage rather than a painted band.
+    const ranges: [string, number, number, number][] = [
+      [p.ridgeFar, 195, 16, 3],
+      [p.ridgeMid, 140, 22, 511],
+      [p.ridgeNear, 88, 30, 907],
+    ];
+
+    ranges.forEach(([color, base, lump, seed]) => {
+      const harmonics: [number, number, number][] = [
+        [2, 26, seed * 0.01],
+        [5, 12, 1.4],
+      ];
+      this.fillRidge(ctx, width, h, base, harmonics, color, 6);
+
+      // Crown lumps riding the ridge line.
+      ctx.fillStyle = color;
+      const count = Math.round(width / lump);
+      for (let i = 0; i < count; i++) {
+        const t = i / count;
+        const x = t * width;
+        const r = lump * (0.45 + hash(i + seed) * 0.5);
+        const y = h - base - this.ridge(t, harmonics);
         ctx.beginPath();
-        ctx.arc(x + 1.5, this.groundY - 55, 8, 0, Math.PI * 2); // Adjusted light position
+        ctx.arc(x, y, r, Math.PI, Math.PI * 2);
         ctx.fill();
-        break;
-    }
-  }
-  
-  // LAYER 3: Enhanced cloud formations (ALL DETAIL PRESERVED)
-  private renderCloudLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
-    const layerWidth = this.canvasWidth * 2;
-    const cloudColors = this.getCloudColors(theme);
-    
-    ctx.globalAlpha = theme === 'night' ? 0.5 : 0.8; // More visible (was 0.3 : 0.6)
-    
-    for (let tile = 0; tile < 2; tile++) {
-      const tileX = -offset + (tile * layerWidth);
-      this.renderDetailedClouds(ctx, tileX, cloudColors, theme);
-    }
-    
-    ctx.globalAlpha = 1;
-  }
-  
-  private renderDetailedClouds(ctx: CanvasRenderingContext2D, x: number, cloudColors: ThemeColors, theme: EnvironmentTheme): void {
-    void theme;
-    // Large, detailed cloud formations (SAME POSITIONS AS BEFORE)
-    const cloudPositions = [
-      { x: 100, y: 40, size: 1.2, type: 'cumulus' },
-      { x: 300, y: 60, size: 0.8, type: 'wispy' },
-      { x: 500, y: 30, size: 1.5, type: 'cumulus' },
-      { x: 750, y: 70, size: 1.0, type: 'scattered' },
-      { x: 950, y: 45, size: 0.9, type: 'wispy' }
-    ];
-    
-    cloudPositions.forEach(cloud => {
-      const cloudX = x + cloud.x;
-      const cloudY = cloud.y;
-      
-      switch (cloud.type) {
-        case 'cumulus':
-          this.renderCumulusCloud(ctx, cloudX, cloudY, cloud.size, cloudColors);
-          break;
-        case 'wispy':
-          this.renderWispyCloud(ctx, cloudX, cloudY, cloud.size, cloudColors);
-          break;
-        case 'scattered':
-          this.renderScatteredClouds(ctx, cloudX, cloudY, cloud.size, cloudColors);
-          break;
       }
     });
   }
-  
-  private renderCumulusCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
-    const baseRadius = 25 * size;
-    
-    // Cloud shadow/depth (SAME AS BEFORE)
-    ctx.fillStyle = colors.shadow;
-    const bubbles = [
-      { x: x - 10, y: y + 5, r: baseRadius * 0.8 },
-      { x: x + 20, y: y + 3, r: baseRadius },
-      { x: x + 50, y: y + 5, r: baseRadius * 0.7 },
-      { x: x + 15, y: y - 8, r: baseRadius * 0.6 }
+
+  // ------------------------------------------------------------ mid band ---
+
+  private drawMid(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    // A rolling hill the props stand on, so the band has a ground of its own.
+    const harmonics: [number, number, number][] = [
+      [2, 16, 1.3],
+      [5, 7, 3.8],
     ];
-    
-    bubbles.forEach(bubble => {
-      ctx.beginPath();
-      ctx.arc(bubble.x, bubble.y, bubble.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    
-    // Cloud highlights
-    ctx.fillStyle = colors.highlight;
-    bubbles.forEach(bubble => {
-      ctx.beginPath();
-      ctx.arc(bubble.x - 3, bubble.y - 3, bubble.r * 0.9, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  }
-  
-  private renderWispyCloud(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
-    ctx.fillStyle = colors.wispy;
-    
-    // Elongated wispy shape (SAME AS BEFORE)
-    ctx.beginPath();
-    ctx.ellipse(x, y, 60 * size, 8 * size, 0.2, 0, Math.PI * 2);
-    ctx.fill();
-    
-    ctx.beginPath();
-    ctx.ellipse(x + 30, y - 5, 40 * size, 6 * size, -0.1, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  
-  private renderScatteredClouds(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, colors: ThemeColors): void {
-    // Multiple small cloud puffs (SAME AS BEFORE)
-    for (let i = 0; i < 4; i++) {
-      const puffX = x + i * 20;
-      const puffY = y + Math.sin(i) * 8;
-      const puffSize = (12 + (i % 3) * 3) * size; // FIXED: Deterministic size
-      
-      ctx.fillStyle = colors.puff;
-      ctx.beginPath();
-      ctx.arc(puffX, puffY, puffSize, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  
-  // LAYER 4: Rich foreground elements (ALL DETAIL PRESERVED)
-  private renderForegroundLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
-    const layerWidth = this.canvasWidth * 2;
-    ctx.globalAlpha = 0.8;
-    
-    for (let tile = 0; tile < 2; tile++) {
-      const tileX = -offset + (tile * layerWidth);
-      this.renderForegroundElements(ctx, tileX, theme);
-    }
-    
-    ctx.globalAlpha = 1;
-  }
-  
-  private renderForegroundElements(ctx: CanvasRenderingContext2D, x: number, theme: EnvironmentTheme): void {
-    const colors = this.getForegroundColors(theme);
-    
-    // Dense foreground details every 30 pixels (SAME AS BEFORE)
-    for (let fx = 0; fx < this.canvasWidth * 2; fx += 30) {
-      const elementIndex = Math.floor((x + fx) / 30); // FIXED: Deterministic
-      const elementChance = (elementIndex % 10) / 10; // FIXED: Deterministic chance
-      
-      if (elementChance > 0.4) {
-        this.renderDetailedBush(ctx, x + fx, colors, theme);
-      } else if (elementChance > 0.2) {
-        this.renderForegroundPost(ctx, x + fx, colors, theme);
+    this.fillRidge(ctx, width, h, 52, harmonics, this.shade(p.ridgeNear, -0.1), 6);
+
+    const slot = 74;
+    const count = Math.round(width / slot);
+    for (let i = 0; i < count; i++) {
+      const t = i / count;
+      const x = t * width + hash(i + 41) * 26;
+      const groundLine = h - 46 - this.ridge(t, harmonics);
+      const kind = hash(i + 13);
+
+      if (p.skyline === 'city') {
+        this.drawMidCityProp(ctx, p, x, groundLine, kind, i);
+      } else if (p.skyline === 'dunes') {
+        this.drawMidDesertProp(ctx, p, x, groundLine, kind, i);
       } else {
-        this.renderSmallRocks(ctx, x + fx, colors);
+        this.drawMidTree(ctx, p, x, groundLine, kind, i);
       }
     }
   }
-  
-  private renderDetailedBush(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
-    const bushIndex = Math.floor(x / 30); // FIXED: Deterministic size
-    const bushSize = 12 + (bushIndex % 3) * 3;
-    const bushY = this.groundY - bushSize;
-    
-    // Bush base (SAME AS BEFORE)
-    ctx.fillStyle = colors.bushDark;
+
+  private drawMidTree(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    x: number,
+    groundLine: number,
+    kind: number,
+    i: number
+  ): void {
+    const size = 34 + hash(i + 301) * 30;
+
+    if (kind < 0.18) {
+      // A boulder cluster instead of a tree, to break the rhythm.
+      for (let r = 0; r < 3; r++) {
+        const rs = 9 + hash(i * 7 + r) * 13;
+        ctx.fillStyle = r === 1 ? this.shade(p.trunk, 0.14) : p.trunk;
+        ctx.beginPath();
+        ctx.ellipse(x + r * 13, groundLine - rs * 0.45, rs, rs * 0.7, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return;
+    }
+
+    // Trunk, tapering and leaning a touch.
+    const lean = (hash(i + 55) - 0.5) * 8;
+    ctx.fillStyle = p.trunk;
     ctx.beginPath();
-    ctx.arc(x, bushY + bushSize * 0.7, bushSize * 0.8, 0, Math.PI * 2);
+    ctx.moveTo(x - size * 0.07, groundLine);
+    ctx.lineTo(x + size * 0.07, groundLine);
+    ctx.lineTo(x + lean + size * 0.04, groundLine - size * 0.72);
+    ctx.lineTo(x + lean - size * 0.04, groundLine - size * 0.72);
+    ctx.closePath();
     ctx.fill();
-    
-    // Bush highlights
-    ctx.fillStyle = colors.bushLight;
-    for (let i = 0; i < 3; i++) {
-      // FIXED: Deterministic leaf positions
-      const leafSeed = (bushIndex + i) * 0.7;
-      const leafX = x + Math.sin(leafSeed) * bushSize * 0.5;
-      const leafY = bushY + Math.cos(leafSeed) * bushSize * 0.4;
-      const leafSize = 3 + (i % 2) * 2;
-      
+
+    const cx = x + lean;
+    const cy = groundLine - size * 0.85;
+
+    if (p.skyline === 'canopy' && kind > 0.62) {
+      // Conifer: stacked triangles.
+      for (let s = 0; s < 3; s++) {
+        const w = size * (0.56 - s * 0.13);
+        const yTop = cy - size * (0.28 + s * 0.26);
+        ctx.fillStyle = s === 2 ? p.foliageLight : s === 1 ? p.foliageMid : p.foliageDark;
+        ctx.beginPath();
+        ctx.moveTo(cx, yTop);
+        ctx.lineTo(cx + w, yTop + size * 0.42);
+        ctx.lineTo(cx - w, yTop + size * 0.42);
+        ctx.closePath();
+        ctx.fill();
+      }
+      return;
+    }
+
+    // Broadleaf: three overlapping blobs, lit from the upper left.
+    const blobs: [number, number, number, string][] = [
+      [-size * 0.22, size * 0.1, size * 0.4, p.foliageDark],
+      [size * 0.2, size * 0.04, size * 0.36, p.foliageMid],
+      [-size * 0.04, -size * 0.18, size * 0.34, p.foliageLight],
+    ];
+    for (const [dx, dy, r, color] of blobs) {
+      ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.arc(leafX, leafY, leafSize, 0, Math.PI * 2);
+      ctx.arc(cx + dx, cy + dy, r, 0, Math.PI * 2);
       ctx.fill();
     }
-    
-    // Theme-specific additions (SAME AS BEFORE)
-    if (theme === 'forest') {
-      // Berries
-      ctx.fillStyle = '#DC143C';
+  }
+
+  private drawMidCityProp(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    x: number,
+    groundLine: number,
+    kind: number,
+    i: number
+  ): void {
+    if (kind < 0.42) {
+      // Street lamp with a pooled glow.
+      const height = 46 + hash(i + 12) * 18;
+      ctx.fillStyle = p.trunk;
+      ctx.fillRect(x, groundLine - height, 3, height);
+      ctx.fillRect(x, groundLine - height, 14, 3);
+      const glow = ctx.createRadialGradient(
+        x + 13, groundLine - height + 3, 0,
+        x + 13, groundLine - height + 3, 34
+      );
+      glow.addColorStop(0, 'rgba(255, 216, 138, 0.55)');
+      glow.addColorStop(1, 'rgba(255, 216, 138, 0)');
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(x + 3, bushY + 2, 2, 0, Math.PI * 2);
+      ctx.arc(x + 13, groundLine - height + 3, 34, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    if (kind < 0.7) {
+      // A neon sign box — the theme's one piece of colour at this depth.
+      const w = 26 + hash(i + 31) * 22;
+      const hgt = 16 + hash(i + 71) * 12;
+      const post = 30;
+      const hue = hash(i + 91);
+      const neon = hue > 0.66 ? '#F472B6' : hue > 0.33 ? '#22D3EE' : '#A78BFA';
+      ctx.fillStyle = p.trunk;
+      ctx.fillRect(x + w / 2 - 1, groundLine - post, 2, post);
+      ctx.fillStyle = this.shade(p.foliageMid, -0.2);
+      ctx.fillRect(x, groundLine - post - hgt, w, hgt);
+      ctx.strokeStyle = neon;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 2, groundLine - post - hgt + 2, w - 4, hgt - 4);
+      ctx.globalAlpha = 0.35;
+      ctx.lineWidth = 5;
+      ctx.strokeRect(x + 2, groundLine - post - hgt + 2, w - 4, hgt - 4);
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // Bare city tree.
+    this.drawMidTree(ctx, p, x, groundLine, 0.3, i);
+  }
+
+  private drawMidDesertProp(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    x: number,
+    groundLine: number,
+    kind: number,
+    i: number
+  ): void {
+    if (kind < 0.45) {
+      // Saguaro.
+      const height = 46 + hash(i + 17) * 36;
+      const w = 9;
+      ctx.fillStyle = p.foliageDark;
+      this.roundedBar(ctx, x, groundLine - height, w, height, w / 2);
+      // Arms, at least one, sometimes two.
+      const armY = groundLine - height * 0.62;
+      this.roundedBar(ctx, x - 14, armY, 7, height * 0.34, 3.5);
+      ctx.fillRect(x - 14, armY + height * 0.28, 16, 7);
+      if (hash(i + 63) > 0.45) {
+        const armY2 = groundLine - height * 0.46;
+        this.roundedBar(ctx, x + w + 7, armY2, 7, height * 0.26, 3.5);
+        ctx.fillRect(x + w - 2, armY2 + height * 0.2, 16, 7);
+      }
+      // Ribs.
+      ctx.strokeStyle = this.shade(p.foliageDark, -0.18);
+      ctx.lineWidth = 1;
+      for (let r = 1; r < 3; r++) {
+        ctx.beginPath();
+        ctx.moveTo(x + (w / 3) * r, groundLine - height + 4);
+        ctx.lineTo(x + (w / 3) * r, groundLine - 2);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    if (kind < 0.7) {
+      // Mesa: a flat-topped rock, stratified.
+      const w = 48 + hash(i + 27) * 46;
+      const hgt = 30 + hash(i + 37) * 34;
+      const y = groundLine - hgt;
+      ctx.fillStyle = this.shade(p.ridgeNear, -0.12);
+      ctx.beginPath();
+      ctx.moveTo(x, groundLine);
+      ctx.lineTo(x + w * 0.1, y);
+      ctx.lineTo(x + w * 0.9, y);
+      ctx.lineTo(x + w, groundLine);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.22;
+      ctx.fillStyle = '#FFFFFF';
+      for (let s = 1; s < 4; s++) {
+        ctx.fillRect(x + w * 0.08, y + (hgt / 4) * s, w * 0.84, 2);
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    // Sun-bleached skull-white scrub.
+    ctx.fillStyle = p.foliageMid;
+    for (let b = 0; b < 4; b++) {
+      const r = 5 + hash(i * 3 + b) * 7;
+      ctx.beginPath();
+      ctx.arc(x + b * 9, groundLine - r * 0.6, r, Math.PI, Math.PI * 2);
       ctx.fill();
     }
   }
-  
-  private renderForegroundPost(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
-    // Fence post or sign (SAME AS BEFORE)
-    ctx.fillStyle = colors.post;
-    ctx.fillRect(x, this.groundY - 25, 4, 25);
-    
-    // Post details
-    ctx.fillStyle = colors.postTop;
-    ctx.fillRect(x - 1, this.groundY - 25, 6, 3);
-    
-    if (theme === 'desert') {
-      // Weathered post
-      ctx.fillStyle = colors.weathered;
-      ctx.fillRect(x + 1, this.groundY - 20, 1, 15);
+
+  // ----------------------------------------------------------- near band ---
+
+  private drawNear(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    const slot = 46;
+    const count = Math.round(width / slot);
+    for (let i = 0; i < count; i++) {
+      const x = (i / count) * width + hash(i + 7) * 18;
+      const kind = hash(i + 211);
+      const dark = this.shade(p.foliageDark, -0.22);
+
+      if (kind < 0.42) {
+        // Bush: a cluster of arcs sitting on the band floor.
+        const size = 11 + hash(i + 331) * 10;
+        ctx.fillStyle = dark;
+        for (let b = 0; b < 3; b++) {
+          const bx = x + b * size * 0.62;
+          const br = size * (0.62 + hash(i * 5 + b) * 0.42);
+          ctx.beginPath();
+          ctx.arc(bx, h - br * 0.25, br, Math.PI, Math.PI * 2);
+          ctx.fill();
+        }
+        // A lit rim along the top of the bush.
+        ctx.fillStyle = this.shade(p.foliageMid, -0.1);
+        ctx.beginPath();
+        ctx.arc(x + size * 0.62, h - size * 0.32, size * 0.5, Math.PI, Math.PI * 2);
+        ctx.fill();
+      } else if (kind < 0.62) {
+        // Fence post, occasionally with a rail running off it.
+        const height = 20 + hash(i + 401) * 14;
+        ctx.fillStyle = dark;
+        ctx.fillRect(x, h - height, 5, height);
+        ctx.fillRect(x - 1, h - height - 3, 7, 3);
+        if (hash(i + 421) > 0.5) ctx.fillRect(x + 5, h - height * 0.7, slot, 3);
+      } else if (kind < 0.78) {
+        // Tall grass tuft.
+        ctx.strokeStyle = dark;
+        ctx.lineWidth = 2;
+        for (let b = 0; b < 5; b++) {
+          const bx = x + b * 3;
+          const bh = 10 + hash(i * 9 + b) * 16;
+          ctx.beginPath();
+          ctx.moveTo(bx, h);
+          ctx.quadraticCurveTo(bx + 3, h - bh * 0.6, bx + (b - 2) * 2, h - bh);
+          ctx.stroke();
+        }
+      } else if (kind < 0.9) {
+        // Stones.
+        ctx.fillStyle = dark;
+        for (let r = 0; r < 3; r++) {
+          const rs = 3 + hash(i * 11 + r) * 6;
+          ctx.beginPath();
+          ctx.ellipse(x + r * 9, h - rs * 0.4, rs, rs * 0.72, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // The remaining tenth is left empty, so the band breathes.
     }
   }
-  
-  private renderSmallRocks(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors): void {
-    // Cluster of small stones (SAME AS BEFORE)
-    const rockIndex = Math.floor(x / 30);
-    const rockCount = 2 + (rockIndex % 2); // FIXED: Deterministic count
-    
-    for (let r = 0; r < rockCount; r++) {
-      const rockX = x + r * 4;
-      const rockSize = 2 + (r % 2) * 2; // FIXED: Deterministic size
-      
-      ctx.fillStyle = colors.rock;
-      ctx.fillRect(rockX, this.groundY - rockSize, rockSize, rockSize);
+
+  // ------------------------------------------------------------- clouds ---
+
+  private drawClouds(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    const count = 7;
+    for (let i = 0; i < count; i++) {
+      const x = (i / count) * width + hash(i + 3) * 90;
+      const y = 26 + hash(i + 61) * (h - 90);
+      const scale = 0.7 + hash(i + 97) * 0.8;
+      // Under a canopy the sky is mist, not weather — no cumulus there.
+      const wispy = p.skyline === 'canopy' || hash(i + 131) > 0.62;
+      ctx.globalAlpha = p.cloudAlpha * (0.55 + hash(i + 151) * 0.45);
+
+      if (wispy) {
+        ctx.fillStyle = p.cloudLight;
+        for (let s = 0; s < 3; s++) {
+          ctx.beginPath();
+          ctx.ellipse(
+            x + s * 34 * scale,
+            y + Math.sin(s + i) * 6,
+            48 * scale,
+            5 * scale,
+            0.06,
+            0,
+            Math.PI * 2
+          );
+          ctx.fill();
+        }
+      } else {
+        // Cumulus: shadowed base, lit crown.
+        const puffs: [number, number, number][] = [
+          [0, 6, 22],
+          [24, 2, 28],
+          [52, 7, 20],
+          [20, -12, 20],
+          [40, -8, 16],
+        ];
+        ctx.fillStyle = p.cloudShadow;
+        for (const [dx, dy, r] of puffs) {
+          ctx.beginPath();
+          ctx.arc(x + dx * scale, y + (dy + 6) * scale, r * scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.fillStyle = p.cloudLight;
+        for (const [dx, dy, r] of puffs) {
+          ctx.beginPath();
+          ctx.arc(x + dx * scale, y + dy * scale, r * 0.92 * scale, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     }
-  }
-  
-  // LAYER 5: Detailed ground textures (ALL DETAIL PRESERVED)
-  private renderGroundDetailLayer(ctx: CanvasRenderingContext2D, offset: number, theme: EnvironmentTheme): void {
-    const layerWidth = this.canvasWidth * 2;
-    const groundColors = this.getGroundColors(theme);
-    
-    ctx.globalAlpha = 0.6;
-    
-    for (let tile = 0; tile < 2; tile++) {
-      const tileX = -offset + (tile * layerWidth);
-      this.renderDetailedGround(ctx, tileX, groundColors, theme);
-    }
-    
     ctx.globalAlpha = 1;
   }
-  
-  private renderDetailedGround(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
-    void theme;
-    // Rich ground texture details every 8 pixels (SAME AS BEFORE)
-    for (let gx = 0; gx < this.canvasWidth * 2; gx += 8) {
-      const elementIndex = Math.floor((x + gx) / 8); // FIXED: Deterministic
-      const detailChance = (elementIndex % 10) / 10; // FIXED: Deterministic chance
-      
-      if (detailChance > 0.3) {
-        this.renderGrassCluster(ctx, x + gx, colors, theme);
-      } else if (detailChance > 0.1) {
-        this.renderGroundTexture(ctx, x + gx, colors, theme);
+
+  // -------------------------------------------------------------- motes ---
+
+  private updateMotes(dt: number, scrollDelta: number): void {
+    if (this.moteBudget === 0) return;
+
+    for (let i = this.motes.length - 1; i >= 0; i--) {
+      const m = this.motes[i];
+      m.life -= dt;
+      m.phase += dt;
+      m.x += (m.vx - scrollDelta * 0.25) * dt;
+      m.y += m.vy * dt;
+      if (m.life <= 0 || m.x < -40 || m.y > this.groundY + 20 || m.y < -40) {
+        this.motes.splice(i, 1);
       }
     }
   }
-  
-  private renderGrassCluster(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
-    void theme;
-    const grassIndex = Math.floor(x / 8);
-    const grassCount = 2 + (grassIndex % 3); // FIXED: Deterministic count
-    
-    for (let g = 0; g < grassCount; g++) {
-      const grassX = x + g * 2;
-      const grassHeight = 4 + (g % 3) * 2; // FIXED: Deterministic height
-      const grassY = this.groundY + 2;
-      
-      ctx.strokeStyle = colors.grass;
-      ctx.lineWidth = 1;
-      
-      // Curved grass blade (FIXED: Deterministic curve)
-      ctx.beginPath();
-      ctx.moveTo(grassX, grassY + grassHeight);
-      const curveSeed = (grassIndex + g) * 0.5;
-      ctx.quadraticCurveTo(
-        grassX + 1 + Math.sin(curveSeed),
-        grassY + grassHeight * 0.5,
-        grassX + Math.cos(curveSeed) * 2,
-        grassY
-      );
-      ctx.stroke();
-    }
-  }
-  
-  private renderGroundTexture(ctx: CanvasRenderingContext2D, x: number, colors: ThemeColors, theme: EnvironmentTheme): void {
-    switch (theme) {
-      case 'desert':
-        // Sand ripples (SAME AS BEFORE)
-        ctx.strokeStyle = colors.sandRipple;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, this.groundY + 5);
-        ctx.lineTo(x + 6, this.groundY + 5);
-        ctx.stroke();
+
+  private spawnMote(p: ThemePalette): void {
+    const edgeX = this.canvasWidth + 20 + Math.random() * 80;
+    switch (p.ambient) {
+      case 'pollen':
+        this.motes.push({
+          x: edgeX,
+          y: Math.random() * (this.groundY - 40),
+          vx: -20 - Math.random() * 30,
+          vy: -6 + Math.random() * 12,
+          size: 1.5 + Math.random() * 2,
+          life: 6,
+          maxLife: 6,
+          phase: Math.random() * 6,
+        });
         break;
-      case 'forest':
-        // Fallen leaves (SAME AS BEFORE)
-        ctx.fillStyle = colors.leaf;
-        const leafIndex = Math.floor(x / 8);
-        const leafSize = 2 + (leafIndex % 2); // FIXED: Deterministic size
-        ctx.fillRect(x, this.groundY + 3, leafSize, leafSize);
+      case 'embers':
+        this.motes.push({
+          x: Math.random() * this.canvasWidth,
+          y: this.groundY - Math.random() * 30,
+          vx: -30 - Math.random() * 40,
+          vy: -18 - Math.random() * 34,
+          size: 1.5 + Math.random() * 2.5,
+          life: 2.6,
+          maxLife: 2.6,
+          phase: Math.random() * 6,
+        });
         break;
-      default:
-        // Small pebbles (SAME AS BEFORE)
-        ctx.fillStyle = colors.pebble;
-        ctx.fillRect(x, this.groundY + 4, 1, 1);
+      case 'fireflies':
+        this.motes.push({
+          x: Math.random() * (this.canvasWidth + 60),
+          y: this.groundY - 40 - Math.random() * 180,
+          vx: -24 - Math.random() * 26,
+          vy: -8 + Math.random() * 16,
+          size: 2 + Math.random() * 1.6,
+          life: 5,
+          maxLife: 5,
+          phase: Math.random() * 6,
+        });
+        break;
+      case 'sand':
+        this.motes.push({
+          x: edgeX,
+          y: this.groundY - Math.random() * 110,
+          vx: -150 - Math.random() * 140,
+          vy: -4 + Math.random() * 10,
+          size: 1 + Math.random() * 1.6,
+          life: 2.2,
+          maxLife: 2.2,
+          phase: Math.random() * 6,
+        });
+        break;
+      case 'leaves':
+        this.motes.push({
+          x: edgeX,
+          y: -20 - Math.random() * 60,
+          vx: -40 - Math.random() * 40,
+          vy: 24 + Math.random() * 28,
+          size: 3 + Math.random() * 3,
+          life: 9,
+          maxLife: 9,
+          phase: Math.random() * 6,
+        });
         break;
     }
   }
-  
-  // Color scheme methods for each theme and layer (SAME AS BEFORE)
-  private getBackgroundColors(theme: EnvironmentTheme): ThemeColors {
-    switch (theme) {
-      case 'day':
-        return { far: '#A0A0A0', mid: '#8B8B8B', near: '#707070' };
-      case 'sunset':
-        return { silhouette: '#8B4513', sun: '#FFA500' };
-      case 'night':
-        return { buildings: '#2F2F2F', windows: '#FFFF99' };
-      case 'desert':
-        return { dunes: '#DEB887' };
-      case 'forest':
-        return { 
-          ridges: ['#556B2F', '#6B8E23', '#8FBC8F'], 
-          trees: '#2F4F2F' 
-        };
-      default:
-        return { far: '#A0A0A0', mid: '#8B8B8B', near: '#707070' };
+
+  private renderMotes(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
+    this.moteBudget =
+      p.ambient === 'sand' ? 70 : p.ambient === 'fireflies' ? 22 : 36;
+    // Top up gradually so a theme change does not pop a full field into view.
+    if (this.motes.length < this.moteBudget && Math.random() < 0.55) {
+      this.spawnMote(p);
     }
+
+    ctx.save();
+    for (const m of this.motes) {
+      const fade = Math.min(1, m.life / (m.maxLife * 0.3));
+      switch (p.ambient) {
+        case 'pollen':
+          ctx.globalAlpha = 0.5 * fade;
+          ctx.fillStyle = '#FFF6C9';
+          ctx.beginPath();
+          ctx.arc(m.x, m.y + Math.sin(m.phase * 2) * 6, m.size, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'embers':
+          ctx.globalAlpha = 0.85 * fade;
+          ctx.fillStyle = m.phase % 1 > 0.5 ? '#FFD37A' : '#FF7A3C';
+          ctx.fillRect(m.x, m.y + Math.sin(m.phase * 5) * 3, m.size, m.size);
+          break;
+        case 'fireflies': {
+          // Firefly light is a slow on/off, not a steady dot.
+          const blink = Math.max(0, Math.sin(m.phase * 2.2));
+          ctx.globalAlpha = blink * fade;
+          const y = m.y + Math.sin(m.phase * 1.6) * 10;
+          const glow = ctx.createRadialGradient(m.x, y, 0, m.x, y, m.size * 2.6);
+          glow.addColorStop(0, 'rgba(214, 255, 160, 0.85)');
+          glow.addColorStop(0.35, 'rgba(180, 255, 110, 0.35)');
+          glow.addColorStop(1, 'rgba(160, 255, 90, 0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(m.x, y, m.size * 2.6, 0, Math.PI * 2);
+          ctx.fill();
+          // A hard point at the centre, so it reads as a light not a smudge.
+          ctx.fillStyle = 'rgba(240, 255, 210, 0.95)';
+          ctx.fillRect(m.x - 0.75, y - 0.75, 1.5, 1.5);
+          break;
+        }
+        case 'sand':
+          ctx.globalAlpha = 0.35 * fade;
+          ctx.fillStyle = '#F6E3B4';
+          ctx.fillRect(m.x, m.y, m.size * 5, m.size * 0.7);
+          break;
+        case 'leaves': {
+          ctx.globalAlpha = 0.8 * fade;
+          const tint = m.size > 4.5 ? '#C97A2E' : m.size > 3.8 ? '#8FA83C' : '#D9A441';
+          ctx.fillStyle = tint;
+          ctx.save();
+          ctx.translate(m.x + Math.sin(m.phase * 1.8) * 18, m.y);
+          ctx.rotate(m.phase * 2);
+          ctx.beginPath();
+          ctx.ellipse(0, 0, m.size, m.size * 0.45, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          break;
+        }
+      }
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
-  
-  private getMidgroundColors(theme: EnvironmentTheme): ThemeColors {
-    switch (theme) {
-      case 'day':
-        return {
-          trunk: '#8B4513', trunkDark: '#654321',
-          canopyDark: '#228B22', canopyMid: '#32CD32', canopyLight: '#90EE90',
-          rock: '#696969', rockHighlight: '#A9A9A9'
-        };
-      case 'sunset':
-        return {
-          trunk: '#A0522D', trunkDark: '#8B4513',
-          canopyDark: '#B8860B', canopyMid: '#DAA520', canopyLight: '#FFD700',
-          rock: '#8B7D6B', rockHighlight: '#D2B48C'
-        };
-      case 'night':
-        return {
-          trunk: '#2F2F2F', trunkDark: '#1C1C1C',
-          canopyDark: '#006400', canopyMid: '#228B22', canopyLight: '#32CD32',
-          rock: '#2F2F2F', rockHighlight: '#404040',
-          post: '#8B4513'
-        };
-      case 'desert':
-        return {
-          trunk: '#D2B48C', trunkDark: '#BC9A6A',
-          canopyDark: '#9ACD32', canopyMid: '#ADFF2F', canopyLight: '#F0E68C',
-          rock: '#D2B48C', rockHighlight: '#F5DEB3',
-          cactus: '#228B22'
-        };
-      case 'forest':
-        return {
-          trunk: '#654321', trunkDark: '#4A4A4A',
-          canopyDark: '#006400', canopyMid: '#228B22', canopyLight: '#32CD32',
-          rock: '#556B2F', rockHighlight: '#6B8E23'
-        };
-      default:
-        return {
-          trunk: '#8B4513', trunkDark: '#654321',
-          canopyDark: '#228B22', canopyMid: '#32CD32', canopyLight: '#90EE90',
-          rock: '#696969', rockHighlight: '#A9A9A9'
-        };
-    }
+
+  // ------------------------------------------------------------- colour ---
+
+  /** Mix a hex colour toward white (amount > 0) or black (amount < 0). */
+  private shade(hex: string, amount: number): string {
+    const n = parseInt(hex.slice(1), 16);
+    const to = amount > 0 ? 255 : 0;
+    const t = Math.abs(amount);
+    const r = Math.round((n >> 16) + (to - (n >> 16)) * t);
+    const g = Math.round(((n >> 8) & 255) + (to - ((n >> 8) & 255)) * t);
+    const b = Math.round((n & 255) + (to - (n & 255)) * t);
+    return `rgb(${r}, ${g}, ${b})`;
   }
-  
-  private getCloudColors(theme: EnvironmentTheme): ThemeColors {
-    switch (theme) {
-      case 'day':
-        return { highlight: 'rgba(255, 255, 255, 0.8)', shadow: 'rgba(200, 200, 200, 0.6)', wispy: 'rgba(240, 240, 240, 0.7)', puff: 'rgba(255, 255, 255, 0.6)' };
-      case 'sunset':
-        return { highlight: 'rgba(255, 200, 150, 0.8)', shadow: 'rgba(200, 150, 100, 0.6)', wispy: 'rgba(255, 180, 120, 0.7)', puff: 'rgba(255, 200, 150, 0.6)' };
-      case 'night':
-        return { highlight: 'rgba(100, 100, 120, 0.4)', shadow: 'rgba(60, 60, 80, 0.3)', wispy: 'rgba(80, 80, 100, 0.4)', puff: 'rgba(100, 100, 120, 0.3)' };
-      case 'desert':
-        return { highlight: 'rgba(255, 240, 200, 0.6)', shadow: 'rgba(200, 180, 140, 0.4)', wispy: 'rgba(240, 220, 180, 0.5)', puff: 'rgba(255, 240, 200, 0.5)' };
-      case 'forest':
-        return { highlight: 'rgba(240, 255, 240, 0.7)', shadow: 'rgba(180, 200, 180, 0.5)', wispy: 'rgba(220, 240, 220, 0.6)', puff: 'rgba(240, 255, 240, 0.6)' };
-      default:
-        return { highlight: 'rgba(255, 255, 255, 0.8)', shadow: 'rgba(200, 200, 200, 0.6)', wispy: 'rgba(240, 240, 240, 0.7)', puff: 'rgba(255, 255, 255, 0.6)' };
+
+  private withAlpha(color: string, alpha: number): string {
+    if (color.startsWith('rgba')) {
+      return color.replace(/[\d.]+\)$/, `${alpha})`);
     }
+    if (color.startsWith('#')) {
+      const n = parseInt(color.slice(1), 16);
+      return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+    }
+    return color;
   }
-  
-  private getForegroundColors(theme: EnvironmentTheme): ThemeColors {
-    switch (theme) {
-      case 'day':
-        return { bushDark: '#228B22', bushLight: '#90EE90', post: '#8B4513', postTop: '#A0522D', rock: '#696969' };
-      case 'sunset':
-        return { bushDark: '#9ACD32', bushLight: '#ADFF2F', post: '#A0522D', postTop: '#D2691E', rock: '#8B7D6B' };
-      case 'night':
-        return { bushDark: '#006400', bushLight: '#228B22', post: '#2F2F2F', postTop: '#404040', rock: '#2F2F2F' };
-      case 'desert':
-        return { bushDark: '#DAA520', bushLight: '#F0E68C', post: '#D2B48C', postTop: '#DEB887', rock: '#D2B48C', weathered: '#BC9A6A' };
-      case 'forest':
-        return { bushDark: '#228B22', bushLight: '#32CD32', post: '#654321', postTop: '#8B4513', rock: '#556B2F' };
-      default:
-        return { bushDark: '#228B22', bushLight: '#90EE90', post: '#8B4513', postTop: '#A0522D', rock: '#696969' };
-    }
-  }
-  
-  private getGroundColors(theme: EnvironmentTheme): ThemeColors {
-    switch (theme) {
-      case 'day':
-        return { grass: '#32CD32', pebble: '#A9A9A9' };
-      case 'sunset':
-        return { grass: '#9ACD32', pebble: '#D2B48C' };
-      case 'night':
-        return { grass: '#006400', pebble: '#2F2F2F' };
-      case 'desert':
-        return { grass: '#DAA520', pebble: '#DEB887', sandRipple: 'rgba(222, 184, 135, 0.5)' };
-      case 'forest':
-        return { grass: '#228B22', pebble: '#556B2F', leaf: '#8B4513' };
-      default:
-        return { grass: '#32CD32', pebble: '#A9A9A9' };
-    }
+
+  private roundedBar(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number
+  ): void {
+    ctx.beginPath();
+    ctx.moveTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+    ctx.lineTo(x + w - r, y);
+    ctx.arc(x + w - r, y + r, r, Math.PI * 1.5, Math.PI * 2);
+    ctx.lineTo(x + w, y + h);
+    ctx.closePath();
+    ctx.fill();
   }
 }

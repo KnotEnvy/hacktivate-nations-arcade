@@ -114,7 +114,7 @@ export class Boss {
   private introPhase: 'approach' | 'stop' | 'name' | 'ready' = 'approach';
   private readonly introApproachTime: number = 1;
   private readonly introStopTime: number = 0.5;
-  private readonly introNameTime: number = 1.5;
+  private readonly introNameTime: number = 1.1;
   private readonly introReadyTime: number = 0.3;
 
   // Attack system
@@ -154,8 +154,8 @@ export class Boss {
     this.bossType = BOSS_TYPE_BY_THEME[themeLevel % 5];
     this.config = BOSS_CONFIGS[this.bossType];
 
-    this.position = new Vector2(x, groundY - 120);
-    this.size = new Vector2(80, 80);
+    this.position = new Vector2(x, groundY - 168);
+    this.size = new Vector2(112, 112);
     this.velocity = new Vector2(-50, 0);
 
     // Scale HP based on boss number (for endless progression)
@@ -194,8 +194,10 @@ export class Boss {
 
     switch (this.introPhase) {
       case 'approach':
-        // Slow entrance from right
-        this.velocity.x = -80;
+        // Entrance from the right. At the old 80px/s this leg alone ran over
+        // three seconds, and with the rest of the sequence the player spent
+        // 5.4s watching before a boss fight could start — five times a lap.
+        this.velocity.x = -170;
         this.position.x += this.velocity.x * dt;
 
         if (this.position.x <= this.baseX + 50) {
@@ -223,8 +225,9 @@ export class Boss {
         this.introTextAlpha = Math.min(1, this.introTimer / 0.3);
         this.introTextScale = 1 + (1 - Math.min(1, this.introTimer / 0.3));
 
-        // Subtle hover during name display
-        this.position.y = this.groundY - 120 + Math.sin(this.animationTime * 3) * 5;
+        // Subtle hover during the name card, in the same band the fight uses
+        // so the boss does not jump position when the intro ends.
+        this.position.y = this.groundY - 152 + Math.sin(this.animationTime * 3) * 5;
 
         if (this.introTimer >= this.introNameTime) {
           this.introPhase = 'ready';
@@ -359,9 +362,18 @@ export class Boss {
     this.movementTimer += dt;
 
     // Vertical wave motion
+    // The hover band is set by the JUMP ARC, not by taste.
+    //
+    // A full-hold jump peaks about 128px up, so the runner's feet top out
+    // near groundY - 128. For a stomp to be possible the boss's top edge has
+    // to dip below that at the bottom of its wave — and for the fight to have
+    // rhythm it has to rise out of reach at the top. With a 112px body,
+    // -152 +/- 36 puts the top between groundY-188 and groundY-116: reachable
+    // on the downbeat, out of reach on the upbeat.
     const waveSpeed = this.phase === 'rage' ? 2 : 1.5;
-    const waveAmplitude = this.phase === 'rage' ? 50 : 40;
-    this.targetY = this.groundY - 120 + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
+    const waveAmplitude = this.phase === 'rage' ? 42 : 36;
+    this.targetY =
+      this.groundY - 152 + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
 
     const dy = this.targetY - this.position.y;
     this.position.y += dy * dt * 3;
@@ -493,6 +505,16 @@ export class Boss {
     const cx = x + w / 2;
     const cy = y + h / 2;
 
+    // A pool of shade under the boss: without it the treant vanishes into the
+    // forest and the shadow beast into the night.
+    const shade = ctx.createRadialGradient(cx, cy, w * 0.2, cx, cy, w * 0.95);
+    shade.addColorStop(0, 'rgba(0, 0, 0, 0.35)');
+    shade.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = shade;
+    ctx.beginPath();
+    ctx.arc(cx, cy, w * 0.95, 0, Math.PI * 2);
+    ctx.fill();
+
     // Outer glow
     const glowRadius = w * 0.8;
     const glowGradient = ctx.createRadialGradient(cx, cy, w * 0.3, cx, cy, glowRadius);
@@ -528,8 +550,8 @@ export class Boss {
         break;
     }
 
-    // Eyes (common to all)
-    this.renderEyes(ctx, x, y, w);
+    // Faces are per-boss; only the anger is shared.
+    this.renderRageBrow(ctx, x, y, w);
 
     // Rage aura
     if (this.phase === 'rage') {
@@ -543,225 +565,703 @@ export class Boss {
     }
   }
 
-  private renderSunBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
+  // ======================================================================
+  // Boss bodies.
+  //
+  // Each one owns its whole silhouette INCLUDING its face, because a shared
+  // pair of dots read as googly eyes stuck onto five different shapes. What is
+  // shared is the language: a hot core colour, a darker shell, one glowing
+  // feature that tells you where the thing is looking, and an animation that
+  // keeps moving while it waits so it never looks switched off.
+  // ======================================================================
+
+  /** Sun Guardian: a solar disc behind a gold mask, two counter-rotating coronas. */
+  private renderSunBoss(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number
+  ): void {
     void h;
-    // Main circle
+    const r = w * 0.34;
+
+    // Two ray crowns turning opposite ways: the classic "living star" read.
+    for (let layer = 0; layer < 2; layer++) {
+      const rayCount = layer === 0 ? 16 : 8;
+      const dir = layer === 0 ? 1 : -1;
+      const inner = r * (layer === 0 ? 1.02 : 1.1);
+      ctx.fillStyle = layer === 0 ? this.config.glowColor : this.config.primaryColor;
+      ctx.globalAlpha = layer === 0 ? 0.9 : 0.55;
+      for (let i = 0; i < rayCount; i++) {
+        const angle =
+          (i / rayCount) * Math.PI * 2 + this.animationTime * 0.45 * dir;
+        const outer =
+          inner + r * (layer === 0 ? 0.5 : 0.85) +
+          Math.sin(this.animationTime * 3 + i) * 5;
+        const spread = layer === 0 ? 0.1 : 0.05;
+        ctx.beginPath();
+        ctx.moveTo(cx + Math.cos(angle - spread) * inner, cy + Math.sin(angle - spread) * inner);
+        ctx.lineTo(cx + Math.cos(angle) * outer, cy + Math.sin(angle) * outer);
+        ctx.lineTo(cx + Math.cos(angle + spread) * inner, cy + Math.sin(angle + spread) * inner);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Molten core.
+    const core = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
+    core.addColorStop(0, '#FFFBE8');
+    core.addColorStop(0.45, this.config.primaryColor);
+    core.addColorStop(1, this.config.secondaryColor);
+    ctx.fillStyle = core;
     ctx.beginPath();
-    ctx.arc(cx, cy, w * 0.4, 0, Math.PI * 2);
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fill();
 
-    // Sun rays
-    ctx.fillStyle = this.config.glowColor;
-    const rayCount = 12;
-    for (let i = 0; i < rayCount; i++) {
-      const angle = (i / rayCount) * Math.PI * 2 + this.animationTime * 0.5;
-      const innerR = w * 0.4;
-      const outerR = w * 0.55 + Math.sin(this.animationTime * 3 + i) * 5;
-
+    // Sunspots, drifting across the face.
+    ctx.fillStyle = 'rgba(160, 70, 10, 0.35)';
+    for (let i = 0; i < 4; i++) {
+      const a = this.animationTime * 0.3 + i * 1.7;
       ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(angle - 0.15) * innerR, cy + Math.sin(angle - 0.15) * innerR);
-      ctx.lineTo(cx + Math.cos(angle) * outerR, cy + Math.sin(angle) * outerR);
-      ctx.lineTo(cx + Math.cos(angle + 0.15) * innerR, cy + Math.sin(angle + 0.15) * innerR);
+      ctx.ellipse(
+        cx + Math.cos(a) * r * 0.5,
+        cy + Math.sin(a * 0.7) * r * 0.4,
+        r * 0.16,
+        r * 0.1,
+        a,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+
+    // The mask.
+    //
+    // Round white eyes plus a curved mouth read as a cartoon face however the
+    // mouth is bent — the first two passes came out cheerful, then worried.
+    // Angled slots with a hot core inside are what actually reads as a glare.
+    ctx.fillStyle = '#93590F';
+    ctx.beginPath();
+    ctx.moveTo(cx - r * 0.86, cy - r * 0.28);
+    ctx.quadraticCurveTo(cx, cy - r * 0.84, cx + r * 0.86, cy - r * 0.28);
+    ctx.quadraticCurveTo(cx, cy - r * 0.44, cx - r * 0.86, cy - r * 0.28);
+    ctx.closePath();
+    ctx.fill();
+
+    // Eye slots: wedges angled down toward the nose.
+    for (const side of [-1, 1]) {
+      const ex = cx + side * r * 0.4;
+      ctx.save();
+      ctx.translate(ex, cy - r * 0.04);
+      // INNER end low, OUTER end high. Rotating the other way tilts the
+      // inner corners up, which is the universal "sad" eyebrow.
+      ctx.rotate(-side * 0.46);
+      ctx.fillStyle = '#5E2C04';
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.3, -r * 0.1);
+      ctx.lineTo(r * 0.3, -r * 0.2);
+      ctx.lineTo(r * 0.3, r * 0.06);
+      ctx.lineTo(-r * 0.3, r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+
+      // The glow inside the slot, hotter in rage.
+      const hot = this.phase === 'rage' ? '#FF5533' : '#FFF3C4';
+      const glow = ctx.createLinearGradient(-r * 0.3, 0, r * 0.3, 0);
+      glow.addColorStop(0, this.hexToRgba(hot, 0.1));
+      glow.addColorStop(0.6, hot);
+      glow.addColorStop(1, this.hexToRgba(hot, 0.35));
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.22, -r * 0.04);
+      ctx.lineTo(r * 0.24, -r * 0.13);
+      ctx.lineTo(r * 0.24, r * 0.0);
+      ctx.lineTo(-r * 0.22, r * 0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Mouth: a hard down-turned bar, widening into a snarl in rage.
+    ctx.fillStyle = '#5E2C04';
+    if (this.phase === 'rage') {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.34, cy + r * 0.34);
+      ctx.quadraticCurveTo(cx, cy + r * 0.82, cx + r * 0.34, cy + r * 0.34);
+      ctx.quadraticCurveTo(cx, cy + r * 0.44, cx - r * 0.34, cy + r * 0.34);
+      ctx.closePath();
+      ctx.fill();
+      // Bared teeth.
+      ctx.fillStyle = '#FFF3C4';
+      for (let i = 0; i < 4; i++) {
+        const tx = cx - r * 0.26 + i * r * 0.17;
+        ctx.beginPath();
+        ctx.moveTo(tx, cy + r * 0.38);
+        ctx.lineTo(tx + r * 0.1, cy + r * 0.38);
+        ctx.lineTo(tx + r * 0.05, cy + r * 0.54);
+        ctx.closePath();
+        ctx.fill();
+      }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(cx - r * 0.3, cy + r * 0.48);
+      ctx.quadraticCurveTo(cx, cy + r * 0.3, cx + r * 0.3, cy + r * 0.48);
+      ctx.lineTo(cx + r * 0.3, cy + r * 0.56);
+      ctx.quadraticCurveTo(cx, cy + r * 0.38, cx - r * 0.3, cy + r * 0.56);
       ctx.closePath();
       ctx.fill();
     }
   }
 
-  private renderPhoenixBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
-    // Body
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, w * 0.35, h * 0.4, 0, 0, Math.PI * 2);
-    ctx.fill();
+  /** Phoenix: an actual bird — neck, beak, layered wings, a tail of flame. */
+  private renderPhoenixBoss(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number
+  ): void {
+    const flap = Math.sin(this.animationTime * 5);
 
-    // Wings
-    ctx.fillStyle = this.config.secondaryColor;
-    const wingFlap = Math.sin(this.animationTime * 6) * 10;
-
-    // Left wing
-    ctx.beginPath();
-    ctx.moveTo(cx - w * 0.2, cy);
-    ctx.quadraticCurveTo(cx - w * 0.6, cy - h * 0.3 + wingFlap, cx - w * 0.5, cy + h * 0.2);
-    ctx.quadraticCurveTo(cx - w * 0.3, cy + h * 0.1, cx - w * 0.2, cy);
-    ctx.fill();
-
-    // Right wing
-    ctx.beginPath();
-    ctx.moveTo(cx + w * 0.2, cy);
-    ctx.quadraticCurveTo(cx + w * 0.6, cy - h * 0.3 + wingFlap, cx + w * 0.5, cy + h * 0.2);
-    ctx.quadraticCurveTo(cx + w * 0.3, cy + h * 0.1, cx + w * 0.2, cy);
-    ctx.fill();
-
-    // Flame tail
-    ctx.fillStyle = this.config.glowColor;
+    // Tail: three flame feathers streaming behind.
     for (let i = 0; i < 3; i++) {
-      const flameOffset = Math.sin(this.animationTime * 8 + i) * 5;
+      const wave = Math.sin(this.animationTime * 6 + i * 0.8) * 8;
+      ctx.fillStyle = i === 1 ? this.config.glowColor : this.config.secondaryColor;
       ctx.beginPath();
-      ctx.moveTo(cx - 5 + i * 5, cy + h * 0.3);
-      ctx.lineTo(cx - 8 + i * 5 + flameOffset, cy + h * 0.5 + i * 5);
-      ctx.lineTo(cx + i * 5, cy + h * 0.3);
+      ctx.moveTo(cx - w * 0.1, cy + h * 0.12 + i * 5);
+      ctx.quadraticCurveTo(
+        cx - w * 0.45,
+        cy + h * 0.2 + i * 9 + wave,
+        cx - w * 0.72,
+        cy + h * 0.02 + i * 13 + wave
+      );
+      ctx.quadraticCurveTo(cx - w * 0.4, cy + h * 0.3 + i * 8, cx - w * 0.1, cy + h * 0.22 + i * 5);
+      ctx.closePath();
       ctx.fill();
     }
+
+    // Far wing.
+    this.phoenixWing(ctx, cx, cy, w, h, -flap, 0.8, this.config.secondaryColor);
+
+    // Body.
+    const body = ctx.createLinearGradient(cx, cy - h * 0.3, cx, cy + h * 0.3);
+    body.addColorStop(0, this.config.glowColor);
+    body.addColorStop(0.5, this.config.primaryColor);
+    body.addColorStop(1, this.config.secondaryColor);
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + h * 0.04, w * 0.27, h * 0.3, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Neck and head, held high.
+    const headX = cx + w * 0.22;
+    const headY = cy - h * 0.3 + Math.sin(this.animationTime * 3) * 3;
+    ctx.fillStyle = this.config.primaryColor;
+    ctx.beginPath();
+    ctx.moveTo(cx + w * 0.04, cy - h * 0.12);
+    ctx.quadraticCurveTo(cx + w * 0.16, cy - h * 0.3, headX, headY);
+    ctx.lineTo(headX, headY + h * 0.16);
+    ctx.quadraticCurveTo(cx + w * 0.12, cy - h * 0.06, cx + w * 0.02, cy + h * 0.04);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = this.config.glowColor;
+    ctx.beginPath();
+    ctx.ellipse(headX, headY + h * 0.03, w * 0.11, h * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Crest feathers.
+    ctx.fillStyle = this.config.secondaryColor;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(headX - w * 0.04 + i * 3, headY - h * 0.06);
+      ctx.lineTo(headX - w * 0.14 + i * 5, headY - h * 0.2 - i * 3);
+      ctx.lineTo(headX + i * 3, headY - h * 0.04);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Beak: hooked, gold.
+    ctx.fillStyle = '#F7C948';
+    ctx.beginPath();
+    ctx.moveTo(headX + w * 0.08, headY);
+    ctx.lineTo(headX + w * 0.24, headY + h * 0.04);
+    ctx.lineTo(headX + w * 0.08, headY + h * 0.08);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#B8860B';
+    ctx.beginPath();
+    ctx.moveTo(headX + w * 0.08, headY + h * 0.045);
+    ctx.lineTo(headX + w * 0.2, headY + h * 0.05);
+    ctx.lineTo(headX + w * 0.08, headY + h * 0.08);
+    ctx.closePath();
+    ctx.fill();
+
+    this.glowEye(ctx, headX + w * 0.02, headY + h * 0.01, w * 0.045, this.config.eyeColor);
+
+    // Talons, tucked.
+    ctx.strokeStyle = '#F7C948';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(cx + w * 0.02 + i * 9, cy + h * 0.26);
+      ctx.lineTo(cx + w * 0.08 + i * 9, cy + h * 0.36);
+      ctx.lineTo(cx + w * 0.16 + i * 9, cy + h * 0.33);
+      ctx.stroke();
+    }
+
+    // Near wing, over everything.
+    this.phoenixWing(ctx, cx, cy, w, h, flap, 1, this.config.primaryColor);
   }
 
-  private renderShadowBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
-    // Shadowy body with wavy edges
+  private phoenixWing(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number,
+    flap: number,
+    scale: number,
+    color: string
+  ): void {
+    ctx.save();
+    ctx.translate(cx, cy - h * 0.04);
+    ctx.scale(scale, scale);
+    ctx.rotate(flap * 0.35);
+
+    // Three feather ranks, each shorter than the last.
+    const ranks: [number, number, string][] = [
+      [0.62, 0.5, this.config.secondaryColor],
+      [0.5, 0.38, color],
+      [0.36, 0.26, this.config.glowColor],
+    ];
+    for (const [reach, drop, c] of ranks) {
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(-w * reach * 0.5, -h * 0.42, -w * reach, -h * drop * 0.3);
+      ctx.quadraticCurveTo(-w * reach * 0.7, h * drop * 0.3, 0, h * 0.14);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Feather separations.
+    ctx.strokeStyle = 'rgba(120, 20, 0, 0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-w * 0.06, h * 0.02);
+      ctx.lineTo(-w * (0.2 + i * 0.12), -h * (0.18 - i * 0.04));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** Shadow Beast: a hole in the world with a maw and too many eyes. */
+  private renderShadowBoss(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number
+  ): void {
+    // Smoke skirts trailing off the body.
+    ctx.fillStyle = this.config.secondaryColor;
+    ctx.globalAlpha = 0.4;
+    for (let i = 0; i < 5; i++) {
+      const a = this.animationTime * 1.2 + i * 1.25;
+      const rr = w * (0.34 + (i % 2) * 0.1);
+      ctx.beginPath();
+      ctx.ellipse(
+        cx + Math.cos(a) * w * 0.34,
+        cy + Math.sin(a * 0.8) * h * 0.3,
+        rr * 0.5,
+        rr * 0.36,
+        a,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // The mass itself: a wobbling blob with a hard edge.
     ctx.beginPath();
-    for (let i = 0; i <= 32; i++) {
-      const angle = (i / 32) * Math.PI * 2;
-      const waveOffset = Math.sin(angle * 6 + this.animationTime * 3) * 5;
-      const r = w * 0.4 + waveOffset;
+    for (let i = 0; i <= 40; i++) {
+      const angle = (i / 40) * Math.PI * 2;
+      const wobble =
+        Math.sin(angle * 5 + this.animationTime * 2.4) * 6 +
+        Math.sin(angle * 9 - this.animationTime * 1.6) * 3;
+      const r = w * 0.38 + wobble;
       const px = cx + Math.cos(angle) * r;
-      const py = cy + Math.sin(angle) * r;
+      const py = cy + Math.sin(angle) * r * 0.95;
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
+    const void_ = ctx.createRadialGradient(cx, cy, w * 0.05, cx, cy, w * 0.42);
+    void_.addColorStop(0, '#120726');
+    void_.addColorStop(0.7, this.config.secondaryColor);
+    void_.addColorStop(1, this.config.primaryColor);
+    ctx.fillStyle = void_;
     ctx.fill();
 
-    // Dark tendrils
-    ctx.strokeStyle = this.config.secondaryColor;
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 4; i++) {
-      const baseAngle = (i / 4) * Math.PI * 2 + Math.PI / 4;
-      const wavePhase = this.animationTime * 2 + i;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(baseAngle) * w * 0.3, cy + Math.sin(baseAngle) * h * 0.3);
-      ctx.quadraticCurveTo(
-        cx + Math.cos(baseAngle + 0.3) * w * 0.5 + Math.sin(wavePhase) * 10,
-        cy + Math.sin(baseAngle + 0.3) * h * 0.5,
-        cx + Math.cos(baseAngle) * w * 0.6,
-        cy + Math.sin(baseAngle) * h * 0.6
-      );
-      ctx.stroke();
-    }
-  }
+    // Rim light, so the silhouette survives a dark background.
+    ctx.strokeStyle = this.config.glowColor;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
 
-  private renderSandwormBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
-    void h;
-    // Segmented worm body
-    const segments = 5;
-    for (let i = segments - 1; i >= 0; i--) {
-      const segOffset = Math.sin(this.animationTime * 3 + i * 0.5) * 8;
-      const segY = cy + i * 8 - 16;
-      const segR = w * (0.4 - i * 0.04);
+    // Three eyes, the middle one larger, all blinking out of step.
+    const eyes: [number, number, number][] = [
+      [-0.24, -0.1, 0.075],
+      [0.02, -0.19, 0.105],
+      [0.26, -0.06, 0.075],
+    ];
+    eyes.forEach(([ex, ey, er], i) => {
+      const blink = Math.sin(this.animationTime * 1.7 + i * 2.1);
+      if (blink > 0.94) return;
+      this.glowEye(ctx, cx + w * ex, cy + h * ey, w * er, this.config.eyeColor);
+    });
 
-      ctx.fillStyle = i === 0 ? this.config.primaryColor : this.config.secondaryColor;
-      ctx.beginPath();
-      ctx.ellipse(cx + segOffset, segY, segR, segR * 0.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Segment lines
-      if (i > 0) {
-        ctx.strokeStyle = this.adjustColor(this.config.secondaryColor, -20);
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(cx + segOffset, segY - segR * 0.3, segR * 0.8, 0.2, Math.PI - 0.2);
-        ctx.stroke();
-      }
-    }
-
-    // Mandibles
-    ctx.fillStyle = this.adjustColor(this.config.secondaryColor, -40);
-    const mandibleAngle = Math.sin(this.animationTime * 4) * 0.2;
-    ctx.save();
-    ctx.translate(cx - 15, cy - 15);
-    ctx.rotate(-0.5 - mandibleAngle);
-    ctx.fillRect(0, 0, 20, 6);
-    ctx.restore();
-    ctx.save();
-    ctx.translate(cx + 15, cy - 15);
-    ctx.rotate(0.5 + mandibleAngle);
-    ctx.fillRect(-20, 0, 20, 6);
-    ctx.restore();
-  }
-
-  private renderTreantBoss(ctx: CanvasRenderingContext2D, cx: number, cy: number, w: number, h: number): void {
-    // Tree trunk body
-    ctx.fillStyle = '#5D4037';
+    // Maw: a jagged grin of pale teeth.
+    const open = this.phase === 'rage' ? 0.14 : 0.07;
+    ctx.fillStyle = '#0A0414';
     ctx.beginPath();
-    ctx.moveTo(cx - w * 0.3, cy + h * 0.4);
-    ctx.lineTo(cx - w * 0.25, cy - h * 0.3);
-    ctx.lineTo(cx + w * 0.25, cy - h * 0.3);
-    ctx.lineTo(cx + w * 0.3, cy + h * 0.4);
+    ctx.moveTo(cx - w * 0.22, cy + h * 0.12);
+    ctx.quadraticCurveTo(cx, cy + h * (0.12 + open * 2.2), cx + w * 0.22, cy + h * 0.12);
+    ctx.quadraticCurveTo(cx, cy + h * 0.1, cx - w * 0.22, cy + h * 0.12);
     ctx.closePath();
     ctx.fill();
 
-    // Bark texture
-    ctx.strokeStyle = '#3E2723';
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 4; i++) {
-      const barkY = cy - h * 0.2 + i * 15;
+    ctx.fillStyle = '#E9D5FF';
+    for (let i = 0; i < 6; i++) {
+      const t = i / 5;
+      const tx = cx - w * 0.2 + t * w * 0.4;
+      const ty = cy + h * 0.118;
       ctx.beginPath();
-      ctx.moveTo(cx - w * 0.2, barkY);
-      ctx.lineTo(cx + w * 0.1, barkY + 5);
-      ctx.stroke();
+      ctx.moveTo(tx - 3, ty);
+      ctx.lineTo(tx, ty + h * (0.05 + open));
+      ctx.lineTo(tx + 3, ty);
+      ctx.closePath();
+      ctx.fill();
     }
+  }
 
-    // Foliage crown
-    ctx.fillStyle = this.config.primaryColor;
-    const leafWave = Math.sin(this.animationTime * 2);
-    for (let i = 0; i < 5; i++) {
-      const angle = (i / 5) * Math.PI - Math.PI / 2;
-      const leafX = cx + Math.cos(angle) * w * 0.35;
-      const leafY = cy - h * 0.25 + Math.sin(angle) * h * 0.15;
-      const leafSize = 15 + Math.sin(this.animationTime * 3 + i) * 3;
+  /** Sand Worm: segmented body rising from the dune, ringed with teeth. */
+  private renderSandwormBoss(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number
+  ): void {
+    // Everything below the ground line is buried, so the segments read as
+    // emerging rather than as a tail dangling through the floor.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(cx - w, cy - h * 2, w * 2, this.groundY - (cy - h * 2));
+    ctx.clip();
 
+    // Body segments, drawn back to front so the head sits on top.
+    const segments = 6;
+    for (let i = segments - 1; i >= 1; i--) {
+      const sway = Math.sin(this.animationTime * 2.6 - i * 0.55) * (6 + i * 2.5);
+      const sy = cy + i * h * 0.15;
+      const sr = w * (0.34 - i * 0.032);
+
+      ctx.fillStyle = i % 2 === 0 ? this.config.secondaryColor : this.adjustColor(this.config.secondaryColor, -18);
       ctx.beginPath();
-      ctx.arc(leafX + leafWave * 2, leafY, leafSize, 0, Math.PI * 2);
+      ctx.ellipse(cx + sway, sy, sr, sr * 0.82, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Chitin plate along the front of each segment.
+      ctx.fillStyle = this.adjustColor(this.config.primaryColor, -10);
+      ctx.beginPath();
+      ctx.ellipse(cx + sway, sy - sr * 0.3, sr * 0.72, sr * 0.34, 0, Math.PI, Math.PI * 2);
       ctx.fill();
     }
 
-    // Top foliage
+    // Head.
+    const headSway = Math.sin(this.animationTime * 2.6) * 4;
+    const hx = cx + headSway;
+    const hy = cy - h * 0.08;
+    const hr = w * 0.35;
+
+    const shell = ctx.createRadialGradient(hx - hr * 0.3, hy - hr * 0.4, 0, hx, hy, hr);
+    shell.addColorStop(0, this.adjustColor(this.config.primaryColor, 30));
+    shell.addColorStop(1, this.config.secondaryColor);
+    ctx.fillStyle = shell;
     ctx.beginPath();
-    ctx.arc(cx, cy - h * 0.35, w * 0.25, 0, Math.PI * 2);
+    ctx.ellipse(hx, hy, hr, hr * 0.94, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Branch arms
-    ctx.strokeStyle = '#5D4037';
-    ctx.lineWidth = 8;
+    // The maw: two concentric rings of teeth around a dark throat.
+    const gape = (this.phase === 'rage' ? 0.62 : 0.5) +
+      Math.sin(this.animationTime * 3) * 0.05;
+    ctx.fillStyle = '#2B1405';
     ctx.beginPath();
-    ctx.moveTo(cx - w * 0.2, cy);
-    ctx.lineTo(cx - w * 0.5, cy - h * 0.1 + Math.sin(this.animationTime * 2) * 5);
-    ctx.stroke();
+    ctx.arc(hx, hy, hr * gape, 0, Math.PI * 2);
+    ctx.fill();
+
+    for (let ring = 0; ring < 2; ring++) {
+      const rr = hr * gape * (ring === 0 ? 1 : 0.62);
+      const teeth = ring === 0 ? 12 : 8;
+      const len = hr * (ring === 0 ? 0.22 : 0.16);
+      ctx.fillStyle = ring === 0 ? '#FDF3D8' : '#E3CFA4';
+      for (let i = 0; i < teeth; i++) {
+        const a = (i / teeth) * Math.PI * 2 + this.animationTime * (ring === 0 ? 0.3 : -0.45);
+        ctx.save();
+        ctx.translate(hx + Math.cos(a) * rr, hy + Math.sin(a) * rr);
+        ctx.rotate(a + Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(-3, 0);
+        ctx.lineTo(0, -len);
+        ctx.lineTo(3, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Eye clusters on the shell, above the maw.
+    this.glowEye(ctx, hx - hr * 0.72, hy - hr * 0.5, hr * 0.13, this.config.eyeColor);
+    this.glowEye(ctx, hx + hr * 0.72, hy - hr * 0.5, hr * 0.13, this.config.eyeColor);
+
+    // Mandibles hinged either side.
+    const mandible = Math.sin(this.animationTime * 4) * 0.18;
+    ctx.fillStyle = this.adjustColor(this.config.secondaryColor, -40);
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(hx + side * hr * 0.92, hy - hr * 0.1);
+      ctx.rotate(side * (0.5 + mandible));
+      ctx.beginPath();
+      ctx.moveTo(0, -5);
+      ctx.quadraticCurveTo(side * 22, -2, side * 26, 10);
+      ctx.quadraticCurveTo(side * 16, 2, 0, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Sand spilling off the body.
+    ctx.fillStyle = 'rgba(240, 214, 160, 0.5)';
+    for (let i = 0; i < 8; i++) {
+      const t = (this.animationTime * 1.6 + i * 0.37) % 1;
+      ctx.globalAlpha = 0.5 * (1 - t);
+      ctx.fillRect(
+        hx - hr + (i / 8) * hr * 2,
+        hy + hr * 0.5 + t * h * 0.5,
+        2,
+        5
+      );
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // The mound it burst out of, drawn on top of the buried segments.
+    ctx.fillStyle = 'rgba(180, 140, 80, 0.85)';
     ctx.beginPath();
-    ctx.moveTo(cx + w * 0.2, cy);
-    ctx.lineTo(cx + w * 0.5, cy - h * 0.1 + Math.sin(this.animationTime * 2 + 1) * 5);
-    ctx.stroke();
+    ctx.ellipse(cx, this.groundY - 4, w * 0.62, 16, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(232, 200, 146, 0.9)';
+    ctx.beginPath();
+    ctx.ellipse(cx, this.groundY - 6, w * 0.46, 11, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
   }
 
-  private renderEyes(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
-    const eyeY = y + this.size.y * 0.35;
-    const eyeSpacing = w * 0.35;
+  /** Ancient Treant: a walking trunk with a carved face and a mossy crown. */
+  private renderTreantBoss(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number,
+    h: number
+  ): void {
+    const sway = Math.sin(this.animationTime * 1.4) * 4;
 
-    ctx.fillStyle = this.config.eyeColor;
-    ctx.shadowColor = this.config.eyeColor;
-    ctx.shadowBlur = 15;
-
-    // Left eye
-    ctx.beginPath();
-    ctx.arc(x + w / 2 - eyeSpacing / 2, eyeY, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Right eye
-    ctx.beginPath();
-    ctx.arc(x + w / 2 + eyeSpacing / 2, eyeY, 6, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.shadowBlur = 0;
-
-    // Angry eyebrow effect in rage mode
-    if (this.phase === 'rage') {
-      ctx.strokeStyle = this.config.secondaryColor;
-      ctx.lineWidth = 3;
+    // Roots, splayed at the base.
+    ctx.strokeStyle = '#4A3122';
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    for (let i = -2; i <= 2; i++) {
+      if (i === 0) continue;
       ctx.beginPath();
-      ctx.moveTo(x + w / 2 - eyeSpacing / 2 - 8, eyeY - 10);
-      ctx.lineTo(x + w / 2 - eyeSpacing / 2 + 8, eyeY - 6);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(x + w / 2 + eyeSpacing / 2 + 8, eyeY - 10);
-      ctx.lineTo(x + w / 2 + eyeSpacing / 2 - 8, eyeY - 6);
+      ctx.moveTo(cx, cy + h * 0.32);
+      ctx.quadraticCurveTo(
+        cx + i * w * 0.14,
+        cy + h * 0.42,
+        cx + i * w * 0.22,
+        cy + h * 0.5
+      );
       ctx.stroke();
     }
+
+    // Trunk.
+    const bark = ctx.createLinearGradient(cx - w * 0.3, 0, cx + w * 0.3, 0);
+    bark.addColorStop(0, '#3E2A1B');
+    bark.addColorStop(0.45, '#6B4B2E');
+    bark.addColorStop(1, '#2F2013');
+    ctx.fillStyle = bark;
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.28, cy + h * 0.36);
+    ctx.quadraticCurveTo(cx - w * 0.22, cy - h * 0.1, cx - w * 0.24 + sway, cy - h * 0.3);
+    ctx.lineTo(cx + w * 0.24 + sway, cy - h * 0.3);
+    ctx.quadraticCurveTo(cx + w * 0.22, cy - h * 0.1, cx + w * 0.28, cy + h * 0.36);
+    ctx.closePath();
+    ctx.fill();
+
+    // Bark grain.
+    ctx.strokeStyle = 'rgba(30, 18, 8, 0.55)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const gx = cx - w * 0.18 + i * w * 0.09;
+      ctx.beginPath();
+      ctx.moveTo(gx, cy + h * 0.32);
+      ctx.quadraticCurveTo(gx + 4, cy, gx + sway * 0.6, cy - h * 0.28);
+      ctx.stroke();
+    }
+
+    // Branch arms with a knuckle each, swinging slightly out of phase.
+    ctx.strokeStyle = '#4A3122';
+    ctx.lineWidth = 9;
+    for (const side of [-1, 1]) {
+      const armWave = Math.sin(this.animationTime * 1.8 + (side > 0 ? 1 : 0)) * 7;
+      ctx.beginPath();
+      ctx.moveTo(cx + side * w * 0.2, cy - h * 0.02);
+      ctx.quadraticCurveTo(
+        cx + side * w * 0.42,
+        cy - h * 0.1 + armWave,
+        cx + side * w * 0.52,
+        cy + h * 0.1 + armWave
+      );
+      ctx.stroke();
+      // Fist of twigs.
+      ctx.fillStyle = '#5A3D26';
+      ctx.beginPath();
+      ctx.arc(cx + side * w * 0.52, cy + h * 0.1 + armWave, 9, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Canopy crown: overlapping clumps, breathing.
+    const breathe = Math.sin(this.animationTime * 1.1) * 2;
+    const clumps: [number, number, number, string][] = [
+      [-0.3, -0.34, 0.24, this.config.secondaryColor],
+      [0.3, -0.34, 0.24, this.config.secondaryColor],
+      [-0.14, -0.48, 0.26, this.config.primaryColor],
+      [0.16, -0.5, 0.24, this.config.primaryColor],
+      [0, -0.6, 0.22, this.config.glowColor],
+    ];
+    for (const [dx, dy, r, color] of clumps) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx + w * dx + sway, cy + h * dy + breathe, w * r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Hanging vines.
+    ctx.strokeStyle = this.config.secondaryColor;
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 4; i++) {
+      const vx = cx - w * 0.36 + i * w * 0.24;
+      const len = h * (0.12 + (i % 2) * 0.08);
+      ctx.beginPath();
+      ctx.moveTo(vx, cy - h * 0.28);
+      ctx.quadraticCurveTo(vx + Math.sin(this.animationTime * 2 + i) * 5, cy - h * 0.28 + len * 0.6, vx, cy - h * 0.28 + len);
+      ctx.stroke();
+    }
+
+    // The face, carved into the trunk: hollow sockets and a splintered mouth.
+    ctx.fillStyle = '#20150C';
+    ctx.beginPath();
+    ctx.ellipse(cx - w * 0.12 + sway, cy - h * 0.13, w * 0.09, h * 0.07, -0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + w * 0.12 + sway, cy - h * 0.13, w * 0.09, h * 0.07, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    this.glowEye(ctx, cx - w * 0.12 + sway, cy - h * 0.13, w * 0.045, this.config.eyeColor);
+    this.glowEye(ctx, cx + w * 0.12 + sway, cy - h * 0.13, w * 0.045, this.config.eyeColor);
+
+    ctx.fillStyle = '#20150C';
+    ctx.beginPath();
+    ctx.moveTo(cx - w * 0.14 + sway, cy + h * 0.04);
+    ctx.lineTo(cx + w * 0.14 + sway, cy + h * 0.04);
+    ctx.lineTo(cx + w * 0.1 + sway, cy + h * (this.phase === 'rage' ? 0.2 : 0.13));
+    ctx.lineTo(cx - w * 0.1 + sway, cy + h * (this.phase === 'rage' ? 0.2 : 0.13));
+    ctx.closePath();
+    ctx.fill();
+    // Splinter teeth.
+    ctx.fillStyle = '#8A6A45';
+    for (let i = 0; i < 4; i++) {
+      const tx = cx - w * 0.11 + i * w * 0.074 + sway;
+      ctx.beginPath();
+      ctx.moveTo(tx, cy + h * 0.04);
+      ctx.lineTo(tx + 4, cy + h * 0.04);
+      ctx.lineTo(tx + 2, cy + h * 0.1);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  /** A pupil that actually glows, used by every boss for its eyes. */
+  private glowEye(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    r: number,
+    color: string
+  ): void {
+    ctx.save();
+    const glow = ctx.createRadialGradient(x, y, 0, x, y, r * 2.6);
+    glow.addColorStop(0, this.hexToRgba(color, 0.6));
+    glow.addColorStop(1, this.hexToRgba(color, 0));
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 2.6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Slit pupil, so the eye has a direction.
+    ctx.fillStyle = 'rgba(20, 5, 5, 0.9)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, Math.max(0.6, r * 0.34), r * 0.86, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  /** Rage brow: one shared overlay, so anger reads the same on every boss. */
+  private renderRageBrow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
+    if (this.phase !== 'rage') return;
+    const eyeY = y + this.size.y * 0.3;
+    const spacing = w * 0.3;
+    ctx.save();
+    ctx.strokeStyle = '#FF4438';
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2 - spacing - 10, eyeY - 14);
+    ctx.lineTo(x + w / 2 - spacing + 10, eyeY - 6);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + w / 2 + spacing + 10, eyeY - 14);
+    ctx.lineTo(x + w / 2 + spacing - 10, eyeY - 6);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private hexToRgba(hex: string, alpha: number): string {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
   }
 
   private renderDefeatExplosions(ctx: CanvasRenderingContext2D): void {
@@ -786,18 +1286,54 @@ export class Boss {
   private renderIntroText(ctx: CanvasRenderingContext2D): void {
     ctx.save();
     ctx.globalAlpha = this.introTextAlpha;
-    ctx.fillStyle = this.config.glowColor;
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 4;
-    ctx.font = `bold ${24 * this.introTextScale}px monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    const text = this.config.name.toUpperCase() + ' AWAKENS!';
-    const textY = this.position.y - 50;
+    const text = this.config.name.toUpperCase();
+    // Clamp to the viewport: the boss enters from off the right edge, and a
+    // banner anchored to it was being cut in half on arrival.
+    const viewWidth = ctx.canvas?.width ?? 800;
+    const cx = Math.max(
+      viewWidth * 0.3,
+      Math.min(viewWidth * 0.7, this.position.x + this.size.x / 2)
+    );
+    const textY = Math.max(64, this.position.y - 44);
+    const size = 30 * this.introTextScale;
 
-    ctx.strokeText(text, this.position.x + this.size.x / 2, textY);
-    ctx.fillText(text, this.position.x + this.size.x / 2, textY);
+    ctx.font = `bold ${size}px Arial`;
+    const width = ctx.measureText(text).width;
+
+    // A solid banner: this has to read on a pale desert sky and a black night
+    // skyline alike, so it brings its own background rather than relying on a
+    // stroke against whatever happens to be behind it.
+    const plateW = width + 64;
+    const plateH = size * 2.05;
+    const plateY = textY - size * 0.78;
+
+    ctx.fillStyle = 'rgba(8, 10, 18, 0.82)';
+    ctx.fillRect(cx - plateW / 2, plateY, plateW, plateH);
+    ctx.fillStyle = this.config.secondaryColor;
+    ctx.fillRect(cx - plateW / 2, plateY, plateW, 3);
+    ctx.fillRect(cx - plateW / 2, plateY + plateH - 3, plateW, 3);
+
+    // Chevrons on the ends, for the arcade-marquee feel.
+    ctx.fillStyle = this.config.glowColor;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + side * (plateW / 2 - 6), plateY + 8);
+      ctx.lineTo(cx + side * (plateW / 2 - 22), plateY + plateH / 2);
+      ctx.lineTo(cx + side * (plateW / 2 - 6), plateY + plateH - 8);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = this.config.glowColor;
+    ctx.fillText(text, cx, textY - size * 0.08);
+
+    ctx.font = `bold ${size * 0.38}px Arial`;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.globalAlpha = this.introTextAlpha * 0.75;
+    ctx.fillText('AWAKENS', cx, textY + size * 0.66);
     ctx.restore();
   }
 
@@ -808,27 +1344,57 @@ export class Boss {
     const cx = this.position.x + this.size.x / 2;
     const cy = this.position.y + this.size.y / 2;
 
-    // Charging circle
-    ctx.strokeStyle = '#EF4444';
-    ctx.lineWidth = 4;
+    ctx.save();
+
+    // A ring that fills as the attack charges — the timing read.
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.arc(cx, cy, this.size.x * 0.6, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.arc(cx, cy, this.size.x * 0.58, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Attack type icon
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 16px monospace';
+    ctx.strokeStyle = '#FF4438';
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, this.size.x * 0.58, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+
+    // The label says what to DO, not what the boss is called.
+    const labels: Record<AttackType, string> = {
+      projectile: 'FIREBALL',
+      volley: 'VOLLEY',
+      groundPound: 'JUMP!',
+      charge: 'CHARGING',
+      summon: 'SUMMONING',
+    };
+    const label = labels[this.pendingAttack.type];
+
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.font = 'bold 15px Arial';
+    const ly = this.position.y - 16;
+    const lw = ctx.measureText(label).width + 16;
 
-    let icon = '!';
-    switch (this.pendingAttack.type) {
-      case 'volley': icon = '!!!'; break;
-      case 'groundPound': icon = '▼'; break;
-      case 'charge': icon = '→'; break;
-      case 'summon': icon = '+'; break;
-    }
-    ctx.fillText(icon, cx, cy - this.size.y * 0.5);
+    // Flash the plate faster as the windup completes.
+    const urgency = 0.55 + Math.abs(Math.sin(progress * Math.PI * 6)) * 0.45;
+    ctx.globalAlpha = urgency;
+    ctx.fillStyle = '#B91C1C';
+    ctx.fillRect(cx - lw / 2, ly - 11, lw, 22);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillText(label, cx, ly);
+
+    // A pointer down at the boss, so the label is never ambiguous.
+    ctx.fillStyle = '#B91C1C';
+    ctx.globalAlpha = urgency;
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, ly + 11);
+    ctx.lineTo(cx + 6, ly + 11);
+    ctx.lineTo(cx, ly + 18);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
   }
 
   private adjustColor(hex: string, amount: number): string {

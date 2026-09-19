@@ -14,9 +14,37 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
 import { ComboFlash } from './systems/ComboFlash';
-import { EnvironmentSystem } from './systems/EnvironmentSystem';
+import { EnvironmentSystem, ThemePalette } from './systems/EnvironmentSystem';
 import { ParallaxSystem } from './systems/ParallaxSystem';
 import { PlayerAura } from './entities/PlayerAura';
+import { HudRenderer, HudState } from './systems/HudRenderer';
+
+/** Coins awarded for felling a boss. Referenced by the victory screen too, so
+ *  the number the player is promised is the number they are paid. */
+const BOSS_BONUS_COINS = 15;
+
+/** How long the "stage begins" banner stays up, in seconds. */
+const STAGE_BANNER_DURATION = 2.6;
+
+/** How long the red hurt vignette lingers, in seconds. */
+const HURT_FLASH_DURATION = 0.55;
+
+/**
+ * One procedural track per stage, plus a boss theme.
+ *
+ * The runner shipped silent apart from its effects. These are all existing
+ * ProceduralMusicEngine tracks (see GAME_TRACK_MAPPING), chosen so the mood
+ * climbs across the five stages and drops into tension for a boss.
+ */
+const STAGE_MUSIC = [
+  'arcade_bounce',
+  'action_chase',
+  'space_exploration',
+  'action_intense',
+  'epic_heroic',
+] as const;
+const BOSS_MUSIC = 'epic_tension';
+const MENU_MUSIC = 'arcade_retro';
 
 // Deterministic noise function for ground textures
 const pseudoNoise = (x: number, y: number): number => {
@@ -75,6 +103,7 @@ export class RunnerGame extends BaseGame {
   private distance: number = 0;
   private groundY: number = 0;
   private jumps: number = 0;
+  private enemiesStomped: number = 0;
   private powerupsUsed: number = 0;
   private powerupTypesUsed: Set<PowerUpType> = new Set();
 
@@ -99,8 +128,8 @@ export class RunnerGame extends BaseGame {
   private themeLevel: number = 0;              // Current theme index (0-4, cycles through 5 themes)
   private bossDefeatedForTheme: boolean = false; // Prevents duplicate boss spawns in same theme
   private themeProgress: number = 0;           // Progress within current theme (0 to THEME_DISTANCE)
-  private readonly THEME_DISTANCE: number = 2000;
   private readonly BOSS_SPAWN_THRESHOLD: number = 2800;
+  private readonly BOSS_WARNING_THRESHOLD: number = 2500;
   private bossesDefeated: number = 0;
   private bossVictoryTimer: number = 0;
   private bossVictoryDuration: number = 3; // seconds
@@ -119,6 +148,11 @@ export class RunnerGame extends BaseGame {
   private invulnerabilityTimer: number = 0;
   private invulnerabilityDuration: number = 2; // seconds
 
+  /** Frames of frozen simulation left, for hit impact. */
+  private hitStopTimer: number = 0;
+  /** Countdown on the red edge flash after a hit. */
+  private hurtFlashTimer: number = 0;
+
   // Death animation
   private deathAnimationTimer: number = 0;
   private deathAnimationDuration: number = 1; // seconds
@@ -136,8 +170,19 @@ export class RunnerGame extends BaseGame {
 
   private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
 
+  /** World odometer for the ground dressing, so tufts keep their shape. */
+  private groundScroll: number = 0;
+
   //paralax system
   private parallaxSystem!: ParallaxSystem;
+
+  private hud!: HudRenderer;
+  /** What the music director last asked for, so it only switches on change. */
+  private currentTrack: string | null = null;
+  /** Best score across restarts within this mount, shown on the menu. */
+  private sessionBest: number = 0;
+  private maxSpeedReached: number = 1;
+  private stageBannerTimer: number = 0;
 
 
   protected onInit(): void {
@@ -159,8 +204,13 @@ export class RunnerGame extends BaseGame {
       this.groundY
     );
     this.parallaxSystem.reset();
+    this.hud = new HudRenderer(this.canvas.width, this.canvas.height);
+    // The runner draws its own chrome; the base Score/Coins overlay would sit
+    // straight on top of it.
+    this.renderBaseHud = false;
     this.startTime = Date.now();
     this.jumps = 0;
+    this.enemiesStomped = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
 
@@ -180,9 +230,23 @@ export class RunnerGame extends BaseGame {
     const downPressed = this.services.input.isDownPressed();
     const upPressed = this.services.input.isUpPressed();
 
+    this.hud.update(dt);
+    this.updateMusic();
+
+    if (this.hurtFlashTimer > 0) this.hurtFlashTimer = Math.max(0, this.hurtFlashTimer - dt);
+
+    // Hit-stop freezes the SIMULATION only. The HUD clock and the music above
+    // keep running, so the pause reads as impact rather than as a stall.
+    if (this.hitStopTimer > 0) {
+      this.hitStopTimer -= dt;
+      this.screenShake.update(dt);
+      this.cameraOffset = this.screenShake.getOffset();
+      return;
+    }
+
     // Handle menu state
     if (this.gameState === 'menu') {
-      this.handleMenuUpdate(upPressed, downPressed, jumpPressed);
+      this.handleMenuUpdate(dt, upPressed, downPressed, jumpPressed);
       return;
     }
 
@@ -234,6 +298,7 @@ export class RunnerGame extends BaseGame {
     }
 
     if (landing && this.jumpInProgress) {
+      this.services.audio.playSound('land', { volume: 0.5 });
       this.jumps++;
       this.jumpInProgress = false;
 
@@ -244,7 +309,7 @@ export class RunnerGame extends BaseGame {
     }
 
     if (slideStarted) {
-      this.services.audio.playSound('powerup'); // Slide sound
+      this.services.audio.playSound('whoosh');
 
       // Tutorial tracking
       if (this.gameState === 'tutorial' && this.tutorialProgress.currentStep === 1) {
@@ -259,18 +324,24 @@ export class RunnerGame extends BaseGame {
     // Update game speed and distance
     const baseIncrement = this.gameSpeed * dt * 100;
     this.distance += baseIncrement;
-    this.gameSpeed = 1 + Math.floor(this.distance / 1000) * 0.2;
+    // A smooth, CAPPED ramp. The old `1 + floor(distance/1000) * 0.2` had no
+    // ceiling, so a long run eventually outran its own jump arc.
+    this.gameSpeed = 1 + 2.1 * (1 - Math.exp(-this.distance / 5200));
+    this.maxSpeedReached = Math.max(this.maxSpeedReached, this.gameSpeed);
 
     // Apply speed boost power-up and speed zone event
     let speedMultiplier = this.hasPowerUp('speed-boost') ? 1.5 : 1;
     if (this.activeEvent === 'speed-zone') {
-      speedMultiplier *= 2; // Double speed during speed zone
+      // 2x was unsurvivable once the base speed had ramped: the screen moved
+      // further in a jump arc than the player could see coming.
+      speedMultiplier *= 1.45;
     }
     const effectiveSpeed = this.gameSpeed * speedMultiplier;
     const distanceIncrement = effectiveSpeed * dt * 100;
 
     // Update theme progress (separate from distance - for boss spawning)
     this.themeProgress += distanceIncrement;
+    this.groundScroll += distanceIncrement;
 
     // Update all entities
     this.updateEntities(dt, effectiveSpeed);
@@ -278,6 +349,7 @@ export class RunnerGame extends BaseGame {
 
     // Update environment using themeLevel directly (NOT distance)
     this.environmentSystem.setTheme(this.themeLevel);
+    this.player.setAccent(this.environmentSystem.getAccentColor());
     
     // Handle spawning
     this.handleSpawning();
@@ -293,7 +365,7 @@ export class RunnerGame extends BaseGame {
     // Update score
     this.score = Math.floor(this.distance / 10);
     // Scroll parallax layers by the distance moved this frame
-    this.parallaxSystem.update(distanceIncrement);
+    this.parallaxSystem.update(distanceIncrement, dt);
   }
 
   public getScore() {
@@ -312,6 +384,7 @@ export class RunnerGame extends BaseGame {
       speed: this.gameSpeed,
       combo: this.comboSystem?.getCombo?.() ?? 0,
       bossesDefeated: this.bossesDefeated,
+      enemiesStomped: this.enemiesStomped,
     };
   }
 
@@ -360,6 +433,7 @@ export class RunnerGame extends BaseGame {
         if (distance < this.coinMagnetRange) {
           const direction = this.player.position.subtract(coin.position).normalize();
           coin.position = coin.position.add(direction.multiply(dt * 300));
+          coin.markAttracted();
         }
       }
     });
@@ -375,6 +449,11 @@ export class RunnerGame extends BaseGame {
       this.flyingEnemies = this.flyingEnemies.filter(enemy => !enemy.isOffScreen());
 
       // Update hover enemies
+      this.hoverEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
+      this.hoverEnemies = this.hoverEnemies.filter(enemy => !enemy.isOffScreen());
+    } else {
+      // During a boss fight the arena is cleared of obstacles, but a summoned
+      // minion still has to animate and die.
       this.hoverEnemies.forEach(enemy => enemy.update(dt, gameSpeed));
       this.hoverEnemies = this.hoverEnemies.filter(enemy => !enemy.isOffScreen());
     }
@@ -409,7 +488,7 @@ export class RunnerGame extends BaseGame {
       // Transition to boss victory when defeated
       if (this.boss.isDefeated() && this.boss.isOffScreen()) {
         this.bossesDefeated++;
-        this.pickups += 15; // Bonus coins for defeating boss
+        this.pickups += BOSS_BONUS_COINS;
         this.bossDefeatedForTheme = true; // Mark boss as defeated for this theme
         this.gameState = 'boss-victory';
         this.bossVictoryTimer = 0;
@@ -447,7 +526,43 @@ export class RunnerGame extends BaseGame {
     this.groundPounds = this.groundPounds.filter(gp => !gp.isOffScreen());
   }
 
+  /**
+   * Pick the track the current moment wants and switch only when it changes —
+   * playMusic tears the old track down and starts a new one, so calling it
+   * every frame would stutter forever.
+   */
+  private updateMusic(): void {
+    let wanted: string | null;
+    switch (this.gameState) {
+      case 'menu':
+      case 'stats-recap':
+        wanted = MENU_MUSIC;
+        break;
+      case 'death-animation':
+        wanted = null;
+        break;
+      default:
+        wanted = this.boss
+          ? BOSS_MUSIC
+          : STAGE_MUSIC[this.themeLevel % STAGE_MUSIC.length];
+    }
+
+    if (wanted === this.currentTrack) return;
+    this.currentTrack = wanted;
+
+    if (wanted === null) {
+      this.services?.audio?.stopMusic?.(0.4);
+      return;
+    }
+    this.services?.audio?.playMusic?.(
+      wanted as Parameters<NonNullable<typeof this.services.audio.playMusic>>[0],
+      0.8
+    );
+  }
+
   private updateSystems(dt: number): void {
+    this.hud.update(dt);
+    if (this.stageBannerTimer > 0) this.stageBannerTimer = Math.max(0, this.stageBannerTimer - dt);
     this.particles.update(dt);
     this.screenShake.update(dt);
     this.comboSystem.update(dt);
@@ -523,44 +638,159 @@ export class RunnerGame extends BaseGame {
     // Regular spawning (only when no boss is active)
     if (!this.boss) {
       if (this.distance >= this.nextObstacleDistance) {
-        // Tutorial mode - simpler spawning
         if (this.gameState === 'tutorial') {
-          this.spawnObstacle();
-          if (Math.random() < 0.7) {
-            this.spawnCoin();
-          }
+          this.spawnTutorialPattern();
         } else {
-          // Normal gameplay - varied spawning
-          if (Math.random() < 0.25) {
-            this.spawnObstacle();
-            this.spawnObstacle(100);
-          } else {
-            this.spawnObstacle();
-          }
-
-          if (Math.random() < 0.6) {
-            this.spawnCoin();
-          }
-
-          if (Math.random() < 0.15 && this.distance > 300) {
-            this.spawnPowerUp();
-          }
+          this.spawnPattern();
         }
-
         this.scheduleNextObstacle();
       }
 
       if (this.distance >= this.nextAerialDistance && this.gameState === 'playing') {
-        if (Math.random() < 0.5 && this.distance > 500) {
-          this.spawnFlyingEnemy();
-        }
-
-        if (Math.random() < 0.4 && this.distance > 800) {
-          this.spawnHoverEnemy();
-        }
-
+        this.spawnAerial();
         this.scheduleNextAerial();
       }
+    }
+  }
+
+  /**
+   * How hard the run currently is, 0 at the start and approaching 1.
+   * Everything that ramps reads from this, so the curve is tuned in one place.
+   */
+  private difficulty(): number {
+    return 1 - Math.exp(-this.distance / 5000);
+  }
+
+  /**
+   * Distance the world covers in one second at the current speed.
+   *
+   * This is the number that makes spawn timing honest. Obstacles move at
+   * `200 * speed` px/s while the odometer climbs at `100 * speed` units/s, so
+   * a gap measured in DISTANCE UNITS shrinks in real time as the run speeds
+   * up. The old scheduler made that worse by subtracting a speed factor from
+   * the gap, which is why late runs threw obstacles closer together than a
+   * jump could possibly clear. Everything below is scheduled in SECONDS and
+   * converted here.
+   */
+  private unitsPerSecond(): number {
+    return 100 * this.gameSpeed;
+  }
+
+  /**
+   * One deliberate hazard arrangement, rather than a die roll per obstacle.
+   *
+   * Every pattern has a known answer: jump it, slide it, or jump the pit. The
+   * spacing inside a pattern is chosen so the answer stays available — a
+   * second blocker never lands inside the first one's landing window.
+   */
+  private spawnPattern(): void {
+    const d = this.difficulty();
+    const far = this.distance;
+    const roll = Math.random();
+
+    // Pattern weights open up as the run goes on. Before 300m it is only
+    // single blockers, so the first thirty seconds teach the basic jump.
+    if (far < 300) {
+      this.spawnObstacle(50, 'cactus');
+      if (Math.random() < 0.7) this.spawnCoinArc(140, 3);
+      return;
+    }
+
+    // Two blockers close enough to read as one hazard, cleared by a single
+    // held jump. Spaced by a fixed screen distance, never by wall time.
+    if (roll < 0.14 + d * 0.1 && far > 900) {
+      this.spawnObstacle(50, 'spike');
+      this.spawnObstacle(118, 'spike');
+      this.spawnCoinArc(84, 3, 74);
+      return;
+    }
+
+    // Slide gate: a hanging barrier, with coins underneath as the reward for
+    // committing to the slide.
+    if (roll < 0.34 && far > 500) {
+      this.spawnObstacle(50, 'high-barrier');
+      this.spawnLowCoins(60, 3);
+      return;
+    }
+
+    // Pit: jump it. Coins arc over the hole.
+    if (roll < 0.5 && far > 700) {
+      this.spawnObstacle(50, 'gap');
+      this.spawnCoinArc(90, 4, 66);
+      return;
+    }
+
+    // Blocker then pit, far enough apart to land and re-jump.
+    if (roll < 0.6 && far > 1600) {
+      this.spawnObstacle(50, 'cactus');
+      this.spawnObstacle(50 + this.safeFollowUpGap(), 'gap');
+      return;
+    }
+
+    // Spike bed.
+    if (roll < 0.74) {
+      this.spawnObstacle(50, 'spike');
+      if (Math.random() < 0.6) this.spawnCoinArc(120, 3);
+      return;
+    }
+
+    // Plain blocker, the bread and butter.
+    this.spawnObstacle(50, 'cactus');
+    if (Math.random() < 0.55) this.spawnCoinArc(130, 3);
+
+    // Power-ups thin out as the player gets deeper, so they stay a treat.
+    if (Math.random() < 0.16 && far > 300) this.spawnPowerUp();
+  }
+
+  /**
+   * Screen distance the runner needs to land, recover, and jump again.
+   * Derived from the jump arc rather than guessed, so it holds at any speed.
+   */
+  private safeFollowUpGap(): number {
+    // ~0.62s of travel: airtime on a tapped jump plus a beat to react.
+    return 0.62 * this.unitsPerSecond() * 2;
+  }
+
+  /** The tutorial spawns exactly the hazard the current step is teaching. */
+  private spawnTutorialPattern(): void {
+    switch (this.tutorialProgress.currentStep) {
+      case 0:
+        this.spawnObstacle(50, 'cactus');
+        break;
+      case 1:
+        // Barriers, so "hold DOWN to slide" has something to slide under.
+        this.spawnObstacle(50, 'high-barrier');
+        this.spawnLowCoins(60, 2);
+        break;
+      default:
+        if (Math.random() < 0.5) this.spawnObstacle(50, 'cactus');
+        this.spawnCoinArc(120, 4);
+        break;
+    }
+    if (this.tutorialProgress.currentStep === 0 && Math.random() < 0.6) {
+      this.spawnCoinArc(140, 3);
+    }
+  }
+
+  /**
+   * Aerials, placed so they never land on top of a ground hazard the player is
+   * already committed to jumping.
+   */
+  private spawnAerial(): void {
+    const d = this.difficulty();
+    const spawnX = this.canvas.width + 50;
+    const clearOfGround = !this.obstacles.some(
+      o => Math.abs(o.position.x - spawnX) < 150
+    );
+
+    if (this.distance > 500 && Math.random() < 0.35 + d * 0.25) {
+      this.spawnFlyingEnemy();
+    }
+
+    // The hover drone is stompable, so it is safe to place near the floor —
+    // but only where the player is not already mid-commitment.
+    if (this.distance > 800 && clearOfGround && Math.random() < 0.3 + d * 0.25) {
+      this.spawnHoverEnemy();
     }
   }
 
@@ -570,13 +800,20 @@ export class RunnerGame extends BaseGame {
     this.eventTimer = 0;
     this.specialEventMeter = 0; // Reset meter
     this.screenShake.shake(6, 0.2);
-    this.services.audio.playSound('powerup');
+    this.services.audio.playSound('achievement');
   }
 
-  private handleMenuUpdate(upPressed: boolean, downPressed: boolean, selectPressed: boolean): void {
-    // Update cooldown
+  private handleMenuUpdate(
+    dt: number,
+    upPressed: boolean,
+    downPressed: boolean,
+    selectPressed: boolean
+  ): void {
+    // The menu keeps its own scroll running so the title screen is alive.
+    this.parallaxSystem.update(28 * dt, dt);
+
     if (this.inputCooldown > 0) {
-      this.inputCooldown -= 1/60; // Assuming 60 FPS
+      this.inputCooldown -= dt;
       return;
     }
 
@@ -591,6 +828,7 @@ export class RunnerGame extends BaseGame {
     if (selectPressed) {
       if (this.menuSelection === 'play') {
         this.gameState = 'playing';
+        this.stageBannerTimer = STAGE_BANNER_DURATION;
       } else {
         this.gameState = 'tutorial';
         this.resetTutorialProgress();
@@ -605,7 +843,7 @@ export class RunnerGame extends BaseGame {
 
     // Continue scrolling background slowly
     const slowSpeed = 0.3;
-    this.parallaxSystem.update(slowSpeed * dt * 100);
+    this.parallaxSystem.update(slowSpeed * dt * 100, dt);
 
     // Transition back to playing after victory duration
     if (this.bossVictoryTimer >= this.bossVictoryDuration) {
@@ -624,6 +862,7 @@ export class RunnerGame extends BaseGame {
 
       // 4. Update environment to new theme
       this.environmentSystem.setTheme(this.themeLevel);
+      this.stageBannerTimer = STAGE_BANNER_DURATION;
 
       // NOTE: distance is NOT touched - it continues as pure progress metric
     }
@@ -673,23 +912,52 @@ export class RunnerGame extends BaseGame {
   private takeDamage(): void {
     this.lives--;
     this.services.audio.playSound('collision');
-    this.screenShake.shake(10, 0.3);
+    this.services.audio.playSound('hurt_grunt');
+    this.screenShake.shake(12, 0.35);
+
+    // Freeze the sim for a beat. Hit-stop is the cheapest way to make a hit
+    // land, and it costs nothing but a timer.
+    this.hitStopTimer = 0.09;
+    this.hurtFlashTimer = HURT_FLASH_DURATION;
+
+    // A hit always breaks the chain — that is the real cost of a mistake.
+    this.comboSystem.resetCombo();
+
+    this.particles.createLandingDust(this.player.position.x, this.player.position.y);
+    this.particles.createImpactRing(
+      this.player.position.x + this.player.size.x / 2,
+      this.player.position.y + this.player.size.y / 2,
+      'boss'
+    );
 
     if (this.lives <= 0) {
-      // Trigger death animation
       this.gameState = 'death-animation';
       this.deathAnimationTimer = 0;
       this.deathAnimationScale = 1;
-    } else {
-      // Bounce back and make invulnerable
-      this.player.velocity.x = -200; // Push back
-      this.player.velocity.y = -8; // Slight bounce up
-      this.isInvulnerable = true;
-      this.invulnerabilityTimer = this.invulnerabilityDuration;
-
-      // Clear nearby obstacles to give player breathing room
-      this.obstacles = this.obstacles.filter(obs => obs.position.x > this.player.position.x + 200);
+      this.services.audio.playSound('death_cry');
+      this.screenShake.shake(22, 0.6);
+      return;
     }
+
+    // Knock back, then hand control straight back.
+    //
+    // The old version set velocity.x to -200, which is expressed in px PER
+    // FRAME here, so it teleported the runner 200px left in a single step
+    // before Player.update zeroed it again.
+    this.player.hurt();
+    this.isInvulnerable = true;
+    this.invulnerabilityTimer = this.invulnerabilityDuration;
+
+    // Clear the way ahead so the player is not hit again while blinking.
+    this.obstacles = this.obstacles.filter(
+      obs => obs.position.x > this.player.position.x + 210
+    );
+    this.hoverEnemies = this.hoverEnemies.filter(
+      e => e.position.x > this.player.position.x + 210
+    );
+    this.flyingEnemies = this.flyingEnemies.filter(
+      e => e.position.x > this.player.position.x + 210
+    );
   }
 
   private handleDeathAnimation(dt: number): void {
@@ -704,8 +972,8 @@ export class RunnerGame extends BaseGame {
     this.player.position.y += this.player.velocity.y;
 
     if (this.deathAnimationTimer >= this.deathAnimationDuration) {
-      // Transition to stats recap
       this.gameState = 'stats-recap';
+      this.sessionBest = Math.max(this.sessionBest, this.score);
     }
   }
 
@@ -782,6 +1050,53 @@ export class RunnerGame extends BaseGame {
 
     this.particles.render(ctx);
 
+    // One light wash over the whole scene, so entities drawn in their own
+    // palettes still read as standing in this stage's light.
+    const palette = this.environmentSystem.getPalette();
+    if (palette.ambientLightAlpha > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.globalAlpha = palette.ambientLightAlpha;
+      ctx.fillStyle = palette.ambientLight;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      ctx.restore();
+    }
+
+    // Hurt vignette: red pulled in from the edges, never over the middle of
+    // the playfield where the player is looking.
+    if (this.hurtFlashTimer > 0) {
+      const t = this.hurtFlashTimer / HURT_FLASH_DURATION;
+      const vignette = ctx.createRadialGradient(
+        this.canvas.width / 2,
+        this.canvas.height / 2,
+        this.canvas.height * 0.28,
+        this.canvas.width / 2,
+        this.canvas.height / 2,
+        this.canvas.height * 0.78
+      );
+      vignette.addColorStop(0, 'rgba(180, 20, 20, 0)');
+      vignette.addColorStop(1, `rgba(180, 20, 20, ${0.62 * t})`);
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
+    // A standing low-health vignette, so the last life is felt.
+    if (this.lives === 1 && this.gameState === 'playing') {
+      const pulse = 0.14 + Math.abs(Math.sin(this.gameTime * 3)) * 0.1;
+      const danger = ctx.createRadialGradient(
+        this.canvas.width / 2,
+        this.canvas.height / 2,
+        this.canvas.height * 0.36,
+        this.canvas.width / 2,
+        this.canvas.height / 2,
+        this.canvas.height * 0.8
+      );
+      danger.addColorStop(0, 'rgba(160, 24, 24, 0)');
+      danger.addColorStop(1, `rgba(160, 24, 24, ${pulse})`);
+      ctx.fillStyle = danger;
+      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
     // Render combo flash overlay (on top of everything in game layer)
     this.comboFlash.render(ctx, this.canvas.width, this.canvas.height);
 
@@ -789,448 +1104,261 @@ export class RunnerGame extends BaseGame {
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-    // Menu state
-    if (this.gameState === 'menu') {
-      this.renderMenu(ctx);
-      return;
-    }
-
-    // Boss victory screen
-    if (this.gameState === 'boss-victory') {
-      this.renderBossVictory(ctx);
-      return;
-    }
-
-    // Tutorial UI
-    if (this.gameState === 'tutorial') {
-      this.renderTutorialUI(ctx);
-      return;
-    }
-
-    // Death animation - no UI
-    if (this.gameState === 'death-animation') {
-      return;
-    }
-
-    // Stats recap screen
-    if (this.gameState === 'stats-recap') {
-      this.renderStatsRecap(ctx);
-      return;
-    }
-
-    // Playing UI
-    this.renderPlayingUI(ctx);
-  }
-
-  private renderMenu(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Title
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('ENDLESS RUNNER', this.canvas.width / 2, 150);
-
-    ctx.font = '20px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText('Your Flagship Adventure Awaits!', this.canvas.width / 2, 190);
-
-    // Menu options
-    const menuY = 300;
-    const spacing = 80;
-
-    // Play option
-    if (this.menuSelection === 'play') {
-      ctx.fillStyle = '#10B981';
-      ctx.fillRect(this.canvas.width / 2 - 150, menuY - 35, 300, 60);
-    }
-    ctx.fillStyle = this.menuSelection === 'play' ? '#FFFFFF' : '#94A3B8';
-    ctx.font = 'bold 28px Arial';
-    ctx.fillText('▶ START GAME', this.canvas.width / 2, menuY);
-
-    // Tutorial option
-    if (this.menuSelection === 'tutorial') {
-      ctx.fillStyle = '#3B82F6';
-      ctx.fillRect(this.canvas.width / 2 - 150, menuY + spacing - 35, 300, 60);
-    }
-    ctx.fillStyle = this.menuSelection === 'tutorial' ? '#FFFFFF' : '#94A3B8';
-    ctx.fillText('📚 TUTORIAL', this.canvas.width / 2, menuY + spacing);
-
-    // Controls hint
-    ctx.font = '16px Arial';
-    ctx.fillStyle = '#64748B';
-    ctx.fillText('Use UP/DOWN to select, SPACE to confirm', this.canvas.width / 2, 500);
-  }
-
-  private renderBossVictory(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Victory text
-    ctx.fillStyle = '#FBBF24';
-    ctx.font = 'bold 56px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('BOSS DEFEATED!', this.canvas.width / 2, this.canvas.height / 2 - 50);
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '24px Arial';
-    ctx.fillText(`Bosses Defeated: ${this.bossesDefeated}`, this.canvas.width / 2, this.canvas.height / 2 + 10);
-    ctx.fillText(`Bonus Coins: +10`, this.canvas.width / 2, this.canvas.height / 2 + 50);
-
-    // Transition hint
-    const timeLeft = Math.ceil(this.bossVictoryDuration - this.bossVictoryTimer);
-    ctx.font = '18px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText(`Next stage in ${timeLeft}...`, this.canvas.width / 2, this.canvas.height / 2 + 100);
-  }
-
-  private renderTutorialUI(ctx: CanvasRenderingContext2D): void {
-    const progress = this.tutorialProgress;
-
-    // Tutorial step indicator - MOVED TO TOP
-    const boxY = 80;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(this.canvas.width / 2 - 200, boxY, 400, 120);
-
-    ctx.fillStyle = '#FBBF24';
-    ctx.font = 'bold 20px Arial';
-    ctx.textAlign = 'center';
-
-    switch (progress.currentStep) {
-      case 0:
-        ctx.fillText('TUTORIAL: Learn to Jump', this.canvas.width / 2, boxY + 30);
-        ctx.font = '16px Arial';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(`Press SPACE to jump over obstacles`, this.canvas.width / 2, boxY + 55);
-        ctx.fillText(`Progress: ${progress.jumpsCompleted}/${progress.requiredJumps} jumps`, this.canvas.width / 2, boxY + 80);
-        break;
-      case 1:
-        ctx.fillText('TUTORIAL: Learn to Slide', this.canvas.width / 2, boxY + 30);
-        ctx.font = '16px Arial';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(`Press DOWN to slide under barriers`, this.canvas.width / 2, boxY + 55);
-        ctx.fillText(`Progress: ${progress.slidesCompleted}/${progress.requiredSlides} slides`, this.canvas.width / 2, boxY + 80);
-        break;
-      case 2:
-        ctx.fillText('TUTORIAL: Collect Coins', this.canvas.width / 2, boxY + 30);
-        ctx.font = '16px Arial';
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillText(`Collect coins to build combos!`, this.canvas.width / 2, boxY + 55);
-        ctx.fillText(`Progress: ${progress.coinsCollected}/${progress.requiredCoins} coins`, this.canvas.width / 2, boxY + 80);
-        break;
-      case 3:
-        ctx.fillStyle = '#10B981';
-        ctx.fillText('TUTORIAL COMPLETE!', this.canvas.width / 2, boxY + 30);
-        ctx.font = '16px Arial';
-        ctx.fillText('Starting game...', this.canvas.width / 2, boxY + 60);
-        break;
+    switch (this.gameState) {
+      case 'menu':
+        this.hud.renderMenu(ctx, this.menuSelection, this.sessionBest);
+        return;
+      case 'boss-victory':
+        this.hud.renderBossVictory(
+          ctx,
+          this.bossesDefeated,
+          BOSS_BONUS_COINS,
+          EnvironmentSystem.paletteForIndex(this.themeLevel + 1).name,
+          EnvironmentSystem.paletteForIndex(this.themeLevel + 1).accent,
+          this.bossVictoryDuration - this.bossVictoryTimer
+        );
+        return;
+      case 'death-animation':
+        // The death beat plays with no chrome at all.
+        return;
+      case 'stats-recap':
+        this.hud.renderRecap(
+          ctx,
+          this.buildRecapStats(),
+          this.score,
+          this.buildGrade(),
+          this.score > 0 && this.score >= this.sessionBest
+        );
+        return;
+      case 'tutorial':
+        this.hud.renderPlaying(ctx, this.buildHudState());
+        this.hud.renderTutorial(
+          ctx,
+          this.tutorialProgress.currentStep,
+          this.tutorialStepDone(),
+          this.tutorialStepNeeded()
+        );
+        return;
+      default:
+        this.hud.renderPlaying(ctx, this.buildHudState());
     }
   }
 
-  private renderStatsRecap(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  private buildHudState(): HudState {
+    const palette = this.environmentSystem.getPalette();
+    const bossApproaching =
+      !this.boss &&
+      !this.bossDefeatedForTheme &&
+      this.themeProgress >= this.BOSS_WARNING_THRESHOLD &&
+      this.gameState === 'playing';
 
-    // Title
-    ctx.fillStyle = '#DC2626';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText('GAME OVER', this.canvas.width / 2, 100);
+    return {
+      score: this.score,
+      coins: this.pickups,
+      lives: this.lives,
+      maxLives: this.maxLives,
+      distance: this.distance,
+      speed: this.gameSpeed,
+      combo: this.comboSystem.getCombo(),
+      comboTimeLeft: this.comboSystem.getTimeLeft(),
+      comboTimeLimit: this.comboSystem.getTimeLimit(),
+      comboMultiplier: this.comboSystem.getMultiplier(),
+      comboScale: this.comboFlash.getTextScale(),
+      powerUps: this.activePowerUps,
+      eventMeter: this.specialEventMeter,
+      eventThreshold: this.specialEventThreshold,
+      activeEvent: this.activeEvent,
+      eventTimeLeft: this.eventDuration - this.eventTimer,
+      eventDuration: this.eventDuration,
+      boss:
+        this.boss && !this.boss.isDefeated()
+          ? {
+              name: this.boss.getBossName(),
+              number: this.boss.getBossNumber(),
+              health: this.boss.health,
+              maxHealth: this.boss.maxHealth,
+              phase: this.boss.getPhase(),
+              glowColor: this.boss.getConfig().glowColor,
+              primaryColor: this.boss.getConfig().primaryColor,
+              secondaryColor: this.boss.getConfig().secondaryColor,
+            }
+          : null,
+      bossIn: bossApproaching
+        ? this.BOSS_SPAWN_THRESHOLD - this.themeProgress
+        : null,
+      stageName: palette.name,
+      stageNumber: this.themeLevel + 1,
+      accent: palette.accent,
+      stageBanner: this.stageBannerTimer > 0
+        ? Math.min(1, this.stageBannerTimer / 0.6) *
+          Math.min(1, (STAGE_BANNER_DURATION - this.stageBannerTimer) / 0.6 + 0.3)
+        : 0,
+      invulnerable: this.isInvulnerable,
+    };
+  }
 
-    // Stats
-    const stats = [
+  private tutorialStepDone(): number {
+    const p = this.tutorialProgress;
+    switch (p.currentStep) {
+      case 0: return p.jumpsCompleted;
+      case 1: return p.slidesCompleted;
+      case 2: return p.coinsCollected;
+      default: return 0;
+    }
+  }
+
+  private tutorialStepNeeded(): number {
+    const p = this.tutorialProgress;
+    switch (p.currentStep) {
+      case 0: return p.requiredJumps;
+      case 1: return p.requiredSlides;
+      case 2: return p.requiredCoins;
+      default: return 0;
+    }
+  }
+
+  private buildRecapStats(): { label: string; value: string; highlight?: boolean }[] {
+    return [
       { label: 'Distance', value: `${Math.floor(this.distance)}m` },
-      { label: 'Coins Collected', value: this.pickups },
-      { label: 'Max Combo', value: `${this.comboSystem.getMaxCombo()}x` },
-      { label: 'Jumps', value: this.jumps },
-      { label: 'Bosses Defeated', value: this.bossesDefeated },
-      { label: 'Max Speed', value: `${this.gameSpeed.toFixed(1)}x` },
+      { label: 'Coins', value: String(this.pickups), highlight: true },
+      { label: 'Best combo', value: `${this.comboSystem.getMaxCombo()}x` },
+      { label: 'Top speed', value: `${this.maxSpeedReached.toFixed(1)}x` },
+      { label: 'Stage reached', value: `${this.themeLevel + 1} / 5` },
+      { label: 'Bosses beaten', value: String(this.bossesDefeated) },
+      { label: 'Drones popped', value: String(this.enemiesStomped) },
+      { label: 'Jumps', value: String(this.jumps) },
     ];
-
-    let y = 180;
-    ctx.font = '20px Arial';
-    ctx.fillStyle = '#FFFFFF';
-
-    stats.forEach(stat => {
-      ctx.textAlign = 'left';
-      ctx.fillText(stat.label, this.canvas.width / 2 - 150, y);
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#FBBF24';
-      ctx.fillText(String(stat.value), this.canvas.width / 2 + 150, y);
-      ctx.fillStyle = '#FFFFFF';
-      y += 40;
-    });
-
-    // Final score
-    ctx.fillStyle = '#10B981';
-    ctx.font = 'bold 32px Arial';
-    ctx.textAlign = 'center';
-    ctx.fillText(`Final Score: ${this.score}`, this.canvas.width / 2, y + 40);
-
-    // Continue hint
-    ctx.font = '18px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText('Press SPACE to continue', this.canvas.width / 2, this.canvas.height - 40);
   }
 
-  private renderPlayingUI(ctx: CanvasRenderingContext2D): void {
-    // Lives display
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText('Lives:', 20, 40);
-    for (let i = 0; i < this.maxLives; i++) {
-      if (i < this.lives) {
-        ctx.fillStyle = '#DC2626';
-      } else {
-        ctx.fillStyle = '#374151';
-      }
-      ctx.fillRect(75 + i * 25, 28, 18, 18);
-    }
-
-    // Speed indicator
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'right';
-    ctx.fillText(`Speed: ${this.gameSpeed.toFixed(1)}x`, this.canvas.width - 20, 40);
-
-    // Distance
-    ctx.fillText(`Distance: ${Math.floor(this.distance)}m`, this.canvas.width - 20, 65);
-
-    // Boss fight indicator
-    if (this.boss && !this.boss.isDefeated()) {
-      const bossConfig = this.boss.getConfig();
-      const bossName = this.boss.getBossName();
-      const bossNum = this.boss.getBossNumber();
-
-      // Boss name with glow
-      ctx.save();
-      ctx.shadowColor = bossConfig.glowColor;
-      ctx.shadowBlur = 10;
-      ctx.fillStyle = bossConfig.glowColor;
-      ctx.font = 'bold 20px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`#${bossNum} ${bossName.toUpperCase()}`, this.canvas.width / 2, 35);
-      ctx.restore();
-
-      // Boss health bar
-      const barWidth = 250;
-      const barHeight = 14;
-      const barX = this.canvas.width / 2 - barWidth / 2;
-      const barY = 48;
-      const healthPercent = this.boss.health / this.boss.maxHealth;
-
-      // Background
-      ctx.fillStyle = '#1F2937';
-      ctx.fillRect(barX - 2, barY - 2, barWidth + 4, barHeight + 4);
-
-      ctx.fillStyle = '#374151';
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-
-      // Health gradient
-      const healthGradient = ctx.createLinearGradient(barX, barY, barX + barWidth * healthPercent, barY);
-      if (healthPercent > 0.3) {
-        healthGradient.addColorStop(0, bossConfig.primaryColor);
-        healthGradient.addColorStop(1, bossConfig.secondaryColor);
-      } else {
-        // Rage mode - pulsing red
-        const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
-        healthGradient.addColorStop(0, `rgba(239, 68, 68, ${pulse})`);
-        healthGradient.addColorStop(1, '#DC2626');
-      }
-      ctx.fillStyle = healthGradient;
-      ctx.fillRect(barX, barY, barWidth * healthPercent, barHeight);
-
-      // Border
-      ctx.strokeStyle = bossConfig.glowColor;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(barX, barY, barWidth, barHeight);
-
-      // Health text
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 11px Arial';
-      ctx.fillText(`${this.boss.health}/${this.boss.maxHealth}`, this.canvas.width / 2, barY + barHeight + 14);
-
-      // Phase indicator
-      const phase = this.boss.getPhase();
-      if (phase === 'rage') {
-        ctx.fillStyle = '#EF4444';
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText('RAGE MODE', this.canvas.width / 2, barY + barHeight + 28);
-      } else if (phase === 'intro') {
-        ctx.fillStyle = '#FBBF24';
-        ctx.font = 'bold 12px Arial';
-        ctx.fillText('INCOMING...', this.canvas.width / 2, barY + barHeight + 28);
-      }
-    }
-
-    // Next boss warning (based on themeProgress, not distance)
-    if (!this.boss && !this.bossDefeatedForTheme) {
-      const distanceToNextBoss = this.BOSS_SPAWN_THRESHOLD - this.themeProgress;
-
-      if (this.themeProgress >= 2600 && this.themeProgress < this.BOSS_SPAWN_THRESHOLD) {
-        ctx.fillStyle = '#FBBF24';
-        ctx.font = 'bold 18px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText(`Boss approaching in ${Math.floor(distanceToNextBoss)}m!`, this.canvas.width / 2, 40);
-      }
-    }
-
-    // Combo display with scale effect on milestones
-    if (this.comboSystem.getCombo() > 1) {
-      const comboScale = this.comboFlash.getTextScale();
-      ctx.save();
-      ctx.fillStyle = '#F59E0B';
-      ctx.font = 'bold 20px Arial';
-      ctx.textAlign = 'right';
-      // Apply scale from center of text position
-      ctx.translate(this.canvas.width - 20, 100);
-      ctx.scale(comboScale, comboScale);
-      ctx.fillText(`Combo: ${this.comboSystem.getCombo()}x`, 0, 0);
-      ctx.restore();
-     
-      // Combo timer bar
-      const timeLeft = this.comboSystem.getTimeLeft();
-      const maxTime = 2;
-      const barWidth = 100;
-      const barHeight = 4;
-      const barX = this.canvas.width - 120;
-      const barY = 110;
-      
-      ctx.fillStyle = '#374151';
-      ctx.fillRect(barX, barY, barWidth, barHeight);
-      
-      ctx.fillStyle = '#F59E0B';
-      ctx.fillRect(barX, barY, barWidth * (timeLeft / maxTime), barHeight);
-    }
-    
-    
-    // Active power-ups display
-    let powerUpY = 140;
-    this.activePowerUps.forEach(powerUp => {
-      const remaining = Math.ceil(powerUp.duration);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'right';
-      ctx.fillText(`${this.getPowerUpName(powerUp.type)}: ${remaining}s`, this.canvas.width - 20, powerUpY);
-      
-      // Power-up timer bar
-      const progress = powerUp.duration / powerUp.maxDuration;
-      const barWidth = 80;
-      const barHeight = 3;
-      const barX = this.canvas.width - 100;
-      
-      ctx.fillStyle = '#374151';
-      ctx.fillRect(barX, powerUpY + 5, barWidth, barHeight);
-      
-      ctx.fillStyle = this.getPowerUpColor(powerUp.type);
-      ctx.fillRect(barX, powerUpY + 5, barWidth * progress, barHeight);
-      
-      powerUpY += 25;
-    });
-    
-    // Special event meter (combo-based)
-    if (this.activeEvent === 'none') {
-      const meterProgress = this.specialEventMeter / this.specialEventThreshold;
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText('Special Event:', 20, 120);
-
-      const barWidth = 100;
-      const barHeight = 8;
-      ctx.fillStyle = '#374151';
-      ctx.fillRect(20, 130, barWidth, barHeight);
-
-      const gradient = ctx.createLinearGradient(20, 0, 120, 0);
-      gradient.addColorStop(0, '#3B82F6');
-      gradient.addColorStop(1, '#FBBF24');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(20, 130, barWidth * meterProgress, barHeight);
-
-      ctx.font = '12px Arial';
-      ctx.fillText(`${this.specialEventMeter}/${this.specialEventThreshold}`, 20, 150);
-    }
-
-    // Special event indicator
-    if (this.activeEvent !== 'none') {
-      const timeLeft = this.eventDuration - this.eventTimer;
-      const eventName = this.activeEvent === 'coin-shower' ? 'COIN SHOWER!' : 'SPEED ZONE!';
-      const eventColor = this.activeEvent === 'coin-shower' ? '#FBBF24' : '#3B82F6';
-
-      ctx.fillStyle = eventColor;
-      ctx.font = 'bold 20px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(`⭐ ${eventName}`, 20, 120);
-
-      // Event timer bar
-      const barWidth = 100;
-      const barHeight = 4;
-      const progress = timeLeft / this.eventDuration;
-
-      ctx.fillStyle = '#374151';
-      ctx.fillRect(20, 130, barWidth, barHeight);
-
-      ctx.fillStyle = eventColor;
-      ctx.fillRect(20, 130, barWidth * progress, barHeight);
-    }
-
-    // Environment theme display
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '12px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText(`Theme: ${this.environmentSystem.getCurrentTheme()}`, 20, this.canvas.height - 20);
+  /**
+   * A letter for the run. Distance is the spine of the score, so the bands are
+   * set on it, and the boss kills a player earned move them up.
+   */
+  private buildGrade(): { letter: string; color: string; caption: string } {
+    const rating = this.distance + this.bossesDefeated * 1500 + this.pickups * 8;
+    if (rating >= 12000) return { letter: 'S', color: '#f0b429', caption: 'Untouchable' };
+    if (rating >= 8000) return { letter: 'A', color: '#34d399', caption: 'Excellent' };
+    if (rating >= 5000) return { letter: 'B', color: '#7c6bff', caption: 'Strong run' };
+    if (rating >= 2500) return { letter: 'C', color: '#9182ff', caption: 'Getting there' };
+    if (rating >= 1000) return { letter: 'D', color: '#a2a9b8', caption: 'Keep at it' };
+    return { letter: 'E', color: '#6d7484', caption: 'Warming up' };
   }
 
   private renderEnhancedBackground(ctx: CanvasRenderingContext2D): void {
-    const colors = this.environmentSystem.getSkyColors();
-    
-    // Still render the gradient sky as base layer
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    gradient.addColorStop(0, colors.top);
-    gradient.addColorStop(1, colors.bottom);
-    
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.canvas.width, this.groundY);
-    
-    // Render all parallax layers
+    // The parallax system owns the sky gradient too, so the horizon haze it
+    // paints can sit between the sky and the distant silhouettes.
     this.parallaxSystem.render(ctx, this.environmentSystem.getCurrentTheme());
   }
 
-  private renderCloud(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-    ctx.fillRect(x, y, 60, 20);
-    ctx.fillRect(x + 10, y - 10, 40, 20);
-    ctx.fillRect(x + 20, y - 15, 30, 20);
+  private renderGround(ctx: CanvasRenderingContext2D): void {
+    const p = this.environmentSystem.getPalette();
+    const depth = this.canvas.height - this.groundY;
+
+    // Body: a vertical ramp from the lit surface down into shadow, so the
+    // floor reads as a solid mass instead of a painted strip.
+    const body = ctx.createLinearGradient(0, this.groundY, 0, this.canvas.height);
+    body.addColorStop(0, p.groundBody);
+    body.addColorStop(1, p.groundDeep);
+    ctx.fillStyle = body;
+    ctx.fillRect(0, this.groundY, this.canvas.width, depth);
+
+    // Surface crust and the bright lip that catches the sky.
+    const crust = ctx.createLinearGradient(0, this.groundY - 10, 0, this.groundY + 14);
+    crust.addColorStop(0, p.groundTop);
+    crust.addColorStop(1, p.groundBody);
+    ctx.fillStyle = crust;
+    ctx.fillRect(0, this.groundY - 10, this.canvas.width, 24);
+
+    ctx.fillStyle = p.groundLine;
+    ctx.fillRect(0, this.groundY - 11, this.canvas.width, 2);
+
+    this.renderGroundDetail(ctx, p);
+
+    // Depth shade at the very bottom, so the floor never fights the player.
+    const floorShade = ctx.createLinearGradient(
+      0,
+      this.canvas.height - 26,
+      0,
+      this.canvas.height
+    );
+    floorShade.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    floorShade.addColorStop(1, 'rgba(0, 0, 0, 0.32)');
+    ctx.fillStyle = floorShade;
+    ctx.fillRect(0, this.canvas.height - 26, this.canvas.width, 26);
   }
 
-  private renderGround(ctx: CanvasRenderingContext2D): void {
-    const groundColor = this.environmentSystem.getGroundColor();
-    const grassColor = this.environmentSystem.getGrassColor();
-    
-    // Main ground
-    ctx.fillStyle = groundColor;
-    ctx.fillRect(0, this.groundY, this.canvas.width, this.canvas.height - this.groundY);
-    
-    // Enhanced grass line with gradient
-    const grassGradient = ctx.createLinearGradient(0, this.groundY - 8, 0, this.groundY);
-    grassGradient.addColorStop(0, grassColor);
-    grassGradient.addColorStop(1, groundColor);
-    
-    ctx.fillStyle = grassGradient;
-    ctx.fillRect(0, this.groundY - 8, this.canvas.width, 8);
-    
-    // Add subtle deterministic ground texture
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-    const textureOffset = (this.distance * 1.5) % 20;
-    for (let x = -textureOffset; x < this.canvas.width; x += 20) {
-      for (let y = this.groundY + 10; y < this.canvas.height; y += 15) {
-        const noise = pseudoNoise(x, y);
-        if (noise > 0.7) {
-          ctx.fillRect(x + (noise * 3) % 3, y, 1, 1);
+  /**
+   * Ground dressing that scrolls at full speed. Positions come from the world
+   * odometer rather than screen space, so a tuft keeps its shape as it passes.
+   */
+  private renderGroundDetail(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette
+  ): void {
+    const scroll = this.groundScroll;
+    const slot = 26;
+    const first = Math.floor(scroll / slot);
+    const count = Math.ceil(this.canvas.width / slot) + 2;
+
+    for (let i = 0; i < count; i++) {
+      const index = first + i;
+      const x = index * slot - scroll;
+      const r = pseudoNoise(index * 3.1, 7.7);
+      const r2 = pseudoNoise(index * 1.7, 13.3);
+
+      if (p.ambient === 'sand') {
+        // Wind ripples running across the dune surface.
+        ctx.strokeStyle = this.withAlpha(p.grassDry, 0.45);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(x, this.groundY + 8 + r * 20);
+        ctx.quadraticCurveTo(
+          x + slot * 0.5,
+          this.groundY + 5 + r * 20,
+          x + slot,
+          this.groundY + 8 + r * 20
+        );
+        ctx.stroke();
+        continue;
+      }
+
+      if (r > 0.34) {
+        // Grass tuft, hanging off the lip of the crust.
+        ctx.strokeStyle = r2 > 0.6 ? p.grassDry : p.grass;
+        ctx.lineWidth = 1.5;
+        const blades = 2 + Math.floor(r2 * 3);
+        for (let b = 0; b < blades; b++) {
+          const bx = x + b * 4;
+          const bh = 5 + pseudoNoise(index + b, 2.2) * 8;
+          ctx.beginPath();
+          ctx.moveTo(bx, this.groundY - 8);
+          ctx.quadraticCurveTo(
+            bx + 2,
+            this.groundY - 8 - bh * 0.6,
+            bx + (b - 1) * 2,
+            this.groundY - 8 - bh
+          );
+          ctx.stroke();
         }
+      } else if (r > 0.16) {
+        // Pebble, sitting in the crust.
+        ctx.fillStyle = this.withAlpha(p.groundDeep, 0.55);
+        const size = 2 + r2 * 3;
+        ctx.beginPath();
+        ctx.ellipse(x, this.groundY + 6 + r2 * 16, size, size * 0.6, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (p.ambient === 'leaves' && r > 0.06) {
+        // Leaf litter on the forest floor.
+        ctx.fillStyle = this.withAlpha('#8A5A2B', 0.5);
+        ctx.fillRect(x, this.groundY + 10 + r2 * 18, 4, 2);
       }
     }
+  }
+
+  private withAlpha(hex: string, alpha: number): string {
+    if (!hex.startsWith('#')) return hex;
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
   }
 
   private spawnPowerUp(): void {
@@ -1244,13 +1372,17 @@ export class RunnerGame extends BaseGame {
   private spawnFlyingEnemy(): void {
     const x = this.canvas.width + 50;
     const y = this.groundY - 150 - Math.random() * 100;
-    this.flyingEnemies.push(new FlyingEnemy(x, y));
+    this.flyingEnemies.push(
+      new FlyingEnemy(x, y, this.environmentSystem.getCurrentTheme())
+    );
   }
 
   private spawnHoverEnemy(): void {
     const x = this.canvas.width + 50;
-    const y = this.groundY - 80;
-    this.hoverEnemies.push(new HoverEnemy(x, y));
+    const y = this.groundY - 84;
+    this.hoverEnemies.push(
+      new HoverEnemy(x, y, this.environmentSystem.getCurrentTheme())
+    );
   }
 
   private spawnBoss(): void {
@@ -1282,7 +1414,9 @@ export class RunnerGame extends BaseGame {
 
       case 'summon':
         // Spawn a hover enemy as minion
-        this.hoverEnemies.push(new HoverEnemy(x, y));
+        this.hoverEnemies.push(
+          new HoverEnemy(x, y, this.environmentSystem.getCurrentTheme())
+        );
         // Summon effect particles
         this.particles.createSummonEffect(x, y);
         this.services.audio.playSound('powerup');
@@ -1306,37 +1440,50 @@ export class RunnerGame extends BaseGame {
     }
   }
 
-  private spawnObstacle(offset: number = 50): void {
+  private spawnObstacle(offset: number = 50, type: ObstacleType = 'cactus'): void {
     const x = this.canvas.width + offset;
 
-    // Choose obstacle type based on distance and randomness
-    let type: ObstacleType = 'cactus';
-    const rand = Math.random();
-
-    if (this.distance > 300) {
-      // Introduce variety after 300m
-      if (rand < 0.3) {
-        type = 'spike';
-      } else if (rand < 0.5 && this.distance > 500) {
-        type = 'high-barrier';
-      } else if (rand < 0.65 && this.distance > 700) {
-        type = 'gap';
-      } else {
-        type = 'cactus';
-      }
-    }
-
-    // Set position based on type
+    // Set position based on type.
+    //
+    // The barrier HANGS: its underside must sit above a sliding player's
+    // hitbox (the bottom 16px of the 32px body) and below a standing one's
+    // head, or the tutorial's "slide under barriers" is a lie. Bottom at
+    // groundY - 20 gives a 20px slide gap and still clips anyone upright.
     let y = this.groundY - 48;
     if (type === 'spike') {
       y = this.groundY - 24;
     } else if (type === 'high-barrier') {
-      y = this.groundY - 64;
+      y = this.groundY - 84;
     } else if (type === 'gap') {
-      y = this.groundY - 10;
+      // A pit is anchored ON the ground line: Obstacle.renderGap cuts upward
+      // through the crust from here, so the hole is a break in the floor
+      // rather than a box hanging under an intact one.
+      y = this.groundY;
     }
 
-    this.obstacles.push(new Obstacle(x, y, type));
+    this.obstacles.push(
+      new Obstacle(x, y, type, this.environmentSystem.getCurrentTheme())
+    );
+  }
+
+  /** An arc of coins over a hazard: the reward line for jumping it. */
+  private spawnCoinArc(offset: number, count: number, spread: number = 80): void {
+    const startX = this.canvas.width + offset;
+    const peak = this.groundY - 118;
+    for (let i = 0; i < count; i++) {
+      const t = count === 1 ? 0.5 : i / (count - 1);
+      // A shallow parabola: highest in the middle, where the jump peaks.
+      const lift = Math.sin(t * Math.PI) * 44;
+      this.coins.push(new Coin(startX + t * spread, peak - lift + 40));
+    }
+  }
+
+  /** Coins along the floor, for the reward under a slide gate. */
+  private spawnLowCoins(offset: number, count: number): void {
+    const startX = this.canvas.width + offset;
+    for (let i = 0; i < count; i++) {
+      this.coins.push(new Coin(startX + i * 30, this.groundY - 26));
+    }
   }
 
   private spawnCoin(offset: number = 50): void {
@@ -1356,18 +1503,23 @@ export class RunnerGame extends BaseGame {
     this.coins.push(new Coin(x, y));
   }
 
+  /**
+   * Schedule in SECONDS, then convert. The interval closes from 1.55s to
+   * 0.95s over the run — pressure the player can feel, without ever dropping
+   * under the time a jump takes.
+   */
   private scheduleNextObstacle(): void {
-    const base = 120;
-    const variation = Math.random() * 80;
-    const speedFactor = Math.max(0, (this.gameSpeed - 1) * 10);
-    this.nextObstacleDistance = this.distance + base + variation - speedFactor;
+    const d = this.difficulty();
+    const seconds = 1.55 - d * 0.6 + Math.random() * 0.45;
+    this.nextObstacleDistance =
+      this.distance + Math.max(0.9, seconds) * this.unitsPerSecond();
   }
 
   private scheduleNextAerial(): void {
-    const base = 220;
-    const variation = Math.random() * 120;
-    const speedFactor = Math.max(0, (this.gameSpeed - 1) * 15);
-    this.nextAerialDistance = this.distance + base + variation - speedFactor;
+    const d = this.difficulty();
+    const seconds = 3.2 - d * 1.1 + Math.random() * 1.4;
+    this.nextAerialDistance =
+      this.distance + Math.max(1.5, seconds) * this.unitsPerSecond();
   }
 
   private checkCollisions(): void {
@@ -1392,12 +1544,21 @@ export class RunnerGame extends BaseGame {
         }
       }
 
-      // Check hover enemy collisions
+      // Hover drones can be stomped. Coming down on the top plate pops one
+      // for coins and a bounce; hitting it any other way still hurts.
       for (const enemy of this.hoverEnemies) {
-        if (playerBounds.intersects(enemy.getBounds())) {
-          this.takeDamage();
-          return;
+        if (enemy.isPopped()) continue;
+        if (!playerBounds.intersects(enemy.getBounds())) continue;
+
+        const falling = this.player.velocity.y > 0;
+        const aboveTop = playerBounds.bottom - 10 <= enemy.getTopY();
+        if (falling && aboveTop) {
+          this.stompHoverEnemy(enemy);
+          break;
         }
+
+        this.takeDamage();
+        return;
       }
 
       // Check boss projectile collisions
@@ -1485,9 +1646,13 @@ export class RunnerGame extends BaseGame {
         // Trigger combo flash on milestones
         this.comboFlash.trigger(this.comboSystem.getCombo());
 
-        // Screen shake for coin pickup
+        // Screen shake for coin pickup. The pitch of the pickup rises with
+        // the combo via volume, since the engine has no pitch parameter —
+        // louder as the chain grows is the closest honest equivalent.
         this.screenShake.shake(2, 0.1);
-        this.services.audio.playSound('coin');
+        this.services.audio.playSound('coin', {
+          volume: Math.min(1, 0.55 + this.comboSystem.getCombo() * 0.03),
+        });
 
         // Tutorial tracking
         if (this.gameState === 'tutorial' && this.tutorialProgress.currentStep === 2) {
@@ -1523,6 +1688,25 @@ export class RunnerGame extends BaseGame {
         this.services.audio.playSound('powerup');
       }
     }
+  }
+
+  /** Pop a hover drone the player landed on: bounce, coins, feedback. */
+  private stompHoverEnemy(enemy: HoverEnemy): void {
+    enemy.pop();
+    this.player.velocity.y = -9.5;
+
+    const cx = enemy.position.x + enemy.size.x / 2;
+    const cy = enemy.position.y + enemy.size.y / 2;
+    this.particles.createImpactRing(cx, cy, 'boss');
+    this.particles.createPowerUpPickup(cx, cy);
+    this.screenShake.shake(5, 0.14);
+    this.services.audio.playSound('explosion');
+
+    // A stomp pays out, and feeds the combo like a coin would.
+    const multiplier = this.comboSystem.addCoin();
+    this.pickups += 2 * multiplier;
+    this.comboFlash.trigger(this.comboSystem.getCombo());
+    this.enemiesStomped++;
   }
 
   private activatePowerUp(type: PowerUpType): void {
@@ -1584,7 +1768,8 @@ export class RunnerGame extends BaseGame {
       combo: this.comboSystem.getMaxCombo(),
       powerupsUsed: this.powerupsUsed,
       powerupTypesUsed: this.powerupTypesUsed.size,
-      bossesDefeated: this.bossesDefeated
+      bossesDefeated: this.bossesDefeated,
+      enemiesStomped: this.enemiesStomped
     };
 
     // Track analytics for game-specific achievements
@@ -1595,6 +1780,7 @@ export class RunnerGame extends BaseGame {
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerups_total', this.powerupsUsed);
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerup_types', this.powerupTypesUsed.size);
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'bosses_defeated', this.bossesDefeated);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'enemies_stomped', this.enemiesStomped);
 
     // Call parent which will handle the final scoring and Hub callback
     super.onGameEnd?.(finalScore);
@@ -1619,6 +1805,7 @@ export class RunnerGame extends BaseGame {
     this.comboSystem.setOnResetCallback(() => this.comboFlash.resetMilestones());
     this.gameSpeed = 1;
     this.distance = 0;
+    this.groundScroll = 0;
     this.themeLevel = 0;
     this.bossDefeatedForTheme = false;
     this.themeProgress = 0;
@@ -1635,10 +1822,16 @@ export class RunnerGame extends BaseGame {
     this.invulnerabilityTimer = 0;
     this.deathAnimationTimer = 0;
     this.deathAnimationScale = 1;
+    this.hitStopTimer = 0;
+    this.hurtFlashTimer = 0;
+    this.currentTrack = null;
+    this.maxSpeedReached = 1;
+    this.stageBannerTimer = 0;
     this.resetTutorialProgress();
     this.scheduleNextObstacle();
     this.scheduleNextAerial();
     this.jumps = 0;
+    this.enemiesStomped = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
     this.player = new Player(100, this.groundY - 32, this.groundY, this.canvas.width);

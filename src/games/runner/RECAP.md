@@ -1,318 +1,167 @@
-# Endless Runner - Development Recap
+# Endless Runner — Development Recap
 
-## Session Summary
-Last Updated: December 2024
+Last updated: September 19, 2026
+
+The runner is the arcade's free, tier-0 headliner, so it is the game most
+players judge the whole arcade by. This file is the working record of what it
+is now and where the edges still are.
 
 ---
 
-## Latest Session Accomplishments
+## The polish pass (September 19, 2026)
 
-### Boss Enhancement System (COMPLETED)
+A full round over the world, the cast, the chrome and the feel. What follows is
+the shape of the game after it, not a diff — but the "why" notes matter, because
+several of the changes fixed rules that were quietly broken.
 
-The boss system has been completely overhauled with unique bosses, attack patterns, and dramatic presentations!
+### Bugs this pass fixed
 
-#### 5 Unique Themed Bosses (`entities/Boss.ts`)
+These were live in the shipped build:
 
-| Theme | Boss | HP | Colors | Attack Patterns |
-|-------|------|-----|--------|-----------------|
-| Day | Sun Guardian | 10 | Yellow/Gold | Projectile |
-| Sunset | Phoenix | 12 | Orange/Red | Projectile, Volley |
-| Night | Shadow Beast | 15 | Purple | Projectile, Volley, Ground Pound |
-| Desert | Sand Worm | 18 | Brown/Gold | Projectile, Charge, Ground Pound |
-| Forest | Ancient Treant | 20 | Green/Brown | Volley, Charge, Ground Pound, Summon |
+| Bug | Effect on the player |
+| --- | --- |
+| The base HUD was left on (`renderBaseHud` defaulted true) | `Score:` / `Coins:` were drawn straight over the runner's own `Lives:` row |
+| The slide barrier hung to the floor (`groundY - 64`, height 64) | The move the tutorial teaches did not clear it. Barriers were pure walls |
+| The pit's hazard band started exactly on the ground line | `Rectangle.intersects` is strict, so **pits did nothing at all** |
+| Spawn gaps *shrank* with speed (`base - (gameSpeed - 1) * 10`) | Late runs threw hazards closer together than a jump arc could clear |
+| `gameSpeed = 1 + floor(distance / 1000) * 0.2`, uncapped | A long run eventually outran its own jump |
+| Knockback set `velocity.x = -200` (px per **frame**) | A hit teleported the runner ~200px left in one step |
+| Parallax elements were seeded from **screen** position | Every tree and bush changed shape as it scrolled — constant shimmer |
+| Victory screen promised `+10` coins; the game awarded 15 | The number shown was not the number paid |
+| The tutorial never spawned a barrier | "Slide under the barriers" with no barrier on screen |
+| Boss intro ran 5.4s (a 3.1s approach at 80px/s) | Five long waits per lap before a fight could start |
 
-**Each boss features:**
-- Unique visual design with animated elements (sun rays, flapping wings, tendrils, etc.)
-- Boss-specific color scheme (primary, secondary, glow, eye colors)
-- Progressive attack patterns unlocked per boss
-- Animated intro sequence with name display
+### The world
 
-#### Attack Pattern System
+`ParallaxSystem` was rebuilt around **seamless cached strips**. Each depth band
+is generated once into an offscreen canvas whose left and right edges line up,
+then blitted twice per frame. That buys three things at once: no shimmer (a
+strip's content is fixed for its lifetime), far more detail per band (a strip is
+drawn on theme change, not 60 times a second), and cheaper frames. Ridges tile
+because their height functions are built from **integer harmonics** of the strip
+width, so `h(0) === h(1)`. If an offscreen canvas is unavailable the bands fall
+back to drawing straight into the frame.
 
-| Attack Type | Description | Telegraph |
-|-------------|-------------|-----------|
-| Projectile | Single fireball aimed at player | Charging circle |
-| Volley | 3-5 spread projectiles (5 in rage mode) | "!!!" indicator |
-| Ground Pound | Shockwave along ground (must jump) | "▼" indicator |
-| Charge | Boss rushes toward player | "→" indicator |
-| Summon | Spawns hover enemy minion | "+" indicator |
+Six bands, back to front: sky features (celestial body + stars), clouds (0.08),
+far silhouettes (0.14), mid hills and structures (0.30), near props (0.55),
+ground detail (1.00, drawn by `RunnerGame` off the world odometer).
 
-**Attack State Machine:**
-- `idle` → `windup` → `execute` → `cooldown` → repeat
-- Windup shows visual indicator (charging circle + attack icon)
-- Attack speed scales with boss difficulty
+`EnvironmentSystem` now carries a full `ThemePalette` per stage — multi-stop sky,
+a **horizon haze colour** that distant geometry fades into (the single strongest
+depth cue), three graded silhouette bands, foliage, ground, cloud, an ambient
+mote kind, an ambient light wash, and the accent the HUD tints itself with.
 
-#### Boss Phases
+| Stage | Name | Sky | Skyline | Air |
+| --- | --- | --- | --- | --- |
+| 1 | Meadow Run | Clear blue | Snow-capped peaks | Pollen |
+| 2 | Ember Coast | Purple → ember | Jagged crags, low sun | Embers |
+| 3 | Neon Skyline | Deep indigo | Lit city, moon, stars | Fireflies |
+| 4 | Dune Sea | Hot pale | Rolling dunes, heat shimmer | Blowing sand |
+| 5 | Deep Canopy | Misted green | Forest walls, god rays | Falling leaves |
 
-1. **Intro Phase** (`approach` → `stop` → `name` → `ready`)
-   - Dramatic entrance from right side
-   - Boss name display: "SUN GUARDIAN AWAKENS!"
-   - Brief invulnerability during intro
+### The cast
 
-2. **Fight Phase**
-   - Normal attack patterns
-   - Wave movement pattern
+- **The runner** is a drawn character: helmet, visor, chest panel, swinging
+  arms with fists, a running leg cycle, a trailing scarf with lag physics, a
+  contact shadow that tightens as they near the ground, a tucked rising pose, a
+  reaching falling pose, a low slide pose, and a full flip on the double jump.
+  The suit is **dark slate with cyan trim** on purpose — the first pass was
+  green and vanished against the meadow and the forest floor.
+- **Obstacles** are re-skinned per stage but never change silhouette, so the
+  rule learned in stage 1 holds in stage 5: a blocker is always a waist-high
+  solid, a barrier always hangs with hazard stripes and a lit underside, a spike
+  bed is always a metal comb, a pit is always a hole cut through the floor.
+- **Flying enemies** are winged darts with a flight path through the jump arc.
+  They cannot be stomped.
+- **Hover drones** are sentry craft with a thruster glow, a sweeping scanner eye
+  and a flat top plate — because they **can** be stomped. That is new: landing
+  on one pops it for coins, feeds the combo, and bounces the player.
+- **Bosses** are five real creatures instead of five coloured circles: a solar
+  disc behind a glaring gold mask, a phoenix with layered feather ranks and a
+  flame tail, a wobbling void with three slit eyes and a jagged maw, a segmented
+  worm rising from a sand mound with two counter-rotating rings of teeth, and a
+  walking trunk with a carved face, branch arms and a mossy crown.
+- **Coins** turn edge-on and back by scaling their width with `cos(spin)`, and
+  keep a bright rim at the edge-on point so they flash rather than vanish.
 
-3. **Rage Phase** (< 30% HP)
-   - Red pulsing aura
-   - 30% faster attacks
-   - Screen shake intensity
-   - Angry eyebrow effect
+### The chrome
 
-4. **Defeat Phase**
-   - Multiple explosion particles
-   - Shrink + sink animation
-   - Screen shake celebration
+All of it moved to `systems/HudRenderer.ts`, built on the arcade design system
+(`DOCS/UI-DESIGN-SYSTEM-HANDOFF.md`): Orbitron for numerals, Inter for prose,
+JetBrains Mono for values, amber only ever meaning currency. Panels sit in the
+two top corners and the far bottom-right; **nothing is drawn in the bottom-left,
+because that is where the runner stands.**
 
-#### Boss Difficulty Scaling
+Screens: title, tutorial card with step dots and progress pips, in-run HUD,
+boss bar (name, segmented health, phase, and the one instruction a new player
+needs), stage-clear, and a recap with a letter grade and an eight-tile stat grid.
 
-```typescript
-// HP scales per boss type
-sun: 10, phoenix: 12, shadow: 15, sandworm: 18, treant: 20
+### The feel
 
-// Attack speed multiplier (lower = faster)
-sun: 1.0, phoenix: 0.9, shadow: 0.8, sandworm: 0.75, treant: 0.7
+- **Coyote time** (0.11s) and **jump buffering** (0.13s).
+- Gravity and the jump hold are dt-scaled, so the arc is identical at 30fps and
+  144fps. There is a test for it.
+- Heavier gravity on the way down than on the way up.
+- Spawning is **scheduled in seconds and converted to distance**, so intervals
+  stay honest as the run speeds up. Hazards come as deliberate patterns with a
+  known answer, not as independent die rolls.
+- Speed ramps smoothly to a ceiling of ~3.1x.
+- Speed Zone is 1.45x, not 2x — at 2x the screen moved further in a jump arc
+  than the player could see coming.
+- A hit now costs the combo, freezes the sim for 90ms, flashes a red edge
+  vignette, and knocks back gently. The last life carries a standing vignette.
+- Music: one procedural track per stage plus a boss theme, switched only when
+  the wanted track changes.
 
-// Endless mode: HP increases by 50% every 5 bosses
-const hpMultiplier = 1 + Math.floor(themeLevel / 5) * 0.5;
+---
+
+## Verifying it
+
+`npm run test:dev -- --runInBand src/games/runner` runs the 18 fairness tests.
+They pin the *rules*, not the tuning numbers:
+
+- no two hazards are ever scheduled less than 0.9s apart, at any distance
+- intervals hold in seconds rather than in distance units
+- game speed is capped
+- a sliding player clears a barrier and a standing one does not
+- a pit hurts a grounded runner and spares a jumping one
+- sliding is not a universal dodge — a blocker still stops it
+- coyote time and jump buffering both fire
+- the jump arc matches at 30fps and 144fps
+- every boss dips inside the measured jump arc at the bottom of its hover wave,
+  never sinks into the floor, and rises out of reach at the top
+
+### Looking at it
+
+There is a dev-only capture harness, mirroring the Dungeon Crawl one:
+
+```bash
+npx playwright test runner-capture --project=chromium
 ```
 
-#### Ground Pound Entity (`entities/GroundPound.ts`)
+It drives `src/dev/runner-capture` through every scene — menu, tutorial, all
+five stages, all five bosses including rage, power-ups, both special events,
+mid-air, slide, death and recap — and writes PNGs to `.captures/runner/`. It
+also has a **loupe**: `zoomPlayer()` blits a magnified crop centred on the
+runner, because sprite work that is 32px on screen cannot be judged at 1x.
 
-- New entity for ground-based shockwave attacks
-- Travels left at 400 px/s
-- Animated wave shape with dust particles
-- Player must jump to avoid
-
-#### Enhanced Boss UI
-
-- Boss name display with glow effect
-- Wider health bar (250px) with gradient
-- Boss number indicator (#1, #2, etc.)
-- Phase indicator (INCOMING..., RAGE MODE)
-- Color-themed to match boss type
-
-#### Victory Celebration
-
-- 15 bonus coins on boss defeat
-- 8 additional coins rain down from sky
-- Screen shake celebration
-- Clear all ground pounds
+The harness is reachable only through `src/app/dev/runner/page.tsx`, which
+`scripts/sync-dev-routes.js` deletes before type-check, lint and build. It can
+never reach production. It is NOT in the CI gate — see `DOCS/START-HERE.md` on
+why the gate stays lean.
 
 ---
 
-### Previous Session: Visual Polish (5 Juice Systems)
+## Still open
 
-#### 1. Impact Rings (`entities/ImpactRing.ts`)
-| Event | Color | Radius | Duration |
-|-------|-------|--------|----------|
-| Jump | Blue #3B82F6 | 30px | 0.3s |
-| Landing | White #FFFFFF | 50px | 0.4s |
-| Coin Collect | Gold #FCD34D | 40px | 0.35s |
-| Boss Hit | Red #DC2626 | 80px | 0.6s |
-
-#### 2. Enhanced Coin Glow (`entities/Coin.ts`)
-- Pulsing radial glow halo
-- Size breathing animation (0.9x to 1.1x)
-- Sparkle particles (max 3)
-
-#### 3. Player Aura System (`entities/PlayerAura.ts`)
-- Base white glow, Combo golden glow, Speed orange aura
-- Invincibility green shield, High speed white streaks
-
-#### 4. Afterimage Trail (`entities/Player.ts`)
-- 5 ghost images during speed boost
-- Orange-tinted, fading and shrinking
-
-#### 5. Combo Flash System (`systems/ComboFlash.ts`)
-- Screen flash at milestones: 5x, 10x, 15x, 20x, 25x, 30x
-- Combo text pop effect (1.5x scale)
-
----
-
-## Current File Structure
-
-```
-src/games/runner/
-├── RunnerGame.ts              # Main game class (1600+ lines)
-├── entities/
-│   ├── Player.ts              # Player with afterimages
-│   ├── Obstacle.ts            # 4 obstacle types
-│   ├── Coin.ts                # Enhanced with glow/sparkles
-│   ├── PowerUp.ts             # 4 power-up types
-│   ├── FlyingEnemy.ts         # Aerial threats
-│   ├── HoverEnemy.ts          # Ground-level threats
-│   ├── Boss.ts                # ENHANCED - 5 unique bosses
-│   ├── BossProjectile.ts      # Boss projectile attacks
-│   ├── GroundPound.ts         # NEW - Shockwave attack
-│   ├── ImpactRing.ts          # Shockwave rings
-│   └── PlayerAura.ts          # Dynamic player glow
-├── systems/
-│   ├── ParticleSystem.ts      # Particles + impact rings
-│   ├── ScreenShake.ts         # Camera shake
-│   ├── ComboSystem.ts         # Combo tracking + callback
-│   ├── ComboFlash.ts          # Milestone flash
-│   ├── EnvironmentSystem.ts   # Theme management + setTheme()
-│   └── ParallaxSystem.ts      # 5-layer parallax backgrounds
-└── assets/
-    └── runner-thumb.svg
-```
-
----
-
-## Core Features (All Complete)
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Menu System | Done | Start Game / Tutorial options |
-| Tutorial | Done | Action-based (3 jumps, 2 slides, 5 coins) |
-| Player Mechanics | Done | Jump, slide, double jump, movement |
-| Lives System | Done | 3 lives, invulnerability, bounce-back |
-| Death Flow | Done | Animation + stats recap screen |
-| 4 Obstacles | Done | Cactus, High Barrier, Spike, Gap |
-| 3 Enemy Types | Done | Flying, Hover, Boss |
-| 4 Power-Ups | Done | Double Jump, Magnet, Shield, Speed |
-| Combo System | Done | Multiplier + timer + flash feedback |
-| Special Events | Done | Coin Shower, Speed Zone |
-| 5 Themes | Done | Day, Sunset, Night, Desert, Forest |
-| Theme Transitions | Done | Clean boss-defeat-driven system |
-| Visual Polish | Done | 5 juice systems implemented |
-| **5 Unique Bosses** | **Done** | **Sun, Phoenix, Shadow, Sandworm, Treant** |
-| **Boss Attack Patterns** | **Done** | **Projectile, Volley, Ground Pound, Charge, Summon** |
-| **Boss Difficulty Scaling** | **Done** | **HP and attack speed scale per boss** |
-| **Boss Intro Sequence** | **Done** | **Dramatic entrance + name display** |
-| **Boss Rage Mode** | **Done** | **< 30% HP triggers faster attacks** |
-| **Boss Defeat Celebration** | **Done** | **Explosions, shrink, coin rain** |
-
----
-
-## Next Session: Audio & Polish
-
-### Priority: Complete the Experience
-
-With visuals and bosses complete, focus on:
-
-#### 1. Audio Feedback
-- Boss-specific sound effects
-- Attack warning sounds
-- Rage mode audio cue
-- Victory fanfare
-
-#### 2. Particle Enhancements
-- Boss-themed particles (fire for Phoenix, leaves for Treant)
-- Ground pound dust/debris
-- Charge attack trail
-
-#### 3. Quality of Life
-- Tutorial for boss mechanics
-- Difficulty settings
-- Statistics persistence
-
-#### 4. Balance Testing
-- Boss HP tuning
-- Attack timing adjustments
-- Rage mode intensity
-
----
-
-## Testing Checklist
-
-### Boss System (Verify Working)
-- [x] Each theme spawns correct boss
-- [x] Boss intro plays with name
-- [x] Attack windup indicators show
-- [x] Projectile attacks work
-- [x] Volley fires spread shots
-- [x] Ground pound creates shockwave
-- [x] Charge attack rushes player
-- [x] Summon creates hover enemy
-- [x] Rage mode at 30% HP
-- [x] Defeat animation plays
-- [x] Victory coins spawn
-- [x] Theme advances after boss
-
-### Visual Polish (Verify Working)
-- [x] Impact rings appear
-- [x] Coin glow visible
-- [x] Player aura shows
-- [x] Afterimages during speed boost
-- [x] Combo flash at milestones
-
----
-
-## Game Stats Tracked
-
-- Distance traveled
-- Coins collected
-- Max combo achieved
-- Total jumps
-- Bosses defeated
-- Max speed reached
-- Power-ups used
-- Power-up types used
-
----
-
-## Quick Reference
-
-**Controls:**
-- SPACE: Jump (hold for higher)
-- DOWN: Slide
-- LEFT/RIGHT: Move horizontally
-- UP/DOWN: Menu navigation
-
-**Boss Types by Theme:**
-| Theme Level | Boss | Key Attack |
-|-------------|------|------------|
-| 0 (Day) | Sun Guardian | Projectile only |
-| 1 (Sunset) | Phoenix | Volley spreads |
-| 2 (Night) | Shadow Beast | Ground pound |
-| 3 (Desert) | Sand Worm | Charge attack |
-| 4 (Forest) | Ancient Treant | Full moveset |
-
-**Game States:**
-- `menu` → `tutorial` OR `playing`
-- `playing` → `boss-victory` (on defeat) OR `death-animation` (on death)
-- `boss-victory` → `playing` (new theme)
-- `death-animation` → `stats-recap` → game over
-
-**Key Thresholds:**
-- Boss spawns: 2800 theme progress
-- Boss warning: 2600-2800 theme progress
-- Rage mode: < 30% HP
-- Combo milestones: 5, 10, 15, 20, 25, 30
-
----
-
-## Latest: Boss Particle Effects (COMPLETED)
-
-### New Particle Effects Added to `ParticleSystem.ts`
-
-| Effect | Trigger | Description |
-|--------|---------|-------------|
-| `createBossExplosion` | Boss defeat | Large themed burst (30 primary + 20 secondary + 15 glow + 10 white) |
-| `createBossHitEffect` | Player stomps boss | Small themed burst + white sparks |
-| `createBossRageEffect` | Boss in rage mode | Red pulsing particles around boss |
-| `createGroundPoundDust` | Ground pound attack | Dust cloud + debris chunks |
-| `createChargeTrail` | Boss charging | Trailing particles + speed lines |
-| `createProjectileTrail` | Projectile flying | Fire trail behind projectiles |
-| `createSummonEffect` | Summon attack | Purple magic ring + rising sparkles |
-
-### Integration Points in RunnerGame.ts
-
-- Boss charge → `createChargeTrail()` every frame
-- Boss rage → `createBossRageEffect()` at 30% chance per frame
-- Boss hit → `createBossHitEffect()` + impact ring
-- Boss defeat → `createBossExplosion()` + victory coins at death location
-- Ground pound → `createGroundPoundDust()` on attack
-- Summon → `createSummonEffect()` when minion spawns
-- Projectile → `createProjectileTrail()` at 50% chance per frame
-
-### Other Fixes
-- Victory coins now spawn in circular burst around boss death location
-- Boss spawn threshold increased to 2800m (was 1800m)
-- Warning appears at 2600m
-
----
-
-**Boss System with Particles: COMPLETE!**
+- The forest stage is the least legible of the five: everything in it is green,
+  and the treant has to fight its own background. More value separation between
+  the canopy bands would help.
+- `ComboFlash` milestones stop at 30. A player who chains past that gets no
+  further acknowledgement.
+- Endless mode past stage 5 re-uses the same five stages with a boss HP bump
+  (+50% every five bosses). It works, but nothing new is introduced.
+- The charge attack returns the boss to `baseX` at a fixed rate and can look
+  stiff next to the other attacks.
+- Power-up drop weighting is flat across the four types; a player who wants a
+  particular one cannot influence it.

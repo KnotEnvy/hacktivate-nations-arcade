@@ -1,6 +1,31 @@
-// ===== src/games/runner/entities/Player.ts (FIXED) =====
+// ===== src/games/runner/entities/Player.ts =====
 import { Vector2, Rectangle } from '@/games/shared/utils/Vector2';
 
+interface Afterimage {
+  x: number;
+  y: number;
+  alpha: number;
+  scale: number;
+  pose: 'run' | 'air' | 'slide';
+  lean: number;
+}
+
+interface ScarfNode {
+  x: number;
+  y: number;
+}
+
+/**
+ * The runner.
+ *
+ * Feel notes, because they are the part that is easy to lose:
+ *  - Gravity and the jump hold are scaled by dt, so the jump arc is identical
+ *    on a 60Hz and a 144Hz display. The constants are tuned so 60Hz matches
+ *    what the game shipped with.
+ *  - COYOTE TIME lets a jump register for a moment after running off an edge.
+ *  - JUMP BUFFERING lets a jump pressed just before landing fire on touchdown.
+ *    Between them, the "I definitely pressed jump" deaths go away.
+ */
 export class Player {
   position: Vector2;
   velocity: Vector2;
@@ -10,7 +35,7 @@ export class Player {
   private isJumping = false;
   private isSliding = false;
   private slideDuration = 0;
-  private slideMaxDuration = 0.4; // seconds
+  private slideMaxDuration = 0.55;
   private groundY: number;
   private worldWidth: number;
 
@@ -25,23 +50,34 @@ export class Player {
   private jumpHoldTime = 0;
 
   private gravity = 0.8;
+  /** Falling is heavier than rising: the classic snappy-jump trick. */
+  private fallGravityScale = 1.35;
   private moveSpeed = 5;
 
+  // Forgiveness windows.
+  private coyoteTime = 0;
+  private readonly coyoteWindow = 0.11;
+  private jumpBuffer = 0;
+  private readonly jumpBufferWindow = 0.13;
+
   // Animation
-  private frameTime: number = 0;
-  private currentFrame: number = 0;
-  private animationSpeed: number = 0.15;
-  private runTime: number = 0;
-  private squashStretch: number = 1;
+  private runTime = 0;
+  private squashStretch = 1;
+  /** Full rotation played on a double jump. */
+  private flipAngle = 0;
+  private flipping = false;
+  private lean = 0;
 
-  // Trail effect
-  private trailPositions: Vector2[] = [];
-  private maxTrailLength = 8;
+  /** Rim-light colour, set from the current stage palette. */
+  private accent = '#FFFFFF';
 
-  // Afterimage effect (for speed boost)
-  private afterimages: {x: number, y: number, alpha: number, scale: number}[] = [];
-  private afterimageTimer: number = 0;
-  private afterimageInterval: number = 0.03; // Generate every 30ms
+  /** Seconds of knockback left after a hit; control is damped while it runs. */
+  private hurtTimer = 0;
+
+  private scarf: ScarfNode[] = [];
+  private afterimages: Afterimage[] = [];
+  private afterimageTimer = 0;
+  private afterimageInterval = 0.03;
 
   constructor(x: number, y: number, groundY: number, worldWidth: number) {
     this.position = new Vector2(x, y);
@@ -49,6 +85,12 @@ export class Player {
     this.size = new Vector2(32, 32);
     this.groundY = groundY;
     this.worldWidth = worldWidth;
+    for (let i = 0; i < 5; i++) this.scarf.push({ x, y });
+  }
+
+  /** Tint the rim light to the stage so the runner sits in its light. */
+  setAccent(color: string): void {
+    this.accent = color;
   }
 
   update(
@@ -59,22 +101,24 @@ export class Player {
     rightPressed: boolean = false,
     downPressed: boolean = false
   ): void {
-    // Update max jumps based on power-up
     this.maxJumps = hasDoubleJump ? 2 : 1;
 
-    // Horizontal movement (disabled while sliding)
-    if (!this.isSliding) {
+    // Horizontal movement (disabled while sliding, damped while hurt).
+    if (this.hurtTimer > 0) {
+      this.hurtTimer = Math.max(0, this.hurtTimer - dt);
+      // Ease the knockback out rather than snapping control back.
+      this.velocity.x *= Math.max(0, 1 - dt * 6);
+    } else if (!this.isSliding) {
       this.velocity.x = 0;
       if (leftPressed) this.velocity.x -= this.moveSpeed;
       if (rightPressed) this.velocity.x += this.moveSpeed;
     }
 
-    // Handle slide start (only when grounded and not already sliding)
+    // Slide start (only when grounded and not already sliding)
     if (downPressed && !this.lastSlidePressed && this.isGrounded && !this.isSliding) {
       this.startSlide();
     }
 
-    // Update slide duration
     if (this.isSliding) {
       this.slideDuration += dt;
       if (this.slideDuration >= this.slideMaxDuration || !downPressed) {
@@ -84,14 +128,30 @@ export class Player {
 
     this.lastSlidePressed = downPressed;
 
-    // Handle jump start (can't jump while sliding)
-    if (inputPressed && !this.lastJumpPressed && this.jumpsRemaining > 0 && !this.isSliding) {
+    // Buffer the press, then spend it the moment a jump is legal.
+    if (inputPressed && !this.lastJumpPressed) {
+      this.jumpBuffer = this.jumpBufferWindow;
+    }
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    this.coyoteTime = Math.max(0, this.coyoteTime - dt);
+
+    const groundJumpAvailable = this.isGrounded || this.coyoteTime > 0;
+    const canJump =
+      !this.isSliding && (groundJumpAvailable || this.jumpsRemaining > 0);
+
+    if (this.jumpBuffer > 0 && canJump) {
+      // A coyote jump spends the ground jump rather than an air jump.
+      if (!this.isGrounded && this.coyoteTime > 0) {
+        this.jumpsRemaining = this.maxJumps;
+      }
       this.jump();
+      this.jumpBuffer = 0;
+      this.coyoteTime = 0;
     }
 
-    // Variable jump height while holding the button
+    // Variable jump height while the button is held.
     if (this.isJumping && inputPressed && this.jumpHoldTime < this.maxJumpHoldTime) {
-      this.velocity.y += this.jumpHoldBoost;
+      this.velocity.y += this.jumpHoldBoost * dt * 60;
       this.jumpHoldTime += dt;
     } else if (!inputPressed) {
       this.isJumping = false;
@@ -99,13 +159,11 @@ export class Player {
 
     this.lastJumpPressed = inputPressed;
 
-    // Apply gravity
-    this.velocity.y += this.gravity;
+    // Gravity, dt-scaled, heavier on the way down.
+    const g = this.velocity.y > 0 ? this.gravity * this.fallGravityScale : this.gravity;
+    this.velocity.y += g * dt * 60;
 
-    // Update position
     this.position = this.position.add(this.velocity.multiply(dt * 60));
-
-    // Clamp horizontal position
     this.position.x = Math.max(0, Math.min(this.worldWidth - this.size.x, this.position.x));
 
     // Ground collision
@@ -117,51 +175,74 @@ export class Player {
       this.isJumping = false;
       this.jumpsRemaining = this.maxJumps;
       this.jumpHoldTime = 0;
-      
-      // Squash effect on landing (only if we were in the air)
-      if (wasAirborne) {
-        this.squashStretch = 1.4; // More pronounced squash
-      }
+      this.coyoteTime = this.coyoteWindow;
+      this.flipping = false;
+      this.flipAngle = 0;
+
+      if (wasAirborne) this.squashStretch = 1.4;
     } else {
+      if (this.isGrounded) this.coyoteTime = this.coyoteWindow;
       this.isGrounded = false;
     }
 
-    // Update animations
     this.updateAnimations(dt);
-    
-    // Update trail
-    this.updateTrail();
+    this.updateScarf(dt);
   }
 
   private updateAnimations(dt: number): void {
-    // Running animation
-    this.frameTime += dt;
-    if (this.frameTime >= this.animationSpeed) {
-      this.currentFrame = (this.currentFrame + 1) % 4;
-      this.frameTime = 0;
-    }
-    this.runTime += dt * (this.isGrounded ? 10 : 6);
-    
-    // Squash and stretch recovery - FIXED!
+    this.runTime += dt * (this.isGrounded ? 11 : 6);
+
+    // Squash and stretch recovery.
     if (this.squashStretch < 1) {
-      this.squashStretch = Math.min(1, this.squashStretch + dt * 1.5); // Faster recovery
+      this.squashStretch = Math.min(1, this.squashStretch + dt * 3.2);
     } else if (this.squashStretch > 1) {
-      this.squashStretch = Math.max(1, this.squashStretch - dt * 1.5); // Recover from stretch too
+      this.squashStretch = Math.max(1, this.squashStretch - dt * 3.2);
     }
+
+    // The double-jump flip, once round and done.
+    if (this.flipping) {
+      this.flipAngle += dt * 13;
+      if (this.flipAngle >= Math.PI * 2) {
+        this.flipAngle = 0;
+        this.flipping = false;
+      }
+    }
+
+    // Lean into the motion: forward while running, back while rising.
+    const targetLean = this.isSliding
+      ? 0.34
+      : this.isGrounded
+        ? 0.1
+        : Math.max(-0.28, Math.min(0.3, this.velocity.y * 0.025));
+    this.lean += (targetLean - this.lean) * Math.min(1, dt * 12);
   }
 
-  private updateTrail(): void {
-    // Add current position to trail
-    this.trailPositions.unshift(this.position.clone());
+  /** The scarf chases the body with a lag per node — cheap, reads as cloth. */
+  private updateScarf(dt: number): void {
+    const anchorX = this.position.x + 9;
+    const anchorY = this.position.y + (this.isSliding ? 20 : 11);
+    const follow = Math.min(1, dt * 22);
 
-    // Limit trail length
-    if (this.trailPositions.length > this.maxTrailLength) {
-      this.trailPositions.pop();
+    let px = anchorX;
+    let py = anchorY;
+    for (let i = 0; i < this.scarf.length; i++) {
+      const node = this.scarf[i];
+      // Each node trails the one ahead, pushed back by the run and lifted by
+      // upward motion, so the scarf streams behind and flicks on a jump.
+      const targetX = px - (i === 0 ? 4 : 5.5) - (this.isSliding ? 2 : 0);
+      // Gravity on the tail plus a travelling wave: the old version pinned
+      // every node at shoulder height, which read as a stiff red blade.
+      const droop = this.isSliding ? 0.6 : 1.6 + i * 0.5;
+      const targetY =
+        py + droop + this.velocity.y * 0.2 + Math.sin(this.runTime * 0.9 + i * 0.9) * 2.2;
+      node.x += (targetX - node.x) * follow;
+      node.y += (targetY - node.y) * follow;
+      px = node.x;
+      py = node.y;
     }
   }
 
   updateAfterimages(dt: number, hasSpeedBoost: boolean): void {
-    // Only generate during speed boost
     if (hasSpeedBoost) {
       this.afterimageTimer += dt;
       if (this.afterimageTimer >= this.afterimageInterval) {
@@ -169,76 +250,60 @@ export class Player {
         this.afterimages.unshift({
           x: this.position.x,
           y: this.position.y,
-          alpha: 0.6,
-          scale: 1
+          alpha: 0.55,
+          scale: 1,
+          pose: this.isSliding ? 'slide' : this.isGrounded ? 'run' : 'air',
+          lean: this.lean,
         });
-
-        // Limit to 5 afterimages
-        if (this.afterimages.length > 5) {
-          this.afterimages.pop();
-        }
+        if (this.afterimages.length > 6) this.afterimages.pop();
       }
     } else {
-      // Clear afterimages when speed boost ends
       this.afterimages = [];
       this.afterimageTimer = 0;
     }
 
-    // Fade and shrink existing afterimages
     this.afterimages = this.afterimages.filter(img => {
-      img.alpha -= dt * 2;
-      img.scale -= dt * 0.3;
+      img.alpha -= dt * 2.2;
+      img.scale -= dt * 0.25;
       return img.alpha > 0 && img.scale > 0.5;
     });
   }
 
-  private renderAfterimages(ctx: CanvasRenderingContext2D): void {
-    if (this.afterimages.length === 0) return;
+  jump(): void {
+    if (this.jumpsRemaining <= 0) return;
 
-    ctx.save();
+    const wasAirborne = !this.isGrounded;
+    this.velocity.y = wasAirborne ? this.jumpPower * 0.88 : this.jumpPower;
+    this.jumpsRemaining--;
+    this.isJumping = true;
+    this.jumpHoldTime = 0;
+    this.squashStretch = 0.62;
+    this.isGrounded = false;
 
-    for (let i = this.afterimages.length - 1; i >= 0; i--) {
-      const img = this.afterimages[i];
-
-      ctx.save();
-      ctx.globalAlpha = img.alpha * 0.5;
-      ctx.translate(img.x + this.size.x / 2, img.y + this.size.y / 2);
-      ctx.scale(img.scale, img.scale);
-      ctx.translate(-this.size.x / 2, -this.size.y / 2);
-
-      // Simplified player shape (orange tint for speed boost)
-      ctx.fillStyle = `rgba(249, 115, 22, ${img.alpha})`;
-      ctx.fillRect(0, 0, this.size.x, this.size.y);
-
-      ctx.restore();
+    // The second jump gets a flip, so it looks as good as it feels.
+    if (wasAirborne) {
+      this.flipping = true;
+      this.flipAngle = 0;
     }
-
-    ctx.restore();
   }
 
-  jump(): void {
-    if (this.jumpsRemaining > 0) {
-      this.velocity.y = this.jumpPower;
-      this.jumpsRemaining--;
-      this.isJumping = true;
-      this.jumpHoldTime = 0;
-
-      // Stretch effect on jump
-      this.squashStretch = 0.6; // More pronounced stretch
-
-      if (!this.isGrounded) {
-        // Double jump effect - slightly weaker but still good
-        this.velocity.y = this.jumpPower * 0.85;
-      } else {
-        this.isGrounded = false;
-      }
-    }
+  /**
+   * Take a hit: a short knockback the player rides out.
+   *
+   * velocity here is px per frame at 60Hz, not px per second — the old call
+   * site set -200 and teleported the runner into the left wall in one step.
+   */
+  hurt(): void {
+    this.hurtTimer = 0.3;
+    this.velocity.x = -3.2;
+    this.velocity.y = -6;
+    this.isSliding = false;
+    this.squashStretch = 1.35;
   }
 
   startSlide(): void {
     this.isSliding = true;
     this.slideDuration = 0;
-    // Squash effect for slide
     this.squashStretch = 1.3;
   }
 
@@ -248,128 +313,335 @@ export class Player {
   }
 
   render(ctx: CanvasRenderingContext2D): void {
-    // Render afterimages first (behind everything)
     this.renderAfterimages(ctx);
+    this.renderShadow(ctx);
+    this.renderScarf(ctx);
 
-    // Render trail
-    this.renderTrail(ctx);
-
-    const bob = this.isGrounded && !this.isSliding ? Math.sin(this.runTime) * 1.5 : 0;
+    const bob = this.isGrounded && !this.isSliding ? Math.sin(this.runTime * 2) * 1.2 : 0;
 
     ctx.save();
-    ctx.translate(this.position.x + this.size.x / 2, this.position.y + this.size.y / 2 + bob);
+    ctx.translate(
+      this.position.x + this.size.x / 2,
+      this.position.y + this.size.y / 2 + bob
+    );
 
-    // Apply squash and stretch (more extreme when sliding)
-    if (this.isSliding) {
-      ctx.scale(1.5, 0.5);
-    } else {
-      ctx.scale(this.squashStretch, 2 - this.squashStretch);
-    }
+    if (this.flipping) ctx.rotate(this.flipAngle);
+    else ctx.rotate(this.lean * 0.55);
 
-    // Slight rotation based on vertical velocity (or forward lean when sliding)
-    if (this.isSliding) {
-      ctx.rotate(0.1); // Forward lean
-    } else {
-      ctx.rotate(this.velocity.y * 0.02);
-    }
+    if (this.isSliding) ctx.scale(1.22, 0.78);
+    else ctx.scale(this.squashStretch, 2 - this.squashStretch);
 
     ctx.translate(-this.size.x / 2, -this.size.y / 2);
 
-    // Body with enhanced visuals
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.size.y);
-    gradient.addColorStop(0, '#4ADE80');
-    gradient.addColorStop(1, '#22C55E');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.size.x, this.size.y);
-
-    // Eyes with blink animation
-    const blinkTime = Math.sin(this.runTime * 0.5);
-    const eyeHeight = blinkTime > 0.95 ? 2 : 4;
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(8, 8, 4, eyeHeight);
-    ctx.fillRect(20, 8, 4, eyeHeight);
-
-    // Moving arms
-    const armOffset = Math.sin(this.runTime + Math.PI / 2) * 2;
-    ctx.fillStyle = '#15803D';
-    ctx.fillRect(2 + armOffset, 16, 4, 8);
-    ctx.fillRect(this.size.x - 6 - armOffset, 16, 4, 8);
-
-    // Moving legs (only when grounded)
-    if (this.isGrounded) {
-      const legOffset = Math.sin(this.runTime) * 3;
-      ctx.fillStyle = '#22C55E';
-      ctx.fillRect(6 + legOffset, 28, 6, 8);
-      ctx.fillRect(20 - legOffset, 28, 6, 8);
-    } else {
-      // Legs in jump position
-      ctx.fillStyle = '#22C55E';
-      ctx.fillRect(6, 30, 6, 6);
-      ctx.fillRect(20, 30, 6, 6);
-    }
-
-    // Enhanced cape effect when jumping - LONGER CAPE!
-    if (!this.isGrounded) {
-      ctx.fillStyle = '#DC2626';
-      ctx.globalAlpha = 0.8;
-      // Longer, more dramatic cape
-      ctx.fillRect(-4, 6, 5, 24); // Wider and longer cape
-      // Cape flowing effect
-      const capeFlow = Math.sin(this.runTime * 2) * 2;
-      ctx.fillRect(-6 + capeFlow, 10, 3, 20);
-      ctx.globalAlpha = 1;
-    }
-
-    // Slide dust effect
-    if (this.isSliding) {
-      ctx.fillStyle = '#A8A29E';
-      ctx.globalAlpha = 0.6;
-      // Dust trail behind player
-      for (let i = 0; i < 3; i++) {
-        const offset = i * 8;
-        const size = 4 - i;
-        ctx.fillRect(this.size.x + offset, this.size.y - 4, size, size);
-      }
-      ctx.globalAlpha = 1;
-    }
+    if (this.isSliding) this.drawSlidePose(ctx);
+    else if (this.isGrounded) this.drawRunPose(ctx);
+    else this.drawAirPose(ctx);
 
     ctx.restore();
   }
 
-  private renderTrail(ctx: CanvasRenderingContext2D): void {
-    if (this.trailPositions.length < 2) return;
-    
+  // --------------------------------------------------------------- poses ---
+  //
+  // All poses are drawn in a 32x32 box. Shared palette, so the silhouette
+  // stays the same colour block however it is posed.
+
+  // A DARK body with BRIGHT trim, deliberately.
+  //
+  // The first pass dressed the runner in green, which vanished against the
+  // meadow and the forest floor. A dark slate silhouette holds up against the
+  // four bright stages, and the cyan trim plus the white chest panel hold up
+  // against the dark one. The red scarf is the single warm note, and it is
+  // never a colour any stage uses for its ground.
+  private readonly suit = '#2A3852';
+  private readonly suitDark = '#1A2436';
+  private readonly suitLight = '#44597E';
+  private readonly trim = '#3BE0D0';
+  private readonly panel = '#E9EEF5';
+  private readonly skin = '#F6C89A';
+  private readonly visor = '#0B1B2A';
+  private readonly boot = '#141E2E';
+
+  private drawRunPose(ctx: CanvasRenderingContext2D): void {
+    const phase = this.runTime;
+    const swing = Math.sin(phase);
+    const swing2 = Math.sin(phase + Math.PI);
+
+    // Back limbs first, so the body overlaps them. The back pair is darker,
+    // which is what sells the depth at this size.
+    this.drawLeg(ctx, 13, swing2, this.suitDark, 1, true);
+    this.drawArm(ctx, 11, swing2, this.suitDark, true);
+
+    this.drawTorso(ctx);
+    this.drawHead(ctx, 0);
+
+    this.drawLeg(ctx, 18, swing, this.suit);
+    this.drawArm(ctx, 20, swing, this.suitLight);
+  }
+
+  private drawAirPose(ctx: CanvasRenderingContext2D): void {
+    const rising = this.velocity.y < 0;
+    // Tucked going up, reaching going down — reads at a glance which way.
+    const tuck = rising ? 1 : 0.25;
+
+    this.drawLeg(ctx, 12, -0.9 * tuck, this.suitDark, 0.7, true);
+    this.drawArm(ctx, 10, rising ? -1.3 : 0.9, this.suitDark, true);
+
+    this.drawTorso(ctx);
+    this.drawHead(ctx, rising ? -1 : 1);
+
+    this.drawLeg(ctx, 18, -0.4 * tuck, this.suit, 0.8);
+    this.drawArm(ctx, 20, rising ? -1.5 : 1.1, this.suitLight);
+  }
+
+  private drawSlidePose(ctx: CanvasRenderingContext2D): void {
+    // Low and long: legs forward, one hand planted behind.
+    ctx.fillStyle = this.suitDark;
+    this.roundRect(ctx, 2, 20, 14, 9, 4);
+
+    ctx.fillStyle = this.suit;
+    this.roundRect(ctx, 8, 15, 19, 13, 6);
+
+    ctx.fillStyle = this.panel;
+    this.roundRect(ctx, 12, 17, 11, 4, 2);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(10, 24, 16, 2);
+
+    // Planted hand.
+    ctx.fillStyle = this.skin;
+    this.roundRect(ctx, 1, 26, 6, 5, 2);
+
+    // Head, turned forward and low.
+    ctx.fillStyle = this.skin;
+    this.roundRect(ctx, 20, 12, 12, 11, 5);
+    ctx.fillStyle = this.suit;
+    this.roundRect(ctx, 19, 10, 13, 6, 3);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(19, 14, 13, 1.5);
+    ctx.fillStyle = this.visor;
+    this.roundRect(ctx, 24, 16, 8, 4, 2);
+
+    // Boots out front, cyan sole forward.
+    ctx.fillStyle = this.boot;
+    this.roundRect(ctx, 24, 24, 10, 6, 3);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(31, 25, 3, 4);
+
+    this.rimLight(ctx, 8, 14, 20, 15);
+  }
+
+  private drawTorso(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = this.suit;
+    this.roundRect(ctx, 9, 12, 15, 15, 5);
+
+    // A white chest panel and one cyan stripe: the two marks that keep the
+    // runner legible against a dark night skyline.
+    ctx.fillStyle = this.panel;
+    this.roundRect(ctx, 12, 14, 9, 6, 2);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(9, 21, 15, 2);
+    ctx.fillStyle = this.suitDark;
+    ctx.fillRect(9, 24, 15, 3);
+
+    this.rimLight(ctx, 9, 12, 15, 15);
+  }
+
+  private drawHead(ctx: CanvasRenderingContext2D, tilt: number): void {
+    const y = 2 + tilt * 0.6;
+    ctx.fillStyle = this.skin;
+    this.roundRect(ctx, 11, y + 1, 13, 12, 5);
+
+    // Jaw shadow, so the head is not one flat oval.
+    ctx.fillStyle = 'rgba(160, 110, 70, 0.35)';
+    ctx.fillRect(12, y + 10, 11, 2);
+
+    // Helmet over the crown, with a cyan stripe front to back.
+    ctx.fillStyle = this.suit;
+    this.roundRect(ctx, 10, y, 15, 7, 4);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(10, y + 3, 15, 1.5);
+    ctx.fillStyle = this.suitDark;
+    ctx.fillRect(10, y + 5.5, 15, 2);
+
+    // Visor: the one dark shape, so the face always reads.
+    ctx.fillStyle = this.visor;
+    this.roundRect(ctx, 16, y + 6.5, 9, 4, 2);
+    ctx.fillStyle = this.trim;
+    ctx.fillRect(21, y + 7.5, 3, 1);
+  }
+
+  private drawArm(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    swing: number,
+    color: string,
+    back = false
+  ): void {
     ctx.save();
-    
-    for (let i = 1; i < this.trailPositions.length; i++) {
-      const pos = this.trailPositions[i];
-      const alpha = (this.trailPositions.length - i) / this.trailPositions.length * 0.3;
-      const size = (this.trailPositions.length - i) / this.trailPositions.length * this.size.x * 0.8;
-      
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = '#4ADE80';
-      ctx.fillRect(
-        pos.x + (this.size.x - size) / 2, 
-        pos.y + (this.size.y - size) / 2, 
-        size, 
-        size
-      );
-    }
-    
+    ctx.translate(x, 15);
+    // A wide swing: at 32px a subtle one is invisible.
+    ctx.rotate(swing * 1.15);
+    ctx.fillStyle = color;
+    this.roundRect(ctx, -2.5, 0, 5, 9, 2.5);
+    // Fist, dimmed on the far arm so the near one stays the readable one.
+    ctx.fillStyle = back ? 'rgba(180, 146, 112, 1)' : this.skin;
+    ctx.beginPath();
+    ctx.arc(0, 11, 3, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
+  }
+
+  private drawLeg(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    swing: number,
+    color: string,
+    lengthScale = 1,
+    back = false
+  ): void {
+    ctx.save();
+    ctx.translate(x, 23);
+    ctx.rotate(swing * 0.82);
+    ctx.fillStyle = color;
+    this.roundRect(ctx, -3, 0, 6, 10 * lengthScale, 3);
+    // Boot, with a cyan sole on the near leg.
+    ctx.fillStyle = this.boot;
+    this.roundRect(ctx, -3.5, 8 * lengthScale, 8, 5, 2);
+    if (!back) {
+      ctx.fillStyle = this.trim;
+      ctx.fillRect(-3.5, 8 * lengthScale + 4, 8, 1.5);
+    }
+    ctx.restore();
+  }
+
+  /** A thin lit edge in the stage's accent, so the runner sits in the scene. */
+  private rimLight(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number
+  ): void {
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = this.accent;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x + w, y + 3);
+    ctx.lineTo(x + w, y + h - 3);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  private roundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number
+  ): void {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.arcTo(x + w, y, x + w, y + radius, radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.arcTo(x + w, y + h, x + w - radius, y + h, radius);
+    ctx.lineTo(x + radius, y + h);
+    ctx.arcTo(x, y + h, x, y + h - radius, radius);
+    ctx.lineTo(x, y + radius);
+    ctx.arcTo(x, y, x + radius, y, radius);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ------------------------------------------------------------ trimmings --
+
+  /** Contact shadow: the cheapest possible read on how high the jump is. */
+  private renderShadow(ctx: CanvasRenderingContext2D): void {
+    const height = this.groundY - (this.position.y + this.size.y);
+    const fade = Math.max(0, 1 - height / 170);
+    if (fade <= 0.02) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.3 * fade;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(
+      this.position.x + this.size.x / 2,
+      this.groundY - 2,
+      13 * (0.55 + fade * 0.45),
+      4 * (0.55 + fade * 0.45),
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private renderScarf(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#E8443C';
+
+    // Start at the shoulder so the scarf is attached to the runner rather
+    // than trailing as a separate red streak behind them.
+    let prev = {
+      x: this.position.x + 11,
+      y: this.position.y + (this.isSliding ? 20 : 11),
+    };
+    for (let i = 0; i < this.scarf.length; i++) {
+      const node = this.scarf[i];
+      ctx.globalAlpha = 1 - (i / this.scarf.length) * 0.6;
+      ctx.lineWidth = Math.max(1.5, 7 - i * 1.1);
+      ctx.beginPath();
+      ctx.moveTo(prev.x, prev.y);
+      ctx.lineTo(node.x, node.y);
+      ctx.stroke();
+      prev = node;
+    }
+    ctx.restore();
+  }
+
+  private renderAfterimages(ctx: CanvasRenderingContext2D): void {
+    if (this.afterimages.length === 0) return;
+
+    for (let i = this.afterimages.length - 1; i >= 0; i--) {
+      const img = this.afterimages[i];
+      ctx.save();
+      ctx.globalAlpha = img.alpha * 0.45;
+      ctx.translate(img.x + this.size.x / 2, img.y + this.size.y / 2);
+      ctx.rotate(img.lean * 0.55);
+      ctx.scale(img.scale, img.scale);
+      ctx.translate(-this.size.x / 2, -this.size.y / 2);
+      // A flat silhouette rather than a full redraw: six ghosts of the whole
+      // character every frame is not worth the cost.
+      ctx.fillStyle = 'rgba(249, 115, 22, 0.85)';
+      if (img.pose === 'slide') this.roundRect(ctx, 6, 14, 22, 15, 6);
+      else this.roundRect(ctx, 9, 4, 15, 25, 6);
+      ctx.restore();
+    }
   }
 
   getBounds(): Rectangle {
-    // Smaller hitbox when sliding
+    // Sliding ducks the hitbox into the bottom half of the box.
     if (this.isSliding) {
       return new Rectangle(
-        this.position.x,
+        this.position.x + 2,
         this.position.y + this.size.y / 2,
-        this.size.x,
+        this.size.x - 4,
         this.size.y / 2
       );
     }
-    return new Rectangle(this.position.x, this.position.y, this.size.x, this.size.y);
+    // A hair narrower than the sprite: near-misses should feel like misses.
+    return new Rectangle(
+      this.position.x + 3,
+      this.position.y + 2,
+      this.size.x - 6,
+      this.size.y - 2
+    );
   }
 
   getIsGrounded(): boolean {
