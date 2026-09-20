@@ -159,6 +159,9 @@ test.describe('runner capture', () => {
         [kind, settle]
       );
       await shot(`15-feature-${kind}`);
+      // The hint card is up for the first few seconds of a feature's first
+      // appearance, so grab it before it fades.
+      if (kind === 'gust') await shot('16-feature-hint');
     }
 
     // 3b. The stage-clear screen, by finishing a boss off.

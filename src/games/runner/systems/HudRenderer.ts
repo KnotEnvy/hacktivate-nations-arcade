@@ -126,6 +126,12 @@ export interface HudState {
   /** Live near-miss chain, and how much of its window is left. */
   grazeStreak: number;
   grazeWindowLeft: number;
+  /** Progress through the stage toward its boss, 0-1. */
+  stageProgress: number;
+  /** Metres run since the last hit, for the clean-run readout. */
+  cleanDistance: number;
+  /** A first-encounter card for a stage feature, or null. */
+  hint: { title: string; body: string; alpha: number } | null;
   stageName: string;
   stageNumber: number;
   accent: string;
@@ -158,6 +164,7 @@ export class HudRenderer {
     ctx.save();
     ctx.textBaseline = 'alphabetic';
 
+    this.renderStageTrack(ctx, s);
     this.renderScoreCluster(ctx, s);
     this.renderRunStats(ctx, s);
     if (s.combo > 1) this.renderCombo(ctx, s);
@@ -169,7 +176,67 @@ export class HudRenderer {
     else if (s.bossIn !== null) this.renderBossWarning(ctx, s);
     this.renderStageChip(ctx, s);
     if (s.stageBanner > 0) this.renderStageBanner(ctx, s);
+    if (s.hint) this.renderFeatureHint(ctx, s);
 
+    ctx.restore();
+  }
+
+  /**
+   * A hairline across the very top: how far through the stage the run is, and
+   * therefore how close the boss is. An endless runner with no visible
+   * structure feels like it is going nowhere; this is the cheapest possible
+   * way to give every stage a beginning, a middle and an end.
+   */
+  private renderStageTrack(ctx: CanvasRenderingContext2D, s: HudState): void {
+    const h = 3;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.07)';
+    ctx.fillRect(0, 0, this.width, h);
+
+    if (s.boss) {
+      // In the fight: the whole track burns, so the bar reads as "this is the
+      // end of the stage" rather than as stalled progress.
+      const pulse = 0.55 + Math.abs(Math.sin(this.time * 6)) * 0.45;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = UI.bad;
+      ctx.fillRect(0, 0, this.width, h);
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    const t = Math.max(0, Math.min(1, s.stageProgress));
+    ctx.fillStyle = s.accent;
+    ctx.fillRect(0, 0, this.width * t, h);
+
+    // A marker at the head of the fill, so slow progress is still visible.
+    ctx.fillStyle = '#FFFFFF';
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(Math.max(0, this.width * t - 2), 0, 2, h);
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * The first time a run meets a stage feature, say what it is for. These
+   * mechanics are only readable if the player is told once — after that the
+   * shape of the thing is the instruction.
+   */
+  private renderFeatureHint(ctx: CanvasRenderingContext2D, s: HudState): void {
+    if (!s.hint) return;
+    const cx = this.width / 2;
+    const y = 158;
+    const w = 300;
+
+    ctx.save();
+    ctx.globalAlpha = s.hint.alpha;
+    this.panel(ctx, cx - w / 2, y, w, 58, 10, 0.92);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = s.accent;
+    ctx.font = displayFont(15);
+    ctx.fillText(s.hint.title, cx, y + 24);
+
+    ctx.fillStyle = UI.ink;
+    ctx.font = sansFont(12, 500);
+    ctx.fillText(s.hint.body, cx, y + 44);
     ctx.restore();
   }
 
@@ -179,7 +246,9 @@ export class HudRenderer {
     const y = 16;
     const w = 186;
 
-    this.panel(ctx, x, y, w, 80);
+    // Tall enough to hold the clean-run line: at h = 80 it spilled out of the
+    // panel and landed behind the event meter below.
+    this.panel(ctx, x, y, w, 98);
 
     ctx.textAlign = 'left';
     ctx.fillStyle = UI.inkFaint;
@@ -192,6 +261,15 @@ export class HudRenderer {
 
     // Lives on the left of the footer row, coins on the right.
     this.renderLives(ctx, x + 18, y + 66, s);
+
+    // Distance since the last hit. Only shown once it is worth protecting,
+    // so it arrives as a reward rather than as another number to ignore.
+    if (s.cleanDistance >= 250) {
+      ctx.textAlign = 'left';
+      ctx.fillStyle = UI.good;
+      ctx.font = monoFont(10, 700);
+      ctx.fillText(`CLEAN ${Math.floor(s.cleanDistance)}m`, x + 12, y + 88);
+    }
 
     ctx.textAlign = 'right';
     ctx.fillStyle = UI.coin;
@@ -351,7 +429,7 @@ export class HudRenderer {
     // Top left under the score block: the bottom-left corner is where the
     // runner actually stands, and a panel there covers them.
     const x = 30;
-    const y = 126;
+    const y = 144;
     const barW = 168;
 
     this.panel(ctx, 18, y - 22, 186, 46, 8);

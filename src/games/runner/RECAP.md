@@ -180,6 +180,33 @@ boss hits (+100) and boss kills (+1000). A skilful run outscores a long one.
 `systems/ScorePopups.ts` floats the number off whatever earned it — the first
 score popups the game has had, and the thing that makes grazing legible.
 
+### Giving a run shape
+
+- **A stage track**: a hairline across the very top of the frame showing how
+  far through the stage the run is, and therefore how close the boss is. It
+  burns red for the whole fight. An endless runner with no visible structure
+  feels like it is going nowhere.
+- **First-encounter hints**: the first time a run meets each stage feature, a
+  card says what it is for ("RIDE THE COLUMN", "Hold RIGHT to keep your
+  ground"). Once per run; after that the shape of the thing is the
+  instruction.
+- **Clean running pays**: every 750m without taking a hit awards a bonus, and
+  a hit resets the counter. The metres-since-hit readout only appears once it
+  is worth protecting, so it arrives as a reward rather than as another
+  number to ignore.
+
+### The score's balance
+
+A first pass paid 1000 for a boss and 100 per hit on it, which at a dozen
+hits a boss made one fight worth roughly ten times the distance run to reach
+it — an endless runner whose score was really a boss-kill counter. Awards are
+now modest (boss 250, hit 25, stomp 25, graze 8-40) and distance stays the
+spine: a bot run of ~9,500m scores ~2,100, of which distance is about 45%. A
+skilled player's near misses are what should close the gap.
+
+The recap's letter grade weights near misses and stomps heavily, so a short
+sharp run can outgrade a long careful one.
+
 ### Graphics
 
 - **A foreground occlusion band** (`ParallaxSystem.renderForeground`) drawn

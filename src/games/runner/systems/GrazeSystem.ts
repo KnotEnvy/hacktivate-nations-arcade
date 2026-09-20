@@ -89,7 +89,7 @@ export class GrazeSystem {
    * run away.
    */
   valueFor(streak: number): number {
-    return Math.min(60, 10 + (streak - 1) * 5);
+    return Math.min(40, 8 + (streak - 1) * 4);
   }
 
   getStreak(): number {

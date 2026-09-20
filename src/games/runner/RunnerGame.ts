@@ -26,6 +26,24 @@ import {
   StageFeatureKind,
   FEATURE_FOR_THEME,
 } from './entities/StageFeature';
+
+/**
+ * Said once, the first time a run meets each stage feature. After that the
+ * shape of the thing is the instruction.
+ */
+const FEATURE_HINTS: Record<StageFeatureKind, { title: string; body: string }> = {
+  geyser: { title: 'EMBER VENT', body: 'It flares on a cycle. Cross it while it sleeps.' },
+  updraft: { title: 'UPDRAFT', body: 'Ride the column to the high route.' },
+  gust: { title: 'SAND GUST', body: 'Hold RIGHT to keep your ground.' },
+  bounce: { title: 'SPORE PAD', body: 'Land on it for a launch no jump can match.' },
+};
+
+/** How long a first-encounter hint stays up, in seconds. */
+const HINT_DURATION = 3.4;
+
+/** Metres of clean running per bonus, and what each one is worth. */
+const CLEAN_STEP = 750;
+const CLEAN_BONUS = 150;
 import { Director, DirectorState, SpawnApi } from './systems/Director';
 import { GameCamera } from './systems/GameCamera';
 import { WorldRenderer } from './systems/WorldRenderer';
@@ -34,8 +52,18 @@ import { WorldRenderer } from './systems/WorldRenderer';
  *  the number the player is promised is the number they are paid. */
 const BOSS_BONUS_COINS = 15;
 
-/** Score for felling a boss, on top of the coins. */
-const BOSS_BONUS_SCORE = 1000;
+/**
+ * Awards, in score.
+ *
+ * These are deliberately modest. A first pass paid 1000 for a boss and 100
+ * per hit on it, which — at a dozen hits a boss — made a single fight worth
+ * roughly ten times the distance run to reach it, and turned an endless
+ * runner's score into a boss-kill counter. Distance stays the spine; this is
+ * the topping. A skilled player's grazes are what should close the gap.
+ */
+const BOSS_BONUS_SCORE = 250;
+const BOSS_HIT_SCORE = 25;
+const STOMP_SCORE = 25;
 
 
 /** How long the "stage begins" banner stays up, in seconds. */
@@ -211,6 +239,13 @@ export class RunnerGame extends BaseGame implements SpawnApi {
    * they would be wiped on the next tick.
    */
   private bonusScore: number = 0;
+  /** Metres since the last hit, and how many clean bonuses that has paid. */
+  private cleanDistance: number = 0;
+  private cleanAwards: number = 0;
+  /** Feature kinds already introduced this run. */
+  private hintedFeatures = new Set<StageFeatureKind>();
+  private hintKind: StageFeatureKind | null = null;
+  private hintTimer: number = 0;
   /** What the music director last asked for, so it only switches on change. */
   private currentTrack: string | null = null;
   /** Best score across restarts within this mount, shown on the menu. */
@@ -278,6 +313,7 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     this.updateMusic();
 
     if (this.hurtFlashTimer > 0) this.hurtFlashTimer = Math.max(0, this.hurtFlashTimer - dt);
+    if (this.hintTimer > 0) this.hintTimer = Math.max(0, this.hintTimer - dt);
     if (this.bossHitCooldown > 0) this.bossHitCooldown = Math.max(0, this.bossHitCooldown - dt);
 
     // Hit-stop freezes the SIMULATION only. The HUD clock and the music above
@@ -392,6 +428,24 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     // Update theme progress (separate from distance - for boss spawning)
     this.themeProgress += distanceIncrement;
     this.groundScroll += distanceIncrement;
+
+    // Clean running pays. Taking a hit resets it, which is what makes the
+    // last stretch before a bonus genuinely tense.
+    if (this.gameState === 'playing') {
+      this.cleanDistance += baseIncrement;
+      const due = Math.floor(this.cleanDistance / CLEAN_STEP);
+      if (due > this.cleanAwards) {
+        this.cleanAwards = due;
+        this.bonusScore += CLEAN_BONUS;
+        this.popups.add(
+          this.player.position.x + 16,
+          this.player.position.y - 30,
+          `CLEAN ${due * CLEAN_STEP}m  +${CLEAN_BONUS}`,
+          'bonus'
+        );
+        this.services.audio.playSound('success', { volume: 0.4 });
+      }
+    }
 
     // Update all entities
     this.updateEntities(dt, effectiveSpeed);
@@ -741,6 +795,13 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     const spawnX = this.canvas.width + 60;
     this.stageFeatures.push(new StageFeature(spawnX, this.groundY, kind));
 
+    // Introduce it once per run, as it arrives.
+    if (!this.hintedFeatures.has(kind)) {
+      this.hintedFeatures.add(kind);
+      this.hintKind = kind;
+      this.hintTimer = HINT_DURATION;
+    }
+
     // Each feature arrives with the reward for engaging with it, so its
     // purpose is legible the first time the player meets one.
     switch (kind) {
@@ -897,8 +958,10 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     this.hitStopTimer = 0.09;
     this.hurtFlashTimer = HURT_FLASH_DURATION;
 
-    // A hit always breaks the chain — that is the real cost of a mistake.
+    // A hit breaks every chain — that is the real cost of a mistake.
     this.comboSystem.resetCombo();
+    this.cleanDistance = 0;
+    this.cleanAwards = 0;
 
     this.particles.createLandingDust(this.player.position.x, this.player.position.y);
     this.particles.createImpactRing(
@@ -1144,6 +1207,20 @@ export class RunnerGame extends BaseGame implements SpawnApi {
         : null,
       grazeStreak: this.grazes.getStreak(),
       grazeWindowLeft: this.grazes.getStreakTimeLeft(),
+      stageProgress: this.themeProgress / this.BOSS_SPAWN_THRESHOLD,
+      cleanDistance: this.cleanDistance,
+      hint:
+        this.hintKind && this.hintTimer > 0
+          ? {
+              ...FEATURE_HINTS[this.hintKind],
+              // Fade in and out at the ends, hold in the middle.
+              alpha: Math.min(
+                1,
+                (HINT_DURATION - this.hintTimer) / 0.4,
+                this.hintTimer / 0.5
+              ),
+            }
+          : null,
       stageName: palette.name,
       stageNumber: this.themeLevel + 1,
       accent: palette.accent,
@@ -1191,8 +1268,8 @@ export class RunnerGame extends BaseGame implements SpawnApi {
       { label: 'Top speed', value: `${this.maxSpeedReached.toFixed(1)}x` },
       { label: 'Stage reached', value: `${this.themeLevel + 1} / 5` },
       { label: 'Bosses beaten', value: String(this.bossesDefeated) },
-      { label: 'Drones popped', value: String(this.enemiesStomped) },
       { label: 'Near misses', value: String(this.grazes.getTotal()) },
+      { label: 'Best chain', value: `${this.grazes.getBest()}x` },
     ];
   }
 
@@ -1201,7 +1278,14 @@ export class RunnerGame extends BaseGame implements SpawnApi {
    * set on it, and the boss kills a player earned move them up.
    */
   private buildGrade(): { letter: string; color: string; caption: string } {
-    const rating = this.distance + this.bossesDefeated * 1500 + this.pickups * 8;
+    // Skill counts, not just endurance: near misses and stomps are weighted
+    // heavily enough that a short, sharp run can outgrade a long careful one.
+    const rating =
+      this.distance +
+      this.bossesDefeated * 1500 +
+      this.pickups * 8 +
+      this.grazes.getTotal() * 40 +
+      this.enemiesStomped * 60;
     if (rating >= 12000) return { letter: 'S', color: '#f0b429', caption: 'Untouchable' };
     if (rating >= 8000) return { letter: 'A', color: '#34d399', caption: 'Excellent' };
     if (rating >= 5000) return { letter: 'B', color: '#7c6bff', caption: 'Strong run' };
@@ -1482,11 +1566,11 @@ export class RunnerGame extends BaseGame implements SpawnApi {
         this.hitStopTimer = 0.05;
         this.services.audio.playSound('hit');
         this.pickups += 2;
-        this.bonusScore += 100;
+        this.bonusScore += BOSS_HIT_SCORE;
         this.popups.add(
           this.boss.position.x + this.boss.size.x / 2,
           this.boss.position.y - 10,
-          '+100',
+          `+${BOSS_HIT_SCORE}`,
           'boss'
         );
       } else if (canTakeDamage && playerBounds.intersects(bodyBox)) {
@@ -1701,8 +1785,8 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     // A stomp pays out, and feeds the combo like a coin would.
     const multiplier = this.comboSystem.addCoin();
     this.pickups += 2 * multiplier;
-    this.bonusScore += 50;
-    this.popups.add(cx, cy - 18, '+50', 'stomp');
+    this.bonusScore += STOMP_SCORE;
+    this.popups.add(cx, cy - 18, `+${STOMP_SCORE}`, 'stomp');
     this.comboFlash.trigger(this.comboSystem.getCombo());
     this.enemiesStomped++;
   }
@@ -1814,6 +1898,11 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     this.gameSpeed = 1;
     this.distance = 0;
     this.bonusScore = 0;
+    this.cleanDistance = 0;
+    this.cleanAwards = 0;
+    this.hintedFeatures.clear();
+    this.hintKind = null;
+    this.hintTimer = 0;
     this.groundScroll = 0;
     this.popups.clear();
     this.grazes.reset();
