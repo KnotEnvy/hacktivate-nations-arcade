@@ -141,7 +141,11 @@ export class HudRenderer {
 
   // ======================================================== in-run HUD ====
 
-  renderPlaying(ctx: CanvasRenderingContext2D, s: HudState): void {
+  renderPlaying(
+    ctx: CanvasRenderingContext2D,
+    s: HudState,
+    showEventStrip = true
+  ): void {
     ctx.save();
     ctx.textBaseline = 'alphabetic';
 
@@ -149,7 +153,9 @@ export class HudRenderer {
     this.renderRunStats(ctx, s);
     if (s.combo > 1) this.renderCombo(ctx, s);
     this.renderPowerUps(ctx, s);
-    this.renderEventStrip(ctx, s);
+    // Special events cannot fire during the tutorial, so the meter is noise
+    // while the player is still learning the three moves.
+    if (showEventStrip) this.renderEventStrip(ctx, s);
     if (s.boss) this.renderBossBar(ctx, s.boss);
     else if (s.bossIn !== null) this.renderBossWarning(ctx, s);
     this.renderStageChip(ctx, s);
@@ -681,10 +687,12 @@ export class HudRenderer {
     const cx = this.width / 2;
     const w = 420;
     const x = cx - w / 2;
-    const y = 74;
+    // Below the left-hand HUD panels, not across them: at y = 74 the card's
+    // left edge clipped the score block.
+    const y = 162;
 
     ctx.save();
-    this.panel(ctx, x, y, w, 96, 10, 0.9);
+    this.panel(ctx, x, y, w, 96, 10, 0.92);
 
     // Step dots along the top edge.
     for (let i = 0; i < 3; i++) {
@@ -727,7 +735,8 @@ export class HudRenderer {
     bonusCoins: number,
     nextStage: string,
     accent: string,
-    secondsLeft: number
+    secondsLeft: number,
+    totalSeconds: number
   ): void {
     ctx.save();
     this.scrim(ctx, 0.8);
@@ -770,7 +779,7 @@ export class HudRenderer {
 
     // Countdown rail.
     const railW = 220;
-    const t = Math.max(0, Math.min(1, secondsLeft / 3));
+    const t = Math.max(0, Math.min(1, secondsLeft / totalSeconds));
     ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
     ctx.fillRect(cx - railW / 2, 424, railW, 4);
     ctx.fillStyle = accent;

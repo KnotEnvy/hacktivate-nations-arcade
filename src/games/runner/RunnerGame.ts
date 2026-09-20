@@ -1129,7 +1129,8 @@ export class RunnerGame extends BaseGame {
           BOSS_BONUS_COINS,
           EnvironmentSystem.paletteForIndex(this.themeLevel + 1).name,
           EnvironmentSystem.paletteForIndex(this.themeLevel + 1).accent,
-          this.bossVictoryDuration - this.bossVictoryTimer
+          this.bossVictoryDuration - this.bossVictoryTimer,
+          this.bossVictoryDuration
         );
         return;
       case 'death-animation':
@@ -1145,7 +1146,7 @@ export class RunnerGame extends BaseGame {
         );
         return;
       case 'tutorial':
-        this.hud.renderPlaying(ctx, this.buildHudState());
+        this.hud.renderPlaying(ctx, this.buildHudState(), false);
         this.hud.renderTutorial(
           ctx,
           this.tutorialProgress.currentStep,
@@ -1203,12 +1204,20 @@ export class RunnerGame extends BaseGame {
       stageName: palette.name,
       stageNumber: this.themeLevel + 1,
       accent: palette.accent,
-      stageBanner: this.stageBannerTimer > 0
-        ? Math.min(1, this.stageBannerTimer / 0.6) *
-          Math.min(1, (STAGE_BANNER_DURATION - this.stageBannerTimer) / 0.6 + 0.3)
-        : 0,
+      stageBanner: this.stageBannerAlpha(),
       invulnerable: this.isInvulnerable,
     };
+  }
+
+  /**
+   * The stage banner's opacity: a 0.6s fade in, a hold, a 0.6s fade out.
+   * `stageBannerTimer` counts DOWN from STAGE_BANNER_DURATION to zero.
+   */
+  private stageBannerAlpha(): number {
+    if (this.stageBannerTimer <= 0) return 0;
+    const fade = 0.6;
+    const elapsed = STAGE_BANNER_DURATION - this.stageBannerTimer;
+    return Math.min(1, elapsed / fade, this.stageBannerTimer / fade);
   }
 
   private tutorialStepDone(): number {
@@ -1814,6 +1823,13 @@ export class RunnerGame extends BaseGame {
 
     // Call parent which will handle the final scoring and Hub callback
     super.onGameEnd?.(finalScore);
+  }
+
+  protected onDestroy(): void {
+    // The hub stops music when it tears a game down, but a game that started
+    // its own track should not rely on that to end it.
+    this.services?.audio?.stopMusic?.(0.3);
+    this.currentTrack = null;
   }
 
   protected onRestart(): void {

@@ -271,23 +271,6 @@ export class EnvironmentSystem {
     return PALETTES[THEME_ORDER[index]];
   }
 
-  getStageName(): string {
-    return PALETTES[this.currentTheme].name;
-  }
-
-  getSkyColors(): { top: string; bottom: string } {
-    const sky = PALETTES[this.currentTheme].sky;
-    return { top: sky[0].color, bottom: sky[sky.length - 1].color };
-  }
-
-  getGroundColor(): string {
-    return PALETTES[this.currentTheme].groundBody;
-  }
-
-  getGrassColor(): string {
-    return PALETTES[this.currentTheme].groundTop;
-  }
-
   getAccentColor(): string {
     return PALETTES[this.currentTheme].accent;
   }

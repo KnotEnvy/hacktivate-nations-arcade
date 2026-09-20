@@ -465,11 +465,6 @@ export class Boss {
     return attacks;
   }
 
-  shouldAttack(): boolean {
-    // Legacy method - now attacks are queued via consumeAttacks()
-    return false;
-  }
-
   render(ctx: CanvasRenderingContext2D): void {
     ctx.save();
 
@@ -1427,10 +1422,6 @@ export class Boss {
     return this.phase === 'defeat' && this.defeatTimer > 2;
   }
 
-  isInIntro(): boolean {
-    return this.phase === 'intro';
-  }
-
   isCharging(): boolean {
     return this.chargingActive;
   }
@@ -1449,13 +1440,6 @@ export class Boss {
 
   getBossNumber(): number {
     return this.bossNumber;
-  }
-
-  getAttackPosition(): Vector2 {
-    return new Vector2(
-      this.position.x,
-      this.position.y + this.size.y / 2
-    );
   }
 
   getConfig(): BossConfig {

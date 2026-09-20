@@ -158,6 +158,51 @@ describe('every hazard has a working answer', () => {
   });
 });
 
+describe('the tutorial teaches what it claims', () => {
+  it('spawns barriers to slide under on the slide step', () => {
+    const { h, g } = startedGame();
+    const t = g as unknown as {
+      gameState: string;
+      tutorialProgress: { currentStep: number };
+      obstacles: Obstacle[];
+      nextObstacleDistance: number;
+      distance: number;
+    };
+    t.gameState = 'tutorial';
+    t.tutorialProgress.currentStep = 1;
+    t.obstacles = [];
+
+    // Run long enough for several spawn cycles.
+    step(h, 900);
+
+    // The step says "hold DOWN to slide under the hanging barriers". Before
+    // the polish pass the tutorial only ever spawned blockers, so the
+    // instruction referred to something that was never on screen.
+    const kinds = new Set(t.obstacles.map(o => o.type));
+    expect(t.obstacles.length).toBeGreaterThan(0);
+    expect(kinds.has('high-barrier')).toBe(true);
+  });
+
+  it('opens with plain blockers on the jump step', () => {
+    const { h, g } = startedGame();
+    const t = g as unknown as {
+      gameState: string;
+      tutorialProgress: { currentStep: number };
+      obstacles: Obstacle[];
+    };
+    t.gameState = 'tutorial';
+    t.tutorialProgress.currentStep = 0;
+    t.obstacles = [];
+
+    step(h, 900);
+
+    // Nothing that needs a move the player has not been taught yet.
+    for (const o of t.obstacles) {
+      expect(['cactus']).toContain(o.type);
+    }
+  });
+});
+
 describe('player forgiveness windows', () => {
   it('still allows a jump just after leaving the ground (coyote time)', () => {
     const player = new Player(100, GROUND_Y - 32, GROUND_Y, 800);
