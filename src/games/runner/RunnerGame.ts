@@ -15,17 +15,41 @@ import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
 import { ComboSystem } from './systems/ComboSystem';
 import { ComboFlash } from './systems/ComboFlash';
-import { EnvironmentSystem, ThemePalette } from './systems/EnvironmentSystem';
+import { EnvironmentSystem } from './systems/EnvironmentSystem';
 import { ParallaxSystem } from './systems/ParallaxSystem';
 import { PlayerAura } from './entities/PlayerAura';
-import { HudRenderer, HudState } from './systems/HudRenderer';
+import { HudRenderer, HudState, sansFamily } from './systems/HudRenderer';
+import { ScorePopups } from './systems/ScorePopups';
+import { GrazeSystem, Grazeable } from './systems/GrazeSystem';
+import {
+  StageFeature,
+  StageFeatureKind,
+  FEATURE_FOR_THEME,
+} from './entities/StageFeature';
+import { Director, DirectorState, SpawnApi } from './systems/Director';
+import { GameCamera } from './systems/GameCamera';
+import { WorldRenderer } from './systems/WorldRenderer';
 
 /** Coins awarded for felling a boss. Referenced by the victory screen too, so
  *  the number the player is promised is the number they are paid. */
 const BOSS_BONUS_COINS = 15;
 
+/** Score for felling a boss, on top of the coins. */
+const BOSS_BONUS_SCORE = 1000;
+
+
 /** How long the "stage begins" banner stays up, in seconds. */
 const STAGE_BANNER_DURATION = 2.6;
+
+/**
+ * How far past each edge of the canvas the world is drawn.
+ *
+ * The camera pulls back as the run speeds up, which reveals area outside the
+ * canvas rectangle. Anything that fills the frame — the sky, the floor, the
+ * ground dressing — has to reach this far past it or the pull-back exposes
+ * bare background at the edges.
+ */
+export const WORLD_OVERSCAN = 110;
 
 /** How long the red hurt vignette lingers, in seconds. */
 const HURT_FLASH_DURATION = 0.55;
@@ -47,11 +71,6 @@ const STAGE_MUSIC = [
 const BOSS_MUSIC = 'epic_tension';
 const MENU_MUSIC = 'arcade_retro';
 
-// Deterministic noise function for ground textures
-const pseudoNoise = (x: number, y: number): number => {
-  return Math.abs(Math.sin(x * 12.9898 + y * 78.233)) % 1;
-};
-
 interface ActivePowerUp {
   type: PowerUpType;
   duration: number;
@@ -70,7 +89,7 @@ interface TutorialProgress {
   currentStep: number;
 }
 
-export class RunnerGame extends BaseGame {
+export class RunnerGame extends BaseGame implements SpawnApi {
   manifest: GameManifest = {
     id: 'runner',
     title: 'Endless Runner',
@@ -180,6 +199,18 @@ export class RunnerGame extends BaseGame {
   private parallaxSystem!: ParallaxSystem;
 
   private hud!: HudRenderer;
+  private popups!: ScorePopups;
+  private grazes!: GrazeSystem;
+  private stageFeatures: StageFeature[] = [];
+  private director = new Director();
+  private camera!: GameCamera;
+  private world!: WorldRenderer;
+  /**
+   * Score earned by doing things, as opposed to by covering ground. `score`
+   * is recomputed from distance every frame, so awards have to live here or
+   * they would be wiped on the next tick.
+   */
+  private bonusScore: number = 0;
   /** What the music director last asked for, so it only switches on change. */
   private currentTrack: string | null = null;
   /** Best score across restarts within this mount, shown on the menu. */
@@ -206,8 +237,19 @@ export class RunnerGame extends BaseGame {
       this.canvas.height,
       this.groundY
     );
+    this.parallaxSystem.setOverscan(WORLD_OVERSCAN);
     this.parallaxSystem.reset();
     this.hud = new HudRenderer(this.canvas.width, this.canvas.height);
+    this.popups = new ScorePopups();
+    this.popups.setViewport(this.canvas.width, this.canvas.height);
+    this.camera = new GameCamera(this.canvas.width, this.canvas.height);
+    this.world = new WorldRenderer(
+      this.canvas.width,
+      this.canvas.height,
+      this.groundY,
+      WORLD_OVERSCAN
+    );
+    this.grazes = new GrazeSystem();
     // The runner draws its own chrome; the base Score/Coins overlay would sit
     // straight on top of it.
     this.renderBaseHud = false;
@@ -218,8 +260,7 @@ export class RunnerGame extends BaseGame {
     this.powerupTypesUsed.clear();
 
     // Schedule first spawns
-    this.scheduleNextObstacle();
-    this.scheduleNextAerial();
+    this.director.rescheduleAll(this.directorState());
 
     // Spawn initial content
     this.spawnObstacle();
@@ -371,8 +412,9 @@ export class RunnerGame extends BaseGame {
       this.checkTutorialProgress();
     }
 
-    // Update score
-    this.score = Math.floor(this.distance / 10);
+    // Update score. Distance is the spine; everything the player actively
+    // does adds on top, so a skilful run outscores a long one.
+    this.score = Math.floor(this.distance / 10) + this.bonusScore;
     // Scroll parallax layers by the distance moved this frame
     this.parallaxSystem.update(distanceIncrement, dt);
   }
@@ -394,6 +436,7 @@ export class RunnerGame extends BaseGame {
       combo: this.comboSystem?.getCombo?.() ?? 0,
       bossesDefeated: this.bossesDefeated,
       enemiesStomped: this.enemiesStomped,
+      nearMisses: this.grazes.getTotal(),
     };
   }
 
@@ -498,6 +541,13 @@ export class RunnerGame extends BaseGame {
       if (this.boss.isDefeated() && this.boss.isOffScreen()) {
         this.bossesDefeated++;
         this.pickups += BOSS_BONUS_COINS;
+        this.bonusScore += BOSS_BONUS_SCORE;
+        this.popups.add(
+          this.boss.position.x + this.boss.size.x / 2,
+          this.boss.position.y,
+          `+${BOSS_BONUS_SCORE}`,
+          'bonus'
+        );
         this.bossDefeatedForTheme = true; // Mark boss as defeated for this theme
         this.gameState = 'boss-victory';
         this.bossVictoryTimer = 0;
@@ -533,6 +583,11 @@ export class RunnerGame extends BaseGame {
     // Update ground pounds
     this.groundPounds.forEach(gp => gp.update(dt));
     this.groundPounds = this.groundPounds.filter(gp => !gp.isOffScreen());
+
+    // Stage features keep running during a boss fight so a gust or a geyser
+    // already on screen finishes its business rather than vanishing.
+    this.stageFeatures.forEach(f => f.update(dt, gameSpeed));
+    this.stageFeatures = this.stageFeatures.filter(f => !f.isOffScreen());
   }
 
   /**
@@ -571,6 +626,8 @@ export class RunnerGame extends BaseGame {
 
   private updateSystems(dt: number): void {
     this.hud.update(dt);
+    this.popups.update(dt);
+    this.grazes.update(dt);
     if (this.stageBannerTimer > 0) this.stageBannerTimer = Math.max(0, this.stageBannerTimer - dt);
     this.particles.update(dt);
     this.screenShake.update(dt);
@@ -609,12 +666,20 @@ export class RunnerGame extends BaseGame {
       }
     }
 
-    // Update camera shake
+    // The camera folds the shake in, so the render path has one transform.
     this.cameraOffset = this.screenShake.getOffset();
+    this.camera.update(
+      dt,
+      {
+        gameSpeed: this.gameSpeed,
+        playerHeight: this.groundY - (this.player.position.y + this.player.size.y),
+        punch: 0,
+      },
+      this.cameraOffset
+    );
   }
 
   private handleSpawning(): void {
-    // Only spawn during playing state
     if (this.gameState !== 'playing' && this.gameState !== 'tutorial') return;
 
     // Boss spawning: based on themeProgress, not distance
@@ -625,186 +690,84 @@ export class RunnerGame extends BaseGame {
       this.gameState === 'playing'
     ) {
       this.spawnBoss();
-      // Clear obstacles and enemies for boss fight
+      // Clear the arena for the fight.
       this.obstacles = [];
       this.flyingEnemies = [];
       this.hoverEnemies = [];
+      this.stageFeatures = [];
       return;
     }
 
-    // Special events (combo-based)
-    if (this.specialEventMeter >= this.specialEventThreshold && this.activeEvent === 'none' && !this.boss && this.gameState === 'playing') {
+    // Special events (combo- and graze-charged)
+    if (
+      this.specialEventMeter >= this.specialEventThreshold &&
+      this.activeEvent === 'none' &&
+      !this.boss &&
+      this.gameState === 'playing'
+    ) {
       this.triggerSpecialEvent();
     }
 
-    // Coin shower event
-    if (this.activeEvent === 'coin-shower') {
-      if (Math.random() < 0.3) {
-        this.spawnCoin(Math.random() * 100);
-      }
+    if (this.activeEvent === 'coin-shower' && Math.random() < 0.3) {
+      this.spawnCoin(Math.random() * 100);
     }
 
-    // Regular spawning (only when no boss is active)
-    if (!this.boss) {
-      if (this.distance >= this.nextObstacleDistance) {
-        if (this.gameState === 'tutorial') {
-          this.spawnTutorialPattern();
-        } else {
-          this.spawnPattern();
-        }
-        this.scheduleNextObstacle();
-      }
-
-      if (this.distance >= this.nextAerialDistance && this.gameState === 'playing') {
-        this.spawnAerial();
-        this.scheduleNextAerial();
-      }
-    }
+    // Everything else is the director's call.
+    if (!this.boss) this.director.update(this.directorState(), this);
   }
 
-  /**
-   * How hard the run currently is, 0 at the start and approaching 1.
-   * Everything that ramps reads from this, so the curve is tuned in one place.
-   */
-  private difficulty(): number {
-    return 1 - Math.exp(-this.distance / 5000);
+  private directorState(): DirectorState {
+    return {
+      distance: this.distance,
+      gameSpeed: this.gameSpeed,
+      tutorial: this.gameState === 'tutorial',
+      tutorialStep: this.tutorialProgress.currentStep,
+      feature:
+        FEATURE_FOR_THEME[this.environmentSystem.getCurrentTheme()] ?? null,
+    };
   }
 
-  /**
-   * Distance the world covers in one second at the current speed.
-   *
-   * This is the number that makes spawn timing honest. Obstacles move at
-   * `200 * speed` px/s while the odometer climbs at `100 * speed` units/s, so
-   * a gap measured in DISTANCE UNITS shrinks in real time as the run speeds
-   * up. The old scheduler made that worse by subtracting a speed factor from
-   * the gap, which is why late runs threw obstacles closer together than a
-   * jump could possibly clear. Everything below is scheduled in SECONDS and
-   * converted here.
-   */
-  private unitsPerSecond(): number {
-    return 100 * this.gameSpeed;
-  }
+  // --- SpawnApi -------------------------------------------------------------
+  //
+  // The director decides WHAT and WHEN; these put it on screen. They are
+  // public because Director takes the game as its SpawnApi.
 
-  /**
-   * One deliberate hazard arrangement, rather than a die roll per obstacle.
-   *
-   * Every pattern has a known answer: jump it, slide it, or jump the pit. The
-   * spacing inside a pattern is chosen so the answer stays available — a
-   * second blocker never lands inside the first one's landing window.
-   */
-  private spawnPattern(): void {
-    const d = this.difficulty();
-    const far = this.distance;
-    const roll = Math.random();
-
-    // Pattern weights open up as the run goes on. Before 300m it is only
-    // single blockers, so the first thirty seconds teach the basic jump.
-    if (far < 300) {
-      this.spawnObstacle(50, 'cactus');
-      if (Math.random() < 0.7) this.spawnCoinArc(140, 3);
-      return;
-    }
-
-    // Two blockers close enough to read as one hazard, cleared by a single
-    // held jump. Spaced by a fixed screen distance, never by wall time.
-    if (roll < 0.14 + d * 0.1 && far > 900) {
-      // Two beds ABUTTING, not spaced. At 118 they left a 32px gap — narrower
-      // than the runner, so it was not a place you could land, but wide enough
-      // that a short jump dropped you onto the second bed.
-      this.spawnObstacle(50, 'spike');
-      this.spawnObstacle(86, 'spike');
-      this.spawnCoinArc(70, 3, 84);
-      return;
-    }
-
-    // Slide gate: a hanging barrier, with coins underneath as the reward for
-    // committing to the slide.
-    if (roll < 0.34 && far > 500) {
-      this.spawnObstacle(50, 'high-barrier');
-      this.spawnLowCoins(60, 3);
-      return;
-    }
-
-    // Pit: jump it. Coins arc over the hole.
-    if (roll < 0.5 && far > 700) {
-      this.spawnObstacle(50, 'gap');
-      this.spawnCoinArc(90, 4, 66);
-      return;
-    }
-
-    // Blocker then pit, far enough apart to land and re-jump.
-    if (roll < 0.6 && far > 1600) {
-      this.spawnObstacle(50, 'cactus');
-      this.spawnObstacle(50 + this.safeFollowUpGap(), 'gap');
-      return;
-    }
-
-    // Spike bed.
-    if (roll < 0.74) {
-      this.spawnObstacle(50, 'spike');
-      if (Math.random() < 0.6) this.spawnCoinArc(120, 3);
-      return;
-    }
-
-    // Plain blocker, the bread and butter.
-    this.spawnObstacle(50, 'cactus');
-    if (Math.random() < 0.55) this.spawnCoinArc(130, 3);
-
-    // Power-ups thin out as the player gets deeper, so they stay a treat.
-    if (Math.random() < 0.16 && far > 300) this.spawnPowerUp();
-  }
-
-  /**
-   * Screen distance the runner needs to land, recover, and jump again.
-   * Derived from the jump arc rather than guessed, so it holds at any speed.
-   */
-  private safeFollowUpGap(): number {
-    // ~0.62s of travel: airtime on a tapped jump plus a beat to react.
-    return 0.62 * this.unitsPerSecond() * 2;
-  }
-
-  /** The tutorial spawns exactly the hazard the current step is teaching. */
-  private spawnTutorialPattern(): void {
-    switch (this.tutorialProgress.currentStep) {
-      case 0:
-        this.spawnObstacle(50, 'cactus');
-        break;
-      case 1:
-        // Barriers, so "hold DOWN to slide" has something to slide under.
-        this.spawnObstacle(50, 'high-barrier');
-        this.spawnLowCoins(60, 2);
-        break;
-      default:
-        if (Math.random() < 0.5) this.spawnObstacle(50, 'cactus');
-        this.spawnCoinArc(120, 4);
-        break;
-    }
-    if (this.tutorialProgress.currentStep === 0 && Math.random() < 0.6) {
-      this.spawnCoinArc(140, 3);
-    }
-  }
-
-  /**
-   * Aerials, placed so they never land on top of a ground hazard the player is
-   * already committed to jumping.
-   */
-  private spawnAerial(): void {
-    const d = this.difficulty();
+  groundBusy(range: number): boolean {
     const spawnX = this.canvas.width + 50;
-    const clearOfGround = !this.obstacles.some(
-      o => Math.abs(o.position.x - spawnX) < 150
-    );
+    return this.obstacles.some(o => Math.abs(o.position.x - spawnX) < range);
+  }
 
-    // Flyers cruise at jump-apex height, so one placed over a ground hazard
-    // puts an enemy exactly where a forced jump has to go. Both aerials wait
-    // for clear ground.
-    if (this.distance > 500 && clearOfGround && Math.random() < 0.35 + d * 0.25) {
-      this.spawnFlyingEnemy();
-      return;
-    }
+  spawnStageFeature(kind: StageFeatureKind): void {
+    const spawnX = this.canvas.width + 60;
+    this.stageFeatures.push(new StageFeature(spawnX, this.groundY, kind));
 
-    if (this.distance > 800 && clearOfGround && Math.random() < 0.3 + d * 0.25) {
-      this.spawnHoverEnemy();
+    // Each feature arrives with the reward for engaging with it, so its
+    // purpose is legible the first time the player meets one.
+    switch (kind) {
+      case 'updraft':
+        // A coin line up the column and along the high route it opens.
+        for (let i = 0; i < 5; i++) {
+          this.coins.push(
+            new Coin(spawnX + 22 + i * 30, this.groundY - 120 - i * 26)
+          );
+        }
+        break;
+      case 'bounce':
+        // Coins stacked above the pad: proof of what the launch is for.
+        for (let i = 0; i < 4; i++) {
+          this.coins.push(
+            new Coin(spawnX + 16 + i * 8, this.groundY - 120 - i * 46)
+          );
+        }
+        break;
+      case 'geyser':
+        // Coins just past the vent, so crossing it is worth the timing.
+        this.spawnCoinArc(110, 3, 70);
+        break;
+      case 'gust':
+        // Coins strung through the gust: holding ground pays.
+        this.spawnLowCoins(70, 4);
+        break;
     }
   }
 
@@ -993,12 +956,18 @@ export class RunnerGame extends BaseGame {
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
     ctx.save();
-
-    // Apply camera shake
-    ctx.translate(this.cameraOffset.x, this.cameraOffset.y);
+    this.camera.apply(ctx);
 
     this.renderEnhancedBackground(ctx);
-    this.renderGround(ctx);
+    this.world.renderGround(
+      ctx,
+      this.environmentSystem.getPalette(),
+      this.groundScroll
+    );
+
+    // Stage features sit behind the hazards: an updraft column or a gust is
+    // atmosphere the rest of the scene plays in front of.
+    this.stageFeatures.forEach(f => f.render(ctx));
 
     // Render all entities
     this.obstacles.forEach(obstacle => obstacle.render(ctx));
@@ -1064,57 +1033,29 @@ export class RunnerGame extends BaseGame {
 
     this.particles.render(ctx);
 
-    // One light wash over the whole scene, so entities drawn in their own
-    // palettes still read as standing in this stage's light.
-    const palette = this.environmentSystem.getPalette();
-    if (palette.ambientLightAlpha > 0) {
-      ctx.save();
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.globalAlpha = palette.ambientLightAlpha;
-      ctx.fillStyle = palette.ambientLight;
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-      ctx.restore();
-    }
+    // The occluding band goes over the entities but under the readouts.
+    this.parallaxSystem.renderForeground(
+      ctx,
+      this.environmentSystem.getCurrentTheme()
+    );
 
-    // Hurt vignette: red pulled in from the edges, never over the middle of
-    // the playfield where the player is looking.
-    if (this.hurtFlashTimer > 0) {
-      const t = this.hurtFlashTimer / HURT_FLASH_DURATION;
-      const vignette = ctx.createRadialGradient(
-        this.canvas.width / 2,
-        this.canvas.height / 2,
-        this.canvas.height * 0.28,
-        this.canvas.width / 2,
-        this.canvas.height / 2,
-        this.canvas.height * 0.78
-      );
-      vignette.addColorStop(0, 'rgba(180, 20, 20, 0)');
-      vignette.addColorStop(1, `rgba(180, 20, 20, ${0.62 * t})`);
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+    this.popups.render(ctx, sansFamily());
 
-    // A standing low-health vignette, so the last life is felt.
-    if (this.lives === 1 && this.gameState === 'playing') {
-      const pulse = 0.14 + Math.abs(Math.sin(this.gameTime * 3)) * 0.1;
-      const danger = ctx.createRadialGradient(
-        this.canvas.width / 2,
-        this.canvas.height / 2,
-        this.canvas.height * 0.36,
-        this.canvas.width / 2,
-        this.canvas.height / 2,
-        this.canvas.height * 0.8
-      );
-      danger.addColorStop(0, 'rgba(160, 24, 24, 0)');
-      danger.addColorStop(1, `rgba(160, 24, 24, ${pulse})`);
-      ctx.fillStyle = danger;
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    }
+    // End of the camera transform. Everything past here is a SCREEN-space
+    // effect — it must not zoom with the world, and it has to cover the full
+    // frame rather than the overscanned world rectangle.
+    ctx.restore();
+
+    this.world.renderAmbientLight(ctx, this.environmentSystem.getPalette());
+    this.world.renderVignettes(ctx, {
+      hurt: this.hurtFlashTimer / HURT_FLASH_DURATION,
+      lastLife: this.lives === 1 && this.gameState === 'playing',
+      time: this.gameTime,
+    });
+    this.world.renderSpeedLines(ctx, this.speedHeat(), this.distance);
 
     // Render combo flash overlay (on top of everything in game layer)
     this.comboFlash.render(ctx, this.canvas.width, this.canvas.height);
-
-    ctx.restore();
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
@@ -1201,6 +1142,8 @@ export class RunnerGame extends BaseGame {
       bossIn: bossApproaching
         ? this.BOSS_SPAWN_THRESHOLD - this.themeProgress
         : null,
+      grazeStreak: this.grazes.getStreak(),
+      grazeWindowLeft: this.grazes.getStreakTimeLeft(),
       stageName: palette.name,
       stageNumber: this.themeLevel + 1,
       accent: palette.accent,
@@ -1249,7 +1192,7 @@ export class RunnerGame extends BaseGame {
       { label: 'Stage reached', value: `${this.themeLevel + 1} / 5` },
       { label: 'Bosses beaten', value: String(this.bossesDefeated) },
       { label: 'Drones popped', value: String(this.enemiesStomped) },
-      { label: 'Jumps', value: String(this.jumps) },
+      { label: 'Near misses', value: String(this.grazes.getTotal()) },
     ];
   }
 
@@ -1267,124 +1210,23 @@ export class RunnerGame extends BaseGame {
     return { letter: 'E', color: '#6d7484', caption: 'Warming up' };
   }
 
+  /** How fast the run FEELS, for the speed lines. 0 = still, 1 = flat out. */
+  private speedHeat(): number {
+    return Math.min(
+      1,
+      Math.max(0, (this.gameSpeed - 1.7) / 1.4) +
+        (this.hasPowerUp('speed-boost') ? 0.45 : 0) +
+        (this.activeEvent === 'speed-zone' ? 0.55 : 0)
+    );
+  }
+
   private renderEnhancedBackground(ctx: CanvasRenderingContext2D): void {
     // The parallax system owns the sky gradient too, so the horizon haze it
     // paints can sit between the sky and the distant silhouettes.
     this.parallaxSystem.render(ctx, this.environmentSystem.getCurrentTheme());
   }
 
-  private renderGround(ctx: CanvasRenderingContext2D): void {
-    const p = this.environmentSystem.getPalette();
-    const depth = this.canvas.height - this.groundY;
-
-    // Body: a vertical ramp from the lit surface down into shadow, so the
-    // floor reads as a solid mass instead of a painted strip.
-    const body = ctx.createLinearGradient(0, this.groundY, 0, this.canvas.height);
-    body.addColorStop(0, p.groundBody);
-    body.addColorStop(1, p.groundDeep);
-    ctx.fillStyle = body;
-    ctx.fillRect(0, this.groundY, this.canvas.width, depth);
-
-    // Surface crust and the bright lip that catches the sky.
-    const crust = ctx.createLinearGradient(0, this.groundY - 10, 0, this.groundY + 14);
-    crust.addColorStop(0, p.groundTop);
-    crust.addColorStop(1, p.groundBody);
-    ctx.fillStyle = crust;
-    ctx.fillRect(0, this.groundY - 10, this.canvas.width, 24);
-
-    ctx.fillStyle = p.groundLine;
-    ctx.fillRect(0, this.groundY - 11, this.canvas.width, 2);
-
-    this.renderGroundDetail(ctx, p);
-
-    // Depth shade at the very bottom, so the floor never fights the player.
-    const floorShade = ctx.createLinearGradient(
-      0,
-      this.canvas.height - 26,
-      0,
-      this.canvas.height
-    );
-    floorShade.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    floorShade.addColorStop(1, 'rgba(0, 0, 0, 0.32)');
-    ctx.fillStyle = floorShade;
-    ctx.fillRect(0, this.canvas.height - 26, this.canvas.width, 26);
-  }
-
-  /**
-   * Ground dressing that scrolls at full speed. Positions come from the world
-   * odometer rather than screen space, so a tuft keeps its shape as it passes.
-   */
-  private renderGroundDetail(
-    ctx: CanvasRenderingContext2D,
-    p: ThemePalette
-  ): void {
-    const scroll = this.groundScroll;
-    const slot = 26;
-    const first = Math.floor(scroll / slot);
-    const count = Math.ceil(this.canvas.width / slot) + 2;
-
-    for (let i = 0; i < count; i++) {
-      const index = first + i;
-      const x = index * slot - scroll;
-      const r = pseudoNoise(index * 3.1, 7.7);
-      const r2 = pseudoNoise(index * 1.7, 13.3);
-
-      if (p.ambient === 'sand') {
-        // Wind ripples running across the dune surface.
-        ctx.strokeStyle = this.withAlpha(p.grassDry, 0.45);
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, this.groundY + 8 + r * 20);
-        ctx.quadraticCurveTo(
-          x + slot * 0.5,
-          this.groundY + 5 + r * 20,
-          x + slot,
-          this.groundY + 8 + r * 20
-        );
-        ctx.stroke();
-        continue;
-      }
-
-      if (r > 0.34) {
-        // Grass tuft, hanging off the lip of the crust.
-        ctx.strokeStyle = r2 > 0.6 ? p.grassDry : p.grass;
-        ctx.lineWidth = 1.5;
-        const blades = 2 + Math.floor(r2 * 3);
-        for (let b = 0; b < blades; b++) {
-          const bx = x + b * 4;
-          const bh = 5 + pseudoNoise(index + b, 2.2) * 8;
-          ctx.beginPath();
-          ctx.moveTo(bx, this.groundY - 8);
-          ctx.quadraticCurveTo(
-            bx + 2,
-            this.groundY - 8 - bh * 0.6,
-            bx + (b - 1) * 2,
-            this.groundY - 8 - bh
-          );
-          ctx.stroke();
-        }
-      } else if (r > 0.16) {
-        // Pebble, sitting in the crust.
-        ctx.fillStyle = this.withAlpha(p.groundDeep, 0.55);
-        const size = 2 + r2 * 3;
-        ctx.beginPath();
-        ctx.ellipse(x, this.groundY + 6 + r2 * 16, size, size * 0.6, 0, 0, Math.PI * 2);
-        ctx.fill();
-      } else if (p.ambient === 'leaves' && r > 0.06) {
-        // Leaf litter on the forest floor.
-        ctx.fillStyle = this.withAlpha('#8A5A2B', 0.5);
-        ctx.fillRect(x, this.groundY + 10 + r2 * 18, 4, 2);
-      }
-    }
-  }
-
-  private withAlpha(hex: string, alpha: number): string {
-    if (!hex.startsWith('#')) return hex;
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-  }
-
-  private spawnPowerUp(): void {
+  spawnPowerUp(): void {
     const types: PowerUpType[] = ['double-jump', 'coin-magnet', 'invincibility', 'speed-boost'];
     const type = types[Math.floor(Math.random() * types.length)];
     const x = this.canvas.width + 50;
@@ -1392,7 +1234,7 @@ export class RunnerGame extends BaseGame {
     this.powerUps.push(new PowerUp(x, y, type));
   }
 
-  private spawnFlyingEnemy(): void {
+  spawnFlyingEnemy(): void {
     const x = this.canvas.width + 50;
     const y = this.groundY - 150 - Math.random() * 100;
     this.flyingEnemies.push(
@@ -1400,7 +1242,7 @@ export class RunnerGame extends BaseGame {
     );
   }
 
-  private spawnHoverEnemy(): void {
+  spawnHoverEnemy(): void {
     const x = this.canvas.width + 50;
     // At groundY - 84 the drone's box cleared a standing runner entirely, so
     // it was only ever a hazard to someone already mid-jump. Down here it is
@@ -1466,7 +1308,7 @@ export class RunnerGame extends BaseGame {
     }
   }
 
-  private spawnObstacle(offset: number = 50, type: ObstacleType = 'cactus'): void {
+  spawnObstacle(offset: number = 50, type: ObstacleType = 'cactus'): void {
     const x = this.canvas.width + offset;
 
     // Set position based on type.
@@ -1493,7 +1335,7 @@ export class RunnerGame extends BaseGame {
   }
 
   /** An arc of coins over a hazard: the reward line for jumping it. */
-  private spawnCoinArc(offset: number, count: number, spread: number = 80): void {
+  spawnCoinArc(offset: number, count: number, spread: number = 80): void {
     const startX = this.canvas.width + offset;
     const peak = this.groundY - 118;
     for (let i = 0; i < count; i++) {
@@ -1505,7 +1347,7 @@ export class RunnerGame extends BaseGame {
   }
 
   /** Coins along the floor, for the reward under a slide gate. */
-  private spawnLowCoins(offset: number, count: number): void {
+  spawnLowCoins(offset: number, count: number): void {
     const startX = this.canvas.width + offset;
     for (let i = 0; i < count; i++) {
       this.coins.push(new Coin(startX + i * 30, this.groundY - 26));
@@ -1529,29 +1371,14 @@ export class RunnerGame extends BaseGame {
     this.coins.push(new Coin(x, y));
   }
 
-  /**
-   * Schedule in SECONDS, then convert. The interval closes from 1.55s to
-   * 0.95s over the run — pressure the player can feel, without ever dropping
-   * under the time a jump takes.
-   */
-  private scheduleNextObstacle(): void {
-    const d = this.difficulty();
-    const seconds = 1.55 - d * 0.6 + Math.random() * 0.45;
-    this.nextObstacleDistance =
-      this.distance + Math.max(0.9, seconds) * this.unitsPerSecond();
-  }
-
-  private scheduleNextAerial(): void {
-    const d = this.difficulty();
-    const seconds = 3.2 - d * 1.1 + Math.random() * 1.4;
-    this.nextAerialDistance =
-      this.distance + Math.max(1.5, seconds) * this.unitsPerSecond();
-  }
-
   private checkCollisions(): void {
     const playerBounds = this.player.getBounds();
     const isInvincible = this.hasPowerUp('invincibility');
     const canTakeDamage = !isInvincible && !this.isInvulnerable;
+
+    this.applyStageFeatures(playerBounds, canTakeDamage);
+    if (this.gameState === 'death-animation') return;
+    this.awardGrazes(playerBounds);
 
     // Check obstacle collisions
     if (canTakeDamage) {
@@ -1655,6 +1482,13 @@ export class RunnerGame extends BaseGame {
         this.hitStopTimer = 0.05;
         this.services.audio.playSound('hit');
         this.pickups += 2;
+        this.bonusScore += 100;
+        this.popups.add(
+          this.boss.position.x + this.boss.size.x / 2,
+          this.boss.position.y - 10,
+          '+100',
+          'boss'
+        );
       } else if (canTakeDamage && playerBounds.intersects(bodyBox)) {
         this.takeDamage();
         return;
@@ -1669,6 +1503,12 @@ export class RunnerGame extends BaseGame {
 
         const multiplier = this.comboSystem.addCoin();
         this.pickups += multiplier;
+        this.popups.add(
+          coin.position.x + coin.size / 2,
+          coin.position.y,
+          multiplier > 1 ? `+${multiplier}` : '+1',
+          'coin'
+        );
 
         this.particles.createCoinPickup(
           coin.position.x + coin.size/2,
@@ -1716,6 +1556,12 @@ export class RunnerGame extends BaseGame {
 
         this.activatePowerUp(powerUp.type);
         this.powerupTypesUsed.add(powerUp.type);
+        this.popups.add(
+          powerUp.position.x + powerUp.size.x / 2,
+          powerUp.position.y,
+          this.getPowerUpName(powerUp.type).toUpperCase(),
+          'bonus'
+        );
         
         this.particles.createPowerUpPickup(
           powerUp.position.x + powerUp.size.x/2,
@@ -1727,6 +1573,117 @@ export class RunnerGame extends BaseGame {
         this.services.audio.playSound('powerup');
       }
     }
+  }
+
+  /**
+   * Stage features are resolved before the hazards, because a bounce pad can
+   * carry the player clear of something they would otherwise have hit.
+   */
+  private applyStageFeatures(
+    playerBounds: Rectangle,
+    canTakeDamage: boolean
+  ): void {
+    for (const feature of this.stageFeatures) {
+      const box = feature.getBounds();
+
+      if (feature.kind === 'gust') {
+        // Weather, not a wall: it pushes while you are inside it. Holding
+        // RIGHT beats it, which is the only thing in the game that asks the
+        // player to use the horizontal keys for anything.
+        if (playerBounds.intersects(box)) {
+          this.player.pushBy(-2.1);
+        }
+        continue;
+      }
+
+      if (feature.kind === 'updraft') {
+        if (playerBounds.intersects(box)) {
+          this.player.lift(-0.72);
+          if (Math.random() < 0.25) {
+            this.particles.createJumpDust(
+              this.player.position.x,
+              this.player.position.y + 20
+            );
+          }
+        }
+        continue;
+      }
+
+      if (feature.kind === 'bounce') {
+        if (!playerBounds.intersects(box)) continue;
+        // Only a descent onto the cap fires it; walking into the stalk does
+        // nothing, the same rule as stomping a drone.
+        const falling = this.player.velocity.y > 0;
+        const above = playerBounds.bottom - 12 <= feature.getTopY();
+        if (!falling || !above) continue;
+
+        feature.compress();
+        this.player.launch(-18);
+        this.screenShake.shake(5, 0.14);
+        this.services.audio.playSound('bounce');
+        this.particles.createLandingDust(
+          feature.position.x,
+          feature.position.y - 10
+        );
+        this.popups.add(
+          feature.position.x + feature.size.x / 2,
+          feature.position.y - 26,
+          'BOING!',
+          'stomp'
+        );
+        continue;
+      }
+
+      // Geyser: only the erupting column hurts.
+      if (!feature.isDangerous()) continue;
+      if (canTakeDamage && playerBounds.intersects(box)) {
+        this.takeDamage();
+        return;
+      }
+    }
+  }
+
+  /**
+   * Near misses. Everything currently dangerous is offered to the graze
+   * system; anything the player skims without touching pays out.
+   */
+  private awardGrazes(playerBounds: Rectangle): void {
+    if (this.gameState !== 'playing') return;
+    // Nothing is a near miss while nothing can touch you. Paying out during
+    // the invulnerability window would reward taking the hit.
+    if (this.isInvulnerable || this.hasPowerUp('invincibility')) return;
+
+    const hazards: Grazeable[] = [
+      ...this.obstacles,
+      ...this.flyingEnemies,
+      ...this.hoverEnemies.filter(e => !e.isPopped()),
+      ...this.bossProjectiles,
+      ...this.groundPounds,
+      ...this.stageFeatures.filter(f => f.isDangerous()),
+    ];
+
+    const result = this.grazes.check(playerBounds, hazards);
+    if (result.hits.length === 0) return;
+
+    for (const hit of result.hits) {
+      const value = this.grazes.valueFor(result.streak);
+      this.bonusScore += value;
+      this.popups.add(
+        hit.x,
+        hit.y - 12,
+        result.streak > 1 ? `x${result.streak} +${value}` : `+${value}`,
+        'graze'
+      );
+      // Grazing charges the special-event meter, so precision is a second
+      // route to an event alongside long coin chains.
+      this.specialEventMeter = Math.min(
+        this.specialEventThreshold,
+        this.specialEventMeter + 1
+      );
+      this.particles.createImpactRing(hit.x, hit.y, 'coin');
+    }
+
+    this.services.audio.playSound('click', { volume: 0.35 });
   }
 
   /** Pop a hover drone the player landed on: bounce, coins, feedback. */
@@ -1744,6 +1701,8 @@ export class RunnerGame extends BaseGame {
     // A stomp pays out, and feeds the combo like a coin would.
     const multiplier = this.comboSystem.addCoin();
     this.pickups += 2 * multiplier;
+    this.bonusScore += 50;
+    this.popups.add(cx, cy - 18, '+50', 'stomp');
     this.comboFlash.trigger(this.comboSystem.getCombo());
     this.enemiesStomped++;
   }
@@ -1808,7 +1767,8 @@ export class RunnerGame extends BaseGame {
       powerupsUsed: this.powerupsUsed,
       powerupTypesUsed: this.powerupTypesUsed.size,
       bossesDefeated: this.bossesDefeated,
-      enemiesStomped: this.enemiesStomped
+      enemiesStomped: this.enemiesStomped,
+      nearMisses: this.grazes.getTotal()
     };
 
     // Track analytics for game-specific achievements
@@ -1820,6 +1780,7 @@ export class RunnerGame extends BaseGame {
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'powerup_types', this.powerupTypesUsed.size);
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'bosses_defeated', this.bossesDefeated);
     this.services.analytics.trackGameSpecificStat(this.manifest.id, 'enemies_stomped', this.enemiesStomped);
+    this.services.analytics.trackGameSpecificStat(this.manifest.id, 'near_misses', this.grazes.getTotal());
 
     // Call parent which will handle the final scoring and Hub callback
     super.onGameEnd?.(finalScore);
@@ -1841,6 +1802,7 @@ export class RunnerGame extends BaseGame {
     this.boss = null;
     this.bossProjectiles = [];
     this.groundPounds = [];
+    this.stageFeatures = [];
     this.activePowerUps = [];
     this.particles = new ParticleSystem();
     this.screenShake = new ScreenShake();
@@ -1851,7 +1813,10 @@ export class RunnerGame extends BaseGame {
     this.comboSystem.setOnResetCallback(() => this.comboFlash.resetMilestones());
     this.gameSpeed = 1;
     this.distance = 0;
+    this.bonusScore = 0;
     this.groundScroll = 0;
+    this.popups.clear();
+    this.grazes.reset();
     this.themeLevel = 0;
     this.bossDefeatedForTheme = false;
     this.themeProgress = 0;
@@ -1875,13 +1840,13 @@ export class RunnerGame extends BaseGame {
     this.maxSpeedReached = 1;
     this.stageBannerTimer = 0;
     this.resetTutorialProgress();
-    this.scheduleNextObstacle();
-    this.scheduleNextAerial();
+    this.director.reset();
     this.jumps = 0;
     this.enemiesStomped = 0;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
     this.player = new Player(100, this.groundY - 32, this.groundY, this.canvas.width);
     this.parallaxSystem.reset();
+    this.camera.reset();
   }
 }

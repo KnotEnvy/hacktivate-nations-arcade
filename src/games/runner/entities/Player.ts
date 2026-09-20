@@ -296,6 +296,45 @@ export class Player {
   }
 
   /**
+   * External forces from the stage features.
+   *
+   * All three work in px PER FRAME at 60Hz, the same units the rest of this
+   * class uses, and are applied on top of whatever the player is already
+   * doing rather than replacing it.
+   */
+
+  /** A sideways shove, e.g. a desert gust. Fought with the movement keys. */
+  pushBy(amount: number): void {
+    this.position.x += amount;
+    this.position.x = Math.max(
+      0,
+      Math.min(this.worldWidth - this.size.x, this.position.x)
+    );
+  }
+
+  /** A sustained upward pull, e.g. an updraft column. Caps the rise so the
+   *  player floats up the column instead of being fired through the roof. */
+  lift(amount: number): void {
+    this.velocity.y = Math.max(-7.5, this.velocity.y + amount);
+    // Riding a column refreshes the air jump, so the high route can be
+    // extended rather than being a dead end.
+    this.jumpsRemaining = this.maxJumps;
+    this.isJumping = false;
+  }
+
+  /** A one-shot launch, e.g. a bounce pad. Stronger than any jump. */
+  launch(power: number): void {
+    this.velocity.y = power;
+    this.isGrounded = false;
+    this.isJumping = false;
+    this.jumpHoldTime = 0;
+    this.jumpsRemaining = this.maxJumps;
+    this.squashStretch = 0.55;
+    this.flipping = true;
+    this.flipAngle = 0;
+  }
+
+  /**
    * Take a hit: a short knockback the player rides out.
    *
    * velocity here is px per frame at 60Hz, not px per second — the old call

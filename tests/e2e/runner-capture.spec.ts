@@ -31,6 +31,7 @@ interface RunnerCaptureControl {
   addCombo(n: number): void;
   activatePowerUp(type: string): void;
   setEvent(event: string): void;
+  spawnFeature(kind: string, settleFrames?: number): void;
   loupe(x: number, y: number, w: number, h: number): void;
   loupePlayer(w?: number, h?: number): void;
   loupeBoss(w?: number, h?: number): void;
@@ -137,6 +138,27 @@ test.describe('runner capture', () => {
       await loupe.screenshot({
         path: path.join(OUT, `22z-boss-${i}-${THEMES[i]}.png`),
       });
+    }
+
+    // 3a. Each stage's signature feature, on the stage it belongs to.
+    // Settle frames are tuned so each feature is still mid-screen when the
+    // shutter opens; they scroll at the world speed.
+    const FEATURES: [number, string, number][] = [
+      [1, 'geyser', 52],
+      [2, 'updraft', 50],
+      [3, 'gust', 78],
+      [4, 'bounce', 48],
+    ];
+    for (const [themeIndex, kind, settle] of FEATURES) {
+      await page.evaluate(
+        ([idx]) => window.__rc!.setTheme(idx as number, 60),
+        [themeIndex]
+      );
+      await page.evaluate(
+        ([k, frames]) => window.__rc!.spawnFeature(k as string, frames as number),
+        [kind, settle]
+      );
+      await shot(`15-feature-${kind}`);
     }
 
     // 3b. The stage-clear screen, by finishing a boss off.

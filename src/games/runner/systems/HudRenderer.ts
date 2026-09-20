@@ -52,7 +52,7 @@ function resolveFamily(variable: string, fallback: string): string {
 }
 
 let displayFamily: string | null = null;
-let sansFamily: string | null = null;
+let sansFamily_: string | null = null;
 let monoFamily: string | null = null;
 
 /** Orbitron: the wordmark and big numerals only. */
@@ -65,10 +65,16 @@ export function displayFont(size: number, weight = 700): string {
 
 /** Inter: everything the player reads as prose. */
 export function sansFont(size: number, weight = 600): string {
-  if (sansFamily === null) {
-    sansFamily = resolveFamily('--font-inter', 'system-ui, sans-serif');
+  return `${weight} ${size}px ${sansFamily()}`;
+}
+
+/** The resolved Inter family on its own, for callers that build their own
+ *  font strings (the score popups draw in the game layer, not the HUD). */
+export function sansFamily(): string {
+  if (sansFamily_ === null) {
+    sansFamily_ = resolveFamily('--font-inter', 'system-ui, sans-serif');
   }
-  return `${weight} ${size}px ${sansFamily}`;
+  return sansFamily_;
 }
 
 /** JetBrains Mono: anything the player reads as a value. */
@@ -117,6 +123,9 @@ export interface HudState {
   boss: BossHudState | null;
   /** Metres until the boss arrives, or null when that is not imminent. */
   bossIn: number | null;
+  /** Live near-miss chain, and how much of its window is left. */
+  grazeStreak: number;
+  grazeWindowLeft: number;
   stageName: string;
   stageNumber: number;
   accent: string;
@@ -362,11 +371,18 @@ export class HudRenderer {
       ctx.fillStyle = fill;
       ctx.fillRect(x, y + 6, barW * t, 5);
 
-      // Nearly full: say so, because it is the player's cue to keep the chain.
-      if (t > 0.75) {
+      // A live near-miss chain shares this panel, because grazing is the
+      // other way to charge it. When one is running it is the more urgent
+      // number, so it takes the slot.
+      ctx.textAlign = 'right';
+      if (s.grazeStreak > 1) {
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = monoFont(10, 700);
+        ctx.fillText(`NEAR MISS x${s.grazeStreak}`, x + barW, y);
+      } else if (t > 0.75) {
+        // Nearly full: the player's cue to keep the chain going.
         ctx.fillStyle = UI.coin;
         ctx.font = monoFont(10, 700);
-        ctx.textAlign = 'right';
         ctx.fillText('READY SOON', x + barW, y);
       }
       return;

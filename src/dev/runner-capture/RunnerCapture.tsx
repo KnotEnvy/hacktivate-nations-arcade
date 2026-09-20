@@ -104,6 +104,8 @@ interface GameInternals {
   spawnPowerUp(): void;
   activeEvent: string;
   eventTimer: number;
+  stageFeatures: unknown[];
+  spawnStageFeature(kind: string): void;
   comboSystem: { addCoin(): number };
   player: { position: { x: number; y: number } };
 }
@@ -132,6 +134,8 @@ export interface RunnerCaptureControl {
   addCombo(n: number): void;
   activatePowerUp(type: string): void;
   setEvent(event: string): void;
+  /** Put the current stage's signature feature on screen right now. */
+  spawnFeature(kind: string, settleFrames?: number): void;
   /** Blit a magnified crop of the last frame into the loupe canvas. */
   loupe(x: number, y: number, w: number, h: number): void;
   /** Blit a magnified crop centred on the runner, wherever they are. */
@@ -296,6 +300,10 @@ export default function RunnerCapture() {
       activatePowerUp: (type: string) => {
         internals().activatePowerUp(type);
         step(2);
+      },
+      spawnFeature: (kind: string, settleFrames = 60) => {
+        internals().spawnStageFeature(kind);
+        step(settleFrames);
       },
       setEvent: (event: string) => {
         internals().activeEvent = event;

@@ -62,8 +62,11 @@ export class ParallaxSystem {
   private groundY: number;
   private distance = 0;
   private time = 0;
+  /** Margin drawn past every edge, for the camera's pull-back. */
+  private overscan = 110;
 
   private bands: Band[] = [];
+  private foreground!: Band;
   /** One cached strip per band, rebuilt whenever the theme changes. */
   private strips = new Map<string, HTMLCanvasElement>();
   private stripTheme: EnvironmentTheme | null = null;
@@ -74,6 +77,10 @@ export class ParallaxSystem {
   /** Strips are twice the canvas so repeats stay off-screen for a long while. */
   private get stripWidth(): number {
     return this.canvasWidth * 2;
+  }
+
+  setOverscan(margin: number): void {
+    this.overscan = margin;
   }
 
   constructor(canvasWidth: number, canvasHeight: number, groundY: number) {
@@ -115,6 +122,22 @@ export class ParallaxSystem {
         draw: (ctx, p, w) => this.drawNear(ctx, p, w, 90),
       },
     ];
+
+    // Drawn separately, AFTER the entities, so it occludes them. One band of
+    // near-black silhouettes streaking past the camera is the cheapest depth
+    // cue there is: it puts the playfield inside the world rather than in
+    // front of a backdrop.
+    // Kept LOW on purpose. The first pass ran 96px tall and its grass swallowed
+    // the runner, who has to be readable at all times. At this height the
+    // silhouettes streak past the player's feet instead of across their body.
+    const fgHeight = 62;
+    this.foreground = {
+      name: 'foreground',
+      speed: 1.75,
+      top: this.canvasHeight - fgHeight,
+      height: fgHeight,
+      draw: (ctx, p, w) => this.drawForeground(ctx, p, w, fgHeight),
+    };
   }
 
   /**
@@ -131,6 +154,8 @@ export class ParallaxSystem {
     this.distance = 0;
     this.time = 0;
     this.motes = [];
+    this.strips.clear();
+    this.stripTheme = null;
   }
 
   render(ctx: CanvasRenderingContext2D, theme: EnvironmentTheme): void {
@@ -151,14 +176,30 @@ export class ParallaxSystem {
     this.renderMotes(ctx, palette);
   }
 
+  /**
+   * The occluding band. Called by the game AFTER the entities are drawn, so
+   * it passes in front of the runner.
+   */
+  renderForeground(ctx: CanvasRenderingContext2D, theme: EnvironmentTheme): void {
+    const palette = EnvironmentSystem.paletteFor(theme);
+    if (this.stripTheme !== theme) {
+      this.strips.clear();
+      this.stripTheme = theme;
+    }
+    this.renderBand(ctx, this.foreground, palette);
+  }
+
   // ---------------------------------------------------------------- sky ----
 
   /** Sky gradient plus whatever hangs in it. Drawn every frame; it is cheap. */
   private renderSky(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
+    // Reach past the frame: the camera pulls back at speed and would
+    // otherwise expose bare canvas above and to the sides of the sky.
+    const over = this.overscan;
     const gradient = ctx.createLinearGradient(0, 0, 0, this.groundY);
     for (const stop of p.sky) gradient.addColorStop(stop.at, stop.color);
     ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.canvasWidth, this.groundY);
+    ctx.fillRect(-over, -over, this.canvasWidth + over * 2, this.groundY + over);
 
     if (p.celestial === 'moon') this.drawStars(ctx, p);
     this.drawCelestial(ctx, p);
@@ -169,7 +210,7 @@ export class ParallaxSystem {
     haze.addColorStop(0, this.withAlpha(p.haze, 0));
     haze.addColorStop(1, this.withAlpha(p.haze, 0.55));
     ctx.fillStyle = haze;
-    ctx.fillRect(0, this.groundY - 220, this.canvasWidth, 220);
+    ctx.fillRect(-over, this.groundY - 220, this.canvasWidth + over * 2, 220);
   }
 
   private drawStars(ctx: CanvasRenderingContext2D, p: ThemePalette): void {
@@ -939,6 +980,63 @@ export class ParallaxSystem {
         }
       }
       // The remaining tenth is left empty, so the band breathes.
+    }
+  }
+
+  /**
+   * Foreground silhouettes: grass blades, branches and rocks along the very
+   * bottom of the frame, almost black so they never compete with the runner.
+   */
+  private drawForeground(
+    ctx: CanvasRenderingContext2D,
+    p: ThemePalette,
+    width: number,
+    h: number
+  ): void {
+    const ink = this.shade(p.groundDeep, -0.55);
+    // Sparse: a dense band reads as a fence rather than as foreground.
+    const slot = 78;
+    const count = Math.round(width / slot);
+
+    for (let i = 0; i < count; i++) {
+      const x = (i / count) * width + hash(i + 17) * 24;
+      const kind = hash(i + 601);
+      ctx.fillStyle = ink;
+      ctx.strokeStyle = ink;
+
+      if (kind < 0.46) {
+        // A fan of tall blades reaching up from the bottom edge.
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        const blades = 4 + Math.floor(hash(i + 71) * 4);
+        for (let b = 0; b < blades; b++) {
+          const bx = x + b * 7;
+          const bh = 20 + hash(i * 13 + b) * 30;
+          ctx.beginPath();
+          ctx.moveTo(bx, h);
+          ctx.quadraticCurveTo(bx + 7, h - bh * 0.6, bx + (b - 2) * 5, h - bh);
+          ctx.stroke();
+        }
+      } else if (kind < 0.62) {
+        // A boulder breaking the bottom edge.
+        const r = 20 + hash(i + 133) * 18;
+        ctx.beginPath();
+        ctx.ellipse(x, h - r * 0.2, r, r * 0.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (kind < 0.74) {
+        // A branch leaning in, with a few leaf clumps.
+        ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.moveTo(x - 24, h);
+        ctx.quadraticCurveTo(x + 4, h - 20, x + 44, h - 34);
+        ctx.stroke();
+        for (let l = 0; l < 3; l++) {
+          ctx.beginPath();
+          ctx.ellipse(x + 10 + l * 15, h - 18 - l * 7, 10, 6, -0.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // The rest is empty: the band has to breathe or it becomes a fence.
     }
   }
 

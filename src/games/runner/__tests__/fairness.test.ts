@@ -17,6 +17,7 @@ import { Obstacle } from '../entities/Obstacle';
 import { Player } from '../entities/Player';
 import { HoverEnemy } from '../entities/HoverEnemy';
 import { Boss } from '../entities/Boss';
+import { Director, DirectorState, SpawnApi } from '../systems/Director';
 import { initGame, step, Harness } from '@/games/shared/gameTestHarness';
 
 /** The private surface these tests reach through. */
@@ -26,14 +27,11 @@ interface RunnerInternals {
   gameSpeed: number;
   groundY: number;
   lives: number;
-  nextObstacleDistance: number;
   obstacles: Obstacle[];
   player: Player;
   hoverEnemies: HoverEnemy[];
   pickups: number;
   enemiesStomped: number;
-  scheduleNextObstacle(): void;
-  unitsPerSecond(): number;
   spawnObstacle(offset: number, type: string): void;
   stompHoverEnemy(enemy: HoverEnemy): void;
 }
@@ -52,33 +50,58 @@ function startedGame(): { h: Harness; g: RunnerInternals } {
 const GROUND_Y = 550;
 
 describe('spawn timing stays fair as the run speeds up', () => {
+  /**
+   * These target Director directly. The rule they protect lives there, and
+   * driving it in isolation covers the whole plausible range of a run far
+   * more thoroughly than stepping a live game could.
+   */
+  const stateAt = (distance: number): DirectorState => ({
+    distance,
+    gameSpeed: 1 + 2.1 * (1 - Math.exp(-distance / 5200)),
+    tutorial: false,
+    tutorialStep: 0,
+    feature: null,
+  });
+
+  /** A SpawnApi that records nothing — we only care about the clock. */
+  const silentApi = (): SpawnApi => ({
+    spawnObstacle: () => {},
+    spawnCoinArc: () => {},
+    spawnLowCoins: () => {},
+    spawnPowerUp: () => {},
+    spawnFlyingEnemy: () => {},
+    spawnHoverEnemy: () => {},
+    spawnStageFeature: () => {},
+    groundBusy: () => false,
+  });
+
+  /** Seconds between this spawn and the next, at a given distance. */
+  const gapSeconds = (director: Director, state: DirectorState): number => {
+    const api = silentApi();
+    director.update(state, api);
+    const internals = director as unknown as { nextObstacle: number };
+    return (
+      (internals.nextObstacle - state.distance) /
+      director.unitsPerSecond(state.gameSpeed)
+    );
+  };
+
   it('never schedules two hazards less than 0.9s apart, at any distance', () => {
-    const { g } = startedGame();
-
-    // Walk the whole plausible range of a run, not just the start.
     for (let distance = 0; distance <= 40000; distance += 250) {
-      g.distance = distance;
-      g.gameSpeed = 1 + 2.1 * (1 - Math.exp(-distance / 5200));
-
+      const state = stateAt(distance);
       for (let sample = 0; sample < 25; sample++) {
-        g.scheduleNextObstacle();
-        const gapUnits = g.nextObstacleDistance - g.distance;
-        const gapSeconds = gapUnits / g.unitsPerSecond();
-        expect(gapSeconds).toBeGreaterThanOrEqual(0.9);
+        const director = new Director();
+        expect(gapSeconds(director, state)).toBeGreaterThanOrEqual(0.9);
       }
     }
   });
 
   it('holds the interval in SECONDS rather than in distance units', () => {
-    const { g } = startedGame();
-
     const sampleAt = (distance: number): number => {
-      g.distance = distance;
-      g.gameSpeed = 1 + 2.1 * (1 - Math.exp(-distance / 5200));
+      const state = stateAt(distance);
       let total = 0;
       for (let i = 0; i < 400; i++) {
-        g.scheduleNextObstacle();
-        total += (g.nextObstacleDistance - g.distance) / g.unitsPerSecond();
+        total += gapSeconds(new Director(), state);
       }
       return total / 400;
     };
@@ -165,8 +188,7 @@ describe('the tutorial teaches what it claims', () => {
       gameState: string;
       tutorialProgress: { currentStep: number };
       obstacles: Obstacle[];
-      nextObstacleDistance: number;
-      distance: number;
+          distance: number;
     };
     t.gameState = 'tutorial';
     t.tutorialProgress.currentStep = 1;

@@ -130,10 +130,90 @@ needs), stage-clear, and a recap with a letter grade and an eight-tile stat grid
 
 ---
 
+---
+
+## The depth round (September 20, 2026)
+
+The polish round made the runner look and feel right. This one gives it
+something to be good AT.
+
+### Every stage now has a verb of its own
+
+The five stages were art variations on one loop: jump, slide, collect. Each
+one past the first now carries a signature interactable (`entities/StageFeature.ts`),
+and each leans on a different verb:
+
+| Stage | Feature | Asks for |
+| --- | --- | --- |
+| 1 Meadow Run | — | nothing. It is the stage that teaches the basics |
+| 2 Ember Coast | Ember geyser | **timing** — read the sleep/warn/erupt cycle and cross while it sleeps |
+| 3 Neon Skyline | Updraft vent | **routing** — ride the column to a high coin line, with the air jump refunded |
+| 4 Dune Sea | Sand gust | **steering** — hold ground against it with the movement keys |
+| 5 Deep Canopy | Bounce pad | **chaining** — a launch stronger than any jump, into the canopy |
+
+The gust is the interesting one: left/right had almost no purpose before it.
+Every feature spawns with the reward for engaging with it attached — a coin
+line up the updraft, a stack over the pad — so its purpose is legible the
+first time a player meets one. A geyser always warns before it fires, and
+only the erupting column is dangerous.
+
+### Near misses
+
+Before this, the optimal play was to jump as early as possible: there was no
+upside to cutting it fine, so the safest run was also the highest-scoring one.
+`systems/GrazeSystem.ts` pays out for passing inside a 16px band around a
+hazard **without** touching it. The value climbs with the chain and caps, the
+chain lapses after 2.2s, each hazard pays once, touching one burns the chance,
+and nothing pays while the player is invulnerable — a near miss has to be near
+something that could actually hit you.
+
+Grazing also charges the special-event meter, so precision is a second route
+to an event alongside long coin chains. The live chain shares the event panel
+in the HUD.
+
+### Score means something now
+
+`score` was `distance / 10` and nothing else, recomputed every frame. It is now
+distance plus a `bonusScore` the player earns: near misses, drone stomps (+50),
+boss hits (+100) and boss kills (+1000). A skilful run outscores a long one.
+
+`systems/ScorePopups.ts` floats the number off whatever earned it — the first
+score popups the game has had, and the thing that makes grazing legible.
+
+### Graphics
+
+- **A foreground occlusion band** (`ParallaxSystem.renderForeground`) drawn
+  AFTER the entities, so near-black silhouettes streak past in front of the
+  runner. It is kept deliberately low: the first pass ran 96px tall and its
+  grass swallowed the player.
+- **A camera that reacts** (`systems/GameCamera.ts`): pulls back up to 9% as
+  the run speeds up (which is also the fair thing to do, since hazards arrive
+  sooner at speed), and drifts down when the player goes high so a bounce-pad
+  launch does not pin them to the top edge. Anchored on the bottom centre so
+  the ground line stays put.
+- **Speed lines** at high speed, kept to the upper sky and the strip just
+  above the floor so they never sit on the hazard being read.
+- Because the camera pulls back, everything that fills the frame is now drawn
+  **overscanned** (`WORLD_OVERSCAN`), and the full-frame effects moved OUT of
+  the camera transform into screen space where they belong.
+
+### Two extractions
+
+`RunnerGame` crossed the repo's 1500-line guardrail twice during this round,
+and the policy is to refactor a monolith when it is next actively extended:
+
+- `systems/Director.ts` — the difficulty curve, the spawn clock and the
+  pattern table, with no knowledge of entities, rendering or collision. It
+  asks for spawns through a `SpawnApi` the game implements. The fairness
+  tests now drive it directly, which covers the whole range of a run far more
+  thoroughly than stepping a live game could.
+- `systems/WorldRenderer.ts` — the floor, the ground dressing, the speed lines
+  and the vignettes.
+
 ## Verifying it
 
-`npm run test:dev -- --runInBand src/games/runner` runs the 18 fairness tests.
-They pin the *rules*, not the tuning numbers:
+`npm run test:dev -- --runInBand src/games/runner` runs the 37 tests. They pin
+the *rules*, not the tuning numbers:
 
 - no two hazards are ever scheduled less than 0.9s apart, at any distance
 - intervals hold in seconds rather than in distance units
@@ -159,6 +239,13 @@ the damage box is the bottom 45% inset 28% from each side, so **jump at the
 boss's flank and come down on its wide top**. Standing under a monster is
 still a hit.
 
+`features.test.ts` covers the depth round: that four of the five stages have a
+feature and stage 1 has none, that all four are different, that only the
+current stage's feature spawns, that the pad fires on a descent and ignores a
+rise, that a geyser never erupts without warning first, that the updraft is
+capped and the gust cannot push anyone off the world, and that a graze pays
+for closeness but never for contact.
+
 ### Looking at it
 
 There is a dev-only capture harness, mirroring the Dungeon Crawl one:
@@ -182,6 +269,8 @@ why the gate stays lean.
 
 ## Still open
 
+- Stage 1 has no feature of its own by design, but by the time a player loops
+  back to it they may want one.
 - Endless mode past stage 5 re-uses the same five stages with a boss HP bump
   (+50% every five bosses). It works, but nothing new is introduced.
 - The charge attack returns the boss to `baseX` at a fixed rate and can look
