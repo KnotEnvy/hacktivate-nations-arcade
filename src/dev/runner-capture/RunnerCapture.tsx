@@ -94,6 +94,8 @@ interface GameInternals {
     maxHealth: number;
     position: { x: number; y: number };
     takeDamage(n: number): void;
+    isExposed(): boolean;
+    update(dt: number, speed: number): void;
   } | null;
   bossProjectiles: unknown[];
   groundPounds: unknown[];
@@ -130,6 +132,8 @@ export interface RunnerCaptureControl {
   hurtBoss(fraction: number): void;
   /** Finish the live boss off, to reach the stage-clear screen. */
   killBoss(): void;
+  /** Step until the live boss is open (or shut), for the fight's two faces. */
+  waitForBossWindow(open: boolean, limit?: number): void;
   /** Push the combo counter up without having to catch coins. */
   addCombo(n: number): void;
   activatePowerUp(type: string): void;
@@ -286,6 +290,14 @@ export default function RunnerCapture() {
           boss.takeDamage(1);
         }
         step(4);
+      },
+      waitForBossWindow: (open: boolean, limit = 900) => {
+        for (let i = 0; i < limit; i++) {
+          const boss = internals().boss;
+          if (!boss) return;
+          if (boss.isExposed() === open) return;
+          step(1);
+        }
       },
       killBoss: () => {
         const boss = internals().boss;

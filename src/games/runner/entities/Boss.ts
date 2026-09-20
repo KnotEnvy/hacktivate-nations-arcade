@@ -23,10 +23,18 @@ interface BossConfig {
   eyeColor: string;
 }
 
+/**
+ * Health pools are sized against the OPENING, not against how fast a player
+ * can mash. A boss is only stompable in the ~1.9s window after each attack,
+ * which is room for two or three hits, and a cycle runs about three seconds.
+ * These numbers put the five fights between roughly ten and twenty-five
+ * seconds. They were nearly double this when a boss could be stomped at any
+ * point its hover wave happened to dip.
+ */
 const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   sun: {
     name: 'Sun Guardian',
-    hp: 10,
+    hp: 6,
     attackSpeed: 1,
     patterns: [
       { type: 'projectile', windupTime: 0.5, executeTime: 0.3, cooldown: 2 }
@@ -38,7 +46,7 @@ const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   },
   phoenix: {
     name: 'Phoenix',
-    hp: 12,
+    hp: 7,
     attackSpeed: 0.9,
     patterns: [
       { type: 'projectile', windupTime: 0.4, executeTime: 0.3, cooldown: 1.8 },
@@ -51,7 +59,7 @@ const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   },
   shadow: {
     name: 'Shadow Beast',
-    hp: 15,
+    hp: 9,
     attackSpeed: 0.8,
     patterns: [
       { type: 'projectile', windupTime: 0.3, executeTime: 0.3, cooldown: 1.5 },
@@ -65,7 +73,7 @@ const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   },
   sandworm: {
     name: 'Sand Worm',
-    hp: 18,
+    hp: 11,
     attackSpeed: 0.75,
     patterns: [
       { type: 'projectile', windupTime: 0.3, executeTime: 0.3, cooldown: 1.2 },
@@ -79,7 +87,7 @@ const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   },
   treant: {
     name: 'Ancient Treant',
-    hp: 20,
+    hp: 13,
     attackSpeed: 0.7,
     patterns: [
       { type: 'volley', windupTime: 0.4, executeTime: 0.5, cooldown: 1.5 },
@@ -138,6 +146,18 @@ export class Boss {
   private chargeTargetX: number = 0;
   private chargingActive: boolean = false;
 
+  /**
+   * Seconds of vulnerability left.
+   *
+   * The five fights used to be the same fight: the boss rode a sine wave and
+   * could be stomped whenever the wave happened to dip. That made the attacks
+   * decoration — you never had to respond to one, only to stand somewhere and
+   * wait. Now a boss rides HIGH by default and drops into reach only after it
+   * finishes an attack. The rhythm of every fight becomes dodge, then punish.
+   */
+  private exposedTimer: number = 0;
+  private readonly exposeDuration: number = 1.9;
+
   // Animation
   private animationTime: number = 0;
   private damageFlashTimer: number = 0;
@@ -171,6 +191,7 @@ export class Boss {
 
   update(dt: number, gameSpeed: number): void {
     this.animationTime += dt;
+    if (this.exposedTimer > 0) this.exposedTimer = Math.max(0, this.exposedTimer - dt);
 
     // Damage flash decay
     if (this.damageFlashTimer > 0) {
@@ -305,6 +326,8 @@ export class Boss {
         if (this.pendingAttack && this.attackStateTimer >= this.pendingAttack.executeTime) {
           this.attackState = 'cooldown';
           this.attackStateTimer = 0;
+          // The opening. Committing to an attack is what leaves it open.
+          this.exposedTimer = this.exposeDuration;
         }
         break;
 
@@ -365,27 +388,31 @@ export class Boss {
     this.movementTimer += dt;
 
     // Vertical wave motion
-    // The hover band is set by the JUMP ARC, not by taste.
+    // Two bands, and which one the boss rides is the whole fight.
     //
     // Measured: a tapped jump lifts the runner 86px, a full-hold one 183px.
-    // The band has to satisfy three things at once —
     //
-    //   reachable   the top edge dips inside 183px at the bottom of the wave
-    //   survivable  the BOTTOM edge stays above a standing runner's head, or
-    //               simply being near the boss at its low point is a free hit
-    //               (this is what made the fight feel unfair: the body came
-    //               down to the floor and there was nowhere to stand)
-    //   rhythmic    the top rises back out of reach, so timing matters
+    //   GUARD    centred 246px up, so its LOWEST point is still well above a
+    //            full-hold jump. While the boss is guarding there is nothing
+    //            to do but read its attacks and stay alive.
+    //   EXPOSED  centred 178px up. The top edge dips to ~156px, inside the
+    //            arc, and the underside still clears a standing runner's head
+    //            so there is somewhere to line the jump up from.
     //
-    // -196 +/- 40 on a 112px body puts the top between groundY-236 and
-    // groundY-156 and the underside between groundY-124 and groundY-44.
+    // The two bands do not overlap: the drop has to be legible at a glance,
+    // not a few pixels of difference.
+    //
+    // It eases between them rather than snapping, so the drop itself is the
+    // tell that the window has opened.
+    const exposed = this.isExposed();
     const waveSpeed = this.phase === 'rage' ? 2 : 1.5;
-    const waveAmplitude = this.phase === 'rage' ? 46 : 40;
+    const waveAmplitude = exposed ? 22 : 30;
+    const band = exposed ? 178 : 246;
     this.targetY =
-      this.groundY - 196 + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
+      this.groundY - band + Math.sin(this.movementTimer * waveSpeed) * waveAmplitude;
 
     const dy = this.targetY - this.position.y;
-    this.position.y += dy * dt * 3;
+    this.position.y += dy * dt * 4.2;
 
     // Horizontal bobbing
     const bobAmplitude = this.phase === 'rage' ? 30 : 20;
@@ -556,6 +583,7 @@ export class Boss {
 
     // Faces are per-boss; only the anger is shared.
     this.renderRageBrow(ctx, x, y, w);
+    this.renderExposedTell(ctx, cx, cy, w);
 
     // Rage aura
     if (this.phase === 'rage') {
@@ -1242,6 +1270,47 @@ export class Boss {
     ctx.restore();
   }
 
+  /**
+   * The opening, drawn so it cannot be missed: a bright ring closing in as
+   * the window runs out, and a chevron pointing down at the landing spot.
+   * Without a tell, a timing window is just an invisible rule.
+   */
+  private renderExposedTell(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    w: number
+  ): void {
+    if (!this.isExposed()) return;
+    const t = this.exposedTimer / this.exposeDuration;
+
+    ctx.save();
+    // The ring shrinks toward the boss as the window closes.
+    const radius = w * (0.5 + t * 0.32);
+    ctx.strokeStyle = '#FFF6C9';
+    ctx.globalAlpha = 0.35 + t * 0.4;
+    ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
+    ctx.lineDashOffset = -this.animationTime * 30;
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // A down-chevron over the crown: land HERE.
+    const bob = Math.sin(this.animationTime * 9) * 4;
+    ctx.globalAlpha = 0.55 + Math.abs(Math.sin(this.animationTime * 6)) * 0.45;
+    ctx.fillStyle = '#FFF6C9';
+    const topY = cy - w * 0.52 - 16 + bob;
+    ctx.beginPath();
+    ctx.moveTo(cx - 11, topY);
+    ctx.lineTo(cx + 11, topY);
+    ctx.lineTo(cx, topY + 14);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
   /** Rage brow: one shared overlay, so anger reads the same on every boss. */
   private renderRageBrow(ctx: CanvasRenderingContext2D, x: number, y: number, w: number): void {
     if (this.phase !== 'rage') return;
@@ -1412,6 +1481,11 @@ export class Boss {
   // Getters
   getBounds(): Rectangle {
     return new Rectangle(this.position.x, this.position.y, this.size.x, this.size.y);
+  }
+
+  /** True while the boss is in its post-attack opening. */
+  isExposed(): boolean {
+    return this.exposedTimer > 0 && this.phase !== 'intro' && this.phase !== 'defeat';
   }
 
   isDefeated(): boolean {

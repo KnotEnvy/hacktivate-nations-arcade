@@ -1197,6 +1197,7 @@ export class RunnerGame extends BaseGame implements SpawnApi {
               health: this.boss.health,
               maxHealth: this.boss.maxHealth,
               phase: this.boss.getPhase(),
+              exposed: this.boss.isExposed(),
               glowColor: this.boss.getConfig().glowColor,
               primaryColor: this.boss.getConfig().primaryColor,
               secondaryColor: this.boss.getConfig().secondaryColor,
@@ -1519,21 +1520,24 @@ export class RunnerGame extends BaseGame implements SpawnApi {
 
     // Boss contact.
     //
-    // The boss is split into two boxes rather than one:
+    // Three boxes, and which one applies depends on the fight's rhythm:
     //
-    //   STOMP  the top 55% of the body, full width. Touching it hurts the
-    //          boss, whichever way the runner is moving. The old rule also
-    //          required falling, which meant a jump that rose into the boss
-    //          always cost a life — and since the body hangs low, that was the
-    //          default result of jumping at one.
-    //   BODY   the bottom 45%, inset by 28% on each side. This is the part
-    //          that hurts: stand under a monster and you get hit. Insetting it
-    //          leaves the flanks clear, so the answer is to jump at the boss's
-    //          EDGE and come down on the wide top.
+    //   STOMP  the top 55%, full width, and ONLY while the boss is in its
+    //          post-attack opening. Gating on the window rather than on how
+    //          low the hover wave happens to be makes the rule something the
+    //          game can state and the player can read, instead of a geometry
+    //          accident. The boss also drops into reach while open, so the
+    //          tell and the rule agree.
+    //   GUARD  the same box while it is shut. Touching it is not punished —
+    //          trying at the wrong moment should teach, not cost a life — but
+    //          it bounces off and does no damage.
+    //   BODY   the bottom 45%, inset 28% each side. This hurts: stand under a
+    //          monster and you get hit. The inset leaves the flanks clear, so
+    //          the approach is to jump at the boss's EDGE and come down.
     //
-    // Damage from the boss also respects the post-hit invulnerability window.
-    // It did not before, so a single bad approach drained all three lives in
-    // about a fifth of a second.
+    // Damage from the boss respects the post-hit invulnerability window. It
+    // did not before, so one bad approach drained three lives in a fifth of
+    // a second.
     if (this.boss && !this.boss.isDefeated() && this.bossHitCooldown <= 0) {
       const b = this.boss.getBounds();
       const stompBox = new Rectangle(b.x, b.y, b.width, b.height * 0.55);
@@ -1545,34 +1549,22 @@ export class RunnerGame extends BaseGame implements SpawnApi {
       );
 
       if (playerBounds.intersects(stompBox)) {
-        this.boss.takeDamage(1);
-        this.player.velocity.y = -10;
-        // Without a cooldown the bounce re-enters the same box next frame and
-        // drains the whole health bar in a handful of frames.
-        this.bossHitCooldown = 0.4;
-
-        this.particles.createImpactRing(
-          this.boss.position.x + this.boss.size.x / 2,
-          this.boss.position.y,
-          'boss'
-        );
-        this.particles.createBossHitEffect(
-          this.boss.position.x + this.boss.size.x / 2,
-          this.boss.position.y + this.boss.size.y / 2,
-          this.boss.getBossType()
-        );
-
-        this.screenShake.shake(6, 0.16);
-        this.hitStopTimer = 0.05;
-        this.services.audio.playSound('hit');
-        this.pickups += 2;
-        this.bonusScore += BOSS_HIT_SCORE;
-        this.popups.add(
-          this.boss.position.x + this.boss.size.x / 2,
-          this.boss.position.y - 10,
-          `+${BOSS_HIT_SCORE}`,
-          'boss'
-        );
+        if (this.boss.isExposed()) {
+          this.hitBoss();
+        } else {
+          // Shrugged off. A bounce and a thud, so the lesson is "not yet"
+          // rather than "never do that".
+          this.player.velocity.y = -6;
+          this.bossHitCooldown = 0.35;
+          this.screenShake.shake(3, 0.1);
+          this.services.audio.playSound('bounce', { volume: 0.5 });
+          this.popups.add(
+            this.boss.position.x + this.boss.size.x / 2,
+            this.boss.position.y - 10,
+            'GUARDED',
+            'warn'
+          );
+        }
       } else if (canTakeDamage && playerBounds.intersects(bodyBox)) {
         this.takeDamage();
         return;
@@ -1768,6 +1760,32 @@ export class RunnerGame extends BaseGame implements SpawnApi {
     }
 
     this.services.audio.playSound('click', { volume: 0.35 });
+  }
+
+  /** A landed stomp on an open boss. */
+  private hitBoss(): void {
+    if (!this.boss) return;
+
+    this.boss.takeDamage(1);
+    this.player.velocity.y = -10;
+    // Without a cooldown the bounce re-enters the box next frame and drains
+    // the whole health bar in a handful of frames.
+    this.bossHitCooldown = 0.4;
+
+    const cx = this.boss.position.x + this.boss.size.x / 2;
+    this.particles.createImpactRing(cx, this.boss.position.y, 'boss');
+    this.particles.createBossHitEffect(
+      cx,
+      this.boss.position.y + this.boss.size.y / 2,
+      this.boss.getBossType()
+    );
+
+    this.screenShake.shake(6, 0.16);
+    this.hitStopTimer = 0.05;
+    this.services.audio.playSound('hit');
+    this.pickups += 2;
+    this.bonusScore += BOSS_HIT_SCORE;
+    this.popups.add(cx, this.boss.position.y - 10, `+${BOSS_HIT_SCORE}`, 'boss');
   }
 
   /** Pop a hover drone the player landed on: bounce, coins, feedback. */

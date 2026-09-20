@@ -28,6 +28,7 @@ interface RunnerCaptureControl {
   bossFight(settleFrames?: number): void;
   hurtBoss(fraction: number): void;
   killBoss(): void;
+  waitForBossWindow(open: boolean, limit?: number): void;
   addCombo(n: number): void;
   activatePowerUp(type: string): void;
   setEvent(event: string): void;
@@ -128,12 +129,18 @@ test.describe('runner capture', () => {
       await page.evaluate(() => window.__rc!.bossFight(320));
       await shot(`20-boss-${i}-${THEMES[i]}`);
 
+      // The two faces of a fight: shut, then open.
+      await page.evaluate(() => window.__rc!.waitForBossWindow(false));
+      await shot(`21-boss-${i}-${THEMES[i]}-guarded`);
+      await page.evaluate(() => window.__rc!.waitForBossWindow(true));
+      await shot(`22-boss-${i}-${THEMES[i]}-opening`);
+
       // Rage phase: below 30% health the fight changes character.
       await page.evaluate(() => {
         window.__rc!.hurtBoss(0.25);
         window.__rc!.step(120);
       });
-      await shot(`21-boss-${i}-${THEMES[i]}-rage`);
+      await shot(`23-boss-${i}-${THEMES[i]}-rage`);
       await page.evaluate(() => window.__rc!.loupeBoss());
       await loupe.screenshot({
         path: path.join(OUT, `22z-boss-${i}-${THEMES[i]}.png`),

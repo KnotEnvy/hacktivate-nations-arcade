@@ -195,6 +195,32 @@ score popups the game has had, and the thing that makes grazing legible.
   is worth protecting, so it arrives as a reward rather than as another
   number to ignore.
 
+### Boss fights are a fight now
+
+The five fights used to be the same fight. The boss rode a sine wave and
+could be stomped whenever the wave happened to dip, which made its attacks
+decoration: you never had to respond to one, only to stand somewhere and
+wait.
+
+A boss now rides **high and shut** by default and drops into an **opening**
+for 1.9s after it finishes each attack. That is the only time a stomp lands.
+Committing to an attack is what leaves it open, so every fight runs on the
+same rhythm — dodge, then punish.
+
+- The rule is the WINDOW, not the geometry. Gating on `isExposed()` rather
+  than on how low the hover happens to be makes it something the game can
+  state and the player can read, with no edge cases at the band boundaries.
+  The two hover bands (246px shut, 178px open, deliberately non-overlapping)
+  are the *tell*, and the tests check both independently.
+- Striking a shut boss is **refused, not punished**: a bounce, a thud and a
+  "GUARDED" popup. Trying at the wrong moment should teach, not cost a life.
+- The opening carries a closing dashed ring and a chevron over the crown, and
+  the boss bar says OPENING — STRIKE NOW. A timing window with no tell is
+  just an invisible rule.
+- Health pools dropped by about 40% (6/7/9/11/13), because hits are now
+  rationed by the window rather than by how fast a player can mash. The five
+  fights land between roughly ten and twenty-five seconds.
+
 ### The score's balance
 
 A first pass paid 1000 for a boss and 100 per hit on it, which at a dozen

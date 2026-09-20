@@ -323,7 +323,7 @@ describe('stomping a hover drone', () => {
   });
 });
 
-describe('bosses stay inside the jump arc', () => {
+describe('boss fights are dodge-then-punish', () => {
   /** How high a full-hold jump actually lifts the runner, measured not guessed. */
   function measuredJumpPeak(): number {
     const player = new Player(100, GROUND_Y - 32, GROUND_Y, 800);
@@ -337,44 +337,69 @@ describe('bosses stay inside the jump arc', () => {
     return GROUND_Y - (peak + 32);
   }
 
-  it.each([0, 1, 2, 3, 4])(
-    'boss %i dips low enough to be stomped and never sinks into the floor',
-    themeLevel => {
-      const boss = new Boss(900, GROUND_Y, themeLevel);
-      const peak = measuredJumpPeak();
+  /** Walk a boss well past its intro and sample its hover band. */
+  function sample(themeLevel: number) {
+    const boss = new Boss(900, GROUND_Y, themeLevel);
+    let lowestExposedTop = Infinity;
+    let highestGuardedTop = -Infinity;
+    let deepestBottom = -Infinity;
+    let sawExposed = false;
+    let sawGuarded = false;
 
-      let lowestTop = -Infinity;
-      let deepestBottom = -Infinity;
-      // Long enough to cover several full hover cycles past the intro.
-      for (let i = 0; i < 1200; i++) {
-        boss.update(1 / 60, 1);
-        if (boss.getPhase() === 'intro') continue;
-        lowestTop = Math.max(lowestTop, boss.position.y);
-        deepestBottom = Math.max(deepestBottom, boss.position.y + boss.size.y);
+    for (let i = 0; i < 3000; i++) {
+      boss.update(1 / 60, 1);
+      if (boss.getPhase() === 'intro') continue;
+      const top = GROUND_Y - boss.position.y;
+      deepestBottom = Math.max(deepestBottom, boss.position.y + boss.size.y);
+      // `top` is the HEIGHT of the boss's top edge above the ground, so the
+      // most reachable moment is the SMALLEST value, not the largest.
+      if (boss.isExposed()) {
+        sawExposed = true;
+        lowestExposedTop = Math.min(lowestExposedTop, top);
+      } else {
+        sawGuarded = true;
+        highestGuardedTop = Math.max(highestGuardedTop, top);
       }
+    }
 
-      // Reachable: at the bottom of its wave the boss's top edge is within
-      // the arc the player can actually reach.
-      expect(GROUND_Y - lowestTop).toBeLessThan(peak);
-      // And its underside stays clear of a standing runner's head, so there
-      // is somewhere to stand while lining the stomp up.
-      const standingTop = GROUND_Y - 30;
-      expect(deepestBottom).toBeLessThan(standingTop);
+    return {
+      lowestExposedTop,
+      highestGuardedTop,
+      deepestBottom,
+      sawExposed,
+      sawGuarded,
+    };
+  }
+
+  it.each([0, 1, 2, 3, 4])(
+    'boss %i opens up after attacking and is shut otherwise',
+    themeLevel => {
+      const peak = measuredJumpPeak();
+      const s = sample(themeLevel);
+
+      // Both states actually happen — a fight that is always open, or never
+      // open, is not a fight.
+      expect(s.sawExposed).toBe(true);
+      expect(s.sawGuarded).toBe(true);
+
+      // The opening is genuinely reachable: a full-hold jump gets there.
+      expect(s.lowestExposedTop).toBeLessThan(peak);
+      // And a shut boss rides clearly higher, so the drop is a visible tell
+      // rather than a hidden state. (The rule itself is the window, not the
+      // height — see the stomp-gating tests in features.test.ts.)
+      expect(s.highestGuardedTop).toBeGreaterThan(peak);
+      // The bands must not overlap, or the tell is a few pixels of nothing.
+      expect(s.lowestExposedTop).toBeLessThan(s.highestGuardedTop - 60);
     }
   );
 
-  it('keeps part of the wave out of reach, so the fight has timing', () => {
-    const boss = new Boss(900, GROUND_Y, 0);
-    const peak = measuredJumpPeak();
-
-    let highestTop = Infinity;
-    for (let i = 0; i < 1200; i++) {
-      boss.update(1 / 60, 1);
-      if (boss.getPhase() === 'intro') continue;
-      highestTop = Math.min(highestTop, boss.position.y);
+  it.each([0, 1, 2, 3, 4])(
+    'boss %i keeps its underside clear of a standing runner',
+    themeLevel => {
+      // There has to be somewhere to stand while lining the stomp up.
+      expect(sample(themeLevel).deepestBottom).toBeLessThan(GROUND_Y - 30);
     }
-    expect(GROUND_Y - highestTop).toBeGreaterThan(peak);
-  });
+  );
 });
 
 describe('the run holds together end to end', () => {

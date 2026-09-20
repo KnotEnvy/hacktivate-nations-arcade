@@ -195,6 +195,87 @@ describe('the updraft and the gust', () => {
   });
 });
 
+describe('the boss opening is the rule, not the geometry', () => {
+  interface BossHandle {
+    health: number;
+    maxHealth: number;
+    position: { x: number; y: number };
+    size: { x: number; y: number };
+    getPhase(): string;
+    isExposed(): boolean;
+    update(dt: number, speed: number): void;
+  }
+
+  interface WithBoss extends RunnerInternals {
+    boss: BossHandle | null;
+    bossHitCooldown: number;
+    spawnBoss(): void;
+  }
+
+  /** Put a boss on screen, past its intro, and stand the runner on its flank. */
+  function bossFight(): { g: WithBoss; boss: BossHandle } {
+    const { g } = startedGame();
+    const w = g as unknown as WithBoss;
+    w.spawnBoss();
+    const boss = w.boss!;
+    for (let i = 0; i < 600 && boss.getPhase() === 'intro'; i++) {
+      boss.update(1 / 60, 1);
+    }
+    return { g: w, boss };
+  }
+
+  /** Drop the runner onto the boss's crown and resolve one frame. */
+  function stomp(g: WithBoss, boss: BossHandle): void {
+    g.bossHitCooldown = 0;
+    g.player.position.x = boss.position.x + boss.size.x / 2 - 16;
+    g.player.position.y = boss.position.y - 6;
+    g.player.velocity.y = 8;
+    g.checkCollisions();
+  }
+
+  it('does nothing while the boss is shut', () => {
+    const { g, boss } = bossFight();
+    // Wind forward to a moment when it is NOT open.
+    for (let i = 0; i < 2000 && boss.isExposed(); i++) boss.update(1 / 60, 1);
+    expect(boss.isExposed()).toBe(false);
+
+    const before = boss.health;
+    stomp(g, boss);
+    expect(boss.health).toBe(before);
+    // Refused, not punished: the player keeps their lives.
+    expect(g.lives).toBe(3);
+  });
+
+  it('lands while the boss is open', () => {
+    const { g, boss } = bossFight();
+    for (let i = 0; i < 4000 && !boss.isExposed(); i++) boss.update(1 / 60, 1);
+    expect(boss.isExposed()).toBe(true);
+
+    const before = boss.health;
+    stomp(g, boss);
+    expect(boss.health).toBe(before - 1);
+    expect(g.player.velocity.y).toBeLessThan(0);
+  });
+
+  it('opens only after an attack, so the fight has a rhythm', () => {
+    const { boss } = bossFight();
+    let openings = 0;
+    let wasOpen = boss.isExposed();
+
+    for (let i = 0; i < 3600; i++) {
+      boss.update(1 / 60, 1);
+      const open = boss.isExposed();
+      if (open && !wasOpen) openings++;
+      wasOpen = open;
+    }
+
+    // Several windows across a minute: often enough to be the fight, rare
+    // enough that the player has to wait for one.
+    expect(openings).toBeGreaterThan(3);
+    expect(openings).toBeLessThan(40);
+  });
+});
+
 describe('near misses', () => {
   const box = (x: number, y: number, w = 20, h = 20) => ({
     getBounds: () => new Obstacle(x, y, 'spike').getBounds(),

@@ -20,6 +20,7 @@ interface BossView {
   size: { x: number; y: number };
   getPhase(): string;
   isDefeated(): boolean;
+  isExposed(): boolean;
 }
 
 interface RunnerInternals {
@@ -100,6 +101,10 @@ function decide(g: RunnerInternals, holdFramesLeft: number): Intent {
     }
 
     if (!g.player.getIsGrounded()) return { ...IDLE, right: true };
+
+    // Wait for the opening. Jumping at a shut boss is refused, so a bot that
+    // ignores the window would simply never win.
+    if (!boss.isExposed()) return IDLE;
 
     const flankX = boss.position.x - 10;
     const offset = flankX - (g.player.position.x + 16);

@@ -91,6 +91,8 @@ export interface BossHudState {
   health: number;
   maxHealth: number;
   phase: string;
+  /** True during the post-attack window when it can be stomped. */
+  exposed: boolean;
   glowColor: string;
   primaryColor: string;
   secondaryColor: string;
@@ -599,7 +601,15 @@ export class HudRenderer {
     ctx.font = monoFont(11, 700);
     ctx.fillText(`${boss.health} / ${boss.maxHealth}`, cx, y + barH + 14);
 
-    if (raging) {
+    if (boss.exposed) {
+      // The opening is the most urgent thing on screen while it lasts.
+      const pulse = 0.6 + Math.abs(Math.sin(this.time * 10)) * 0.4;
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = UI.good;
+      ctx.font = displayFont(12);
+      this.trackedCenter(ctx, 'OPENING — STRIKE NOW', cx, y + barH + 28, 2.5);
+      ctx.globalAlpha = 1;
+    } else if (raging) {
       ctx.fillStyle = UI.bad;
       ctx.font = displayFont(11);
       this.trackedCenter(ctx, 'ENRAGED', cx, y + barH + 28, 3);
@@ -611,7 +621,7 @@ export class HudRenderer {
       // The one instruction that matters, for anyone meeting a boss cold.
       ctx.fillStyle = UI.inkFaint;
       ctx.font = sansFont(11, 600);
-      ctx.fillText('Land on it from above to damage it', cx, y + barH + 28);
+      ctx.fillText('Dodge its attack, then land on it from above', cx, y + barH + 28);
     }
   }
 
