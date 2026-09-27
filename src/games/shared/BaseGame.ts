@@ -53,7 +53,13 @@ export abstract class BaseGame implements GameModule {
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     
-    if (!this.isRunning) return;
+    if (!this.isRunning) {
+      // A finished run used to leave a black canvas under the run shell's
+      // summary. A game may opt in to drawing its final frame instead; games
+      // that do not implement the hook behave exactly as before.
+      this.onRenderEnded?.(ctx);
+      return;
+    }
     
     this.onRender(ctx);
     
@@ -182,4 +188,10 @@ export abstract class BaseGame implements GameModule {
   protected onRestart?(): void;
   protected onGameEnd?(finalScore: GameScore): void;
   protected onRenderUI?(ctx: CanvasRenderingContext2D): void;
+  /**
+   * Draw the frame shown once the run has ended (after endGame). Optional:
+   * without it the canvas stays black, as it always has. Keep it static —
+   * the loop stops shortly after game over, so nothing here animates.
+   */
+  protected onRenderEnded?(ctx: CanvasRenderingContext2D): void;
 }
