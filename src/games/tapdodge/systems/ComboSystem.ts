@@ -1,129 +1,102 @@
 // ===== src/games/tapdodge/systems/ComboSystem.ts =====
+//
+// Two counters the fever chip reads:
+//   CHAIN — skill reads in a row (near misses and clean laser dodges), each
+//           worth NEAR_MISS_POINTS × chain; it lapses after CHAIN_WINDOW
+//           seconds without another, and a hit breaks it.
+//   COMBO — coins taken without a pause longer than COIN_WINDOW.
+
+export const NEAR_MISS_POINTS = 25;
+export const CHAIN_WINDOW = 3;
+export const MAX_CHAIN = 5;
+export const COIN_WINDOW = 2;
 
 export class ComboSystem {
-    // Near-miss combo
-    private nearMissChain: number = 0;
-    private nearMissTimer: number = 0;
-    private readonly NEAR_MISS_TIMEOUT = 1.5; // seconds to maintain chain
+  private chain = 0;
+  private chainTimer = 0;
+  private coinCombo = 0;
+  private coinTimer = 0;
 
-    // Coin combo
-    private coinCombo: number = 0;
-    private coinComboTimer: number = 0;
-    private readonly COIN_COMBO_TIMEOUT = 2.0;
+  private maxChain = 0;
+  private maxCoinCombo = 0;
+  private nearMisses = 0;
+  private clears = 0;
 
-    // Stats tracking
-    private maxNearMissChain: number = 0;
-    private maxCoinCombo: number = 0;
-    private totalNearMisses: number = 0;
-
-    // Base bonuses
-    private readonly NEAR_MISS_BASE_BONUS = 15;
-    private readonly NEAR_MISS_CHAIN_MULTIPLIER = 0.25; // +25% per chain level
-    private readonly MAX_NEAR_MISS_CHAIN = 5;
-
-    public update(dt: number): void {
-        // Decay near-miss chain
-        if (this.nearMissTimer > 0) {
-            this.nearMissTimer -= dt;
-            if (this.nearMissTimer <= 0) {
-                this.nearMissChain = 0;
-            }
-        }
-
-        // Decay coin combo
-        if (this.coinComboTimer > 0) {
-            this.coinComboTimer -= dt;
-            if (this.coinComboTimer <= 0) {
-                this.coinCombo = 0;
-            }
-        }
+  update(dt: number): void {
+    if (this.chainTimer > 0) {
+      this.chainTimer -= dt;
+      if (this.chainTimer <= 0) this.chain = 0;
     }
-
-    // ===== Near-Miss System =====
-
-    public addNearMiss(): { bonus: number; chain: number; multiplier: number } {
-        this.nearMissChain = Math.min(this.MAX_NEAR_MISS_CHAIN, this.nearMissChain + 1);
-        this.nearMissTimer = this.NEAR_MISS_TIMEOUT;
-        this.totalNearMisses++;
-
-        // Track max chain
-        if (this.nearMissChain > this.maxNearMissChain) {
-            this.maxNearMissChain = this.nearMissChain;
-        }
-
-        const multiplier = 1 + (this.nearMissChain - 1) * this.NEAR_MISS_CHAIN_MULTIPLIER;
-        const bonus = Math.floor(this.NEAR_MISS_BASE_BONUS * multiplier);
-
-        return {
-            bonus,
-            chain: this.nearMissChain,
-            multiplier
-        };
+    if (this.coinTimer > 0) {
+      this.coinTimer -= dt;
+      if (this.coinTimer <= 0) this.coinCombo = 0;
     }
+  }
 
-    public getNearMissChain(): number {
-        return this.nearMissChain;
-    }
+  /** A near miss. Returns the points it pays. */
+  addNearMiss(): number {
+    this.nearMisses++;
+    return this.bumpChain();
+  }
 
-    public getNearMissTimeLeft(): number {
-        return this.nearMissTimer;
-    }
+  /** A laser taken with the right dodge. Returns the points it pays. */
+  addClear(): number {
+    this.clears++;
+    return this.bumpChain();
+  }
 
-    public getNearMissMultiplier(): number {
-        if (this.nearMissChain <= 0) return 1;
-        return 1 + (this.nearMissChain - 1) * this.NEAR_MISS_CHAIN_MULTIPLIER;
-    }
+  private bumpChain(): number {
+    this.chain = Math.min(MAX_CHAIN, this.chain + 1);
+    this.chainTimer = CHAIN_WINDOW;
+    this.maxChain = Math.max(this.maxChain, this.chain);
+    return NEAR_MISS_POINTS * this.chain;
+  }
 
-    // ===== Coin Combo System =====
+  addCoin(): number {
+    this.coinCombo++;
+    this.coinTimer = COIN_WINDOW;
+    this.maxCoinCombo = Math.max(this.maxCoinCombo, this.coinCombo);
+    return this.coinCombo;
+  }
 
-    public addCoin(): number {
-        this.coinCombo = Math.min(10, this.coinCombo + 1);
-        this.coinComboTimer = this.COIN_COMBO_TIMEOUT;
+  /** A hit breaks the chain (the coin combo survives; it only needs pace). */
+  breakChain(): void {
+    this.chain = 0;
+    this.chainTimer = 0;
+  }
 
-        if (this.coinCombo > this.maxCoinCombo) {
-            this.maxCoinCombo = this.coinCombo;
-        }
+  getChain(): number {
+    return this.chain;
+  }
 
-        return this.getCoinMultiplier();
-    }
+  getCoinCombo(): number {
+    return this.coinCombo;
+  }
 
-    public getCoinCombo(): number {
-        return this.coinCombo;
-    }
+  getMaxChain(): number {
+    return this.maxChain;
+  }
 
-    public getCoinMultiplier(): number {
-        return 1 + this.coinCombo * 0.2; // +20% per combo level
-    }
+  getMaxCoinCombo(): number {
+    return this.maxCoinCombo;
+  }
 
-    public getCoinTimeLeft(): number {
-        return this.coinComboTimer;
-    }
+  getNearMisses(): number {
+    return this.nearMisses;
+  }
 
-    // ===== Stats =====
+  getClears(): number {
+    return this.clears;
+  }
 
-    public getMaxNearMissChain(): number {
-        return this.maxNearMissChain;
-    }
-
-    public getMaxCoinCombo(): number {
-        return this.maxCoinCombo;
-    }
-
-    public getTotalNearMisses(): number {
-        return this.totalNearMisses;
-    }
-
-    public reset(): void {
-        this.nearMissChain = 0;
-        this.nearMissTimer = 0;
-        this.coinCombo = 0;
-        this.coinComboTimer = 0;
-    }
-
-    public resetAll(): void {
-        this.reset();
-        this.maxNearMissChain = 0;
-        this.maxCoinCombo = 0;
-        this.totalNearMisses = 0;
-    }
+  resetAll(): void {
+    this.chain = 0;
+    this.chainTimer = 0;
+    this.coinCombo = 0;
+    this.coinTimer = 0;
+    this.maxChain = 0;
+    this.maxCoinCombo = 0;
+    this.nearMisses = 0;
+    this.clears = 0;
+  }
 }

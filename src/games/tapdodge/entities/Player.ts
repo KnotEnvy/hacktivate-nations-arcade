@@ -1,525 +1,323 @@
 // ===== src/games/tapdodge/entities/Player.ts =====
-// AAA-Quality Player with afterimages, energy wings, and dynamic visuals
+//
+// The ship: a compact wedge with a cockpit and two engine nozzles. It is
+// always either ON a lane centre or travelling to one — there is no free
+// position, so it can never straddle two lanes and clip two hazards.
+//
+// Poses, each readable at a glance:
+//   hop    banks up to ±0.25 rad toward the new lane
+//   jump   rises toward the camera (grows, shadow drops away), squashes on
+//          landing — clears LOW beams
+//   duck   flattens onto the road with a tight dark shadow and skid marks —
+//          passes under HIGH beams
+//
+// Lateral motion runs on real time so a hop always feels the same; the dodge
+// runs on world time so slow-motion stretches it along with the beam.
 
-interface AfterImage {
-    x: number;
-    y: number;
-    alpha: number;
-    scale: number;
-    rotation: number;
+import { SHIP } from '../systems/palette';
+import { wedgePath } from '../systems/icons';
+import { Rect, SHIP_Y, clampLane, laneCenter } from '../systems/layout';
+
+export type DodgeKind = 'jump' | 'duck';
+
+export const DODGE_TIME = 0.45;
+export const DODGE_COOLDOWN = 0.25;
+export const SHIP_HITBOX = 30;
+const SHIP_W = 34;
+const SHIP_H = 40;
+
+/** Hop: exponential approach, never slower than HOP_MIN_V px/s. */
+const HOP_K = 22;
+const HOP_MIN_V = 700;
+const BANK_MAX = 0.25;
+const LAND_SQUASH = 0.14;
+const TRAIL_POINTS = 7;
+const TRAIL_EVERY = 0.02;
+
+export interface ShipLook {
+  speedFactor: number;
+  shield: boolean;
+  ghost: boolean;
+  time: number;
 }
 
 export class Player {
-    // Position and movement
-    public x: number;
-    public y: number;
-    public targetX: number;
-    public readonly width: number = 40;
-    public readonly height: number = 40;
+  lane = 2;
+  x = laneCenter(2);
+  readonly y = SHIP_Y;
+  vx = 0;
+  dodge: DodgeKind | null = null;
+  dodgeT = 0;
+  cooldown = 0;
+  /** Dodges begun this run (tests pin that a held key starts only one). */
+  dodgesStarted = 0;
+  invuln = 0;
+  private invulnSpan = 0;
+  private bank = 0;
+  private squash = 0;
+  private trail: Array<{ x: number; y: number }> = [];
+  private trailTimer = 0;
 
-    // Lane system
-    private currentLane: number = 2; // 0-4, starting middle
-    private readonly laneCount: number = 5;
-    private canvasWidth: number;
+  reset(): void {
+    this.lane = 2;
+    this.x = laneCenter(2);
+    this.vx = 0;
+    this.dodge = null;
+    this.dodgeT = 0;
+    this.cooldown = 0;
+    this.dodgesStarted = 0;
+    this.invuln = 0;
+    this.invulnSpan = 0;
+    this.bank = 0;
+    this.squash = 0;
+    this.trail = [];
+    this.trailTimer = 0;
+  }
 
-    // Movement smoothing
-    private readonly lerpSpeed: number = 12;
-    private velocityX: number = 0;
+  /** One lane left (-1) or right (+1). Returns whether the lane changed. */
+  hop(dir: number): boolean {
+    return this.steerTo(this.lane + dir);
+  }
 
-    // Visual state
-    private trailPoints: { x: number; y: number; alpha: number }[] = [];
-    private afterImages: AfterImage[] = [];
-    private pulsePhase: number = 0;
-    private energyPhase: number = 0;
-    private wingPhase: number = 0;
+  steerTo(lane: number): boolean {
+    const next = clampLane(lane);
+    if (next === this.lane) return false;
+    this.lane = next;
+    return true;
+  }
 
-    // Damage state
-    private invulnTime: number = 0;
-    private blinkTimer: number = 0;
+  canDodge(): boolean {
+    return this.dodge === null && this.cooldown <= 0;
+  }
 
-    // Vertical dodge state
-    private isDucking: boolean = false;
-    private isJumping: boolean = false;
-    private dodgeTimer: number = 0;
-    private readonly DODGE_DURATION: number = 0.5;
+  startDodge(kind: DodgeKind): boolean {
+    if (!this.canDodge()) return false;
+    this.dodge = kind;
+    this.dodgeT = DODGE_TIME;
+    this.dodgesStarted++;
+    return true;
+  }
 
-    constructor(canvasWidth: number, canvasHeight: number) {
-        this.canvasWidth = canvasWidth;
-        this.y = canvasHeight - 80;
-        this.x = this.getLaneX(this.currentLane);
-        this.targetX = this.x;
+  isJumping(): boolean {
+    return this.dodge === 'jump';
+  }
+
+  isDucking(): boolean {
+    return this.dodge === 'duck';
+  }
+
+  setInvulnerable(seconds: number): void {
+    if (seconds > this.invuln) {
+      this.invuln = seconds;
+      this.invulnSpan = seconds;
+    }
+  }
+
+  isInvulnerable(): boolean {
+    return this.invuln > 0;
+  }
+
+  /** Exactly on its lane centre. */
+  settled(): boolean {
+    return this.x === laneCenter(this.lane);
+  }
+
+  hitbox(): Rect {
+    const h = SHIP_HITBOX / 2;
+    return { x: this.x - h, y: this.y - h, w: SHIP_HITBOX, h: SHIP_HITBOX };
+  }
+
+  /**
+   * `dt` real seconds, `wdt` world seconds, `dy` how far the road moved
+   * (the trail scrolls away with it).
+   */
+  update(dt: number, wdt: number, dy: number): void {
+    const target = laneCenter(this.lane);
+    const dx = target - this.x;
+    if (Math.abs(dx) < 0.5) {
+      this.x = target;
+      this.vx = 0;
+    } else if (dt > 0) {
+      const v = Math.max(HOP_MIN_V, Math.abs(dx) * HOP_K);
+      const step = Math.sign(dx) * Math.min(Math.abs(dx), v * dt);
+      this.x += step;
+      this.vx = step / dt;
+      if (Math.abs(target - this.x) < 0.5) this.x = target;
     }
 
-    private getLaneX(lane: number): number {
-        const laneWidth = this.canvasWidth / this.laneCount;
-        return lane * laneWidth + (laneWidth - this.width) / 2;
+    const bankTo = Math.max(-1, Math.min(1, this.vx / 1400)) * BANK_MAX;
+    this.bank += (bankTo - this.bank) * Math.min(1, dt * 18);
+
+    if (this.dodge) {
+      this.dodgeT -= wdt;
+      if (this.dodgeT <= 0) {
+        if (this.dodge === 'jump') this.squash = LAND_SQUASH;
+        this.dodge = null;
+        this.dodgeT = 0;
+        this.cooldown = DODGE_COOLDOWN;
+      }
+    } else if (this.cooldown > 0) {
+      this.cooldown = Math.max(0, this.cooldown - wdt);
     }
 
-    public moveLeft(): void {
-        if (this.currentLane > 0) {
-            this.currentLane--;
-            this.targetX = this.getLaneX(this.currentLane);
-        }
+    this.squash = Math.max(0, this.squash - dt);
+    this.invuln = Math.max(0, this.invuln - dt);
+
+    for (const p of this.trail) p.y += dy;
+    this.trailTimer += dt;
+    if (this.trailTimer >= TRAIL_EVERY) {
+      this.trailTimer = 0;
+      this.trail.push({ x: this.x, y: this.y + SHIP_H * 0.35 });
+      if (this.trail.length > TRAIL_POINTS) this.trail.shift();
+    }
+  }
+
+  // ------------------------------------------------------------ render
+
+  render(ctx: CanvasRenderingContext2D, look: ShipLook): void {
+    const lift =
+      this.dodge === 'jump'
+        ? Math.sin(Math.PI * (1 - this.dodgeT / DODGE_TIME))
+        : 0;
+    let sx = 1 + 0.24 * lift;
+    let sy = sx;
+    if (this.dodge === 'duck') {
+      sx = 1.16;
+      sy = 0.72;
+    } else if (this.squash > 0) {
+      const k = this.squash / LAND_SQUASH;
+      sx = 1 + 0.12 * k;
+      sy = 1 - 0.14 * k;
     }
 
-    public moveRight(): void {
-        if (this.currentLane < this.laneCount - 1) {
-            this.currentLane++;
-            this.targetX = this.getLaneX(this.currentLane);
-        }
+    // Blink at 8Hz while invulnerable after a hit.
+    let alpha = 1;
+    if (this.invuln > 0 && this.invulnSpan > 0) {
+      const t = this.invulnSpan - this.invuln;
+      alpha = Math.floor(t * 16) % 2 === 0 ? 1 : 0.25;
     }
+    if (look.ghost) alpha *= 0.42;
 
-    public moveToPosition(targetX: number): void {
-        const clampedX = Math.max(0, Math.min(this.canvasWidth - this.width, targetX - this.width / 2));
-        this.targetX = clampedX;
+    this.renderTrail(ctx, alpha);
 
-        const laneWidth = this.canvasWidth / this.laneCount;
-        this.currentLane = Math.floor((clampedX + this.width / 2) / laneWidth);
-        this.currentLane = Math.max(0, Math.min(this.laneCount - 1, this.currentLane));
+    // Shadow: far and faint in a jump, tight and dark in a duck.
+    ctx.save();
+    const ducking = this.dodge === 'duck';
+    const shOff = ducking ? 3 : 9 + 16 * lift;
+    const shScale = ducking ? 1.2 : 1 - 0.35 * lift;
+    ctx.globalAlpha = (ducking ? 0.6 : 0.34 - 0.14 * lift) * alpha;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(
+      this.x,
+      this.y + shOff,
+      (SHIP_W / 2) * shScale,
+      (SHIP_H / 3.2) * shScale * (ducking ? 0.7 : 1),
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.bank);
+    ctx.scale(sx, sy);
+
+    // The one glow.
+    const glow = ctx.createRadialGradient(0, 4, 2, 0, 4, 34);
+    glow.addColorStop(0, 'rgba(98, 230, 255, 0.28)');
+    glow.addColorStop(1, 'rgba(98, 230, 255, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-34, -30, 68, 68);
+
+    this.renderFlames(ctx, look);
+
+    wedgePath(ctx, 0, 0, SHIP_W, SHIP_H);
+    const hull = ctx.createLinearGradient(0, -SHIP_H / 2, 0, SHIP_H / 2);
+    hull.addColorStop(0, SHIP.hull);
+    hull.addColorStop(1, SHIP.hullShade);
+    ctx.fillStyle = hull;
+    ctx.fill();
+    ctx.strokeStyle = SHIP.outline;
+    ctx.lineWidth = 1.5;
+    if (look.ghost) ctx.setLineDash([4, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = SHIP.cockpit;
+    ctx.beginPath();
+    ctx.ellipse(0, -3, 4.5, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.fillRect(-1.5, -8, 2, 4);
+
+    if (ducking) {
+      // Skid marks either side: this ship is down on the road.
+      ctx.strokeStyle = SHIP.cockpit;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-SHIP_W / 2 - 5, 2);
+      ctx.lineTo(-SHIP_W / 2 - 5, 16);
+      ctx.moveTo(SHIP_W / 2 + 5, 2);
+      ctx.lineTo(SHIP_W / 2 + 5, 16);
+      ctx.stroke();
     }
+    ctx.restore();
 
-    public getCurrentLane(): number {
-        return this.currentLane;
+    if (look.shield) {
+      ctx.save();
+      const r = 29 + Math.sin(look.time * 4) * 1.2;
+      ctx.fillStyle = 'rgba(111, 232, 255, 0.08)';
+      ctx.strokeStyle = 'rgba(111, 232, 255, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
     }
+  }
 
-    public update(dt: number): void {
-        // Smooth movement interpolation
-        const dx = this.targetX - this.x;
-        this.velocityX = dx * this.lerpSpeed;
-        this.x += this.velocityX * dt;
-
-        // Update trail
-        this.trailPoints.push({
-            x: this.x + this.width / 2,
-            y: this.y + this.height / 2,
-            alpha: 0.6
-        });
-
-        if (this.trailPoints.length > 20) {
-            this.trailPoints.shift();
-        }
-
-        for (const point of this.trailPoints) {
-            point.alpha = Math.max(0, point.alpha - dt * 1.8);
-        }
-        this.trailPoints = this.trailPoints.filter(p => p.alpha > 0);
-
-        // Update after-images (create on movement)
-        if (Math.abs(this.velocityX) > 50) {
-            if (this.afterImages.length === 0 ||
-                Math.abs(this.afterImages[this.afterImages.length - 1].x - this.x) > 15) {
-                this.afterImages.push({
-                    x: this.x,
-                    y: this.y,
-                    alpha: 0.6,
-                    scale: 1,
-                    rotation: (this.velocityX > 0 ? 0.1 : -0.1)
-                });
-            }
-        }
-
-        // Decay after-images
-        for (const image of this.afterImages) {
-            image.alpha -= dt * 2;
-            image.scale *= 0.98;
-        }
-        this.afterImages = this.afterImages.filter(img => img.alpha > 0);
-
-        // Update invulnerability
-        if (this.invulnTime > 0) {
-            this.invulnTime -= dt;
-            this.blinkTimer += dt;
-        }
-
-        // Pulse animation
-        this.pulsePhase += dt * 4;
-        this.energyPhase += dt * 8;
-        this.wingPhase += dt * 12;
-
-        // Dodge timer
-        if (this.dodgeTimer > 0) {
-            this.dodgeTimer -= dt;
-            if (this.dodgeTimer <= 0) {
-                this.isDucking = false;
-                this.isJumping = false;
-            }
-        }
+  private renderFlames(ctx: CanvasRenderingContext2D, look: ShipLook): void {
+    const len =
+      7 +
+      10 * Math.max(0, look.speedFactor - 1) +
+      Math.sin(look.time * 40) * 1.5;
+    for (const nx of [-7, 7]) {
+      const top = SHIP_H * 0.32;
+      const g = ctx.createLinearGradient(0, top, 0, top + len);
+      g.addColorStop(0, SHIP.flame);
+      g.addColorStop(1, 'rgba(140, 245, 255, 0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.moveTo(nx - 3.5, top);
+      ctx.lineTo(nx + 3.5, top);
+      ctx.lineTo(nx, top + len);
+      ctx.closePath();
+      ctx.fill();
     }
+  }
 
-    public duck(): void {
-        if (!this.isDucking && !this.isJumping) {
-            this.isDucking = true;
-            this.isJumping = false;
-            this.dodgeTimer = this.DODGE_DURATION;
-        }
+  private renderTrail(ctx: CanvasRenderingContext2D, alpha: number): void {
+    const n = this.trail.length;
+    if (n < 2) return;
+    ctx.save();
+    ctx.strokeStyle = SHIP.glow;
+    ctx.lineCap = 'round';
+    for (let i = 1; i < n; i++) {
+      const a = this.trail[i - 1];
+      const b = this.trail[i];
+      const k = i / n;
+      ctx.globalAlpha = 0.22 * k * alpha;
+      ctx.lineWidth = 2 + 5 * k;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
     }
-
-    public jump(): void {
-        if (!this.isJumping && !this.isDucking) {
-            this.isJumping = true;
-            this.isDucking = false;
-            this.dodgeTimer = this.DODGE_DURATION;
-        }
-    }
-
-    public getIsDucking(): boolean {
-        return this.isDucking;
-    }
-
-    public getIsJumping(): boolean {
-        return this.isJumping;
-    }
-
-    public getDodgeTimeRemaining(): number {
-        return this.dodgeTimer;
-    }
-
-    public takeDamage(): boolean {
-        if (this.invulnTime > 0) {
-            return false;
-        }
-        this.invulnTime = 1.0;
-        this.blinkTimer = 0;
-        return true;
-    }
-
-    public setInvulnerable(duration: number): void {
-        this.invulnTime = Math.max(this.invulnTime, duration);
-    }
-
-    public isInvulnerable(): boolean {
-        return this.invulnTime > 0;
-    }
-
-    public getInvulnTime(): number {
-        return this.invulnTime;
-    }
-
-    public getBounds(): { x: number; y: number; w: number; h: number } {
-        const margin = 4;
-        return {
-            x: this.x + margin,
-            y: this.y + margin,
-            w: this.width - margin * 2,
-            h: this.height - margin * 2
-        };
-    }
-
-    public getCenterX(): number {
-        return this.x + this.width / 2;
-    }
-
-    public getCenterY(): number {
-        return this.y + this.height / 2;
-    }
-
-    public render(ctx: CanvasRenderingContext2D, hasShield: boolean = false, hasGhost: boolean = false): void {
-        const cx = this.x + this.width / 2;
-        const cy = this.y + this.height / 2;
-        const pulse = Math.sin(this.pulsePhase) * 0.1 + 1;
-
-        const primaryColor = hasGhost ? '#A78BFA' : '#22D3EE';
-        const secondaryColor = hasGhost ? '#C4B5FD' : '#67E8F9';
-        const glowColor = hasGhost ? 'rgba(167, 139, 250,' : 'rgba(34, 211, 238,';
-
-        // ===== LAYER 1: After-images =====
-        for (const image of this.afterImages) {
-            ctx.save();
-            ctx.globalAlpha = image.alpha * 0.4;
-            ctx.translate(image.x + this.width / 2, image.y + this.height / 2);
-            ctx.rotate(image.rotation);
-            ctx.scale(image.scale, image.scale);
-
-            ctx.fillStyle = primaryColor;
-            ctx.beginPath();
-            ctx.moveTo(0, -this.height / 2);
-            ctx.lineTo(this.width / 2, 0);
-            ctx.lineTo(0, this.height / 2);
-            ctx.lineTo(-this.width / 2, 0);
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.restore();
-        }
-
-        // ===== LAYER 2: Motion trail with gradient =====
-        if (this.trailPoints.length > 1) {
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-
-            for (let i = 1; i < this.trailPoints.length; i++) {
-                const p1 = this.trailPoints[i - 1];
-                const p2 = this.trailPoints[i];
-                const progress = i / this.trailPoints.length;
-
-                ctx.globalAlpha = p2.alpha * 0.5;
-                ctx.strokeStyle = primaryColor;
-                ctx.lineWidth = 3 + progress * 6;
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
-            }
-        }
-        ctx.globalAlpha = 1;
-
-        // Blink during invulnerability
-        if (this.invulnTime > 0) {
-            const blink = Math.sin(this.blinkTimer * 20) > 0;
-            ctx.globalAlpha = blink ? 0.4 : 0.9;
-        }
-
-        // Ghost effect
-        if (hasGhost) {
-            ctx.globalAlpha *= 0.6;
-        }
-
-        // ===== LAYER 3: Energy wings (during movement or shield) =====
-        const showWings = hasShield || Math.abs(this.velocityX) > 100 || this.isDucking || this.isJumping;
-        if (showWings) {
-            this.renderEnergyWings(ctx, cx, cy, primaryColor, glowColor);
-        }
-
-        // ===== LAYER 4: Outer energy field =====
-        const outerGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, this.width * 1.2);
-        outerGlow.addColorStop(0, `${glowColor}0.4)`);
-        outerGlow.addColorStop(0.4, `${glowColor}0.15)`);
-        outerGlow.addColorStop(0.7, `${glowColor}0.05)`);
-        outerGlow.addColorStop(1, `${glowColor}0)`);
-        ctx.fillStyle = outerGlow;
-        ctx.beginPath();
-        ctx.arc(cx, cy, this.width * 1.2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // ===== LAYER 5: Main body =====
-        this.renderMainBody(ctx, cx, cy, primaryColor, secondaryColor, pulse);
-
-        // ===== LAYER 6: Inner core with energy lines =====
-        this.renderEnergyCore(ctx, cx, cy, secondaryColor, pulse);
-
-        // ===== LAYER 7: Central eye/core =====
-        const coreGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 6);
-        coreGradient.addColorStop(0, '#FFFFFF');
-        coreGradient.addColorStop(0.5, secondaryColor);
-        coreGradient.addColorStop(1, primaryColor);
-        ctx.fillStyle = coreGradient;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 6 * pulse, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Core highlight
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-        ctx.beginPath();
-        ctx.arc(cx - 2, cy - 2, 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.globalAlpha = 1;
-
-        // ===== LAYER 8: Shield aura =====
-        if (hasShield) {
-            this.renderShieldAura(ctx, cx, cy);
-        }
-
-        // ===== LAYER 9: Speed lines during fast movement =====
-        if (Math.abs(this.velocityX) > 150) {
-            this.renderSpeedLines(ctx, cx, cy);
-        }
-    }
-
-    private renderEnergyWings(ctx: CanvasRenderingContext2D, cx: number, cy: number, primaryColor: string, glowColor: string): void {
-        void glowColor;
-        ctx.save();
-
-        const wingFlap = Math.sin(this.wingPhase) * 0.3;
-        const wingSize = 25 + Math.sin(this.wingPhase * 0.5) * 5;
-
-        // Left wing
-        ctx.save();
-        ctx.translate(cx - this.width / 2 - 5, cy);
-        ctx.rotate(-0.4 - wingFlap);
-        ctx.globalAlpha = 0.5;
-
-        const leftWingGrad = ctx.createLinearGradient(0, -wingSize, 0, wingSize);
-        leftWingGrad.addColorStop(0, 'transparent');
-        leftWingGrad.addColorStop(0.5, primaryColor);
-        leftWingGrad.addColorStop(1, 'transparent');
-
-        ctx.fillStyle = leftWingGrad;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-wingSize, -wingSize / 2, -wingSize * 0.8, -wingSize);
-        ctx.lineTo(-wingSize * 0.5, 0);
-        ctx.quadraticCurveTo(-wingSize, wingSize / 2, -wingSize * 0.8, wingSize);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        // Right wing
-        ctx.save();
-        ctx.translate(cx + this.width / 2 + 5, cy);
-        ctx.rotate(0.4 + wingFlap);
-        ctx.globalAlpha = 0.5;
-
-        const rightWingGrad = ctx.createLinearGradient(0, -wingSize, 0, wingSize);
-        rightWingGrad.addColorStop(0, 'transparent');
-        rightWingGrad.addColorStop(0.5, primaryColor);
-        rightWingGrad.addColorStop(1, 'transparent');
-
-        ctx.fillStyle = rightWingGrad;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(wingSize, -wingSize / 2, wingSize * 0.8, -wingSize);
-        ctx.lineTo(wingSize * 0.5, 0);
-        ctx.quadraticCurveTo(wingSize, wingSize / 2, wingSize * 0.8, wingSize);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-
-        ctx.restore();
-    }
-
-    private renderMainBody(ctx: CanvasRenderingContext2D, cx: number, cy: number, primaryColor: string, secondaryColor: string, pulse: number): void {
-        void pulse;
-        // Outer edge glow
-        ctx.strokeStyle = primaryColor;
-        ctx.lineWidth = 3;
-        ctx.shadowColor = primaryColor;
-        ctx.shadowBlur = 15;
-
-        ctx.beginPath();
-        if (this.isDucking) {
-            const duckOffset = this.height * 0.25;
-            ctx.moveTo(cx, this.y + duckOffset + this.height * 0.25);
-            ctx.lineTo(this.x + this.width, cy + duckOffset);
-            ctx.lineTo(cx, this.y + this.height);
-            ctx.lineTo(this.x, cy + duckOffset);
-        } else if (this.isJumping) {
-            const jumpOffset = -this.height * 0.3;
-            ctx.moveTo(cx, this.y + jumpOffset);
-            ctx.lineTo(this.x + this.width * 0.9, cy + jumpOffset * 0.5);
-            ctx.lineTo(cx, this.y + this.height + jumpOffset * 0.2);
-            ctx.lineTo(this.x + this.width * 0.1, cy + jumpOffset * 0.5);
-        } else {
-            ctx.moveTo(cx, this.y);
-            ctx.lineTo(this.x + this.width, cy);
-            ctx.lineTo(cx, this.y + this.height);
-            ctx.lineTo(this.x, cy);
-        }
-        ctx.closePath();
-        ctx.stroke();
-
-        ctx.shadowBlur = 0;
-
-        // Fill with gradient
-        const bodyGradient = ctx.createLinearGradient(this.x, this.y, this.x + this.width, this.y + this.height);
-        bodyGradient.addColorStop(0, secondaryColor);
-        bodyGradient.addColorStop(0.5, primaryColor);
-        bodyGradient.addColorStop(1, secondaryColor);
-        ctx.fillStyle = bodyGradient;
-        ctx.fill();
-    }
-
-    private renderEnergyCore(ctx: CanvasRenderingContext2D, cx: number, cy: number, secondaryColor: string, pulse: number): void {
-        const innerSize = this.width * 0.35 * pulse;
-
-        // Inner diamond
-        ctx.fillStyle = secondaryColor;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - innerSize);
-        ctx.lineTo(cx + innerSize, cy);
-        ctx.lineTo(cx, cy + innerSize);
-        ctx.lineTo(cx - innerSize, cy);
-        ctx.closePath();
-        ctx.fill();
-
-        // Energy lines radiating from core
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 1;
-
-        for (let i = 0; i < 8; i++) {
-            const angle = (Math.PI * 2 * i) / 8 + this.energyPhase * 0.5;
-            const innerR = 8;
-            const outerR = 15 + Math.sin(this.energyPhase + i) * 3;
-
-            ctx.beginPath();
-            ctx.moveTo(cx + Math.cos(angle) * innerR, cy + Math.sin(angle) * innerR);
-            ctx.lineTo(cx + Math.cos(angle) * outerR, cy + Math.sin(angle) * outerR);
-            ctx.stroke();
-        }
-    }
-
-    private renderShieldAura(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-        // Outer shield ring
-        const shieldRadius = 35 + Math.sin(this.pulsePhase * 2) * 4;
-
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.7)';
-        ctx.lineWidth = 3;
-        ctx.shadowColor = '#22D3EE';
-        ctx.shadowBlur = 20;
-        ctx.beginPath();
-        ctx.arc(cx, cy, shieldRadius, 0, Math.PI * 2);
-        ctx.stroke();
-
-        ctx.shadowBlur = 0;
-
-        // Hexagonal energy pattern
-        ctx.strokeStyle = 'rgba(34, 211, 238, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-            const angle = (Math.PI * 2 * i) / 6 + this.pulsePhase * 0.3;
-            const x = cx + Math.cos(angle) * shieldRadius;
-            const y = cy + Math.sin(angle) * shieldRadius;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-        }
-        ctx.closePath();
-        ctx.stroke();
-
-        // Orbiting particles
-        for (let i = 0; i < 8; i++) {
-            const angle = this.pulsePhase * 1.5 + (Math.PI * 2 * i) / 8;
-            const px = cx + Math.cos(angle) * shieldRadius;
-            const py = cy + Math.sin(angle) * shieldRadius;
-            const size = 3 + Math.sin(this.pulsePhase * 3 + i) * 1;
-
-            const particleGrad = ctx.createRadialGradient(px, py, 0, px, py, size * 2);
-            particleGrad.addColorStop(0, '#FFFFFF');
-            particleGrad.addColorStop(0.5, '#22D3EE');
-            particleGrad.addColorStop(1, 'transparent');
-
-            ctx.fillStyle = particleGrad;
-            ctx.beginPath();
-            ctx.arc(px, py, size * 2, 0, Math.PI * 2);
-            ctx.fill();
-        }
-    }
-
-    private renderSpeedLines(ctx: CanvasRenderingContext2D, cx: number, cy: number): void {
-        const direction = this.velocityX > 0 ? -1 : 1;
-
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-        ctx.lineWidth = 2;
-
-        for (let i = 0; i < 5; i++) {
-            const offsetY = (i - 2) * 8;
-            const startX = cx + direction * (this.width / 2 + 5);
-            const endX = startX + direction * (20 + Math.random() * 15);
-
-            ctx.globalAlpha = 0.2 + Math.random() * 0.3;
-            ctx.beginPath();
-            ctx.moveTo(startX, cy + offsetY);
-            ctx.lineTo(endX, cy + offsetY);
-            ctx.stroke();
-        }
-
-        ctx.globalAlpha = 1;
-    }
-
-    public resize(canvasWidth: number, canvasHeight: number): void {
-        this.canvasWidth = canvasWidth;
-        this.y = canvasHeight - 80;
-        this.targetX = this.getLaneX(this.currentLane);
-        this.x = this.targetX;
-    }
+    ctx.restore();
+  }
 }

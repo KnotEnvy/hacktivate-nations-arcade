@@ -1,41 +1,103 @@
 // ===== src/games/tapdodge/TapDodgeGame.ts =====
+//
+// TAP DODGE — a five-lane highway seen from above, descending. Hazards come
+// down the road in ROWS that always leave a way through; the player hops
+// lanes, jumps LOW beams and ducks HIGH ones. Late dodges pay.
+//
+// The run: READY card (first input or 2s) -> play -> a 1.4s death beat ->
+// the in-canvas run report (any input after 0.5s, or 4s) -> endGame().
+//
+// This file owns the lifecycle, input routing, the collision pass and the
+// score. Rows come from systems/PatternSpawner, difficulty from
+// systems/Progression, pixels from the entity and renderer modules.
+
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
-
-// Entities
-import { Player } from './entities/Player';
-import { Obstacle, ObstacleConfig } from './entities/Obstacle';
+import { UI, edgeVignette, withAlpha } from '@/games/shared/hud/canvasUi';
+import type { GameManifest, GameScore } from '@/lib/types';
+import type { SoundName } from '@/services/AudioManager';
 import { Coin } from './entities/Coin';
-import { PowerUp, PowerUpType, POWERUP_CONFIG } from './entities/PowerUp';
 import { Gem } from './entities/Gem';
-
-// Systems
-import { ParticleSystem } from './systems/ParticleSystem';
-import { ScreenShake } from './systems/ScreenShake';
+import { NEAR_MISS_PX, Obstacle } from './entities/Obstacle';
+import { DodgeKind, Player } from './entities/Player';
+import { POWERUP_CONFIG, PowerUp, PowerUpType } from './entities/PowerUp';
+import { Backdrop, rgba } from './systems/Backdrop';
 import { ComboSystem } from './systems/ComboSystem';
-import { WaveSystem, ZoneConfig } from './systems/WaveSystem';
-import { BackgroundSystem } from './systems/BackgroundSystem';
-import { FeverSystem } from './systems/FeverSystem';
-import { LaneWarningSystem } from './systems/LaneWarningSystem';
+import { Controls, Intents } from './systems/Controls';
+import { FEVER_LEVELS, FeverSystem } from './systems/FeverSystem';
+import { HudRenderer, HudState, Popup } from './systems/HudRenderer';
+import { icon } from './systems/icons';
+import {
+  DECK_Y,
+  Rect,
+  SPAWN_Y,
+  VIEW_H,
+  VIEW_W,
+  intersects,
+  laneCenter,
+  rectGap,
+} from './systems/layout';
+import { GEM, HAZARD, RUSH_HOT, SHIP, ZONES } from './systems/palette';
+import { ParticleSystem } from './systems/ParticleSystem';
+import {
+  PatternKind,
+  PatternSpawner,
+  RowSpec,
+  SpawnContext,
+} from './systems/PatternSpawner';
+import {
+  BASE_SPEED,
+  ProgressEvent,
+  Progression,
+  RUSH_LENGTH,
+} from './systems/Progression';
+import { RecapRenderer, RunStats, gradeRun } from './systems/RecapRenderer';
+import { ScreenShake } from './systems/ScreenShake';
 
-interface ActivePowerUp {
+export type Phase = 'ready' | 'play' | 'dying' | 'recap' | 'done';
+
+export const READY_SECONDS = 2;
+/**
+ * The key that pressed the shell's Start button can still be down on the
+ * first frame; a press this early does not dismiss READY.
+ */
+export const READY_MIN_INPUT = 0.25;
+export const DEATH_BEAT = 1.4;
+export const RECAP_SECONDS = 4;
+/** A press this early in the recap is still the panic press; ignore it. */
+export const RECAP_MIN_INPUT = 0.5;
+export const HIT_FREEZE = 0.09;
+export const HIT_INVULN = 1;
+export const NEAR_MISS_SLOWMO = 0.4;
+export const NEAR_MISS_SCALE = 0.7;
+export const SLOW_POWER_SCALE = 0.6;
+export const MAX_LIVES = 3;
+export const HOP_BUFFER = 3;
+
+/** Economy: points per world second (times fever), and per event. */
+export const SURVIVAL_POINTS = 20;
+export const COIN_POINTS = 50;
+export const GEM_POINTS = 250;
+export const RUSH_POINTS = 300;
+export const DRONE_KILL_POINTS = 40;
+
+/** Longest sub-step the collision pass takes (s): nothing tunnels at 0.05. */
+const MAX_STEP = 0.02;
+const DODGE_BUFFER = 0.15;
+const MAGNET_RANGE = 170;
+const MAGNET_PULL = 420;
+const DRONE_FIRE_EVERY = 0.32;
+const BOLT_SPEED = 900;
+const BEST_KEY = 'tapdodge_best';
+
+interface Bolt {
+  x: number;
+  y: number;
+}
+
+interface ActivePower {
   type: PowerUpType;
-  duration: number;
-  maxDuration: number;
-}
-
-interface Popup {
-  x: number;
-  y: number;
-  text: string;
-  life: number;
-  color: string;
-}
-
-interface Bullet {
-  x: number;
-  y: number;
-  vy: number;
+  left: number;
+  max: number;
 }
 
 export class TapDodgeGame extends BaseGame {
@@ -46,1321 +108,867 @@ export class TapDodgeGame extends BaseGame {
     inputSchema: ['touch', 'keyboard'],
     assetBudgetKB: 60,
     tier: 0,
-    description: 'Survive the onslaught! Dodge falling obstacles, collect coins, and master near-misses.'
+    description:
+      'Five lanes, a falling road. Hop, jump and duck through the gaps; late dodges score.',
   };
 
-  // ===== Entities =====
-  private player!: Player;
+  protected renderBaseHud = false;
+
+  private gameState: Phase = 'ready';
+  private phaseTime = 0;
+
+  private player = new Player();
   private obstacles: Obstacle[] = [];
   private coins: Coin[] = [];
   private gems: Gem[] = [];
   private powerUps: PowerUp[] = [];
-  private bullets: Bullet[] = [];
-
-  // ===== Systems =====
-  private particles!: ParticleSystem;
-  private screenShake!: ScreenShake;
-  private comboSystem!: ComboSystem;
-  private waveSystem!: WaveSystem;
-  private backgroundSystem!: BackgroundSystem;
-  private feverSystem!: FeverSystem;
-  private laneWarningSystem!: LaneWarningSystem;
-
-  // ===== Power-ups =====
-  private activePowerUps: ActivePowerUp[] = [];
-  private readonly MAGNET_RANGE = 150;
-  private readonly MAGNET_STRENGTH = 250;
-
-  // ===== Game State =====
-  private lives: number = 3;
-  private isStarted: boolean = false;
-  private readyTimer: number = 1.5;
-  private spawnTimer: number = 0;
-  private droneFireTimer: number = 0;
-
-  // ===== Popups =====
+  private bolts: Bolt[] = [];
   private popups: Popup[] = [];
+  private activePowerUps: ActivePower[] = [];
 
-  // ===== Timers =====
-  private slowMoTimer: number = 0;
-  private finishingTimer: number = 0;
+  private controls = new Controls();
+  private progression = new Progression();
+  private spawner = new PatternSpawner();
+  private backdrop = new Backdrop();
+  private fever = new FeverSystem();
+  private combo = new ComboSystem();
+  private particles = new ParticleSystem();
+  private shake = new ScreenShake();
+  private hud = new HudRenderer();
+  private recap = new RecapRenderer();
 
-  // ===== Input =====
-  private lastTouchX: number = 0;
-  private hasTouchInput: boolean = false;
-  private lastMoveDir: number = 0;
+  private lives = MAX_LIVES;
+  /** Seconds of live play: never the READY card, a pause or the recap. */
+  private runTime = 0;
+  private scoreAcc = 0;
+  private coinsTaken = 0;
+  private gemsTaken = 0;
+  private best = 0;
+  private bestAtStart = 0;
+  private hopQueue: number[] = [];
+  private steer: number | null = null;
+  private pendingDodge: { kind: DodgeKind; ttl: number } | null = null;
+  private freeze = 0;
+  private slowMo = 0;
+  private hitFlash = 0;
+  private zoneFlip = 1;
+  private droneTimer = 0;
+  private stats: RunStats | null = null;
+  private soundAt = new Map<SoundName, number>();
 
-  // ===== Stats =====
-  private highScore: number = 0;
-  private gameStartTime: number = 0;
-  private gemsCollected: number = 0;
-
-  // ===== Visual State =====
-  private bannerText: string = '';
-  private bannerTimer: number = 0;
-  private currentZoneColors = {
-    primary: '#1E3A5F',
-    secondary: '#0D1B2A',
-    accent: '#22D3EE'
-  };
-
-  // ===== Stats Recap =====
-  private showingRecap: boolean = false;
-  private recapTimer: number = 0;
-  private recapAnimPhase: number = 0;
-  private recapStats: {
-    score: number;
-    highScore: number;
-    isNewRecord: boolean;
-    survivalTime: number;
-    nearMisses: number;
-    maxChain: number;
-    coinsCollected: number;
-    gemsCollected: number;
-    maxFever: number;
-    zoneReached: number;
-    bossesCleared: number;
-  } | null = null;
+  // ============================================================ lifecycle
 
   protected onInit(): void {
-    // Initialize systems
-    this.particles = new ParticleSystem();
-    this.screenShake = new ScreenShake();
-    this.comboSystem = new ComboSystem();
-    this.waveSystem = new WaveSystem();
-    this.backgroundSystem = new BackgroundSystem(this.canvas.width, this.canvas.height);
-    this.feverSystem = new FeverSystem();
-    this.laneWarningSystem = new LaneWarningSystem(this.canvas.width);
-
-    // Initialize player
-    this.player = new Player(this.canvas.width, this.canvas.height);
-
-    // Set up wave system callbacks
-    this.waveSystem.setOnZoneChange((zone: ZoneConfig) => {
-      this.showBanner(zone.name);
-      this.currentZoneColors = zone.colors;
-      this.services.audio.playSound('success');
-    });
-
-    this.waveSystem.setOnBossWaveWarning((countdown: number) => {
-      this.showBanner(`BOSS WAVE IN ${countdown}!`);
-      this.particles.createBossWarning(this.canvas.width, this.canvas.height);
-      this.services.audio.playSound('click');
-    });
-
-    this.waveSystem.setOnBossWaveStart(() => {
-      this.showBanner('SURVIVE!');
-      this.screenShake.shake(8, 0.5);
-      this.services.audio.playSound('powerup');
-    });
-
-    this.waveSystem.setOnBossWaveEnd((survived: boolean) => {
-      if (survived) {
-        this.showBanner('BOSS CLEARED! +500');
-        this.score += 500;
-        this.particles.createCoinShower(this.canvas.width);
-        this.services.audio.playSound('unlock');
-      }
-    });
-
-    // Load high score
     try {
-      const saved = localStorage.getItem('tapdodge_best');
-      this.highScore = saved ? parseInt(saved, 10) || 0 : 0;
-    } catch { /* ignore */ }
-
-    this.showBanner('Tap Dodge');
+      const saved = localStorage.getItem(BEST_KEY);
+      this.best = saved ? parseInt(saved, 10) || 0 : 0;
+    } catch {
+      this.best = 0;
+    }
+    this.resetRun();
   }
 
   protected onRestart(): void {
-    // Reset state
+    this.resetRun();
+  }
+
+  private resetRun(): void {
+    this.gameState = 'ready';
+    this.phaseTime = 0;
+    this.player.reset();
     this.obstacles = [];
     this.coins = [];
     this.gems = [];
     this.powerUps = [];
-    this.bullets = [];
-    this.activePowerUps = [];
+    this.bolts = [];
     this.popups = [];
-    this.lives = 3;
-    this.isStarted = false;
-    this.readyTimer = 1.5;
-    this.spawnTimer = 0;
-    this.slowMoTimer = 0;
-    this.finishingTimer = 0;
-    this.droneFireTimer = 0;
-    this.gemsCollected = 0;
-
-    // Reset systems
+    this.activePowerUps = [];
+    this.controls.reset();
+    this.progression.reset();
+    this.spawner.reset(Math.floor(Math.random() * 0xffffffff));
+    this.backdrop.reset();
+    this.fever.reset();
+    this.combo.resetAll();
     this.particles.clear();
-    this.screenShake.stop();
-    this.comboSystem.resetAll();
-    this.waveSystem.reset();
-    this.feverSystem.reset();
-    this.laneWarningSystem.clearWarnings();
-
-    // Reset player
-    this.player = new Player(this.canvas.width, this.canvas.height);
-
-    this.currentZoneColors = {
-      primary: '#1E3A5F',
-      secondary: '#0D1B2A',
-      accent: '#22D3EE'
-    };
-
-    this.showBanner('Ready');
+    this.shake.stop();
+    this.lives = MAX_LIVES;
+    this.runTime = 0;
+    this.scoreAcc = 0;
+    this.score = 0;
+    this.pickups = 0;
+    this.coinsTaken = 0;
+    this.gemsTaken = 0;
+    this.bestAtStart = this.best;
+    this.hopQueue = [];
+    this.steer = null;
+    this.pendingDodge = null;
+    this.freeze = 0;
+    this.slowMo = 0;
+    this.hitFlash = 0;
+    this.zoneFlip = 1;
+    this.droneTimer = 0;
+    this.stats = null;
+    this.extendedGameData = null;
+    this.soundAt.clear();
   }
 
   protected onUpdate(dt: number): void {
-    // Handle stats recap
-    if (this.showingRecap) {
-      this.updateRecap(dt);
-      return;
+    const intents = this.controls.update(this.services.input, dt);
+    this.phaseTime += dt;
+    switch (this.gameState) {
+      case 'ready':
+        this.updateReady(dt, intents);
+        break;
+      case 'play':
+        this.updatePlay(dt, intents);
+        break;
+      case 'dying':
+        this.updateDying(dt);
+        break;
+      case 'recap':
+        this.updateRecap(dt, intents);
+        break;
+      case 'done':
+        break;
+    }
+  }
+
+  private updateReady(dt: number, intents: Intents): void {
+    const dy = BASE_SPEED * 0.35 * dt;
+    this.backdrop.update(dt, dy);
+    this.player.update(dt, dt, dy);
+    const pressed = intents.anyPress && this.phaseTime >= READY_MIN_INPUT;
+    if (pressed || this.phaseTime >= READY_SECONDS) this.startPlay(pressed);
+  }
+
+  private startPlay(fromPress: boolean): void {
+    this.gameState = 'play';
+    this.phaseTime = 0;
+    // The press that started the run is spent: it does not also hop.
+    if (fromPress) this.controls.consumePress();
+    this.zoneFlip = 0;
+    this.backdrop.paint(ZONES[0].name, ZONES[0].accent, 'ZONE 1');
+    this.sound('click');
+  }
+
+  // ================================================================= play
+
+  private updatePlay(dt: number, intents: Intents): void {
+    // Input is buffered first, so a press during a hit-freeze still lands.
+    for (const d of intents.hops) {
+      if (this.hopQueue.length < HOP_BUFFER) this.hopQueue.push(d);
+    }
+    if (intents.steer !== null) {
+      this.steer = intents.steer;
+      this.hopQueue = [];
+    }
+    if (intents.dodge) {
+      this.pendingDodge = { kind: intents.dodge, ttl: DODGE_BUFFER };
     }
 
-    // Handle finishing sequence
-    if (this.finishingTimer > 0) {
-      this.updateFinishingSequence(dt);
-      return;
-    }
-
-    // Handle ready countdown
-    if (!this.isStarted) {
-      this.updateReadyPhase(dt);
-      return;
-    }
-
-    // Calculate speed scale (slow-mo effects)
-    const speedScale = this.getSpeedScale();
-    const scaledDt = dt * speedScale;
-
-    // Update input
-    this.handleInput();
-
-    // Update systems
-    this.waveSystem.update(scaledDt);
-    this.backgroundSystem.update(scaledDt, this.waveSystem.getSpeedMultiplier());
-    this.particles.update(dt); // Particles don't slow down
-    this.screenShake.update(dt);
-    this.comboSystem.update(dt);
-    this.feverSystem.update(dt); // Fever tracks real time
-    this.laneWarningSystem.update(dt);
-    this.updatePowerUps(dt);
-
-    // Update entities
-    this.player.update(dt);
-    this.updateObstacles(scaledDt);
-    this.updateCoins(scaledDt);
-    this.updateGems(scaledDt);
-    this.updatePowerUpEntities(scaledDt);
-    this.updateBullets(scaledDt);
+    this.particles.update(dt);
+    this.shake.update(dt);
     this.updatePopups(dt);
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    this.zoneFlip = Math.min(1, this.zoneFlip + dt / 0.35);
 
-    // Update lane warnings based on current obstacles/gems
-    this.updateLaneWarnings();
-
-    // Spawn logic
-    this.handleSpawning(scaledDt);
-
-    // Collision detection
-    this.checkCollisions();
-
-    // Score from survival (apply fever multiplier)
-    this.score += Math.floor(scaledDt * 100 * this.feverSystem.getMultiplier());
-
-    // Update slow-mo timer
-    if (this.slowMoTimer > 0) {
-      this.slowMoTimer -= dt;
+    if (this.freeze > 0) {
+      this.freeze = Math.max(0, this.freeze - dt);
+      return;
     }
 
-    // Track high score
-    if (this.score > this.highScore) {
-      this.highScore = this.score;
-    }
-  }
-
-  private getSpeedScale(): number {
-    // Slow time power-up
-    if (this.hasPowerUp('slow')) return 0.5;
-    // Near-miss slow-mo
-    if (this.slowMoTimer > 0) return 0.65;
-    return 1;
-  }
-
-  private updateReadyPhase(dt: number): void {
-    if (this.readyTimer > 0) {
-      this.readyTimer -= dt;
+    this.applyControls();
+    if (this.pendingDodge) {
+      this.pendingDodge.ttl -= dt;
+      if (this.pendingDodge.ttl <= 0) this.pendingDodge = null;
     }
 
-    // Check for input to start
-    const touches = this.services.input.getTouches?.() || [];
-    const keyPressed = this.services.input.isLeftPressed() || this.services.input.isRightPressed() || this.services.input.isActionPressed();
+    this.runTime += dt;
+    if (this.fever.update(dt)) this.sound('success', 0.2, 0.6);
+    this.combo.update(dt);
+    this.slowMo = Math.max(0, this.slowMo - dt);
+    this.updateActivePowerUps(dt);
 
-    if (touches.length > 0 || keyPressed || this.readyTimer <= 0) {
-      this.isStarted = true;
-      this.gameStartTime = Date.now();
-      this.player.setInvulnerable(0.8);
-      this.services.audio.playSound('click');
+    const wdt = dt * this.timeScale();
+    for (const ev of this.progression.update(wdt)) this.onProgress(ev);
+
+    const n = Math.max(1, Math.ceil(dt / MAX_STEP));
+    for (let i = 0; i < n && this.gameState === 'play'; i++) {
+      this.step(dt / n, wdt / n);
     }
 
-    // Still update visual systems
-    this.player.update(dt);
-    this.particles.update(dt);
-    this.backgroundSystem.update(dt * 0.5, 1);
-  }
-
-  private updateFinishingSequence(dt: number): void {
-    this.finishingTimer -= dt;
-    this.particles.update(dt);
-    this.updatePopups(dt);
-
-    if (this.finishingTimer <= 0) {
-      this.endGame();
+    if (this.gameState === 'play') {
+      this.addPoints(SURVIVAL_POINTS * this.fever.multiplier() * wdt);
     }
   }
 
-  private updateRecap(dt: number): void {
-    this.recapTimer += dt;
-    this.recapAnimPhase += dt * 4;
-    this.particles.update(dt);
-    this.backgroundSystem.update(dt * 0.2, 0.3);
-
-    // Continue to game over after player input or 8 seconds
-    const touches = this.services.input.getTouches?.() || [];
-    const keyPressed = this.services.input.isActionPressed?.() || this.services.input.isKeyPressed?.('Space') || this.services.input.isKeyPressed?.('Enter');
-
-    if ((this.recapTimer > 2 && (touches.length > 0 || keyPressed)) || this.recapTimer > 8) {
-      this.showingRecap = false;
-      this.finishingTimer = 0.5;
+  private applyControls(): void {
+    let hopped = 0;
+    if (this.steer !== null) {
+      const from = this.player.lane;
+      if (this.player.steerTo(this.steer)) hopped = this.player.lane - from;
+      this.steer = null;
+    }
+    while (this.hopQueue.length > 0) {
+      const dir = this.hopQueue.shift() ?? 0;
+      if (this.player.hop(dir)) hopped = dir;
+    }
+    if (hopped !== 0) {
+      this.particles.puff(
+        this.player.x,
+        this.player.y,
+        Math.sign(hopped),
+        SHIP.flame
+      );
+      this.sound('click', 0.06, 0.45);
+    }
+    if (this.pendingDodge && this.player.startDodge(this.pendingDodge.kind)) {
+      this.sound(this.pendingDodge.kind === 'jump' ? 'whoosh' : 'land');
+      this.pendingDodge = null;
     }
   }
 
-  private handleInput(): void {
-    // Touch input
-    const touches = this.services.input.getTouches?.() || [];
-    if (touches.length > 0) {
-      const touch = touches[0];
-      this.player.moveToPosition(touch.x);
-      this.hasTouchInput = true;
-      this.lastTouchX = touch.x;
-    }
-
-    // Keyboard input
-    if (this.services.input.isLeftPressed()) {
-      if (this.lastMoveDir !== -1) {
-        this.player.moveLeft();
-        this.lastMoveDir = -1;
-      }
-    } else if (this.services.input.isRightPressed()) {
-      if (this.lastMoveDir !== 1) {
-        this.player.moveRight();
-        this.lastMoveDir = 1;
-      }
-    } else {
-      this.lastMoveDir = 0;
-    }
-
-    // Up/Down input for laser dodge
-    if (this.services.input.isUpPressed?.() || this.services.input.isKeyPressed?.('ArrowUp') || this.services.input.isKeyPressed?.('KeyW')) {
-      this.player.jump();
-    }
-    if (this.services.input.isDownPressed?.() || this.services.input.isKeyPressed?.('ArrowDown') || this.services.input.isKeyPressed?.('KeyS')) {
-      this.player.duck();
-    }
-
-    // Pause toggle
-    const pausePressed = this.services.input.isKeyPressed?.('Escape') || this.services.input.isKeyPressed?.('KeyP');
-    if (pausePressed && !this.isPaused) {
-      this.pause();
-    }
+  private timeScale(): number {
+    let k = 1;
+    if (this.hasPower('slow')) k = Math.min(k, SLOW_POWER_SCALE);
+    if (this.slowMo > 0) k = Math.min(k, NEAR_MISS_SCALE);
+    return k;
   }
 
-  private handleSpawning(dt: number): void {
-    this.spawnTimer += dt;
+  /** One sub-step: move everything by the road's single speed, then collide. */
+  private step(dt: number, wdt: number): void {
+    const dy = this.progression.speed() * wdt;
+    this.player.update(dt, wdt, dy);
+    for (const o of this.obstacles) o.update(dy, wdt);
+    for (const c of this.coins) c.update(dy, wdt);
+    for (const g of this.gems) g.update(dy, wdt);
+    for (const p of this.powerUps) p.update(dy, wdt);
+    for (const b of this.bolts) b.y -= BOLT_SPEED * dt;
+    this.backdrop.update(dt, dy);
 
-    const spawnInterval = this.waveSystem.getSpawnInterval();
-    if (this.spawnTimer >= spawnInterval) {
-      this.spawnTimer = 0;
-
-      // Decide what pattern to spawn
-      if (this.waveSystem.shouldSpawnWall()) {
-        this.spawnWallWithGap();
-      } else {
-        this.spawnSingleObstacle();
-      }
-
-      // Power-up spawning
-      if (this.waveSystem.shouldSpawnPowerUp()) {
-        this.spawnPowerUp();
+    if (this.hasPower('magnet')) {
+      const pull = MAGNET_PULL * wdt;
+      for (const c of [...this.coins, ...this.gems]) {
+        const dx = this.player.x - c.x;
+        const dyy = this.player.y - c.y;
+        if (dx * dx + dyy * dyy < MAGNET_RANGE * MAGNET_RANGE) {
+          c.attract(this.player.x, this.player.y, pull);
+        }
       }
     }
+
+    for (const { row, overshoot } of this.spawner.advance(
+      dy,
+      this.spawnContext()
+    )) {
+      this.placeRow(row, SPAWN_Y + overshoot);
+    }
+
+    this.collide();
+    this.cull();
   }
 
-  private spawnSingleObstacle(): void {
-    const laneCount = 5;
-    const laneWidth = this.canvas.width / laneCount;
-    const lane = Math.floor(Math.random() * laneCount);
-
-    const obstacleType = this.waveSystem.getRandomObstacleType();
-    const baseSpeed = 180 * this.waveSystem.getSpeedMultiplier();
-
-    const config: ObstacleConfig = {
-      x: lane * laneWidth + laneWidth * 0.1,
-      y: -40,
-      width: laneWidth * 0.8,
-      height: 30 + Math.random() * 20,
-      speed: baseSpeed + Math.random() * 40,
-      type: obstacleType === 'wall' ? 'block' : obstacleType,
-      isDestructible: true
+  private spawnContext(): SpawnContext {
+    return {
+      zone: this.progression.zoneIndex,
+      worldTime: this.progression.worldTime,
+      speed: this.progression.speed(),
+      rush: this.progression.rushPhase === 'active',
     };
+  }
 
-    // Moving obstacles oscillate
-    if (obstacleType === 'moving') {
-      config.movingRange = laneWidth * 0.8;
+  private placeRow(row: RowSpec, bottomY: number): void {
+    for (const h of row.hazards) {
+      this.obstacles.push(
+        new Obstacle(h.kind, h.lane, row.id, bottomY, h.band ?? null, row.id)
+      );
     }
-
-    this.obstacles.push(new Obstacle(config));
-
-    // Random chance to spawn laser instead (10% chance after zone 2)
-    if (this.waveSystem.getZoneIndex() >= 1 && Math.random() < 0.1) {
-      this.spawnLaser();
+    for (const p of row.pickups) {
+      const x = laneCenter(p.lane);
+      const y = bottomY - p.dy;
+      if (p.kind === 'coin') this.coins.push(new Coin(x, y, p.dy * 0.05));
+      else if (p.kind === 'gem') this.gems.push(new Gem(x, y, row.id));
+      else if (p.power) this.powerUps.push(new PowerUp(x, y, p.power, row.id));
     }
+  }
 
-    // Random chance to spawn coin or gem alongside
-    if (Math.random() < 0.3) {
-      const coinLane = (lane + 1 + Math.floor(Math.random() * 3)) % laneCount;
-      const coinX = coinLane * laneWidth + laneWidth / 2;
+  /** Scenes and tests: put one row of a given pattern at the far end now. */
+  spawnPattern(kind: PatternKind): RowSpec {
+    const row = this.spawner.next(this.spawnContext(), kind);
+    this.placeRow(row, SPAWN_Y);
+    return row;
+  }
 
-      // 1 in 8 chance for gem instead of coin
-      if (Math.random() < 0.125) {
-        this.gems.push(new Gem(coinX, -50, baseSpeed));
-      } else {
-        this.coins.push(new Coin(coinX, -50, baseSpeed));
+  private cull(): void {
+    const floor = DECK_Y + 40;
+    this.obstacles = this.obstacles.filter(o => !o.destroyed && o.y < floor);
+    this.coins = this.coins.filter(c => !c.collected && c.y < floor);
+    this.gems = this.gems.filter(g => !g.collected && g.y < floor);
+    this.powerUps = this.powerUps.filter(p => !p.collected && p.y < floor);
+    this.bolts = this.bolts.filter(b => b.y > 0);
+  }
+
+  // ============================================================ collisions
+
+  private collide(): void {
+    const ship = this.player.hitbox();
+    const ghost = this.hasPower('ghost');
+
+    for (const o of this.obstacles) {
+      if (o.destroyed || o.passed) continue;
+      const box = o.hitbox();
+      if (o.kind === 'laser') {
+        this.collideLaser(o, box, ship, ghost);
+      } else if (intersects(ship, box)) {
+        if (!o.touched) {
+          o.touched = true;
+          if (!ghost) this.takeHit();
+        }
+      } else if (!o.touched) {
+        o.closest = Math.min(o.closest, rectGap(ship, box));
+      }
+      if (this.gameState !== 'play') return;
+      // A close pass is judged as the hazard draws level with the ship, so
+      // the reward lands on the move that earned it; slipping in right
+      // behind a hazard is caught when it has fully passed.
+      const level = box.y + box.h >= this.player.y;
+      const past = box.y > ship.y + ship.h;
+      if (
+        o.kind !== 'laser' &&
+        (level || past) &&
+        !o.nearMissed &&
+        !o.touched &&
+        o.closest <= NEAR_MISS_PX
+      ) {
+        this.nearMiss(o, ship);
+      }
+      if (past) {
+        o.passed = true;
+        if (o.kind === 'laser' && o.dodged && !o.touched) this.laserClear(o);
       }
     }
+
+    this.collectPickups(ship);
+    this.collideBolts();
   }
 
-  private spawnLaser(): void {
-    const baseSpeed = 150 * this.waveSystem.getSpeedMultiplier();
-    const isHigh = Math.random() < 0.5;
-
-    const config: ObstacleConfig = {
-      x: 0,
-      y: -30,
-      width: this.canvas.width,
-      height: 20,
-      speed: baseSpeed,
-      type: 'laser',
-      laserPosition: isHigh ? 'high' : 'low',
-      isDestructible: false
-    };
-
-    this.obstacles.push(new Obstacle(config));
-  }
-
-  private spawnWallWithGap(): void {
-    const laneCount = 5;
-    const laneWidth = this.canvas.width / laneCount;
-    const gapLane = Math.floor(Math.random() * laneCount);
-    const baseSpeed = 160 * this.waveSystem.getSpeedMultiplier();
-
-    for (let lane = 0; lane < laneCount; lane++) {
-      if (lane === gapLane) continue;
-
-      const config: ObstacleConfig = {
-        x: lane * laneWidth + laneWidth * 0.05,
-        y: -30,
-        width: laneWidth * 0.9,
-        height: 28,
-        speed: baseSpeed,
-        type: 'wall',
-        isDestructible: false
-      };
-
-      this.obstacles.push(new Obstacle(config));
-    }
-
-    // Spawn coin or gem in the gap
-    const collectibleX = gapLane * laneWidth + laneWidth / 2;
-    if (Math.random() < 0.125) {
-      this.gems.push(new Gem(collectibleX, -50, baseSpeed));
+  private collideLaser(
+    o: Obstacle,
+    box: Rect,
+    ship: Rect,
+    ghost: boolean
+  ): void {
+    const overlap = box.y < ship.y + ship.h && box.y + box.h > ship.y;
+    if (!overlap || o.touched) return;
+    const right =
+      (o.band === 'high' && this.player.isDucking()) ||
+      (o.band === 'low' && this.player.isJumping());
+    if (ghost) {
+      o.touched = true;
+    } else if (right) {
+      o.dodged = true;
     } else {
-      this.coins.push(new Coin(collectibleX, -50, baseSpeed));
+      o.touched = true;
+      this.takeHit();
     }
   }
 
-  private spawnPowerUp(): void {
-    const types: PowerUpType[] = ['shield', 'magnet', 'slow', 'ghost', 'drone'];
-    const type = types[Math.floor(Math.random() * types.length)];
-
-    const laneCount = 5;
-    const laneWidth = this.canvas.width / laneCount;
-    const lane = Math.floor(Math.random() * laneCount);
-    const x = lane * laneWidth + laneWidth / 2;
-    const speed = 120 + Math.random() * 40;
-
-    this.powerUps.push(new PowerUp(x, -30, speed, type));
-  }
-
-  private updateObstacles(dt: number): void {
-    const speedMult = this.waveSystem.getSpeedMultiplier();
-
-    for (const obstacle of this.obstacles) {
-      obstacle.update(dt, speedMult);
+  private takeHit(): void {
+    if (this.player.isInvulnerable()) return;
+    const shield = this.activePowerUps.find(p => p.type === 'shield');
+    if (shield) {
+      this.activePowerUps = this.activePowerUps.filter(p => p !== shield);
+      this.player.setInvulnerable(0.6);
+      this.particles.ring(
+        this.player.x,
+        this.player.y,
+        POWERUP_CONFIG.shield.color,
+        34
+      );
+      this.shake.shake(4, 0.2);
+      this.popup(
+        this.player.x,
+        this.player.y - 40,
+        'SHIELD',
+        'HELD',
+        POWERUP_CONFIG.shield.color
+      );
+      this.sound('hit');
+      return;
     }
-
-    this.obstacles = this.obstacles.filter(o => !o.isOffScreen(this.canvas.height));
+    this.lives--;
+    this.player.setInvulnerable(HIT_INVULN);
+    this.freeze = HIT_FREEZE;
+    this.shake.shake(10, 0.35);
+    this.hitFlash = 0.5;
+    this.fever.onDamage();
+    this.combo.breakChain();
+    this.particles.sparks(this.player.x, this.player.y, HAZARD.signal, 10);
+    this.sound('collision');
+    if (this.lives <= 0) {
+      this.die();
+    } else {
+      this.popup(this.player.x, this.player.y - 40, 'HULL', '-1', UI.bad);
+    }
   }
 
-  private updateCoins(dt: number): void {
-    const speedMult = this.waveSystem.getSpeedMultiplier();
-    const hasMagnet = this.hasPowerUp('magnet');
+  private nearMiss(o: Obstacle, ship: Rect): void {
+    o.nearMissed = true;
+    const pts = this.combo.addNearMiss();
+    this.addPoints(pts);
+    const b = o.hitbox();
+    o.flash = 0.25;
+    // Flash the edge that faced the ship.
+    if (ship.x >= b.x + b.w) o.flashSide = 'right';
+    else if (ship.x + ship.w <= b.x) o.flashSide = 'left';
+    else o.flashSide = ship.y >= b.y + b.h ? 'bottom' : 'top';
+    this.slowMo = NEAR_MISS_SLOWMO;
+    this.popup(
+      this.player.x,
+      this.player.y - 44,
+      'CLOSE',
+      `+${pts}`,
+      this.accentHex()
+    );
+    this.sound('success');
+    this.services?.analytics?.trackFeatureUsage?.('tapdodge_near_miss');
+  }
 
-    for (const coin of this.coins) {
-      coin.update(dt, speedMult);
+  private laserClear(o: Obstacle): void {
+    const pts = this.combo.addClear();
+    this.addPoints(pts);
+    this.popup(
+      this.player.x,
+      this.player.y - 44,
+      o.band === 'high' ? 'UNDER' : 'OVER',
+      `+${pts}`,
+      this.accentHex()
+    );
+    this.sound('success');
+  }
 
-      // Magnet attraction
-      if (hasMagnet) {
-        const dx = this.player.getCenterX() - coin.x;
-        const dy = this.player.getCenterY() - coin.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+  private collectPickups(ship: Rect): void {
+    for (const c of this.coins) {
+      if (c.collected || !intersects(ship, c.hitbox())) continue;
+      c.collected = true;
+      this.coinsTaken++;
+      this.pickups++;
+      this.combo.addCoin();
+      this.addPoints(COIN_POINTS);
+      this.particles.sparkle(c.x, c.y, UI.coin);
+      this.popup(c.x, c.y - 16, '', `+${COIN_POINTS}`, UI.ink);
+      this.sound('coin', 0.04);
+    }
+    for (const g of this.gems) {
+      if (g.collected || !intersects(ship, g.hitbox())) continue;
+      g.collected = true;
+      this.gemsTaken++;
+      this.pickups++;
+      this.addPoints(GEM_POINTS);
+      this.particles.burst(g.x, g.y, GEM.light);
+      this.popup(g.x, g.y - 18, 'GEM', `+${GEM_POINTS}`, GEM.light);
+      this.sound('powerup');
+      this.services?.analytics?.trackFeatureUsage?.('tapdodge_gem_collected');
+    }
+    for (const p of this.powerUps) {
+      if (p.collected || !intersects(ship, p.hitbox())) continue;
+      p.collected = true;
+      this.activatePowerUp(p.type);
+      const style = POWERUP_CONFIG[p.type];
+      this.particles.ring(p.x, p.y, style.color, 26);
+      this.popup(p.x, p.y - 22, style.label, '', style.color);
+      this.sound('powerup');
+      this.services?.analytics?.trackFeatureUsage?.('tapdodge_power', {
+        type: p.type,
+      });
+    }
+  }
 
-        if (dist < this.MAGNET_RANGE) {
-          coin.attractTo(this.player.getCenterX(), this.player.getCenterY(), this.MAGNET_STRENGTH, dt);
+  private collideBolts(): void {
+    for (const b of this.bolts) {
+      for (const o of this.obstacles) {
+        if (o.destroyed || !o.isDestructible()) continue;
+        const box = o.hitbox();
+        if (
+          b.x > box.x &&
+          b.x < box.x + box.w &&
+          b.y > box.y &&
+          b.y < box.y + box.h
+        ) {
+          o.destroyed = true;
+          b.y = -100;
+          this.addPoints(DRONE_KILL_POINTS);
+          this.particles.sparks(o.x + o.w / 2, o.y + o.h / 2, HAZARD.signal, 8);
+          this.sound('bounce');
+          break;
         }
       }
     }
-
-    this.coins = this.coins.filter(c => !c.isOffScreen(this.canvas.height));
   }
 
-  private updateGems(dt: number): void {
-    const speedMult = this.waveSystem.getSpeedMultiplier();
-    const hasMagnet = this.hasPowerUp('magnet');
-
-    for (const gem of this.gems) {
-      gem.update(dt, speedMult);
-
-      // Magnet attraction (stronger for gems!)
-      if (hasMagnet) {
-        const dx = this.player.getCenterX() - gem.x;
-        const dy = this.player.getCenterY() - gem.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        if (dist < this.MAGNET_RANGE * 1.5) {
-          gem.attractTo(this.player.getCenterX(), this.player.getCenterY(), this.MAGNET_STRENGTH * 1.5, dt);
-        }
-      }
-    }
-
-    this.gems = this.gems.filter(g => !g.isOffScreen(this.canvas.height));
-  }
-
-  private updatePowerUpEntities(dt: number): void {
-    const speedMult = this.waveSystem.getSpeedMultiplier();
-
-    for (const powerUp of this.powerUps) {
-      powerUp.update(dt, speedMult);
-    }
-
-    this.powerUps = this.powerUps.filter(p => !p.isOffScreen(this.canvas.height));
-  }
-
-  private updatePowerUps(dt: number): void {
-    // Decay active power-ups
-    this.activePowerUps = this.activePowerUps.filter(p => {
-      p.duration -= dt;
-      return p.duration > 0;
-    });
-
-    // Drone shooting
-    if (this.hasPowerUp('drone')) {
-      this.droneFireTimer -= dt;
-      if (this.droneFireTimer <= 0) {
-        this.droneFireTimer = 0.3;
-        this.fireDroneBullet();
-      }
-    }
-  }
-
-  private updateBullets(dt: number): void {
-    for (const bullet of this.bullets) {
-      bullet.y += bullet.vy * dt;
-    }
-
-    // Check bullet-obstacle collisions
-    for (const bullet of this.bullets) {
-      for (const obstacle of this.obstacles) {
-        if (obstacle.isDestructible && !obstacle.isDestroyed) {
-          const bounds = obstacle.getBounds();
-          if (bullet.x > bounds.x && bullet.x < bounds.x + bounds.w &&
-            bullet.y > bounds.y && bullet.y < bounds.y + bounds.h) {
-            obstacle.destroy();
-            bullet.y = -100; // Remove bullet
-
-            this.score += 80;
-            this.addPopup(bounds.x + bounds.w / 2, bounds.y, '+80', '#F59E0B');
-            this.particles.createObstacleDestroy(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2);
-            this.screenShake.shake(4, 0.15);
-            this.services.audio.playSound('success');
-          }
-        }
-      }
-    }
-
-    this.bullets = this.bullets.filter(b => b.y > -20);
-  }
-
-  private fireDroneBullet(): void {
-    this.bullets.push({
-      x: this.player.getCenterX(),
-      y: this.player.y - 10,
-      vy: -400
-    });
-    this.particles.createDroneShot(this.player.getCenterX(), this.player.y);
-    this.services.audio.playSound('click');
-  }
-
-  private updatePopups(dt: number): void {
-    for (const popup of this.popups) {
-      popup.y -= 40 * dt;
-      popup.life -= dt;
-    }
-    this.popups = this.popups.filter(p => p.life > 0);
-  }
-
-  private updateLaneWarnings(): void {
-    // Only show lane warnings during fever mode
-    if (this.feverSystem.getLevel() < 1) return;
-
-    const laneCount = 5;
-    const laneWidth = this.canvas.width / laneCount;
-
-    // Add warnings for obstacles (not lasers since they span all lanes)
-    for (const obstacle of this.obstacles) {
-      if (obstacle.y < 100 && obstacle.type !== 'laser') {
-        const lane = Math.floor((obstacle.x + obstacle.width / 2) / laneWidth);
-        const timeToImpact = (this.player.y - obstacle.y) / obstacle.speed;
-        this.laneWarningSystem.addWarning(lane, timeToImpact, 'obstacle');
-      }
-    }
-
-    // Add warnings for gems (positive indicator)
-    for (const gem of this.gems) {
-      if (gem.y < 100) {
-        const lane = Math.floor(gem.x / laneWidth);
-        const timeToImpact = (this.player.y - gem.y) / gem.speed;
-        this.laneWarningSystem.addWarning(lane, timeToImpact, 'gem');
-      }
-    }
-  }
-
-  private checkCollisions(): void {
-    const playerBounds = this.player.getBounds();
-    const hasGhost = this.hasPowerUp('ghost');
-
-    // Obstacle collisions
-    if (!hasGhost) {
-      for (const obstacle of this.obstacles) {
-        if (obstacle.isDestroyed) continue;
-
-        const obsBounds = obstacle.getBounds();
-
-        // Special handling for laser obstacles
-        if (obstacle.type === 'laser') {
-          const isInLaserZone = this.intersects(playerBounds, obsBounds);
-
-          if (isInLaserZone) {
-            // Check if player is correctly dodging
-            const isDodgingCorrectly =
-              (obstacle.laserPosition === 'high' && this.player.getIsDucking()) ||
-              (obstacle.laserPosition === 'low' && this.player.getIsJumping());
-
-            if (isDodgingCorrectly) {
-              // Successfully dodging - set visual feedback
-              obstacle.setDodging(true);
-
-              // Award near-miss if not already
-              if (!obstacle.isNearMissed) {
-                obstacle.isNearMissed = true;
-                const result = this.comboSystem.addNearMiss();
-                const bonus = Math.floor(result.bonus * 2 * this.feverSystem.getMultiplier());
-                this.score += bonus;
-                this.addPopup(this.player.getCenterX(), this.player.y - 30, `DODGE! +${bonus}`, '#22D3EE');
-                this.particles.createNearMiss(this.player.getCenterX(), this.player.getCenterY());
-                this.services.audio.playSound('success');
-              }
-            } else {
-              // Not dodging correctly - hit!
-              obstacle.setDodging(false);
-              if (!this.player.isInvulnerable()) {
-                const tookDamage = this.player.takeDamage();
-                if (tookDamage) {
-                  this.lives--;
-                  this.feverSystem.onDamage();
-                  this.particles.createExplosion(this.player.getCenterX(), this.player.getCenterY(), '#EF4444');
-                  this.screenShake.shake(10, 0.4);
-                  this.services.audio.playSound('collision');
-
-                  if (this.lives <= 0) {
-                    this.triggerGameOver();
-                    return;
-                  }
-                }
-              }
-            }
-          } else {
-            obstacle.setDodging(false);
-          }
-          continue;
-        }
-
-        // Regular obstacle collision
-        if (this.intersects(playerBounds, obsBounds)) {
-          // Hit!
-          if (this.player.isInvulnerable()) {
-            // Absorb hit
-            this.screenShake.shake(5, 0.3);
-            continue;
-          }
-
-          // Take damage
-          const tookDamage = this.player.takeDamage();
-          if (tookDamage) {
-            this.lives--;
-            this.feverSystem.onDamage(); // Reset fever!
-            this.particles.createExplosion(this.player.getCenterX(), this.player.getCenterY(), '#EF4444');
-            this.screenShake.shake(10, 0.4);
-            this.services.audio.playSound('collision');
-
-            // Check game over
-            if (this.lives <= 0) {
-              this.triggerGameOver();
-              return;
-            }
-          }
-          continue;
-        }
-
-        // Near-miss detection
-        if (!obstacle.isNearMissed) {
-          const nearDist = this.getNearMissDistance(playerBounds, obsBounds);
-          if (nearDist < 35 && nearDist > 0) {
-            obstacle.isNearMissed = true;
-
-            const result = this.comboSystem.addNearMiss();
-            const feverBonus = Math.floor(result.bonus * this.feverSystem.getMultiplier());
-            this.score += feverBonus;
-
-            this.addPopup(
-              this.player.getCenterX(),
-              this.player.y - 20,
-              `Near! +${feverBonus}`,
-              '#60A5FA'
-            );
-
-            this.particles.createNearMiss(this.player.getCenterX(), this.player.getCenterY());
-            this.slowMoTimer = 0.4;
-            this.screenShake.shake(3, 0.1);
-            this.services.audio.playSound('success');
-            this.services.analytics.trackFeatureUsage('tapdodge_near_miss');
-          }
-        }
-      }
-    }
-
-    // Coin collisions
-    for (const coin of this.coins) {
-      if (coin.isCollected) continue;
-
-      const coinBounds = coin.getBounds();
-      if (this.intersects(playerBounds, coinBounds)) {
-        coin.collect();
-
-        const multiplier = this.comboSystem.addCoin();
-        const coinValue = Math.floor(100 * multiplier * this.feverSystem.getMultiplier());
-        this.score += coinValue;
-        this.pickups++;
-
-        this.addPopup(coin.x, coin.y - 10, `+${coinValue}`, '#FBBF24');
-        this.particles.createCoinPickup(coin.x, coin.y);
-        this.services.audio.playSound('coin');
-      }
-    }
-
-    // Gem collisions
-    for (const gem of this.gems) {
-      if (gem.isCollected) continue;
-
-      const gemBounds = gem.getBounds();
-      if (this.intersects(playerBounds, gemBounds)) {
-        gem.collect();
-        this.gemsCollected++;
-
-        const multiplier = this.comboSystem.addCoin();
-        const gemValue = Math.floor(500 * multiplier * this.feverSystem.getMultiplier());
-        this.score += gemValue;
-        this.pickups++;
-
-        this.addPopup(gem.x, gem.y - 10, `💎 +${gemValue}`, '#A855F7');
-        this.particles.createPowerUpPickup(gem.x, gem.y, '#A855F7');
-        this.screenShake.shake(5, 0.2);
-        this.services.audio.playSound('powerup');
-        this.services.analytics.trackFeatureUsage('tapdodge_gem_collected');
-      }
-    }
-
-    // Power-up collisions
-    for (const powerUp of this.powerUps) {
-      if (powerUp.isCollected) continue;
-
-      const puBounds = powerUp.getBounds();
-      if (this.intersects(playerBounds, puBounds)) {
-        powerUp.collect();
-        this.activatePowerUp(powerUp.type);
-
-        this.addPopup(powerUp.x, powerUp.y - 10, POWERUP_CONFIG[powerUp.type].icon, '#FFFFFF');
-        this.particles.createPowerUpPickup(powerUp.x, powerUp.y, POWERUP_CONFIG[powerUp.type].color);
-        this.screenShake.shake(4, 0.15);
-        this.services.audio.playSound('powerup');
-        this.services.analytics.trackFeatureUsage('tapdodge_power', { type: powerUp.type });
-      }
-    }
-  }
-
-  private intersects(a: { x: number; y: number; w: number; h: number }, b: { x: number; y: number; w: number; h: number }): boolean {
-    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  }
-
-  private getNearMissDistance(player: { x: number; y: number; w: number; h: number }, obstacle: { x: number; y: number; w: number; h: number }): number {
-    const px = player.x + player.w / 2;
-    const py = player.y + player.h / 2;
-
-    const closestX = Math.max(obstacle.x, Math.min(px, obstacle.x + obstacle.w));
-    const closestY = Math.max(obstacle.y, Math.min(py, obstacle.y + obstacle.h));
-
-    return Math.sqrt((px - closestX) ** 2 + (py - closestY) ** 2);
-  }
+  // ============================================================= power-ups
 
   private activatePowerUp(type: PowerUpType): void {
     const duration = POWERUP_CONFIG[type].duration;
-
-    // Check if already active
     const existing = this.activePowerUps.find(p => p.type === type);
     if (existing) {
-      existing.duration += duration;
-      existing.maxDuration += duration;
+      existing.left = duration;
+      existing.max = duration;
     } else {
-      this.activePowerUps.push({ type, duration, maxDuration: duration });
+      this.activePowerUps.push({ type, left: duration, max: duration });
     }
-
-    // Special effects
-    if (type === 'shield') {
-      this.player.setInvulnerable(duration);
-    }
-
-    this.showBanner(type.toUpperCase() + ' ACTIVATED!');
+    if (type === 'drone') this.droneTimer = 0;
   }
 
-  private hasPowerUp(type: PowerUpType): boolean {
+  private updateActivePowerUps(dt: number): void {
+    for (const p of this.activePowerUps) {
+      p.left -= dt;
+      // Coming out of ghost inside a hazard must not be an instant hit.
+      if (p.left <= 0 && p.type === 'ghost') this.player.setInvulnerable(0.4);
+    }
+    this.activePowerUps = this.activePowerUps.filter(p => p.left > 0);
+    if (this.hasPower('drone')) {
+      this.droneTimer -= dt;
+      if (this.droneTimer <= 0) {
+        this.droneTimer = DRONE_FIRE_EVERY;
+        this.bolts.push({ x: this.player.x + 30, y: this.player.y - 24 });
+      }
+    }
+  }
+
+  private hasPower(type: PowerUpType): boolean {
     return this.activePowerUps.some(p => p.type === type);
   }
 
-  private triggerGameOver(): void {
-    this.particles.createDeathExplosion(this.player.getCenterX(), this.player.getCenterY(), this.canvas.width);
-    this.screenShake.shake(15, 0.8);
+  // ============================================================ progression
 
-    // Fail boss wave if active
-    this.waveSystem.failBossWave();
+  private onProgress(ev: ProgressEvent): void {
+    switch (ev.type) {
+      case 'zone': {
+        const zone = ZONES[ev.zone];
+        this.backdrop.setZone(ev.zone);
+        this.zoneFlip = 0;
+        this.backdrop.paint(zone.name, zone.accent, `ZONE ${ev.zone + 1}`);
+        this.sound('success');
+        break;
+      }
+      case 'rush-warning':
+        this.backdrop.paint('RUSH', RUSH_HOT, '', true);
+        this.sound('laser');
+        break;
+      case 'rush-start':
+        this.shake.shake(5, 0.3);
+        this.sound('whoosh');
+        break;
+      case 'rush-clear':
+        this.addPoints(RUSH_POINTS);
+        this.backdrop.paint('CLEAR', this.accentHex(), `+${RUSH_POINTS}`);
+        this.popup(
+          this.player.x,
+          this.player.y - 60,
+          'RUSH',
+          `+${RUSH_POINTS}`,
+          RUSH_HOT
+        );
+        this.sound('unlock');
+        break;
+    }
+  }
 
-    // Calculate stats for recap
-    const survivalTime = this.gameStartTime > 0 ? (Date.now() - this.gameStartTime) / 1000 : 0;
-    const isNewRecord = this.score > this.highScore;
+  // ================================================================== end
 
-    this.recapStats = {
+  private die(): void {
+    this.gameState = 'dying';
+    this.phaseTime = 0;
+    this.freeze = 0;
+    this.particles.explode(this.player.x, this.player.y, SHIP.hull, SHIP.glow);
+    this.shake.shake(14, 0.6);
+    this.hitFlash = 0.9;
+    this.progression.abandonRush();
+    this.sound('explosion');
+    this.stats = this.buildStats();
+    this.services?.analytics?.trackFeatureUsage?.('tapdodge_game_over', {
       score: this.score,
-      highScore: Math.max(this.score, this.highScore),
-      isNewRecord,
-      survivalTime,
-      nearMisses: this.comboSystem.getTotalNearMisses(),
-      maxChain: this.comboSystem.getMaxNearMissChain(),
-      coinsCollected: this.pickups,
-      gemsCollected: this.gemsCollected,
-      maxFever: this.feverSystem.getMaxLevelReached(),
-      zoneReached: this.waveSystem.getZoneIndex(),
-      bossesCleared: this.waveSystem.getBossesCleared()
-    };
-
-    // Show recap instead of immediately ending
-    this.showingRecap = true;
-    this.recapTimer = 0;
-    this.recapAnimPhase = 0;
-
-    this.services.analytics.trackFeatureUsage('tapdodge_game_over', {
-      score: this.score,
-      zone: this.waveSystem.getZoneIndex()
+      zone: this.progression.zoneIndex,
     });
   }
 
-  private addPopup(x: number, y: number, text: string, color: string): void {
-    this.popups.push({ x, y, text, life: 0.8, color });
+  private updateDying(dt: number): void {
+    this.particles.update(dt);
+    this.shake.update(dt);
+    this.updatePopups(dt);
+    this.hitFlash = Math.max(0, this.hitFlash - dt);
+    // The road coasts to a stop under the wreck.
+    const k = Math.max(0, 1 - this.phaseTime / DEATH_BEAT);
+    const dy = this.progression.speed() * dt * k * k;
+    for (const o of this.obstacles) o.update(dy, dt * k);
+    for (const c of this.coins) c.update(dy, dt * k);
+    for (const g of this.gems) g.update(dy, dt * k);
+    for (const p of this.powerUps) p.update(dy, dt * k);
+    this.backdrop.update(dt, dy);
+    if (this.phaseTime >= DEATH_BEAT) {
+      this.gameState = 'recap';
+      this.phaseTime = 0;
+    }
   }
 
-  private showBanner(text: string): void {
-    this.bannerText = text;
-    this.bannerTimer = 2.0;
+  private updateRecap(dt: number, intents: Intents): void {
+    this.particles.update(dt);
+    const skip = intents.anyPress && this.phaseTime >= RECAP_MIN_INPUT;
+    if (skip || this.phaseTime >= RECAP_SECONDS) {
+      if (skip) this.sound('click');
+      this.finish();
+    }
   }
 
-  // ===== RENDERING =====
+  private buildStats(): RunStats {
+    const zone = this.progression.zoneIndex;
+    return {
+      score: this.score,
+      best: this.bestAtStart,
+      newBest: this.score > this.bestAtStart,
+      survival: this.runTime,
+      nearMisses: this.combo.getNearMisses(),
+      maxChain: this.combo.getMaxChain(),
+      coins: this.coinsTaken,
+      gems: this.gemsTaken,
+      maxFever: this.fever.maxLevelReached,
+      maxFeverName: FEVER_LEVELS[this.fever.maxLevelReached].name,
+      zone,
+      zoneName: ZONES[zone].name,
+      rushes: this.progression.rushesCleared,
+    };
+  }
+
+  private finish(): void {
+    this.gameState = 'done';
+    // Set before endGame(): getScore() inside it merges these in.
+    this.extendedGameData = {
+      survival_time: this.runTime,
+      near_misses: this.combo.getNearMisses(),
+      max_near_chain: this.combo.getMaxChain(),
+      coins_collected: this.pickups,
+      gems_collected: this.gemsTaken,
+      max_combo: this.combo.getMaxCoinCombo(),
+      zone_reached: this.progression.zoneIndex,
+      max_fever_level: this.fever.maxLevelReached,
+      rushes_cleared: this.progression.rushesCleared,
+    };
+    this.endGame();
+  }
+
+  protected onGameEnd(finalScore: GameScore): void {
+    try {
+      const prev = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+      if (finalScore.score > prev) {
+        localStorage.setItem(BEST_KEY, String(finalScore.score));
+      }
+    } catch {
+      // Private mode or storage full: the best just is not remembered.
+    }
+    this.best = Math.max(this.best, finalScore.score);
+
+    const track = (key: string, value: number) =>
+      this.services?.analytics?.trackGameSpecificStat?.('tapdodge', key, value);
+    track('survival_time', this.runTime);
+    track('near_misses', this.combo.getNearMisses());
+    track('coins_collected', this.pickups);
+    track('gems_collected', this.gemsTaken);
+    track('max_combo', this.combo.getMaxCoinCombo());
+    track('max_fever', this.fever.maxLevelReached);
+  }
+
+  // ============================================================== helpers
+
+  private addPoints(points: number): void {
+    this.scoreAcc += points;
+    this.score = Math.floor(this.scoreAcc);
+  }
+
+  private popup(
+    x: number,
+    y: number,
+    label: string,
+    value: string,
+    color: string
+  ): void {
+    if (this.popups.length >= 8) this.popups.shift();
+    this.popups.push({ x, y, label, value, color, life: 0.7, max: 0.7 });
+  }
+
+  private updatePopups(dt: number): void {
+    for (const p of this.popups) p.life -= dt;
+    this.popups = this.popups.filter(p => p.life > 0);
+  }
+
+  /** Play a sound at most once per `gap` seconds of game time. */
+  private sound(name: SoundName, gap = 0.05, volume?: number): void {
+    const last = this.soundAt.get(name);
+    if (last !== undefined && this.gameTime - last < gap) return;
+    this.soundAt.set(name, this.gameTime);
+    this.services?.audio?.playSound?.(
+      name,
+      volume === undefined ? undefined : { volume }
+    );
+  }
+
+  private accentHex(): string {
+    return ZONES[this.progression.zoneIndex].accent;
+  }
+
+  // ================================================================ render
 
   protected onRender(ctx: CanvasRenderingContext2D): void {
+    this.renderWorld(ctx);
+  }
+
+  private renderWorld(ctx: CanvasRenderingContext2D): void {
+    const offset = this.shake.getOffset();
     ctx.save();
+    ctx.translate(offset.x, offset.y);
+    this.backdrop.render(ctx, this.gameTime, this.progression.rushBlend);
 
-    // Apply screen shake
-    const shakeOffset = this.screenShake.getOffset();
-    ctx.translate(shakeOffset.x, shakeOffset.y);
-
-    // Background
-    this.backgroundSystem.render(ctx, this.currentZoneColors);
-
-    // Fever overlay
-    this.feverSystem.render(ctx, this.canvas.width, this.canvas.height);
-
-    // Boss warning overlay
-    if (this.waveSystem.isBossWarningActive()) {
-      this.backgroundSystem.renderBossWarning(ctx, this.waveSystem.getBossWarningTimeLeft());
+    if (this.fever.level > 0) {
+      // Fever warms the air: 1% a level, 4% at the top (the cap is 6%).
+      ctx.fillStyle = withAlpha(
+        this.fever.info().color,
+        0.01 * this.fever.level
+      );
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
     }
 
-    // Lane warnings at top
-    this.laneWarningSystem.render(ctx);
+    for (const c of this.coins) c.render(ctx);
+    for (const g of this.gems) g.render(ctx);
+    for (const p of this.powerUps) p.render(ctx);
+    // HIGH beams hang above the road, so they draw over the ship (a duck
+    // reads as passing under); everything else sits on the road beneath it.
+    for (const o of this.obstacles) if (o.band !== 'high') o.render(ctx);
 
-    // Obstacles
-    for (const obstacle of this.obstacles) {
-      obstacle.render(ctx);
+    if (this.bolts.length > 0) {
+      ctx.fillStyle = POWERUP_CONFIG.drone.color;
+      for (const b of this.bolts) ctx.fillRect(b.x - 1.5, b.y - 8, 3, 12);
     }
 
-    // Coins
-    for (const coin of this.coins) {
-      coin.render(ctx);
-    }
-
-    // Gems
-    for (const gem of this.gems) {
-      gem.render(ctx);
-    }
-
-    // Power-ups
-    for (const powerUp of this.powerUps) {
-      powerUp.render(ctx);
-    }
-
-    // Bullets
-    ctx.fillStyle = '#60A5FA';
-    for (const bullet of this.bullets) {
-      ctx.beginPath();
-      ctx.arc(bullet.x, bullet.y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // Player
-    this.player.render(ctx, this.hasPowerUp('shield'), this.hasPowerUp('ghost'));
-
-    // Particles
-    this.particles.render(ctx);
-
-    // Slow-mo vignette
-    if (this.slowMoTimer > 0 || this.hasPowerUp('slow')) {
-      const intensity = this.hasPowerUp('slow') ? 1 : this.slowMoTimer / 0.4;
-      this.backgroundSystem.renderSlowMoVignette(ctx, intensity);
-    }
-
-    // Danger vignette (low lives)
-    if (this.lives === 1) {
-      const pulse = Math.sin(this.gameTime * 4) * 0.3 + 0.4;
-      this.backgroundSystem.renderDangerVignette(ctx, pulse);
-    }
-
-    ctx.restore();
-
-    // Popups (not affected by shake)
-    this.renderPopups(ctx);
-
-    // Banner
-    this.renderBanner(ctx);
-  }
-
-  private renderPopups(ctx: CanvasRenderingContext2D): void {
-    ctx.font = 'bold 16px Arial';
-    ctx.textAlign = 'center';
-
-    for (const popup of this.popups) {
-      ctx.globalAlpha = Math.min(1, popup.life * 2);
-      ctx.fillStyle = popup.color;
-      ctx.fillText(popup.text, popup.x, popup.y);
-    }
-
-    ctx.globalAlpha = 1;
-  }
-
-  private renderBanner(ctx: CanvasRenderingContext2D): void {
-    if (this.bannerTimer <= 0) return;
-
-    this.bannerTimer -= 1 / 60;
-    const alpha = Math.min(1, this.bannerTimer);
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    // Banner background
-    const bannerWidth = this.canvas.width * 0.7;
-    const bannerHeight = 50;
-    const bannerY = 80;
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect((this.canvas.width - bannerWidth) / 2, bannerY, bannerWidth, bannerHeight);
-
-    // Banner border
-    ctx.strokeStyle = this.currentZoneColors.accent;
-    ctx.lineWidth = 2;
-    ctx.strokeRect((this.canvas.width - bannerWidth) / 2, bannerY, bannerWidth, bannerHeight);
-
-    // Banner text
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 24px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(this.bannerText, this.canvas.width / 2, bannerY + bannerHeight / 2);
-
-    ctx.restore();
-  }
-
-  private renderRecap(ctx: CanvasRenderingContext2D): void {
-    if (!this.recapStats) return;
-
-    const stats = this.recapStats;
-    const cx = this.canvas.width / 2;
-    const cy = this.canvas.height / 2;
-
-    // Animate entry - items appear sequentially
-    const itemDelay = 0.3;
-    const getAlpha = (index: number) => {
-      const delay = index * itemDelay;
-      return Math.min(1, Math.max(0, (this.recapTimer - delay) * 2));
-    };
-
-    // Dark overlay
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Subtle vignette
-    const vignette = ctx.createRadialGradient(cx, cy, 0, cx, cy, this.canvas.width * 0.7);
-    vignette.addColorStop(0, 'transparent');
-    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    let y = 60;
-
-    // ===== HEADER: GAME OVER or NEW RECORD =====
-    ctx.globalAlpha = getAlpha(0);
-    ctx.textAlign = 'center';
-    if (stats.isNewRecord) {
-      ctx.fillStyle = '#FBBF24';
-      ctx.font = 'bold 36px Arial';
-      ctx.fillText('🏆 NEW RECORD! 🏆', cx, y);
-    } else {
-      ctx.fillStyle = '#EF4444';
-      ctx.font = 'bold 32px Arial';
-      ctx.fillText('GAME OVER', cx, y);
-    }
-    y += 50;
-
-    // ===== SCORE =====
-    ctx.globalAlpha = getAlpha(1);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = 'bold 48px Arial';
-    const displayScore = Math.floor(stats.score * Math.min(1, (this.recapTimer - 0.3) * 3));
-    ctx.fillText(displayScore.toLocaleString(), cx, y);
-
-    ctx.font = '16px Arial';
-    ctx.fillStyle = '#94A3B8';
-    ctx.fillText(`Best: ${stats.highScore.toLocaleString()}`, cx, y + 25);
-    y += 60;
-
-    // ===== STATS GRID =====
-    const statsToShow = [
-      { icon: '⏱️', label: 'Survival', value: `${stats.survivalTime.toFixed(1)}s`, color: '#22D3EE' },
-      { icon: '💨', label: 'Near Misses', value: stats.nearMisses.toString(), color: '#60A5FA' },
-      { icon: '🔥', label: 'Max Chain', value: `x${stats.maxChain}`, color: '#F97316' },
-      { icon: '💰', label: 'Coins', value: stats.coinsCollected.toString(), color: '#FBBF24' },
-      { icon: '💎', label: 'Gems', value: stats.gemsCollected.toString(), color: '#A855F7' },
-      { icon: '🌡️', label: 'Max Fever', value: `Lv.${stats.maxFever}`, color: '#EC4899' }
-    ];
-
-    const gridCols = 3;
-    const gridWidth = Math.min(this.canvas.width - 40, 360);
-    const cellWidth = gridWidth / gridCols;
-    const startX = cx - gridWidth / 2;
-
-    y += 10;
-    for (let i = 0; i < statsToShow.length; i++) {
-      const stat = statsToShow[i];
-      const col = i % gridCols;
-      const row = Math.floor(i / gridCols);
-      const x = startX + col * cellWidth + cellWidth / 2;
-      const rowY = y + row * 55;
-
-      ctx.globalAlpha = getAlpha(2 + i * 0.3);
-
-      // Icon
-      ctx.font = '20px Arial';
-      ctx.fillText(stat.icon, x, rowY);
-
-      // Value
-      ctx.fillStyle = stat.color;
-      ctx.font = 'bold 18px Arial';
-      ctx.fillText(stat.value, x, rowY + 22);
-
-      // Label
-      ctx.fillStyle = '#64748B';
-      ctx.font = '11px Arial';
-      ctx.fillText(stat.label, x, rowY + 36);
-    }
-    y += 120;
-
-    // ===== ACHIEVEMENTS EARNED =====
-    ctx.globalAlpha = getAlpha(5);
-    const achievements: string[] = [];
-
-    if (stats.zoneReached >= 1) achievements.push(`🏔️ Zone ${stats.zoneReached + 1} Reached`);
-    if (stats.bossesCleared > 0) achievements.push(`👹 ${stats.bossesCleared} Boss${stats.bossesCleared > 1 ? 'es' : ''} Cleared`);
-    if (stats.maxChain >= 5) achievements.push('⚡ Chain Master');
-    if (stats.gemsCollected >= 3) achievements.push('💎 Gem Hunter');
-    if (stats.maxFever >= 3) achievements.push('🔥 Fever Lord');
-    if (stats.nearMisses >= 20) achievements.push('😎 Daredevil');
-    if (stats.survivalTime >= 60) achievements.push('🕐 Survivor');
-
-    if (achievements.length > 0) {
-      ctx.fillStyle = '#FBBF24';
-      ctx.font = 'bold 14px Arial';
-      ctx.fillText('ACHIEVEMENTS', cx, y);
-      y += 20;
-
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = '13px Arial';
-      ctx.fillText(achievements.slice(0, 3).join('  •  '), cx, y);
-      if (achievements.length > 3) {
-        y += 18;
-        ctx.fillText(achievements.slice(3, 6).join('  •  '), cx, y);
+    const alive = this.gameState === 'ready' || this.gameState === 'play';
+    if (alive) {
+      if (this.hasPower('drone')) {
+        icon(
+          ctx,
+          'drone',
+          this.player.x + 30,
+          this.player.y - 16,
+          16,
+          POWERUP_CONFIG.drone.color
+        );
       }
-      y += 25;
+      this.player.render(ctx, {
+        speedFactor: this.progression.speedFactor(),
+        shield: this.hasPower('shield'),
+        ghost: this.hasPower('ghost'),
+        time: this.gameTime,
+      });
     }
+    for (const o of this.obstacles) if (o.band === 'high') o.render(ctx);
+    this.particles.render(ctx);
+    ctx.restore();
 
-    // ===== MOTIVATIONAL MESSAGE =====
-    ctx.globalAlpha = getAlpha(6);
-    y += 10;
-
-    let motivationalMessage = '';
-    let messageColor = '#94A3B8';
-
-    if (stats.isNewRecord) {
-      motivationalMessage = 'You\'re on fire! Can you beat it again?';
-      messageColor = '#FBBF24';
-    } else if (stats.score < 500) {
-      motivationalMessage = 'Tip: Near misses give bonus points!';
-      messageColor = '#60A5FA';
-    } else if (stats.maxFever < 2) {
-      motivationalMessage = 'Challenge: Reach Fever Level 3!';
-      messageColor = '#EC4899';
-    } else if (stats.gemsCollected === 0) {
-      motivationalMessage = 'Next goal: Collect a rare 💎 gem!';
-      messageColor = '#A855F7';
-    } else if (stats.bossesCleared === 0) {
-      motivationalMessage = 'Next challenge: Survive a boss wave!';
-      messageColor = '#F97316';
-    } else {
-      const tips = [
-        'Fever mode = 3x points! Stay safe!',
-        'Gems are worth 5x more than coins!',
-        'Use Ghost to phase through danger!',
-        'Near-miss chains stack up fast!'
-      ];
-      motivationalMessage = tips[Math.floor(Math.random() * tips.length)];
+    const slow = this.hasPower('slow') ? 0.6 : this.slowMo / NEAR_MISS_SLOWMO;
+    if (slow > 0)
+      edgeVignette(ctx, VIEW_W, VIEW_H, this.accentHex(), slow * 0.5);
+    if (this.hitFlash > 0) {
+      edgeVignette(
+        ctx,
+        VIEW_W,
+        VIEW_H,
+        UI.bad,
+        Math.min(1, this.hitFlash * 1.8)
+      );
     }
-
-    ctx.fillStyle = messageColor;
-    ctx.font = 'bold 14px Arial';
-    ctx.fillText(motivationalMessage, cx, y);
-
-    // ===== TAP TO CONTINUE =====
-    ctx.globalAlpha = getAlpha(7) * (Math.sin(this.recapAnimPhase * 2) * 0.3 + 0.7);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.font = '16px Arial';
-    ctx.fillText('Tap or Press SPACE to continue', cx, this.canvas.height - 40);
-
-    ctx.globalAlpha = 1;
+    if (this.lives === 1 && this.gameState === 'play') {
+      edgeVignette(
+        ctx,
+        VIEW_W,
+        VIEW_H,
+        UI.bad,
+        0.3 + 0.12 * Math.sin(this.gameTime * 5)
+      );
+    }
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-    // Show recap screen if active
-    if (this.showingRecap) {
-      this.renderRecap(ctx);
-      return;
-    }
-
-    // ===== TOP-LEFT: Zone and score info =====
-    let topY = this.getHudStartY();
-
-    // Zone indicator
-    const zone = this.waveSystem.getCurrentZone();
-    ctx.fillStyle = this.currentZoneColors.accent;
-    ctx.font = 'bold 14px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText(zone.name, 16, topY);
-    topY += 20;
-
-    // Best score
-    ctx.fillStyle = '#94A3B8';
-    ctx.font = '14px Arial';
-    ctx.fillText(`Best: ${this.highScore}`, 16, topY);
-    topY += 20;
-
-    // Gems collected
-    if (this.gemsCollected > 0) {
-      ctx.fillStyle = '#A855F7';
-      ctx.fillText(`💎 ${this.gemsCollected}`, 16, topY);
-      topY += 20;
-    }
-
-    // ===== BOTTOM-LEFT: Fever meter and combos =====
-    let bottomLeftY = this.canvas.height - 120;
-
-    // Fever multiplier HUD
-    bottomLeftY += this.feverSystem.renderHUD(ctx, 16, bottomLeftY);
-
-    // Combos
-    ctx.font = '14px Arial';
-
-    const coinCombo = this.comboSystem.getCoinCombo();
-    if (coinCombo > 0) {
-      ctx.fillStyle = '#FBBF24';
-      ctx.textAlign = 'left';
-      ctx.fillText(`Coin x${this.comboSystem.getCoinMultiplier().toFixed(1)}`, 16, bottomLeftY);
-      bottomLeftY += 18;
-    }
-
-    const nearChain = this.comboSystem.getNearMissChain();
-    if (nearChain > 0) {
-      ctx.fillStyle = '#60A5FA';
-      ctx.textAlign = 'left';
-      ctx.fillText(`Chain x${nearChain}`, 16, bottomLeftY);
-      bottomLeftY += 18;
-    }
-
-    // Active power-ups
-    for (const powerUp of this.activePowerUps) {
-      const config = POWERUP_CONFIG[powerUp.type];
-      ctx.fillStyle = config.color;
-      ctx.textAlign = 'left';
-      ctx.fillText(`${config.icon} ${powerUp.duration.toFixed(1)}s`, 16, bottomLeftY);
-      bottomLeftY += 18;
-    }
-
-    // ===== BOTTOM-RIGHT: Lives =====
-    ctx.fillStyle = '#EF4444';
-    ctx.font = '24px Arial';
-    ctx.textAlign = 'right';
-    let heartsText = '';
-    for (let i = 0; i < 3; i++) {
-      heartsText += i < this.lives ? '❤️' : '🖤';
-    }
-    ctx.fillText(heartsText, this.canvas.width - 16, this.canvas.height - 30);
-
-    // Dodge indicator when ducking/jumping
-    if (this.player.getIsDucking()) {
-      ctx.fillStyle = '#22D3EE';
-      ctx.font = 'bold 16px Arial';
-      ctx.fillText('⬇ DUCKING', this.canvas.width - 16, this.canvas.height - 60);
-    } else if (this.player.getIsJumping()) {
-      ctx.fillStyle = '#22D3EE';
-      ctx.font = 'bold 16px Arial';
-      ctx.fillText('⬆ JUMPING', this.canvas.width - 16, this.canvas.height - 60);
-    }
-
-    // Boss wave timer
-    if (this.waveSystem.isBossWaveActive()) {
-      ctx.fillStyle = '#EF4444';
-      ctx.font = 'bold 16px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`BOSS: ${this.waveSystem.getBossWaveTimeLeft().toFixed(1)}s`, this.canvas.width / 2, 50);
-    }
-
-    // Ready screen
-    if (!this.isStarted) {
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 20px Arial';
-      ctx.textAlign = 'center';
-
-      if (this.readyTimer > 0) {
-        ctx.fillText(`Starting in ${Math.ceil(this.readyTimer)}...`, this.canvas.width / 2, this.canvas.height / 2);
-      } else {
-        ctx.fillText('Tap or press arrow keys to start!', this.canvas.width / 2, this.canvas.height / 2);
-      }
-
-      ctx.font = '14px Arial';
-      ctx.fillStyle = '#94A3B8';
-      ctx.fillText('Dodge obstacles • Collect coins • Chain near-misses', this.canvas.width / 2, this.canvas.height / 2 + 30);
-    }
-
-    // Paused overlay
-    if (this.isPaused) {
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 32px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText('PAUSED', this.canvas.width / 2, this.canvas.height / 2);
+    this.hud.renderPopups(ctx, this.popups);
+    this.hud.renderBands(ctx, this.hudState());
+    if (this.gameState === 'ready') {
+      this.hud.renderReady(
+        ctx,
+        this.accentHex(),
+        this.phaseTime / READY_SECONDS
+      );
+    } else if (this.gameState === 'recap' && this.stats) {
+      this.dimPlayfield(ctx, Math.min(0.5, this.phaseTime * 2));
+      this.recap.render(
+        ctx,
+        this.stats,
+        gradeRun(this.stats),
+        this.accentHex(),
+        this.phaseTime,
+        this.phaseTime / RECAP_SECONDS
+      );
     }
   }
 
-  protected onGameEnd(finalScore: import('@/lib/types').GameScore): void {
-    // Save high score
-    try {
-      const prev = parseInt(localStorage.getItem('tapdodge_best') || '0', 10) || 0;
-      if (finalScore.score > prev) {
-        localStorage.setItem('tapdodge_best', String(finalScore.score));
-      }
-    } catch { /* ignore */ }
+  /** The finished run, still and dimmed, under the shell's summary. */
+  protected onRenderEnded(ctx: CanvasRenderingContext2D): void {
+    this.renderWorld(ctx);
+    this.hud.renderBands(ctx, this.hudState());
+    if (this.stats) {
+      this.dimPlayfield(ctx, 0.5);
+      this.recap.render(
+        ctx,
+        this.stats,
+        gradeRun(this.stats),
+        this.accentHex(),
+        0,
+        1,
+        true
+      );
+    }
+    ctx.fillStyle = 'rgba(4, 6, 12, 0.55)';
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
 
-    // Calculate survival time
-    const survivalTime = this.gameStartTime > 0 ? (Date.now() - this.gameStartTime) / 1000 : 0;
+  private dimPlayfield(ctx: CanvasRenderingContext2D, alpha: number): void {
+    ctx.fillStyle = `rgba(4, 6, 12, ${alpha.toFixed(3)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  }
 
-    // Extended game data for achievements
-    this.extendedGameData = {
-      survival_time: survivalTime,
-      near_misses: this.comboSystem.getTotalNearMisses(),
-      max_near_chain: this.comboSystem.getMaxNearMissChain(),
-      coins_collected: this.pickups,
-      gems_collected: this.gemsCollected,
-      max_combo: this.comboSystem.getMaxCoinCombo(),
-      zone_reached: this.waveSystem.getZoneIndex(),
-      max_fever_level: this.feverSystem.getMaxLevelReached()
+  private hudState(): HudState {
+    const p = this.progression;
+    const info = this.fever.info();
+    return {
+      score: this.score,
+      best: this.bestAtStart,
+      zone: p.zoneIndex,
+      zoneCount: ZONES.length,
+      zoneName: ZONES[p.zoneIndex].name,
+      zoneProgress: p.zoneProgress(),
+      nextZoneIn: p.secondsToNextZone(),
+      accent: rgba(this.backdrop.accentRgb(), 1),
+      rushPhase: p.rushPhase,
+      rushTimer: p.rushTimer,
+      rushLength: RUSH_LENGTH,
+      feverName: info.name,
+      feverMult: info.multiplier,
+      feverColor: info.color,
+      feverProgress: this.fever.progress(),
+      feverFlash: this.fever.flash,
+      chain: this.combo.getChain(),
+      combo: this.combo.getCoinCombo(),
+      lives: Math.max(0, this.lives),
+      maxLives: MAX_LIVES,
+      powerUps: this.activePowerUps,
+      zoneFlip: this.zoneFlip,
+      time: this.gameTime,
     };
-
-    // Track analytics
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'survival_time', survivalTime);
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'near_misses', this.comboSystem.getTotalNearMisses());
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'coins_collected', this.pickups);
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'gems_collected', this.gemsCollected);
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'max_combo', this.comboSystem.getMaxCoinCombo());
-    this.services?.analytics?.trackGameSpecificStat?.('tapdodge', 'max_fever', this.feverSystem.getMaxLevelReached());
-
-    super.onGameEnd?.(finalScore);
-  }
-
-  protected onResize(width: number, height: number): void {
-    this.backgroundSystem?.resize(width, height);
-    this.player?.resize(width, height);
-    this.laneWarningSystem?.resize(width);
   }
 }
