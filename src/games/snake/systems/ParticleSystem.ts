@@ -1,309 +1,229 @@
 // ===== src/games/snake/systems/ParticleSystem.ts =====
+//
+// Bits of apple, sparks off coins, eggshell, popped scales, expanding rings
+// and score popups. Everything is capped (oldest dropped first) and nothing
+// uses shadowBlur, so a long snake popping at death costs the same as a
+// short one. The board is seen from above, so there is no gravity: pieces
+// fly out and drag to a stop.
+
+import { displayFont } from '@/games/shared/hud/canvasUi';
+
+type Kind = 'chunk' | 'dot' | 'spark' | 'shard' | 'leaf';
 
 interface Particle {
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    lifetime: number;
-    maxLifetime: number;
-    color: string;
-    size: number;
-    type: 'burst' | 'sparkle' | 'trail' | 'explosion' | 'glow';
-    rotation?: number;
-    rotationSpeed?: number;
+  kind: Kind;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  max: number;
+  size: number;
+  color: string;
+  rot: number;
+  spin: number;
 }
 
-interface ScorePopup {
-    x: number;
-    y: number;
-    text: string;
-    color: string;
-    lifetime: number;
-    maxLifetime: number;
-    scale: number;
+interface Ring {
+  x: number;
+  y: number;
+  from: number;
+  to: number;
+  life: number;
+  max: number;
+  color: string;
+  width: number;
 }
+
+interface Popup {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+  max: number;
+  size: number;
+}
+
+export const MAX_PARTICLES = 220;
+const MAX_RINGS = 12;
+const MAX_POPUPS = 10;
 
 export class ParticleSystem {
-    private particles: Particle[] = [];
-    private scorePopups: ScorePopup[] = [];
+  private particles: Particle[] = [];
+  private rings: Ring[] = [];
+  private popups: Popup[] = [];
 
-    update(dt: number): void {
-        // Update particles
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-            p.x += p.vx * dt;
-            p.y += p.vy * dt;
-            p.lifetime -= dt;
+  update(dt: number): void {
+    const drag = Math.pow(0.02, dt);
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      const p = this.particles[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= drag;
+      p.vy *= drag;
+      p.rot += p.spin * dt;
+      p.life -= dt;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      this.rings[i].life -= dt;
+      if (this.rings[i].life <= 0) this.rings.splice(i, 1);
+    }
+    for (let i = this.popups.length - 1; i >= 0; i--) {
+      const p = this.popups[i];
+      p.y -= 34 * dt * (p.life / p.max + 0.3);
+      p.life -= dt;
+      if (p.life <= 0) this.popups.splice(i, 1);
+    }
+  }
 
-            // Apply gravity to explosions
-            if (p.type === 'explosion') {
-                p.vy += 300 * dt;
-            }
+  count(): number {
+    return this.particles.length;
+  }
 
-            // Apply drag
-            p.vx *= 0.98;
-            p.vy *= 0.98;
-
-            // Update rotation
-            if (p.rotation !== undefined && p.rotationSpeed !== undefined) {
-                p.rotation += p.rotationSpeed * dt;
-            }
-
-            if (p.lifetime <= 0) {
-                this.particles.splice(i, 1);
-            }
-        }
-
-        // Update score popups
-        for (let i = this.scorePopups.length - 1; i >= 0; i--) {
-            const popup = this.scorePopups[i];
-            popup.y -= 60 * dt; // Float upward
-            popup.lifetime -= dt;
-
-            if (popup.lifetime <= 0) {
-                this.scorePopups.splice(i, 1);
-            }
-        }
+  render(ctx: CanvasRenderingContext2D): void {
+    for (const r of this.rings) {
+      const k = 1 - r.life / r.max;
+      const e = 1 - Math.pow(1 - k, 3);
+      ctx.save();
+      ctx.globalAlpha = (1 - k) * 0.9;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = r.width * (1 - k * 0.6);
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.from + (r.to - r.from) * e, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
     }
 
-    render(ctx: CanvasRenderingContext2D): void {
-        // Render particles
-        for (const p of this.particles) {
-            const alpha = Math.min(1, p.lifetime / (p.maxLifetime * 0.3));
-            ctx.save();
-            ctx.globalAlpha = alpha;
-
-            if (p.type === 'glow') {
-                // Glow particles have blur
-                ctx.shadowColor = p.color;
-                ctx.shadowBlur = 10;
-            }
-
-            ctx.fillStyle = p.color;
-
-            if (p.rotation !== undefined) {
-                ctx.translate(p.x, p.y);
-                ctx.rotate(p.rotation);
-                ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
-            } else if (p.type === 'sparkle') {
-                // Star shape for sparkles
-                this.drawStar(ctx, p.x, p.y, 4, p.size, p.size / 2);
-            } else {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            ctx.restore();
-        }
-
-        // Render score popups
-        for (const popup of this.scorePopups) {
-            const alpha = Math.min(1, popup.lifetime / (popup.maxLifetime * 0.5));
-            const scale = popup.scale * (1 + (1 - popup.lifetime / popup.maxLifetime) * 0.3);
-
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.font = `bold ${Math.floor(16 * scale)}px Arial`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            // Shadow
-            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-            ctx.fillText(popup.text, popup.x + 2, popup.y + 2);
-
-            // Main text
-            ctx.fillStyle = popup.color;
-            ctx.fillText(popup.text, popup.x, popup.y);
-
-            ctx.restore();
-        }
+    for (const p of this.particles) {
+      const alpha = Math.min(1, p.life / (p.max * 0.4));
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      const s = p.size;
+      switch (p.kind) {
+        case 'chunk':
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s, s * 0.72, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'dot':
+          ctx.beginPath();
+          ctx.arc(0, 0, s, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+        case 'spark':
+          ctx.beginPath();
+          ctx.moveTo(0, -s);
+          ctx.lineTo(s * 0.28, -s * 0.28);
+          ctx.lineTo(s, 0);
+          ctx.lineTo(s * 0.28, s * 0.28);
+          ctx.lineTo(0, s);
+          ctx.lineTo(-s * 0.28, s * 0.28);
+          ctx.lineTo(-s, 0);
+          ctx.lineTo(-s * 0.28, -s * 0.28);
+          ctx.closePath();
+          ctx.fill();
+          break;
+        case 'shard':
+          ctx.beginPath();
+          ctx.moveTo(-s, -s * 0.5);
+          ctx.lineTo(s, -s * 0.2);
+          ctx.lineTo(-s * 0.2, s * 0.7);
+          ctx.closePath();
+          ctx.fill();
+          break;
+        case 'leaf':
+          ctx.beginPath();
+          ctx.ellipse(0, 0, s, s * 0.45, 0, 0, Math.PI * 2);
+          ctx.fill();
+          break;
+      }
+      ctx.restore();
     }
 
-    private drawStar(ctx: CanvasRenderingContext2D, cx: number, cy: number, spikes: number, outerRadius: number, innerRadius: number): void {
-        let rot = Math.PI / 2 * 3;
-        const step = Math.PI / spikes;
-
-        ctx.beginPath();
-        ctx.moveTo(cx, cy - outerRadius);
-
-        for (let i = 0; i < spikes; i++) {
-            let x = cx + Math.cos(rot) * outerRadius;
-            let y = cy + Math.sin(rot) * outerRadius;
-            ctx.lineTo(x, y);
-            rot += step;
-
-            x = cx + Math.cos(rot) * innerRadius;
-            y = cy + Math.sin(rot) * innerRadius;
-            ctx.lineTo(x, y);
-            rot += step;
-        }
-
-        ctx.lineTo(cx, cy - outerRadius);
-        ctx.closePath();
-        ctx.fill();
+    for (const p of this.popups) {
+      const k = p.life / p.max;
+      const grow = k > 0.8 ? 1 + (k - 0.8) * 1.5 : 1;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, k / 0.35);
+      ctx.font = displayFont(Math.round(p.size * grow), 800);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(2, 14, 12, 0.75)';
+      ctx.fillText(p.text, p.x + 1, p.y + 1.5);
+      ctx.fillStyle = p.color;
+      ctx.fillText(p.text, p.x, p.y);
+      ctx.restore();
     }
+  }
 
-    // Burst effect when eating food
-    createFoodBurst(x: number, y: number, color: string): void {
-        const count = 12;
-        for (let i = 0; i < count; i++) {
-            const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
-            const speed = 100 + Math.random() * 80;
-
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                lifetime: 0.4 + Math.random() * 0.2,
-                maxLifetime: 0.6,
-                color,
-                size: 3 + Math.random() * 3,
-                type: 'burst',
-                rotation: Math.random() * Math.PI * 2,
-                rotationSpeed: (Math.random() - 0.5) * 10,
-            });
-        }
+  /** A radial burst of `count` pieces. */
+  burst(
+    x: number,
+    y: number,
+    count: number,
+    kind: Kind,
+    colors: readonly string[],
+    speed: number,
+    size: number,
+    life = 0.55
+  ): void {
+    for (let i = 0; i < count; i++) {
+      const a = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+      const v = speed * (0.6 + Math.random() * 0.6);
+      this.push({
+        kind,
+        x,
+        y,
+        vx: Math.cos(a) * v,
+        vy: Math.sin(a) * v,
+        life: life * (0.75 + Math.random() * 0.5),
+        max: life * 1.25,
+        size: size * (0.7 + Math.random() * 0.6),
+        color: colors[i % colors.length],
+        rot: Math.random() * Math.PI * 2,
+        spin: (Math.random() - 0.5) * 12,
+      });
     }
+  }
 
-    // Sparkle effect for coins
-    createCoinSparkle(x: number, y: number): void {
-        const count = 8;
-        for (let i = 0; i < count; i++) {
-            const angle = (Math.PI * 2 * i) / count;
-            const speed = 60 + Math.random() * 40;
+  ring(
+    x: number,
+    y: number,
+    from: number,
+    to: number,
+    color: string,
+    life = 0.45,
+    width = 3
+  ): void {
+    this.rings.push({ x, y, from, to, life, max: life, color, width });
+    if (this.rings.length > MAX_RINGS) this.rings.shift();
+  }
 
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                lifetime: 0.5 + Math.random() * 0.3,
-                maxLifetime: 0.8,
-                color: Math.random() > 0.5 ? '#FCD34D' : '#FFFFFF',
-                size: 4 + Math.random() * 3,
-                type: 'sparkle',
-            });
-        }
-    }
+  popup(
+    x: number,
+    y: number,
+    text: string,
+    color: string,
+    size = 14,
+    life = 0.9
+  ): void {
+    this.popups.push({ x, y, text, color, life, max: life, size });
+    if (this.popups.length > MAX_POPUPS) this.popups.shift();
+  }
 
-    // Power-up activation glow
-    createPowerUpGlow(x: number, y: number, color: string): void {
-        const count = 16;
-        for (let i = 0; i < count; i++) {
-            const angle = (Math.PI * 2 * i) / count;
-            const speed = 80 + Math.random() * 60;
+  clear(): void {
+    this.particles = [];
+    this.rings = [];
+    this.popups = [];
+  }
 
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                lifetime: 0.6 + Math.random() * 0.3,
-                maxLifetime: 0.9,
-                color,
-                size: 5 + Math.random() * 4,
-                type: 'glow',
-            });
-        }
-    }
-
-    // Death explosion - segments scatter
-    createDeathExplosion(segments: Array<{ x: number; y: number }>, segmentSize: number): void {
-        for (const seg of segments) {
-            const angle = Math.random() * Math.PI * 2;
-            const speed = 150 + Math.random() * 100;
-
-            // Main segment piece
-            this.particles.push({
-                x: seg.x + segmentSize / 2,
-                y: seg.y + segmentSize / 2,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed - 100, // Initial upward boost
-                lifetime: 1 + Math.random() * 0.5,
-                maxLifetime: 1.5,
-                color: '#10b981',
-                size: segmentSize * 0.6,
-                type: 'explosion',
-                rotation: 0,
-                rotationSpeed: (Math.random() - 0.5) * 15,
-            });
-
-            // Small debris
-            for (let j = 0; j < 3; j++) {
-                const debrisAngle = Math.random() * Math.PI * 2;
-                const debrisSpeed = 80 + Math.random() * 60;
-
-                this.particles.push({
-                    x: seg.x + segmentSize / 2,
-                    y: seg.y + segmentSize / 2,
-                    vx: Math.cos(debrisAngle) * debrisSpeed,
-                    vy: Math.sin(debrisAngle) * debrisSpeed - 50,
-                    lifetime: 0.5 + Math.random() * 0.3,
-                    maxLifetime: 0.8,
-                    color: '#4ade80',
-                    size: 2 + Math.random() * 2,
-                    type: 'explosion',
-                });
-            }
-        }
-    }
-
-    // Trail effect for fast movement
-    createTrail(x: number, y: number, color: string): void {
-        this.particles.push({
-            x: x + (Math.random() - 0.5) * 8,
-            y: y + (Math.random() - 0.5) * 8,
-            vx: (Math.random() - 0.5) * 20,
-            vy: (Math.random() - 0.5) * 20,
-            lifetime: 0.3,
-            maxLifetime: 0.3,
-            color,
-            size: 3 + Math.random() * 2,
-            type: 'trail',
-        });
-    }
-
-    // Score popup
-    addScorePopup(x: number, y: number, text: string, color: string): void {
-        this.scorePopups.push({
-            x,
-            y,
-            text,
-            color,
-            lifetime: 1.0,
-            maxLifetime: 1.0,
-            scale: 1.0,
-        });
-    }
-
-    // Combo milestone effect
-    createComboFlash(x: number, y: number, multiplier: number): void {
-        const count = 20;
-        const colors = ['#FBBF24', '#F59E0B', '#FFFFFF'];
-
-        for (let i = 0; i < count; i++) {
-            const angle = (Math.PI * 2 * i) / count;
-            const speed = 100 + multiplier * 20;
-
-            this.particles.push({
-                x,
-                y,
-                vx: Math.cos(angle) * speed,
-                vy: Math.sin(angle) * speed,
-                lifetime: 0.4,
-                maxLifetime: 0.4,
-                color: colors[Math.floor(Math.random() * colors.length)],
-                size: 4 + Math.random() * 3,
-                type: 'sparkle',
-            });
-        }
-    }
-
-    clear(): void {
-        this.particles = [];
-        this.scorePopups = [];
-    }
+  private push(p: Particle): void {
+    this.particles.push(p);
+    if (this.particles.length > MAX_PARTICLES) this.particles.shift();
+  }
 }

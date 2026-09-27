@@ -1,77 +1,72 @@
 // ===== src/games/snake/systems/ComboSystem.ts =====
+//
+// The feast chain: apples and coins eaten within COMBO_TIMEOUT of each
+// other build a multiplier. A hit breaks the chain but not the record.
+
+export const COMBO_TIMEOUT = 3.0;
+
+const MILESTONES = [3, 5, 10, 15, 20, 25, 30, 40, 50];
+
+export interface ComboHit {
+  combo: number;
+  multiplier: number;
+  isMilestone: boolean;
+}
 
 export class ComboSystem {
-    private combo: number = 0;
-    private comboTimer: number = 0;
-    private readonly comboTimeout: number = 3.0; // seconds before combo resets
-    private maxCombo: number = 0;
+  private combo = 0;
+  private comboTimer = 0;
+  private maxCombo = 0;
 
-    // Callback for combo resets (used for visual effects)
-    private onResetCallback?: () => void;
+  update(dt: number): void {
+    if (this.combo === 0) return;
+    this.comboTimer += dt;
+    if (this.comboTimer >= COMBO_TIMEOUT) this.breakCombo();
+  }
 
-    update(dt: number): void {
-        if (this.combo > 0) {
-            this.comboTimer += dt;
-            if (this.comboTimer >= this.comboTimeout) {
-                this.resetCombo();
-            }
-        }
-    }
+  /** An apple or a coin was eaten. */
+  addHit(): ComboHit {
+    this.combo++;
+    this.comboTimer = 0;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    return {
+      combo: this.combo,
+      multiplier: this.getMultiplier(),
+      isMilestone: MILESTONES.includes(this.combo),
+    };
+  }
 
-    // Call when food/coin is eaten
-    addHit(): { combo: number; multiplier: number; isMilestone: boolean } {
-        this.combo++;
-        this.comboTimer = 0;
+  getMultiplier(): number {
+    if (this.combo <= 1) return 1;
+    if (this.combo <= 3) return 1.5;
+    if (this.combo <= 6) return 2;
+    if (this.combo <= 10) return 3;
+    return 5;
+  }
 
-        if (this.combo > this.maxCombo) {
-            this.maxCombo = this.combo;
-        }
+  getCombo(): number {
+    return this.combo;
+  }
 
-        const multiplier = this.getMultiplier();
-        const isMilestone = this.isMilestoneCombo();
+  getMaxCombo(): number {
+    return this.maxCombo;
+  }
 
-        return { combo: this.combo, multiplier, isMilestone };
-    }
+  /** 1 just after a hit, draining to 0 at the timeout. */
+  getComboProgress(): number {
+    if (this.combo === 0) return 0;
+    return Math.max(0, 1 - this.comboTimer / COMBO_TIMEOUT);
+  }
 
-    getMultiplier(): number {
-        if (this.combo <= 1) return 1;
-        if (this.combo <= 3) return 1.5;
-        if (this.combo <= 6) return 2;
-        if (this.combo <= 10) return 3;
-        return 5;
-    }
+  /** End the current chain (timeout or a hit); the record stays. */
+  breakCombo(): void {
+    this.combo = 0;
+    this.comboTimer = 0;
+  }
 
-    private isMilestoneCombo(): boolean {
-        // Trigger effects at these combo counts
-        return [3, 5, 10, 15, 20, 25, 30, 40, 50].includes(this.combo);
-    }
-
-    getCombo(): number {
-        return this.combo;
-    }
-
-    getMaxCombo(): number {
-        return this.maxCombo;
-    }
-
-    getComboProgress(): number {
-        // Returns 0-1 showing how close to timeout
-        return 1 - (this.comboTimer / this.comboTimeout);
-    }
-
-    private resetCombo(): void {
-        this.combo = 0;
-        this.comboTimer = 0;
-        this.onResetCallback?.();
-    }
-
-    setOnResetCallback(callback: () => void): void {
-        this.onResetCallback = callback;
-    }
-
-    reset(): void {
-        this.combo = 0;
-        this.comboTimer = 0;
-        this.maxCombo = 0;
-    }
+  reset(): void {
+    this.combo = 0;
+    this.comboTimer = 0;
+    this.maxCombo = 0;
+  }
 }

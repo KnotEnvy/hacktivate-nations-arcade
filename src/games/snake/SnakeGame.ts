@@ -1,60 +1,133 @@
 // ===== src/games/snake/SnakeGame.ts =====
+//
+// Snake, by (the imagined) Mosslight: a terrarium, a hatchling, apples.
+//
+// The run: READY (a card naming the controls; the first turn, a tap or
+// two seconds starts it) → PLAYING → HIT (a half-second freeze, then the
+// snake hatches again at the centre and waits for a turn) → DYING (the
+// body pops head to tail, the bed goes red) → endGame(). The rules live in
+// small modules under systems/ so tests can pin them; this file wires them
+// together and owns the state machine.
+
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
-import { Vector2 } from '@/games/shared/utils/Vector2';
-import { ParticleSystem } from './systems/ParticleSystem';
-import { ScreenShake } from './systems/ScreenShake';
+import { PressTracker } from '@/games/shared/input/PressTracker';
+import { UI } from '@/games/shared/hud/canvasUi';
+import type { GameManifest } from '@/lib/types';
+import type { SoundName } from '@/services/AudioManager';
+import {
+  BOARD_X,
+  BOARD_Y,
+  CANVAS_H,
+  CANVAS_W,
+  CELL,
+  COIN_INTERVAL,
+  COIN_LIFETIME,
+  COIN_POINTS,
+  COLS,
+  DEATH_HOLD,
+  DEATH_POP_TIME,
+  FOOD_POINTS,
+  HIT_STOP,
+  LENGTH_MILESTONE,
+  MAGNET_RANGE,
+  MAX_COINS,
+  MAX_LIVES,
+  MAX_POWERUPS,
+  PAL,
+  POWER_GRACE,
+  POWERUP_INTERVAL,
+  POWERUP_LIFETIME,
+  POWERUP_POINTS,
+  READY_AUTO_START,
+  RESPAWN_INVULNERABILITY,
+  RESPAWN_WAIT,
+  ROWS,
+  START_LENGTH,
+} from './constants';
+import { BoardRenderer, clipToBoard } from './systems/BoardRenderer';
 import { ComboSystem } from './systems/ComboSystem';
-import { Food } from './entities/Food';
+import {
+  drawBottomBand,
+  drawReadyCard,
+  drawRibbon,
+  drawTopHud,
+  HudState,
+  Ribbon,
+} from './systems/HudRenderer';
+import {
+  PACE_TIERS,
+  applesToNextPace,
+  paceProgress,
+  paceTierFor,
+  stepRate,
+} from './systems/Pace';
+import { ParticleSystem } from './systems/ParticleSystem';
+import { drawPlayfield, PlayfieldView } from './systems/Playfield';
+import {
+  Cell,
+  inBounds,
+  layoutRespawn,
+  openRoom,
+  respawnFacing,
+} from './systems/Respawn';
+import { ScreenShake } from './systems/ScreenShake';
+import { DIR_VEC, Dir, OPPOSITE, TurnQueue } from './systems/TurnQueue';
 import { Coin } from './entities/Coin';
-import { PowerUp, SnakePowerUpType, POWERUP_CONFIGS } from './entities/PowerUp';
+import { Food } from './entities/Food';
+import {
+  POWERUP_CONFIGS,
+  POWERUP_TYPES,
+  PowerUp,
+  SnakePowerUpType,
+} from './entities/PowerUp';
 
-// ============================================
-// TYPES & INTERFACES
-// ============================================
+export type SnakeState =
+  | 'ready'
+  | 'playing'
+  | 'hit'
+  | 'respawn'
+  | 'dying'
+  | 'ended';
 
-type GameState = 'playing' | 'dying' | 'gameOver';
-
-interface SnakeSegment {
-  x: number;
-  y: number;
-}
-
-interface ActivePowerUp {
+export interface ActivePowerUp {
   type: SnakePowerUpType;
   duration: number;
   maxDuration: number;
 }
 
-// ============================================
-// CONSTANTS
-// ============================================
+/**
+ * A pickup the rules have already taken but the picture has not: the drawn
+ * head trails the logical head by up to one step, so the apple stays on
+ * screen until the mouth reaches it, and its burst, popup and sound fire
+ * then rather than a cell early.
+ */
+export interface Morsel {
+  kind: 'apple' | 'coin' | 'powerup';
+  x: number;
+  y: number;
+  /** Where a magnet-pulled coin slides in from. */
+  fromX: number;
+  fromY: number;
+  type: SnakePowerUpType | null;
+  left: number;
+  total: number;
+  text: string;
+  /** The feast count if this bite hit a milestone, else 0. */
+  milestone: number;
+}
 
-const COLORS = {
-  // Background
-  bgGradientTop: '#083344',
-  bgGradientBottom: '#065f46',
-  gridLine: 'rgba(255, 255, 255, 0.05)',
-  gridLineBright: 'rgba(255, 255, 255, 0.1)',
-
-  // Snake
-  snakeHead: '#4ade80',
-  snakeBody: '#10b981',
-  snakeTail: '#059669',
-  snakeEye: '#ffffff',
-  snakePupil: '#1f2937',
-
-  // UI
-  textPrimary: '#ffffff',
-  textSecondary: '#94a3b8',
-  comboText: '#fbbf24',
-  heartFull: '#ef4444',
-  heartEmpty: '#4b5563',
-};
-
-// ============================================
-// SNAKE GAME CLASS
-// ============================================
+const KEYMAP: ReadonlyArray<[Dir, readonly string[]]> = [
+  ['up', ['ArrowUp', 'KeyW']],
+  ['down', ['ArrowDown', 'KeyS']],
+  ['left', ['ArrowLeft', 'KeyA']],
+  ['right', ['ArrowRight', 'KeyD']],
+];
+const KEY_CODES = KEYMAP.flatMap(([, codes]) => codes);
+const SWIPE_PX = 22;
+/** The mouth covers a pickup about this far into the step that took it. */
+const BITE_AT = 0.6;
+const HUNGRY_AFTER = 8;
+const RIBBON_LIFE = 1.6;
 
 export class SnakeGame extends BaseGame {
   manifest: GameManifest = {
@@ -64,930 +137,915 @@ export class SnakeGame extends BaseGame {
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 0,
-    description: 'Classic snake action with modern flair. Eat food, collect coins, grow longer!',
+    description:
+      'Classic snake action with modern flair. Eat food, collect coins, grow longer!',
   };
 
-  // Grid configuration (larger for more action)
-  private gridSize = 24;
-  private gridWidth = 32;
-  private gridHeight = 24;
+  // State machine.
+  private gameState: SnakeState = 'ready';
+  private stateTime = 0;
 
-  private get offsetX(): number {
-    return (this.canvas.width - this.gridWidth * this.gridSize) / 2;
-  }
+  // The snake.
+  private snake: Cell[] = [];
+  private prevTail: Cell = { x: 0, y: 0 };
+  private turns = new TurnQueue('right');
+  private stepProgress = 0;
+  private pendingGrowth = 0;
+  private bulges: number[] = [];
 
-  private get offsetY(): number {
-    return (this.canvas.height - this.gridHeight * this.gridSize) / 2;
-  }
-
-  // Game state
-  private gameState: GameState = 'playing';
-  private deathTimer: number = 0;
-  private readonly deathDuration: number = 1.5;
-
-  // Snake
-  private snake: SnakeSegment[] = [];
-  private direction: Vector2 = new Vector2(1, 0);
-  private nextDirection: Vector2 = new Vector2(1, 0);
-  private pendingGrowth: number = 0;
-  private rainbowTimer: number = 0;
-  private readonly rainbowDuration: number = 1.25;
-
-  // Movement
-  private moveTimer: number = 0;
-  private baseSpeed: number = 7;
-
-  // Touch input
-  private lastTouch: { x: number; y: number } | null = null;
-  private readonly touchThreshold: number = 20;
-
-  // Entities
-  private food!: Food;
+  // The board.
+  private food: Food = new Food(-1, -1);
   private coins: Coin[] = [];
   private powerUps: PowerUp[] = [];
-
-  // Timers
-  private coinTimer: number = 0;
-  private readonly coinInterval: number = 4;
-  private powerUpTimer: number = 0;
-  private readonly powerUpInterval: number = 10;
-
-  // Active power-ups
+  private morsels: Morsel[] = [];
+  private coinTimer = 0;
+  private powerUpTimer = 0;
   private activePowerUps: ActivePowerUp[] = [];
+  private wrapGrace = 0;
+  private ghostGrace = 0;
 
-  // Systems
-  private particles!: ParticleSystem;
-  private screenShake!: ScreenShake;
-  private comboSystem!: ComboSystem;
+  // Lives.
+  private lives = MAX_LIVES;
+  private maxLives = MAX_LIVES;
+  private invulnerableFor = 0;
+  private lostAge = 99;
+  private hitCell: Cell | null = null;
+  private shed: Cell[] = [];
+  private shedAge = 99;
+  private hatchAge = 99;
+  private deathPopped = 0;
 
-  // Lives system
-  private lives: number = 3;
-  private maxLives: number = 3;
-  private isInvulnerable: boolean = false;
-  private invulnerabilityTimer: number = 0;
-  private readonly invulnerabilityDuration: number = 2;
-
-  // Stats
-  private foodEaten: number = 0;
-  private maxLength: number = 0;
-  private highScore: number = 0;
-  private powerupsUsed: number = 0;
+  // Progress and stats.
+  private foodEaten = 0;
+  private paceTier = 0;
+  private survivalCarry = 0;
+  private sinceFood = 0;
+  private nextLengthMilestone = LENGTH_MILESTONE;
+  private maxLength = START_LENGTH;
+  private highScore = 0;
+  private powerupsUsed = 0;
   private powerupTypesUsed: Set<SnakePowerUpType> = new Set();
 
-  // Visual effects
-  private gridPulsePhase: number = 0;
-  private cameraOffset: { x: number; y: number } = { x: 0, y: 0 };
+  // Feel.
+  private squash = 0;
+  private rainbowTimer = 0;
+  private paceFlash = 0;
+  private comboFlash = 0;
+  private boardFlash = 0;
+  private readyFadeAge = 99;
+  private ribbons: Ribbon[] = [];
+  private lastSound: Partial<Record<SoundName, number>> = {};
 
-  // ==========================================
-  // LIFECYCLE METHODS
-  // ==========================================
+  // Systems.
+  private particles = new ParticleSystem();
+  private screenShake = new ScreenShake();
+  private comboSystem = new ComboSystem();
+  private tracker = new PressTracker();
+  private board: BoardRenderer | null = null;
+
+  // ==================================================== lifecycle ====
 
   protected onInit(): void {
-    this.renderBaseHud = false; // Custom HUD
-
-    // Initialize systems
-    this.particles = new ParticleSystem();
-    this.screenShake = new ScreenShake();
-    this.comboSystem = new ComboSystem();
-
-    // Load high score
+    this.renderBaseHud = false;
+    // Built here, not as a field, so its spores use the seeded Math.random
+    // the capture harness installs just before init().
+    this.board = new BoardRenderer();
     try {
       const saved = localStorage.getItem('snake_best');
       this.highScore = saved ? parseInt(saved, 10) || 0 : 0;
     } catch {
       this.highScore = 0;
     }
-
     this.reset();
-  }
-
-  protected onUpdate(dt: number): void {
-    // Update visual effects
-    this.gridPulsePhase += dt;
-    this.screenShake.update(dt);
-    this.cameraOffset = this.screenShake.getOffset();
-    this.particles.update(dt);
-    this.comboSystem.update(dt);
-
-    // Update entities
-    this.food.update(dt);
-    for (const coin of this.coins) {
-      coin.update(dt);
-    }
-    for (const powerUp of this.powerUps) {
-      powerUp.update(dt);
-    }
-
-    // Decay active power-ups
-    this.activePowerUps = this.activePowerUps.filter(p => {
-      p.duration -= dt;
-      return p.duration > 0;
-    });
-
-    // Handle game states
-    switch (this.gameState) {
-      case 'playing':
-        this.updatePlaying(dt);
-        break;
-      case 'dying':
-        this.updateDying(dt);
-        break;
-      case 'gameOver':
-        // Wait for platform to handle
-        break;
-    }
-
-    // Decay rainbow effect
-    if (this.rainbowTimer > 0) {
-      this.rainbowTimer = Math.max(0, this.rainbowTimer - dt);
-    }
-
-    // Decay invulnerability
-    if (this.isInvulnerable) {
-      this.invulnerabilityTimer -= dt;
-      if (this.invulnerabilityTimer <= 0) {
-        this.isInvulnerable = false;
-      }
-    }
-  }
-
-  private updatePlaying(dt: number): void {
-    this.handleInput();
-
-    // Calculate effective speed
-    let effectiveSpeed = this.baseSpeed;
-    if (this.hasPowerUp('slow')) {
-      effectiveSpeed *= 0.6;
-    }
-
-    this.moveTimer += dt;
-    if (this.moveTimer >= 1 / effectiveSpeed) {
-      this.moveTimer = 0;
-      this.step();
-    }
-
-    // Spawn timers
-    this.coinTimer += dt;
-    if (this.coinTimer >= this.coinInterval && this.coins.length < 2) {
-      this.coinTimer = 0;
-      this.spawnCoin();
-    }
-
-    this.powerUpTimer += dt;
-    if (this.powerUpTimer >= this.powerUpInterval && this.powerUps.length < 1) {
-      this.powerUpTimer = 0;
-      this.spawnPowerUp();
-    }
-
-    // Clean up expired entities
-    this.coins = this.coins.filter(c => !c.isExpired());
-    this.powerUps = this.powerUps.filter(p => !p.isExpired());
-
-    // Update score from survival
-    this.score += Math.floor(dt * 2);
-  }
-
-  private updateDying(dt: number): void {
-    this.deathTimer += dt;
-    if (this.deathTimer >= this.deathDuration) {
-      this.gameState = 'gameOver';
-      this.endGame();
-    }
-  }
-
-  protected onRender(ctx: CanvasRenderingContext2D): void {
-    ctx.save();
-    ctx.translate(this.cameraOffset.x, this.cameraOffset.y);
-
-    this.renderBackground(ctx);
-    this.renderGrid(ctx);
-    this.renderEntities(ctx);
-    this.renderSnake(ctx);
-    this.particles.render(ctx);
-
-    ctx.restore();
-  }
-
-  protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-    this.renderHUD(ctx);
   }
 
   protected onRestart(): void {
     this.reset();
   }
 
+  protected onUpdate(dt: number): void {
+    this.tracker.update(this.services.input, KEY_CODES, dt);
+    this.stateTime += dt;
+    this.screenShake.update(dt);
+    this.particles.update(dt);
+    this.food.update(dt);
+    const live = this.gameState === 'playing';
+    for (const coin of this.coins) coin.update(dt, live);
+    for (const p of this.powerUps) p.update(dt, live);
+    this.updateFeel(dt);
+
+    switch (this.gameState) {
+      case 'ready':
+        this.updateReady();
+        break;
+      case 'playing':
+        this.updatePlaying(dt);
+        break;
+      case 'hit':
+        if (this.stateTime >= HIT_STOP) this.respawn();
+        break;
+      case 'respawn':
+        this.updateRespawn();
+        break;
+      case 'dying':
+        this.updateDying();
+        break;
+      case 'ended':
+        break;
+    }
+  }
+
+  protected onRender(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = PAL.case;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    const off = this.screenShake.getOffset();
+    ctx.save();
+    ctx.translate(off.x, off.y);
+    this.board?.drawBoard(ctx);
+    ctx.save();
+    clipToBoard(ctx);
+    this.board?.drawMotes(ctx, this.gameTime);
+    drawPlayfield(ctx, this.playfieldView());
+    this.particles.render(ctx);
+    ctx.restore();
+    ctx.restore();
+  }
+
+  protected onRenderUI(ctx: CanvasRenderingContext2D): void {
+    this.board?.drawBands(ctx);
+    const hud = this.hudState();
+    drawTopHud(ctx, hud);
+    drawBottomBand(ctx, hud);
+
+    const cardFade =
+      this.gameState === 'ready' ? 1 : 1 - this.readyFadeAge / 0.25;
+    if (cardFade > 0) {
+      const appear = this.gameState === 'ready' ? this.stateTime / 0.35 : 1;
+      drawReadyCard(
+        ctx,
+        Math.min(1, appear),
+        cardFade,
+        this.gameState === 'ready' ? this.stateTime / READY_AUTO_START : 1
+      );
+    }
+    if (this.ribbons.length > 0) drawRibbon(ctx, this.ribbons[0]);
+  }
+
+  /** The finished run: the board and its shed skin, dimmed, under the HUD. */
+  protected onRenderEnded(ctx: CanvasRenderingContext2D): void {
+    ctx.fillStyle = PAL.case;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+    this.board?.drawBoard(ctx);
+    ctx.save();
+    clipToBoard(ctx);
+    drawPlayfield(ctx, { ...this.playfieldView(), ended: true });
+    ctx.restore();
+    this.board?.drawBands(ctx);
+    const hud = this.hudState();
+    drawTopHud(ctx, hud);
+    drawBottomBand(ctx, hud);
+  }
+
   protected onGameEnd(): void {
-    // Save high score
     try {
       if (this.score > this.highScore) {
         this.highScore = this.score;
         localStorage.setItem('snake_best', String(this.highScore));
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* storage can be unavailable; the run still counts */
+    }
 
-    // Extended data for achievements
     this.extendedGameData = {
       snake_length: this.snake.length,
-      final_speed: this.baseSpeed,
+      final_speed: stepRate(this.paceTier, false),
       food_eaten: this.foodEaten,
       max_length: this.maxLength,
       powerupsUsed: this.powerupsUsed,
       powerupTypesUsed: [...this.powerupTypesUsed],
       maxCombo: this.comboSystem.getMaxCombo(),
       livesRemaining: this.lives,
+      pace_tier: this.paceTier,
     };
 
-    this.services?.analytics?.trackGameSpecificStat?.('snake', 'snake_length', this.snake.length);
-    this.services?.analytics?.trackGameSpecificStat?.('snake', 'max_combo', this.comboSystem.getMaxCombo());
-    this.services?.analytics?.trackGameSpecificStat?.('snake', 'food_eaten', this.foodEaten);
+    const analytics = this.services?.analytics;
+    analytics?.trackGameSpecificStat?.(
+      'snake',
+      'snake_length',
+      this.snake.length
+    );
+    analytics?.trackGameSpecificStat?.(
+      'snake',
+      'max_combo',
+      this.comboSystem.getMaxCombo()
+    );
+    analytics?.trackGameSpecificStat?.('snake', 'food_eaten', this.foodEaten);
   }
 
-  // ==========================================
-  // GAME LOGIC
-  // ==========================================
+  // ======================================================= states ====
 
   private reset(): void {
-    const centerX = Math.floor(this.gridWidth / 2);
-    const centerY = Math.floor(this.gridHeight / 2);
-
-    // Snake starts with 3 segments
-    this.snake = [
-      { x: centerX, y: centerY },
-      { x: centerX - 1, y: centerY },
-      { x: centerX - 2, y: centerY },
-    ];
-
-    this.direction = new Vector2(1, 0);
-    this.nextDirection = new Vector2(1, 0);
+    const cx = Math.floor(COLS / 2);
+    const cy = Math.floor(ROWS / 2);
+    this.snake = [];
+    for (let i = 0; i < START_LENGTH; i++) {
+      this.snake.push({ x: cx - i, y: cy });
+    }
+    this.prevTail = { ...this.snake[this.snake.length - 1] };
+    this.turns.reset('right');
+    this.stepProgress = 0;
     this.pendingGrowth = 0;
+    this.bulges = [];
 
-    // Initialize food
-    this.food = new Food(0, 0, this.gridSize);
-    this.spawnFood();
-
-    // Clear entities
+    // The first apple sits straight ahead, so the first input is optional.
+    this.food = new Food(-1, -1);
+    this.food.setPosition(cx + 6, cy);
     this.coins = [];
     this.powerUps = [];
-    this.activePowerUps = [];
-
-    // Reset timers
+    this.morsels = [];
     this.coinTimer = 0;
     this.powerUpTimer = 0;
-    this.moveTimer = 0;
-    this.rainbowTimer = 0;
-    this.deathTimer = 0;
+    this.activePowerUps = [];
+    this.wrapGrace = 0;
+    this.ghostGrace = 0;
 
-    // Reset state
-    this.gameState = 'playing';
-    this.baseSpeed = 7;
     this.lives = this.maxLives;
-    this.isInvulnerable = false;
-    this.invulnerabilityTimer = 0;
+    this.invulnerableFor = 0;
+    this.lostAge = 99;
+    this.hitCell = null;
+    this.shed = [];
+    this.shedAge = 99;
+    this.hatchAge = 99;
+    this.deathPopped = 0;
 
-    // Reset stats
     this.score = 0;
     this.pickups = 0;
     this.foodEaten = 0;
+    this.paceTier = 0;
+    this.survivalCarry = 0;
+    this.sinceFood = 0;
+    this.nextLengthMilestone = LENGTH_MILESTONE;
     this.maxLength = this.snake.length;
     this.powerupsUsed = 0;
     this.powerupTypesUsed.clear();
+    this.extendedGameData = null;
 
-    // Reset systems
+    this.squash = 0;
+    this.rainbowTimer = 0;
+    this.paceFlash = 0;
+    this.comboFlash = 0;
+    this.boardFlash = 0;
+    this.readyFadeAge = 99;
+    this.ribbons = [];
+    this.lastSound = {};
+
     this.particles.clear();
     this.screenShake.stop();
     this.comboSystem.reset();
+    this.tracker.reset();
+    this.setState('ready');
+  }
+
+  private setState(next: SnakeState): void {
+    this.gameState = next;
+    this.stateTime = 0;
+  }
+
+  private updateReady(): void {
+    const dirs = this.readDirections();
+    const tapped = this.tracker.pointerJustPressed();
+    if (dirs.length > 0 || tapped || this.stateTime >= READY_AUTO_START) {
+      this.turns.pushAll(dirs);
+      this.readyFadeAge = 0;
+      this.startMoving();
+    }
+  }
+
+  /** PLAYING, taking the first step at once so the glide never jumps. */
+  private startMoving(): void {
+    this.setState('playing');
+    this.stepProgress = 1;
+  }
+
+  private updatePlaying(dt: number): void {
+    this.turns.pushAll(this.readDirections());
+    this.comboSystem.update(dt);
+    this.tickPowerUps(dt);
+    this.invulnerableFor = Math.max(0, this.invulnerableFor - dt);
+    this.sinceFood += dt;
+
+    // Pace pays: points per second = pace tier + 1, accrued as a float so
+    // the total does not depend on the frame rate.
+    this.survivalCarry += dt * (this.paceTier + 1);
+    const whole = Math.floor(this.survivalCarry);
+    if (whole > 0) {
+      this.score += whole;
+      this.survivalCarry -= whole;
+    }
+
+    this.stepProgress += dt * this.currentStepRate();
+    let guard = 0;
+    while (this.stepProgress >= 1 && this.gameState === 'playing') {
+      this.stepProgress -= 1;
+      this.step();
+      if (++guard >= 4) {
+        this.stepProgress = 0;
+        break;
+      }
+    }
+    if (this.gameState !== 'playing') return;
+
+    this.coinTimer += dt;
+    if (this.coinTimer >= COIN_INTERVAL) {
+      this.coinTimer = 0;
+      if (this.coins.length < MAX_COINS) this.spawnCoin();
+    }
+    this.powerUpTimer += dt;
+    if (this.powerUpTimer >= POWERUP_INTERVAL) {
+      this.powerUpTimer = 0;
+      if (this.powerUps.length < MAX_POWERUPS) this.spawnPowerUp();
+    }
+    this.coins = this.coins.filter(c => !c.isExpired());
+    this.powerUps = this.powerUps.filter(p => !p.isExpired());
+  }
+
+  private updateRespawn(): void {
+    const dirs = this.readDirections();
+    const heading = this.turns.heading;
+    const go = dirs.find(d => d !== OPPOSITE[heading]);
+    const tapped = this.tracker.pointerJustPressed();
+    if (go || tapped || this.stateTime >= RESPAWN_WAIT) {
+      if (go) this.turns.push(go);
+      this.invulnerableFor = RESPAWN_INVULNERABILITY;
+      this.startMoving();
+    }
+  }
+
+  private updateDying(): void {
+    const total = this.snake.length;
+    const target = Math.min(
+      total,
+      (this.stateTime / DEATH_POP_TIME) * (total + 0.5)
+    );
+    const per = Math.max(2, Math.min(6, Math.floor(180 / total)));
+    while (this.deathPopped < target) {
+      const i = Math.floor(this.deathPopped);
+      const c = this.snake[Math.min(i, total - 1)];
+      const px = BOARD_X + (c.x + 0.5) * CELL;
+      const py = BOARD_Y + (c.y + 0.5) * CELL;
+      const colors = [PAL.snakeBody, PAL.snakeStripe, PAL.snakeHead];
+      this.particles.burst(px, py, i === 0 ? 10 : per, 'chunk', colors, 110, 4);
+      this.play('bounce', 0.09, 0.45);
+      this.deathPopped += 1;
+    }
+    if (this.stateTime >= DEATH_POP_TIME + DEATH_HOLD) {
+      this.setState('ended');
+      this.endGame();
+    }
+  }
+
+  // ======================================================== rules ====
+
+  private currentStepRate(): number {
+    return stepRate(this.paceTier, this.hasPowerUp('slow'));
   }
 
   private step(): void {
-    const head = this.snake[0];
-    const newHead = {
-      x: head.x + this.nextDirection.x,
-      y: head.y + this.nextDirection.y,
-    };
+    const dir = this.turns.next();
+    let next = this.ahead(this.snake[0], dir);
 
-    // Handle wall wrap power-up
-    if (this.hasPowerUp('wrap')) {
-      if (newHead.x < 0) newHead.x = this.gridWidth - 1;
-      if (newHead.x >= this.gridWidth) newHead.x = 0;
-      if (newHead.y < 0) newHead.y = this.gridHeight - 1;
-      if (newHead.y >= this.gridHeight) newHead.y = 0;
-    }
-
-    // Check wall collision
-    if (!this.hasPowerUp('wrap') && this.hitWall(newHead)) {
-      this.handleCollision();
-      return;
-    }
-
-    // Check self collision (unless ghost power-up)
-    if (!this.hasPowerUp('ghost')) {
-      if (this.snake.some(seg => seg.x === newHead.x && seg.y === newHead.y)) {
-        this.handleCollision();
-        return;
+    if (!inBounds(next.x, next.y)) {
+      if (this.canWrap()) {
+        next = { x: (next.x + COLS) % COLS, y: (next.y + ROWS) % ROWS };
+      } else if (this.invulnerableFor > 0) {
+        // A fresh hatchling is steered off the glass rather than hurt.
+        const steer = this.steerFromWall(dir);
+        if (!steer) return this.collide(this.snake[0]);
+        this.turns.force(steer);
+        next = this.ahead(this.snake[0], steer);
+      } else {
+        return this.collide(this.snake[0]);
       }
     }
 
-    // Move snake
-    this.snake.unshift(newHead);
-    this.direction = this.nextDirection;
+    // The tail cell is free to enter unless the snake is about to grow.
+    const eats = this.food.x === next.x && this.food.y === next.y;
+    const grows = this.pendingGrowth > 0 || eats;
+    const body = grows ? this.snake : this.snake.slice(0, -1);
+    const bites = body.some(c => c.x === next.x && c.y === next.y);
+    if (bites && !this.canPassBody()) return this.collide(next);
 
-    // Check food
-    if (newHead.x === this.food.x && newHead.y === this.food.y) {
-      this.eatFood();
+    this.snake.unshift(next);
+    if (eats) this.eatFood();
+    if (this.pendingGrowth > 0) {
+      this.pendingGrowth--;
+      this.prevTail = { ...this.snake[this.snake.length - 1] };
     } else {
-      this.consumePendingGrowthOrPop();
+      this.prevTail = this.snake.pop()!;
     }
 
-    // Check coins
-    for (let i = this.coins.length - 1; i >= 0; i--) {
-      const coin = this.coins[i];
-      if (newHead.x === coin.x && newHead.y === coin.y) {
-        this.collectCoin(i);
-        break;
-      }
-    }
+    const ci = this.coins.findIndex(c => c.x === next.x && c.y === next.y);
+    if (ci >= 0) this.collectCoin(ci, null);
+    const pi = this.powerUps.findIndex(p => p.x === next.x && p.y === next.y);
+    if (pi >= 0) this.collectPowerUp(pi);
+    if (this.hasPowerUp('magnet')) this.applyMagnet();
 
-    // Check power-ups
-    for (let i = this.powerUps.length - 1; i >= 0; i--) {
-      const powerUp = this.powerUps[i];
-      if (newHead.x === powerUp.x && newHead.y === powerUp.y) {
-        this.collectPowerUp(i);
-        break;
-      }
-    }
-
-    // Magnet effect - attract nearby coins
-    if (this.hasPowerUp('magnet')) {
-      this.applyMagnetEffect();
-    }
-
-    // Update max length
     this.maxLength = Math.max(this.maxLength, this.snake.length);
-
-    // Gradual speed increase
-    this.baseSpeed += 0.002;
+    if (this.snake.length >= this.nextLengthMilestone) {
+      this.announce(
+        'GROWING',
+        `LENGTH ${this.nextLengthMilestone}`,
+        PAL.sprout
+      );
+      this.play('win', 0.5, 0.6);
+      this.nextLengthMilestone += LENGTH_MILESTONE;
+    }
   }
 
-  private handleCollision(): void {
-    if (this.isInvulnerable) {
+  private ahead(from: Cell, dir: Dir): Cell {
+    const v = DIR_VEC[dir];
+    return { x: from.x + v.x, y: from.y + v.y };
+  }
+
+  private steerFromWall(dir: Dir): Dir | null {
+    const head = this.snake[0];
+    const options: Dir[] =
+      dir === 'left' || dir === 'right' ? ['up', 'down'] : ['left', 'right'];
+    options.sort((a, b) => openRoom(head, b) - openRoom(head, a));
+    for (const d of options) {
+      const n = this.ahead(head, d);
+      if (inBounds(n.x, n.y)) return d;
+    }
+    return null;
+  }
+
+  private canWrap(): boolean {
+    return this.hasPowerUp('wrap') || this.wrapGrace > 0;
+  }
+
+  private canPassBody(): boolean {
+    return (
+      this.hasPowerUp('ghost') ||
+      this.ghostGrace > 0 ||
+      this.invulnerableFor > 0
+    );
+  }
+
+  private collide(cell: Cell): void {
+    this.hitCell = { ...cell };
+    // Whatever was being announced no longer matters.
+    this.ribbons = [];
+    this.lives--;
+    this.lostAge = 0;
+    this.comboSystem.breakCombo();
+    this.stepProgress = 0;
+    if (this.lives <= 0) {
+      this.setState('dying');
+      this.deathPopped = 0;
+      this.screenShake.shake(6, 0.45);
+      this.play('collision');
       return;
     }
+    this.setState('hit');
+    this.screenShake.shake(5, 0.35);
+    this.play('hit');
+  }
 
-    this.lives--;
-    this.services.audio.playSound('collision');
-    this.screenShake.shake(12, 0.4);
+  /** Hatch again at the centre: half the length, facing open room. */
+  private respawn(): void {
+    this.shed = this.snake.map(c => ({ ...c }));
+    this.shedAge = 0;
+    const length = Math.max(START_LENGTH, Math.floor(this.snake.length / 2));
+    const facing = respawnFacing(this.hitCell);
+    this.snake = layoutRespawn(length, facing);
+    this.prevTail = { ...this.snake[this.snake.length - 1] };
+    this.turns.force(facing);
+    this.pendingGrowth = 0;
+    this.bulges = [];
+    this.stepProgress = 0;
+    this.hatchAge = 0;
+    this.relocateCovered();
+    this.setState('respawn');
 
-    if (this.lives <= 0) {
-      // Death - trigger explosion
-      this.gameState = 'dying';
-      this.deathTimer = 0;
+    const head = this.cellCentre(this.snake[0]);
+    this.particles.burst(
+      head.x,
+      head.y,
+      9,
+      'shard',
+      [PAL.egg, PAL.eggShade],
+      120,
+      4
+    );
+    this.particles.ring(head.x, head.y, 6, 30, PAL.egg, 0.45, 2);
+    this.play('hole');
+    const left = this.lives === 1 ? '1 LIFE LEFT' : `${this.lives} LIVES LEFT`;
+    this.announce('HATCHED', left, this.lives === 1 ? UI.bad : PAL.sprout);
+  }
 
-      // Create death explosion
-      const segments = this.snake.map(seg => ({
-        x: this.offsetX + seg.x * this.gridSize,
-        y: this.offsetY + seg.y * this.gridSize,
-      }));
-      this.particles.createDeathExplosion(segments, this.gridSize);
-    } else {
-      // Lose one life - make invulnerable
-      this.isInvulnerable = true;
-      this.invulnerabilityTimer = this.invulnerabilityDuration;
+  /** Anything the hatchling was laid over moves somewhere free. */
+  private relocateCovered(): void {
+    const onSnake = (x: number, y: number) =>
+      this.snake.some(c => c.x === x && c.y === y);
+    if (onSnake(this.food.x, this.food.y)) this.spawnFood();
+    for (const c of this.coins) {
+      if (!onSnake(c.x, c.y)) continue;
+      const cell = this.randomFreeCell();
+      if (cell) c.moveTo(cell.x, cell.y);
     }
+    this.powerUps = this.powerUps.filter(p => {
+      if (!onSnake(p.x, p.y)) return true;
+      const cell = this.randomFreeCell();
+      if (!cell) return false;
+      p.x = cell.x;
+      p.y = cell.y;
+      return true;
+    });
   }
 
   private eatFood(): void {
     this.foodEaten++;
-    const comboResult = this.comboSystem.addHit();
-    const baseScore = 10;
-    const scoreGain = Math.floor(baseScore * comboResult.multiplier);
-
-    this.score += scoreGain;
-
-    // Growth (double if power-up active)
-    if (this.hasPowerUp('double')) {
-      this.pendingGrowth += 2;
-    } else {
-      this.pendingGrowth += 1;
-    }
-
-    // Speed increase
-    this.baseSpeed += 0.05;
-
-    // Effects
-    const foodX = this.offsetX + this.food.x * this.gridSize + this.gridSize / 2;
-    const foodY = this.offsetY + this.food.y * this.gridSize + this.gridSize / 2;
-    this.particles.createFoodBurst(foodX, foodY, '#e11d48');
-    this.particles.addScorePopup(foodX, foodY - 10, `+${scoreGain}`, COLORS.textPrimary);
-
-    if (comboResult.isMilestone) {
-      this.particles.createComboFlash(foodX, foodY, comboResult.multiplier);
-      this.particles.addScorePopup(foodX, foodY - 30, `COMBO x${comboResult.combo}!`, COLORS.comboText);
-    }
-
-    this.screenShake.shake(3, 0.1);
-    this.services.audio.playSound('success');
-
+    this.sinceFood = 0;
+    const hit = this.comboSystem.addHit();
+    const gain = Math.floor(FOOD_POINTS * hit.multiplier);
+    this.score += gain;
+    this.pendingGrowth += this.hasPowerUp('double') ? 2 : 1;
+    this.addMorsel('apple', this.food.x, this.food.y, null, `+${gain}`, hit);
     this.spawnFood();
+
+    const tier = paceTierFor(this.foodEaten);
+    if (tier > this.paceTier) {
+      this.paceTier = tier;
+      this.paceFlash = 1;
+      this.boardFlash = 1;
+      this.announce('SPEED UP', PACE_TIERS[tier].name, PAL.tide);
+      this.play('whoosh');
+    }
   }
 
-  private collectCoin(index: number): void {
+  /** `into` is set when a magnet pulls the coin into the mouth. */
+  private collectCoin(index: number, into: Cell | null): void {
     const coin = this.coins[index];
-    const comboResult = this.comboSystem.addHit();
-    const baseScore = 25;
-    const scoreGain = Math.floor(baseScore * comboResult.multiplier);
-
-    this.score += scoreGain;
+    const hit = this.comboSystem.addHit();
+    const gain = Math.floor(COIN_POINTS * hit.multiplier);
+    this.score += gain;
     this.pickups++;
-    this.rainbowTimer = this.rainbowDuration;
-
-    // Effects
-    const coinX = this.offsetX + coin.x * this.gridSize + this.gridSize / 2;
-    const coinY = this.offsetY + coin.y * this.gridSize + this.gridSize / 2;
-    this.particles.createCoinSparkle(coinX, coinY);
-    this.particles.addScorePopup(coinX, coinY - 10, `+${scoreGain}`, '#FCD34D');
-
-    this.screenShake.shake(2, 0.1);
-    this.services.audio.playSound('coin');
-
+    const at = into ?? coin;
+    const m = this.addMorsel('coin', at.x, at.y, null, `+${gain}`, hit);
+    // A pulled coin slides from where it sat into the head.
+    m.fromX = coin.x;
+    m.fromY = coin.y;
     this.coins.splice(index, 1);
   }
 
   private collectPowerUp(index: number): void {
-    const powerUp = this.powerUps[index];
-    const config = powerUp.getConfig();
-
-    // Add or extend power-up
-    const existing = this.activePowerUps.find(p => p.type === powerUp.type);
+    const p = this.powerUps[index];
+    const cfg = POWERUP_CONFIGS[p.type];
+    const existing = this.activePowerUps.find(a => a.type === p.type);
     if (existing) {
-      existing.duration += config.duration;
-      existing.maxDuration += config.duration;
+      existing.duration += cfg.duration;
+      existing.maxDuration = existing.duration;
     } else {
       this.activePowerUps.push({
-        type: powerUp.type,
-        duration: config.duration,
-        maxDuration: config.duration,
+        type: p.type,
+        duration: cfg.duration,
+        maxDuration: cfg.duration,
       });
     }
-
+    if (p.type === 'wrap') this.wrapGrace = 0;
+    if (p.type === 'ghost') this.ghostGrace = 0;
     this.powerupsUsed++;
-    this.powerupTypesUsed.add(powerUp.type);
-    this.score += 30;
-
-    // Effects
-    const puX = this.offsetX + powerUp.x * this.gridSize + this.gridSize / 2;
-    const puY = this.offsetY + powerUp.y * this.gridSize + this.gridSize / 2;
-    this.particles.createPowerUpGlow(puX, puY, config.color);
-    this.particles.addScorePopup(puX, puY - 10, config.label, config.color);
-
-    this.screenShake.shake(5, 0.2);
-    this.services.audio.playSound('powerup');
-
+    this.powerupTypesUsed.add(p.type);
+    this.score += POWERUP_POINTS;
+    this.addMorsel('powerup', p.x, p.y, p.type, cfg.label, null);
     this.powerUps.splice(index, 1);
   }
 
-  private applyMagnetEffect(): void {
+  /**
+   * Coins within range slide one cell toward the head per step. A coin
+   * never lands on an occupied cell: if both ways toward the head are
+   * blocked it waits, and a coin pulled into the head is eaten, not parked
+   * under the neck (the old pull could hide it beneath the body).
+   */
+  private applyMagnet(): void {
     const head = this.snake[0];
-    const magnetRange = 4; // Grid cells
-
-    // Attract coins
-    for (const coin of this.coins) {
+    for (let i = this.coins.length - 1; i >= 0; i--) {
+      const coin = this.coins[i];
       const dx = head.x - coin.x;
       const dy = head.y - coin.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < magnetRange && dist > 0.5) {
-        // Move coin toward snake
-        if (Math.abs(dx) > Math.abs(dy)) {
-          coin.x += Math.sign(dx);
-        } else {
-          coin.y += Math.sign(dy);
+      const dist = Math.hypot(dx, dy);
+      if (dist === 0 || dist >= MAGNET_RANGE) continue;
+      const moves: Cell[] = [];
+      const alongX = { x: Math.sign(dx), y: 0 };
+      const alongY = { x: 0, y: Math.sign(dy) };
+      if (Math.abs(dx) >= Math.abs(dy)) moves.push(alongX, alongY);
+      else moves.push(alongY, alongX);
+      for (const m of moves) {
+        if (m.x === 0 && m.y === 0) continue;
+        const tx = coin.x + m.x;
+        const ty = coin.y + m.y;
+        if (tx === head.x && ty === head.y) {
+          this.collectCoin(i, { x: head.x, y: head.y });
+          break;
         }
+        if (this.isOccupied(tx, ty)) continue;
+        coin.moveTo(tx, ty);
+        break;
       }
     }
   }
 
-  private hitWall(pos: { x: number; y: number }): boolean {
-    return pos.x < 0 || pos.x >= this.gridWidth || pos.y < 0 || pos.y >= this.gridHeight;
-  }
-
-  private consumePendingGrowthOrPop(): void {
-    if (this.pendingGrowth > 0) {
-      this.pendingGrowth--;
-    } else {
-      this.snake.pop();
+  private tickPowerUps(dt: number): void {
+    this.wrapGrace = Math.max(0, this.wrapGrace - dt);
+    this.ghostGrace = Math.max(0, this.ghostGrace - dt);
+    for (const p of this.activePowerUps) {
+      const before = p.duration;
+      p.duration -= dt;
+      for (const mark of [2, 1.5, 1, 0.5]) {
+        if (before > mark && p.duration <= mark) this.play('click', 0.2, 0.35);
+      }
+      if (p.duration <= 0) {
+        if (p.type === 'wrap') this.wrapGrace = POWER_GRACE;
+        if (p.type === 'ghost') this.ghostGrace = POWER_GRACE;
+      }
     }
-  }
-
-  // ==========================================
-  // SPAWNING
-  // ==========================================
-
-  private spawnFood(): void {
-    const pos = this.randomEmptyCell();
-    this.food.setPosition(pos.x, pos.y);
-  }
-
-  private spawnCoin(): void {
-    const pos = this.randomEmptyCell();
-    this.coins.push(new Coin(pos.x, pos.y, this.gridSize, 6, 1));
-  }
-
-  private spawnPowerUp(): void {
-    const pos = this.randomEmptyCell();
-    const types: SnakePowerUpType[] = ['wrap', 'slow', 'double', 'magnet', 'ghost'];
-    const type = types[Math.floor(Math.random() * types.length)];
-    this.powerUps.push(new PowerUp(pos.x, pos.y, this.gridSize, type, 8, 1.2));
-  }
-
-  private randomEmptyCell(): { x: number; y: number } {
-    let pos: { x: number; y: number };
-    let attempts = 0;
-    const maxAttempts = 100;
-
-    do {
-      pos = {
-        x: Math.floor(Math.random() * this.gridWidth),
-        y: Math.floor(Math.random() * this.gridHeight),
-      };
-      attempts++;
-    } while (
-      attempts < maxAttempts &&
-      (this.snake.some(s => s.x === pos.x && s.y === pos.y) ||
-        (this.food && pos.x === this.food.x && pos.y === this.food.y) ||
-        this.coins.some(c => c.x === pos.x && c.y === pos.y) ||
-        this.powerUps.some(p => p.x === pos.x && p.y === pos.y))
-    );
-
-    return pos;
+    this.activePowerUps = this.activePowerUps.filter(p => p.duration > 0);
   }
 
   private hasPowerUp(type: SnakePowerUpType): boolean {
     return this.activePowerUps.some(p => p.type === type);
   }
 
-  // ==========================================
-  // INPUT HANDLING
-  // ==========================================
+  // ===================================================== spawning ====
 
-  private handleInput(): void {
-    // Touch input
-    const touches = this.services.input.getTouches?.() || [];
-    if (touches.length > 0) {
-      const t = touches[0];
-      if (!this.lastTouch) {
-        this.lastTouch = { x: t.x, y: t.y };
-      } else {
-        const dx = t.x - this.lastTouch.x;
-        const dy = t.y - this.lastTouch.y;
-        const absDx = Math.abs(dx);
-        const absDy = Math.abs(dy);
-
-        if (Math.max(absDx, absDy) >= this.touchThreshold) {
-          if (absDx > absDy) {
-            if (dx > 0 && this.direction.x !== -1) {
-              this.nextDirection = new Vector2(1, 0);
-            } else if (dx < 0 && this.direction.x !== 1) {
-              this.nextDirection = new Vector2(-1, 0);
-            }
-          } else {
-            if (dy > 0 && this.direction.y !== -1) {
-              this.nextDirection = new Vector2(0, 1);
-            } else if (dy < 0 && this.direction.y !== 1) {
-              this.nextDirection = new Vector2(0, -1);
-            }
-          }
-          this.lastTouch = { x: t.x, y: t.y };
-        }
-      }
-    } else {
-      this.lastTouch = null;
-    }
-
-    // Keyboard input
-    if (this.services.input.isLeftPressed() && this.direction.x !== 1) {
-      this.nextDirection = new Vector2(-1, 0);
-    } else if (this.services.input.isRightPressed() && this.direction.x !== -1) {
-      this.nextDirection = new Vector2(1, 0);
-    } else if (this.services.input.isUpPressed() && this.direction.y !== 1) {
-      this.nextDirection = new Vector2(0, -1);
-    } else if (this.services.input.isDownPressed() && this.direction.y !== -1) {
-      this.nextDirection = new Vector2(0, 1);
-    }
-  }
-
-  // ==========================================
-  // RENDERING
-  // ==========================================
-
-  private renderBackground(ctx: CanvasRenderingContext2D): void {
-    const boardW = this.gridWidth * this.gridSize;
-    const boardH = this.gridHeight * this.gridSize;
-
-    // Gradient background
-    const gradient = ctx.createLinearGradient(0, this.offsetY, 0, this.offsetY + boardH);
-    gradient.addColorStop(0, COLORS.bgGradientTop);
-    gradient.addColorStop(1, COLORS.bgGradientBottom);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(this.offsetX, this.offsetY, boardW, boardH);
-
-    // Vignette effect
-    const vignetteGradient = ctx.createRadialGradient(
-      this.offsetX + boardW / 2,
-      this.offsetY + boardH / 2,
-      0,
-      this.offsetX + boardW / 2,
-      this.offsetY + boardH / 2,
-      Math.max(boardW, boardH) * 0.7
+  private isOccupied(x: number, y: number): boolean {
+    return (
+      this.snake.some(c => c.x === x && c.y === y) ||
+      (this.food.x === x && this.food.y === y) ||
+      this.coins.some(c => c.x === x && c.y === y) ||
+      this.powerUps.some(p => p.x === x && p.y === y)
     );
-    vignetteGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    vignetteGradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
-    ctx.fillStyle = vignetteGradient;
-    ctx.fillRect(this.offsetX, this.offsetY, boardW, boardH);
   }
 
-  private renderGrid(ctx: CanvasRenderingContext2D): void {
-    const boardW = this.gridWidth * this.gridSize;
-    const boardH = this.gridHeight * this.gridSize;
-
-    // Animated grid pulse
-    const pulseAlpha = 0.03 + 0.02 * Math.sin(this.gridPulsePhase * 2);
-
-    ctx.strokeStyle = `rgba(255, 255, 255, ${pulseAlpha})`;
-    ctx.lineWidth = 1;
-
-    // Vertical lines
-    for (let x = 0; x <= this.gridWidth; x++) {
-      const xPos = this.offsetX + x * this.gridSize;
-      ctx.beginPath();
-      ctx.moveTo(xPos, this.offsetY);
-      ctx.lineTo(xPos, this.offsetY + boardH);
-      ctx.stroke();
-    }
-
-    // Horizontal lines
-    for (let y = 0; y <= this.gridHeight; y++) {
-      const yPos = this.offsetY + y * this.gridSize;
-      ctx.beginPath();
-      ctx.moveTo(this.offsetX, yPos);
-      ctx.lineTo(this.offsetX + boardW, yPos);
-      ctx.stroke();
-    }
-
-    // Border
-    ctx.strokeStyle = COLORS.gridLineBright;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(this.offsetX, this.offsetY, boardW, boardH);
-  }
-
-  private renderEntities(ctx: CanvasRenderingContext2D): void {
-    // Render food
-    this.food.render(ctx, this.offsetX, this.offsetY);
-
-    // Render coins
-    for (const coin of this.coins) {
-      coin.render(ctx, this.offsetX, this.offsetY);
-    }
-
-    // Render power-ups
-    for (const powerUp of this.powerUps) {
-      powerUp.render(ctx, this.offsetX, this.offsetY);
-    }
-  }
-
-  private renderSnake(ctx: CanvasRenderingContext2D): void {
-    if (this.gameState === 'dying') {
-      return; // Don't render during death animation
-    }
-
-    const time = Date.now() * 0.002;
-
-    // Blinking during invulnerability
-    if (this.isInvulnerable && Math.floor(time * 10) % 2 === 0) {
-      ctx.globalAlpha = 0.4;
-    }
-
-    for (let i = this.snake.length - 1; i >= 0; i--) {
-      const seg = this.snake[i];
-      const drawX = this.offsetX + seg.x * this.gridSize;
-      const drawY = this.offsetY + seg.y * this.gridSize;
-
-      // Calculate color gradient from head to tail
-      const progress = i / Math.max(1, this.snake.length - 1);
-
-      if (i === 0) {
-        // Head
-        this.renderSnakeHead(ctx, drawX, drawY);
-      } else if (i === this.snake.length - 1) {
-        // Tail
-        ctx.fillStyle = COLORS.snakeTail;
-        this.renderSegment(ctx, drawX, drawY, 0.8);
-      } else {
-        // Body - gradient or rainbow
-        if (this.rainbowTimer > 0) {
-          const hue = (time * 40 + i * 10) % 360;
-          ctx.fillStyle = `hsl(${hue}, 80%, 50%)`;
-        } else {
-          // Gradient from bright to dark
-          const r = Math.floor(16 + (4 - 16) * progress);
-          const g = Math.floor(185 + (150 - 185) * progress);
-          const b = Math.floor(129 + (105 - 129) * progress);
-          ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-        }
-        this.renderSegment(ctx, drawX, drawY, 1);
+  /**
+   * A random cell nothing occupies, preferring cells not touching the
+   * head. Null when the board is full (the old version gave up after 100
+   * tries and returned an occupied cell).
+   */
+  private randomFreeCell(): Cell | null {
+    const head = this.snake[0];
+    const free: Cell[] = [];
+    const clear: Cell[] = [];
+    for (let y = 0; y < ROWS; y++) {
+      for (let x = 0; x < COLS; x++) {
+        if (this.isOccupied(x, y)) continue;
+        free.push({ x, y });
+        const near =
+          head && Math.abs(head.x - x) <= 1 && Math.abs(head.y - y) <= 1;
+        if (!near) clear.push({ x, y });
       }
     }
-
-    ctx.globalAlpha = 1;
+    const pool = clear.length > 0 ? clear : free;
+    if (pool.length === 0) return null;
+    return pool[Math.floor(Math.random() * pool.length)];
   }
 
-  private renderSegment(ctx: CanvasRenderingContext2D, x: number, y: number, scale: number): void {
-    const size = this.gridSize - 2;
-    const offset = (this.gridSize - size * scale) / 2;
-    const radius = 4 * scale;
-
-    ctx.beginPath();
-    ctx.roundRect(x + offset, y + offset, size * scale, size * scale, radius);
-    ctx.fill();
+  private spawnFood(): void {
+    this.food.setPosition(-1, -1);
+    const cell = this.randomFreeCell();
+    if (cell) this.food.setPosition(cell.x, cell.y);
   }
 
-  private renderSnakeHead(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-    const size = this.gridSize - 2;
-
-    // Head body
-    ctx.fillStyle = COLORS.snakeHead;
-    ctx.beginPath();
-    ctx.roundRect(x + 1, y + 1, size, size, 6);
-    ctx.fill();
-
-    // Eyes based on direction
-    const eyeSize = this.gridSize / 6;
-    const eyeOffset = this.gridSize * 0.2;
-
-    ctx.fillStyle = COLORS.snakeEye;
-
-    // Calculate eye positions based on direction
-    let eye1X: number, eye1Y: number, eye2X: number, eye2Y: number;
-
-    if (this.direction.x === 1) {
-      // Moving right
-      eye1X = x + this.gridSize - eyeOffset - eyeSize;
-      eye1Y = y + eyeOffset;
-      eye2X = x + this.gridSize - eyeOffset - eyeSize;
-      eye2Y = y + this.gridSize - eyeOffset - eyeSize;
-    } else if (this.direction.x === -1) {
-      // Moving left
-      eye1X = x + eyeOffset;
-      eye1Y = y + eyeOffset;
-      eye2X = x + eyeOffset;
-      eye2Y = y + this.gridSize - eyeOffset - eyeSize;
-    } else if (this.direction.y === -1) {
-      // Moving up
-      eye1X = x + eyeOffset;
-      eye1Y = y + eyeOffset;
-      eye2X = x + this.gridSize - eyeOffset - eyeSize;
-      eye2Y = y + eyeOffset;
-    } else {
-      // Moving down
-      eye1X = x + eyeOffset;
-      eye1Y = y + this.gridSize - eyeOffset - eyeSize;
-      eye2X = x + this.gridSize - eyeOffset - eyeSize;
-      eye2Y = y + this.gridSize - eyeOffset - eyeSize;
-    }
-
-    // Draw eyes
-    ctx.fillRect(eye1X, eye1Y, eyeSize, eyeSize);
-    ctx.fillRect(eye2X, eye2Y, eyeSize, eyeSize);
-
-    // Pupils
-    ctx.fillStyle = COLORS.snakePupil;
-    const pupilSize = eyeSize * 0.5;
-    const pupilOffset = (eyeSize - pupilSize) / 2;
-    ctx.fillRect(eye1X + pupilOffset + this.direction.x, eye1Y + pupilOffset + this.direction.y, pupilSize, pupilSize);
-    ctx.fillRect(eye2X + pupilOffset + this.direction.x, eye2Y + pupilOffset + this.direction.y, pupilSize, pupilSize);
+  private spawnCoin(): void {
+    const cell = this.randomFreeCell();
+    if (cell) this.coins.push(new Coin(cell.x, cell.y, COIN_LIFETIME, 1));
   }
 
-  private renderHUD(ctx: CanvasRenderingContext2D): void {
-    // Score (top-left)
-    ctx.fillStyle = COLORS.textPrimary;
-    ctx.font = 'bold 28px Arial';
-    ctx.textAlign = 'left';
-    ctx.fillText(`${this.score}`, 24, 40);
+  private spawnPowerUp(type?: SnakePowerUpType): void {
+    const cell = this.randomFreeCell();
+    if (!cell) return;
+    const pick =
+      type ?? POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
+    this.powerUps.push(new PowerUp(cell.x, cell.y, pick, POWERUP_LIFETIME));
+  }
 
-    // Combo indicator
-    const combo = this.comboSystem.getCombo();
-    if (combo > 1) {
-      ctx.fillStyle = COLORS.comboText;
-      ctx.font = 'bold 18px Arial';
-      ctx.fillText(`x${combo} COMBO`, 24, 65);
+  // ======================================================== input ====
 
-      // Combo timer bar
-      const barWidth = 80;
-      const progress = this.comboSystem.getComboProgress();
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.3)';
-      ctx.fillRect(24, 72, barWidth, 4);
-      ctx.fillStyle = COLORS.comboText;
-      ctx.fillRect(24, 72, barWidth * progress, 4);
+  /** Directions pressed this frame: key edges, then a swipe (re-armed). */
+  private readDirections(): Dir[] {
+    const out: Dir[] = [];
+    for (const [dir, codes] of KEYMAP) {
+      if (codes.some(c => this.tracker.justPressed(c))) out.push(dir);
+    }
+    const swipe = this.tracker.swipe(SWIPE_PX);
+    if (swipe) {
+      out.push(swipe);
+      this.tracker.rearmSwipe();
+    }
+    return out;
+  }
+
+  // ========================================================= feel ====
+
+  private updateFeel(dt: number): void {
+    this.squash = Math.max(0, this.squash - dt / 0.2);
+    this.rainbowTimer = Math.max(0, this.rainbowTimer - dt);
+    this.paceFlash = Math.max(0, this.paceFlash - dt / 0.7);
+    this.comboFlash = Math.max(0, this.comboFlash - dt / 0.5);
+    this.boardFlash = Math.max(0, this.boardFlash - dt / 0.4);
+    this.lostAge += dt;
+    this.shedAge += dt;
+    this.hatchAge += dt;
+    this.readyFadeAge += dt;
+
+    if (this.ribbons.length > 0) {
+      this.ribbons[0].age += dt;
+      if (this.ribbons[0].age >= this.ribbons[0].life) this.ribbons.shift();
     }
 
-    // High score (top-left, below score)
-    ctx.fillStyle = COLORS.textSecondary;
-    ctx.font = '14px Arial';
-    ctx.fillText(`BEST: ${this.highScore}`, 24, combo > 1 ? 95 : 65);
-
-    // Lives (top-right)
-    ctx.textAlign = 'right';
-    const heartSize = 20;
-    const heartSpacing = 26;
-    const heartsX = this.canvas.width - 24;
-    const heartsY = 32;
-
-    for (let i = 0; i < this.maxLives; i++) {
-      const x = heartsX - (i * heartSpacing) - heartSize / 2;
-      this.drawHeart(ctx, x, heartsY, heartSize, i < this.lives ? COLORS.heartFull : COLORS.heartEmpty);
+    if (this.gameState === 'playing') {
+      const travel = dt * this.currentStepRate() * 1.4;
+      this.bulges = this.bulges
+        .map(b => b + travel)
+        .filter(b => b < this.snake.length + 1);
     }
 
-    // Length indicator
-    ctx.fillStyle = COLORS.textSecondary;
-    ctx.font = '14px Arial';
-    ctx.fillText(`Length: ${this.snake.length}`, this.canvas.width - 24, 58);
-
-    // Active power-ups (bottom)
-    if (this.activePowerUps.length > 0) {
-      const barY = this.canvas.height - 40;
-      const barHeight = 24;
-      const barSpacing = 10;
-      let currentX = 24;
-
-      ctx.font = '12px Arial';
-      ctx.textAlign = 'left';
-
-      for (const pu of this.activePowerUps) {
-        const config = POWERUP_CONFIGS[pu.type];
-        const progress = pu.duration / pu.maxDuration;
-        const barWidth = 100;
-
-        // Background
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
-        ctx.fillRect(currentX, barY, barWidth, barHeight);
-
-        // Progress
-        ctx.fillStyle = config.color;
-        ctx.globalAlpha = 0.7;
-        ctx.fillRect(currentX, barY, barWidth * progress, barHeight);
-        ctx.globalAlpha = 1;
-
-        // Border
-        ctx.strokeStyle = config.color;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(currentX, barY, barWidth, barHeight);
-
-        // Label
-        ctx.fillStyle = COLORS.textPrimary;
-        ctx.fillText(`${config.icon} ${pu.duration.toFixed(1)}s`, currentX + 6, barY + 16);
-
-        currentX += barWidth + barSpacing;
+    for (let i = this.morsels.length - 1; i >= 0; i--) {
+      const m = this.morsels[i];
+      m.left -= dt;
+      if (m.left <= 0) {
+        this.morsels.splice(i, 1);
+        this.biteFx(m);
       }
     }
   }
 
-  private drawHeart(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string): void {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-
-    const width = size;
-    const height = size;
-    const topCurveHeight = height * 0.3;
-
-    ctx.moveTo(x, y + topCurveHeight);
-    // Left curve
-    ctx.bezierCurveTo(
-      x, y,
-      x - width / 2, y,
-      x - width / 2, y + topCurveHeight
-    );
-    // Left bottom
-    ctx.bezierCurveTo(
-      x - width / 2, y + (height + topCurveHeight) / 2,
-      x, y + (height + topCurveHeight) / 2,
-      x, y + height
-    );
-    // Right bottom
-    ctx.bezierCurveTo(
-      x, y + (height + topCurveHeight) / 2,
-      x + width / 2, y + (height + topCurveHeight) / 2,
-      x + width / 2, y + topCurveHeight
-    );
-    // Right curve
-    ctx.bezierCurveTo(
-      x + width / 2, y,
-      x, y,
-      x, y + topCurveHeight
-    );
-
-    ctx.fill();
+  private addMorsel(
+    kind: Morsel['kind'],
+    x: number,
+    y: number,
+    type: SnakePowerUpType | null,
+    text: string,
+    hit: { combo: number; isMilestone: boolean } | null
+  ): Morsel {
+    const total = BITE_AT / this.currentStepRate();
+    const m: Morsel = {
+      kind,
+      x,
+      y,
+      fromX: x,
+      fromY: y,
+      type,
+      left: total,
+      total,
+      text,
+      milestone: hit?.isMilestone ? hit.combo : 0,
+    };
+    this.morsels.push(m);
+    return m;
   }
 
-  isGameOver(): boolean {
-    return this.gameState === 'gameOver';
+  /** The mouth reached a pickup: burst, popup, sound. */
+  private biteFx(m: Morsel): void {
+    const { x, y } = this.cellCentre(m);
+    if (m.kind === 'apple') {
+      this.particles.burst(
+        x,
+        y,
+        9,
+        'dot',
+        [PAL.apple, PAL.appleLight],
+        120,
+        2.6
+      );
+      this.particles.burst(x, y, 3, 'leaf', [PAL.leaf], 90, 4);
+      this.particles.popup(x, y - 14, m.text, PAL.bone);
+      this.squash = 1;
+      this.bulges.push(0);
+      this.screenShake.shake(1.5, 0.12);
+      this.play('success', 0.05);
+    } else if (m.kind === 'coin') {
+      this.particles.burst(x, y, 8, 'spark', [UI.coin, '#fff4d6'], 110, 4.5);
+      this.particles.popup(x, y - 14, m.text, PAL.bone);
+      this.rainbowTimer = 1.2;
+      this.screenShake.shake(1.2, 0.1);
+      this.play('coin', 0.05);
+    } else if (m.type) {
+      const color = POWERUP_CONFIGS[m.type].color;
+      this.particles.ring(x, y, 8, 40, color, 0.5, 3);
+      this.particles.burst(x, y, 12, 'dot', [color], 130, 2.4);
+      this.particles.popup(x, y - 16, m.text, color, 13);
+      this.screenShake.shake(2.5, 0.16);
+      this.play('powerup');
+    }
+    if (m.milestone > 0) {
+      this.comboFlash = 1;
+      const head = this.headCentre();
+      this.particles.ring(head.x, head.y, 10, 64, PAL.sprout, 0.6, 3);
+      this.particles.popup(
+        head.x,
+        head.y - 30,
+        `FEAST x${m.milestone}`,
+        PAL.sprout,
+        15,
+        1.1
+      );
+      this.play('unlock', 0.3, 0.7);
+    }
+  }
+
+  private announce(eyebrow: string, title: string, accent: string): void {
+    this.ribbons.push({ eyebrow, title, accent, age: 0, life: RIBBON_LIFE });
+    if (this.ribbons.length > 3) this.ribbons.splice(1, 1);
+  }
+
+  private play(name: SoundName, minGap = 0, volume?: number): void {
+    const last = this.lastSound[name];
+    if (last !== undefined && this.gameTime - last < minGap) return;
+    this.lastSound[name] = this.gameTime;
+    this.services?.audio?.playSound?.(
+      name,
+      volume === undefined ? undefined : { volume }
+    );
+  }
+
+  // ======================================================= render ====
+
+  private cellCentre(c: { x: number; y: number }): { x: number; y: number } {
+    return {
+      x: BOARD_X + (c.x + 0.5) * CELL,
+      y: BOARD_Y + (c.y + 0.5) * CELL,
+    };
+  }
+
+  private headCentre(): { x: number; y: number } {
+    return this.cellCentre(this.snake[0]);
+  }
+
+  /** Everything the in-board painter needs, read-only. */
+  private playfieldView(): PlayfieldView {
+    const moving = this.gameState === 'playing';
+    const hunger =
+      moving && this.sinceFood > HUNGRY_AFTER
+        ? Math.min(1, (this.sinceFood - HUNGRY_AFTER) / 3)
+        : 0;
+    return {
+      state: this.gameState,
+      stateTime: this.stateTime,
+      time: this.gameTime,
+      snake: this.snake,
+      prevTail: this.prevTail,
+      t: moving ? Math.min(1, this.stepProgress) : 1,
+      bulges: this.bulges,
+      heading: this.turns.heading,
+      food: this.food,
+      coins: this.coins,
+      powerUps: this.powerUps,
+      morsels: this.morsels,
+      hunger,
+      flash:
+        this.invulnerableFor > 0 && Math.floor(this.gameTime * 16) % 2 === 0,
+      rainbow: this.rainbowTimer / 1.2,
+      squash: this.squash,
+      hatch: Math.min(1, this.hatchAge / 0.3),
+      popped:
+        this.gameState === 'dying' || this.gameState === 'ended'
+          ? this.deathPopped
+          : 0,
+      hitCell: this.hitCell,
+      shed: this.shed,
+      shedAge: this.shedAge,
+      boardFlash: this.boardFlash,
+      powers: this.activePowerUps.map(p => p.type),
+      ended: false,
+    };
+  }
+
+  private hudState(): HudState {
+    return {
+      score: this.score,
+      best: this.highScore,
+      pickups: this.pickups,
+      length: this.snake.length,
+      paceTier: this.paceTier,
+      paceProgress: paceProgress(this.foodEaten),
+      paceFlash: this.paceFlash,
+      applesToNext: applesToNextPace(this.foodEaten),
+      combo: this.comboSystem.getCombo(),
+      comboMultiplier: this.comboSystem.getMultiplier(),
+      comboLeft: this.comboSystem.getComboProgress(),
+      comboFlash: this.comboFlash,
+      lives: this.lives,
+      maxLives: this.maxLives,
+      lostAge: this.lostAge,
+      powerUps: this.activePowerUps.map(p => ({
+        type: p.type,
+        left: Math.max(0, p.duration),
+        max: p.maxDuration,
+      })),
+      state: this.gameState,
+      stateTime: this.stateTime,
+      time: this.gameTime,
+    };
   }
 }
