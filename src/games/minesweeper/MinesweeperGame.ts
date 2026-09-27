@@ -1,88 +1,105 @@
 // ===== src/games/minesweeper/MinesweeperGame.ts =====
+//
+// Minesweeper, by Fieldmark: the field is a surveyor's instrument, the
+// tiles are enamel keys on a charcoal plate, and flags are pennants of pink
+// flagging tape. This file is the run: states, input, scoring, saved bests.
+// The rules live in systems/Board.ts, the layout in systems/Layout.ts, and
+// every pixel in systems/BoardRenderer.ts and systems/HudRenderer.ts.
+//
+// States:
+//   ready    the board is visible and the timer is still. A short card
+//            names the controls (gone on first input or after 2s). The
+//            first reveal lays the mines, always around a safe opening.
+//   playing  the timer runs. Reveal, flag, chord.
+//   dying    2.0s: a hit-stop, the hit mine flashes, then a shockwave sets
+//            off every other mine in order of distance; then BOOM.
+//   won      1.8s: flags plant on the remaining mines in a wave from the
+//            last move, the field shimmers, ribbons fall, then CLEARED.
+//   ended    endGame() has been called; onRenderEnded draws the final board.
+
 import { BaseGame } from '@/games/shared/BaseGame';
-import { GameManifest } from '@/lib/types';
+import { PressTracker } from '@/games/shared/input/PressTracker';
+import { UI } from '@/games/shared/hud/canvasUi';
+import type { GameManifest, GameScore } from '@/lib/types';
+import {
+  Board,
+  CellRef,
+  DIFFICULTIES,
+  Difficulty,
+  RevealResult,
+  isDifficulty,
+  tileDistance,
+} from './systems/Board';
+import {
+  FieldLayout,
+  HudTarget,
+  cellAt,
+  cellCentre,
+  computeLayout,
+  hitTest,
+} from './systems/Layout';
+import {
+  BoardRenderer,
+  BoardView,
+  CellFx,
+  freshFx,
+} from './systems/BoardRenderer';
+import { BannerView, HudRenderer, HudView } from './systems/HudRenderer';
 import { ParticleSystem } from './systems/ParticleSystem';
 import { ScreenShake } from './systems/ScreenShake';
+import { SoundBoard } from './systems/SoundBoard';
+import { CURSOR_CODES, KeyCursor, gridRef } from './systems/KeyCursor';
+import { FIELD } from './systems/palette';
+import type { Mood } from './entities/TileArt';
 
-// ============================================
-// TYPES & INTERFACES
-// ============================================
+export type Phase = 'ready' | 'playing' | 'dying' | 'won' | 'ended';
 
-interface Cell {
-  mine: boolean;
-  revealed: boolean;
+const CODES: readonly string[] = [
+  ...CURSOR_CODES,
+  'Space',
+  'Enter',
+  'KeyF',
+  'Digit1',
+  'Digit2',
+  'Digit3',
+];
+
+/** Beat lengths and feel, in seconds. */
+export const DEATH_BEAT = 2.0;
+export const VICTORY_BEAT = 1.8;
+export const HITSTOP = 0.1;
+export const LONG_PRESS = 0.45;
+export const READY_CARD_TIME = 2.0;
+const CARD_FADE = 0.2;
+const POP_STAGGER = 0.028;
+const CHORD_DELAY = 0.08;
+const PEEK_TIME = 0.26;
+/** The long-press ring only appears once a press is clearly not a tap. */
+const RING_DELAY = 0.12;
+const DRIFT = 14;
+const BIG_CASCADE = 12;
+/** A mine's own blast sound plays at most this many times per loss. */
+export const EXPLOSION_BUDGET = 6;
+
+const DIFFICULTY_KEY = 'minesweeper_difficulty';
+
+interface Press {
+  target: HudTarget | null;
+  /** This press long-pressed a flag; its release must do nothing. */
   flagged: boolean;
-  neighbors: number;
-  // Animation state
-  revealProgress: number;
-  flagProgress: number;
-  isHovered: boolean;
-  exploded: boolean;
 }
 
-type MinesweeperDifficulty = 'easy' | 'medium' | 'hard';
-type GameState = 'playing' | 'won' | 'lost' | 'dying';
-type SmileyState = 'happy' | 'surprised' | 'cool' | 'dead';
+interface WaveEntry extends CellRef {
+  /** Beat time at which the wave reaches this tile. */
+  at: number;
+  distance: number;
+  kind: 'mine' | 'wrong' | 'plant';
+}
 
-const DIFFICULTY_CONFIG: Record<
-  MinesweeperDifficulty,
-  { cols: number; rows: number; mines: number }
-> = {
-  easy: { cols: 9, rows: 9, mines: 10 },
-  medium: { cols: 16, rows: 16, mines: 40 },
-  hard: { cols: 20, rows: 14, mines: 60 },
-};
-
-// ============================================
-// COLORS - Retro Minesweeper Theme
-// ============================================
-
-const COLORS = {
-  // Background
-  bgDark: '#1a1a2e',
-  bgLight: '#16213e',
-
-  // Cell colors (classic 3D bevel)
-  cellUnrevealed: '#047857',
-  cellHighlight: '#10b981',
-  cellShadow: '#065f46',
-  cellRevealed: '#1f2937',
-  cellRevealedLight: '#374151',
-  cellHover: '#059669',
-
-  // Border
-  borderLight: '#C0C0C0',
-  borderDark: '#808080',
-
-  // Numbers (classic colors)
-  num1: '#3B82F6',
-  num2: '#22C55E',
-  num3: '#EF4444',
-  num4: '#1D4ED8',
-  num5: '#991B1B',
-  num6: '#0891B2',
-  num7: '#1F2937',
-  num8: '#6B7280',
-
-  // Other
-  mine: '#1F2937',
-  mineExploded: '#DC2626',
-  flag: '#FACC15',
-  flagPole: '#78350F',
-
-  // LED display
-  ledBg: '#1F0000',
-  ledOn: '#FF0000',
-  ledOff: '#3D0000',
-
-  // Smiley
-  smileyYellow: '#FBBF24',
-  smileyBorder: '#92400E',
-};
-
-// ============================================
-// MINESWEEPER GAME CLASS
-// ============================================
+function smooth(t: number): number {
+  const k = Math.max(0, Math.min(1, t));
+  return k * k * (3 - 2 * k);
+}
 
 export class MinesweeperGame extends BaseGame {
   manifest: GameManifest = {
@@ -92,1074 +109,938 @@ export class MinesweeperGame extends BaseGame {
     inputSchema: ['keyboard', 'touch'],
     assetBudgetKB: 80,
     tier: 0,
-    description: 'Classic mine-clearing puzzle with retro arcade style!',
+    description: 'Survey the field, flag every mine, open everything else.',
   };
 
   protected renderBaseHud = false;
 
-  // Grid configuration
-  private difficulty: MinesweeperDifficulty = 'easy';
-  private cols = 9;
-  private rows = 9;
-  private mines = 10;
-  private cellSize = 28;
-  private margin = 16;
+  // Field
+  private difficulty: Difficulty = 'easy';
+  private board!: Board;
+  private layout!: FieldLayout;
+  private fx: CellFx[][] = [];
+  private gameState: Phase = 'ready';
+  private outcome: 'won' | 'lost' | null = null;
 
-  // Board state
-  private board: Cell[][] = [];
-  private gameState: GameState = 'playing';
-  private smileyState: SmileyState = 'happy';
-  private minesPlaced = false;
-  private isStarted = false;
+  // Clocks
+  /** Animation clock; it stands still during the hit-stop. */
+  private clock = 0;
+  private hitstop = 0;
+  /** The player's timer: runs only while playing. */
   private elapsedSec = 0;
+  /** Time into the death or victory beat. */
+  private beatT = 0;
+  private readyCardT = 0;
+
+  // Results
   private bestTimeSec: number | null = null;
-  private cellsCleared = 0;
+  private newBest = false;
+  private playerFlags = 0;
+  private hit: CellRef | null = null;
+  private lastMove: CellRef | null = null;
+  private wave: WaveEntry[] = [];
+  private waveNext = 0;
+  /** Tiles per second the death or victory wave travels. */
+  private waveSpeed = 1;
+  private waveReach = 0;
+  private impactPending = false;
+  private ribbonsDone = false;
 
-  // Hover state
-  private hoveredCell: { row: number; col: number } | null = null;
-  private isMouseDown = false;
-
-  // Input tracking
-  private prevLeft = false;
-  private prevRight = false;
-  private prevEasyKey = false;
-  private prevMediumKey = false;
-  private prevHardKey = false;
-
-  // Reveal animation queue
-  private revealQueue: Array<{ row: number; col: number; delay: number }> = [];
-  private revealTimer = 0;
+  // Input
+  private tracker = new PressTracker();
+  private cursor = new KeyCursor();
+  private press: Press | null = null;
+  private hover: CellRef | null = null;
+  private lastPointer = { x: 0, y: 0 };
+  private pointerSeen = false;
+  private modality: 'touch' | 'mouse' | 'keyboard' = 'touch';
+  private flagMode = false;
+  private longPressT = 0;
+  private peek: { cells: CellRef[]; until: number } | null = null;
+  private pendingChord: (CellRef & { cells: CellRef[]; t: number }) | null =
+    null;
+  private pops: Array<CellRef & { t: number }> = [];
+  private keyNudge = 0;
 
   // Systems
-  private particles!: ParticleSystem;
-  private screenShake!: ScreenShake;
-  private cameraOffset = { x: 0, y: 0 };
+  private particles = new ParticleSystem();
+  private shake = new ScreenShake();
+  private sfx = new SoundBoard((name, volume) =>
+    this.services?.audio?.playSound?.(
+      name,
+      volume === undefined ? undefined : { volume }
+    )
+  );
+  private boardRenderer = new BoardRenderer(800, 600);
+  private hud = new HudRenderer();
+  private handleContextMenu?: (e: Event) => void;
 
-  // Victory/Death state
-  private victoryConfettiSpawned = false;
-  private deathTimer = 0;
-  private readonly deathAnimationDuration = 2.0; // seconds to show death animation
-
-  // Computed layout
-  private get offsetX(): number {
-    return (this.canvas.width - this.cols * this.cellSize) / 2;
-  }
-
-  private get offsetY(): number {
-    return (this.canvas.height - this.rows * this.cellSize) / 2 + 30;
-  }
-
-  // ==========================================
-  // LIFECYCLE METHODS
-  // ==========================================
+  // ======================================================= lifecycle ====
 
   protected onInit(): void {
-    this.particles = new ParticleSystem();
-    this.screenShake = new ScreenShake();
+    this.boardRenderer = new BoardRenderer(
+      this.canvas.width,
+      this.canvas.height
+    );
     this.loadDifficulty();
-    this.generateBoard();
-
-    // Prevent browser context menu on right-click
+    this.resetRun();
+    // Right-click flags; the browser menu must not open over the field.
     this.handleContextMenu = (e: Event) => e.preventDefault();
     this.canvas.addEventListener('contextmenu', this.handleContextMenu);
   }
 
   protected onDestroy(): void {
-    // Clean up event listener
     if (this.handleContextMenu) {
       this.canvas.removeEventListener('contextmenu', this.handleContextMenu);
     }
   }
 
-  private handleContextMenu?: (e: Event) => void;
-
   protected onRestart(): void {
-    this.generateBoard();
+    this.resetRun();
   }
+
+  protected onResume(): void {
+    // Whatever the pointer did while paused is not a move on the field.
+    this.tracker.reset();
+    this.press = null;
+    this.longPressT = 0;
+  }
+
+  protected onResize(width: number, height: number): void {
+    if (!this.board) return;
+    this.layout = computeLayout(
+      this.board.cols,
+      this.board.rows,
+      width,
+      height
+    );
+    this.boardRenderer.invalidate();
+  }
+
+  /** A whole new run: new field, READY card, fresh input and sound state. */
+  private resetRun(): void {
+    this.newField();
+    this.readyCardT = READY_CARD_TIME;
+    this.extendedGameData = null;
+    this.tracker.reset();
+    this.press = null;
+    this.pointerSeen = false;
+    this.sfx.reset();
+    this.clock = 0;
+  }
+
+  /** A new field at the current difficulty, back in READY. */
+  private newField(): void {
+    const spec = DIFFICULTIES[this.difficulty];
+    this.board = Board.for(this.difficulty);
+    this.layout = computeLayout(
+      spec.cols,
+      spec.rows,
+      this.canvas.width,
+      this.canvas.height
+    );
+    this.fx = [];
+    for (let r = 0; r < spec.rows; r++) {
+      const row: CellFx[] = [];
+      for (let c = 0; c < spec.cols; c++) row.push(freshFx());
+      this.fx.push(row);
+    }
+    this.gameState = 'ready';
+    this.outcome = null;
+    this.endGameSound = 'game_over';
+    this.endGameOutcome = 'died';
+    this.elapsedSec = 0;
+    this.beatT = 0;
+    this.hitstop = 0;
+    this.hit = null;
+    this.lastMove = null;
+    this.wave = [];
+    this.waveNext = 0;
+    this.impactPending = false;
+    this.ribbonsDone = false;
+    this.newBest = false;
+    this.playerFlags = 0;
+    this.score = 0;
+    this.pickups = 0;
+    this.hover = null;
+    this.peek = null;
+    this.pendingChord = null;
+    this.pops = [];
+    this.longPressT = 0;
+    this.keyNudge = 0;
+    this.cursor.reset(spec.rows, spec.cols);
+    this.particles.clear();
+    this.shake.stop();
+    this.boardRenderer.invalidate();
+    this.loadBestTime();
+  }
+
+  // ========================================================== update ====
 
   protected onUpdate(dt: number): void {
-    // Update systems
-    this.particles.update(dt);
-    this.screenShake.update(dt);
-    this.cameraOffset = this.screenShake.getOffset();
+    this.tracker.update(this.services.input, CODES, dt);
+    this.sfx.tick(dt);
 
-    // Update timer
-    if (this.gameState === 'playing' && this.isStarted) {
-      this.elapsedSec += dt;
+    if (this.hitstop > 0) {
+      this.hitstop = Math.max(0, this.hitstop - dt);
+    } else {
+      this.clock += dt;
+      this.particles.update(dt);
+      this.shake.update(dt);
     }
+    if (this.readyCardT > 0)
+      this.readyCardT = Math.max(0, this.readyCardT - dt);
+    if (this.keyNudge > 0)
+      this.keyNudge = Math.max(0, this.keyNudge - dt / 0.3);
+    if (this.peek && this.clock >= this.peek.until) this.peek = null;
+    this.flushPops();
 
-    // Process reveal queue (cascade animation)
-    if (this.revealQueue.length > 0) {
-      this.revealTimer += dt;
-      while (this.revealQueue.length > 0 && this.revealTimer >= this.revealQueue[0].delay) {
-        const next = this.revealQueue.shift()!;
-        const cell = this.board[next.row]?.[next.col];
-        if (cell && !cell.revealed && !cell.flagged) {
-          this.revealCell(next.row, next.col, false);
+    switch (this.gameState) {
+      case 'ready':
+      case 'playing':
+        this.handleInput(dt);
+        this.tickChord(dt);
+        if (this.gameState === 'playing') {
+          this.elapsedSec += dt;
+          // Every reveal checks for the clear; this is the backstop.
+          if (this.board.isCleared()) this.startVictory(this.lastMove);
         }
-      }
+        break;
+      case 'dying':
+        this.tickDeath(dt);
+        break;
+      case 'won':
+        this.tickVictory(dt);
+        break;
+      default:
+        break;
     }
+  }
 
-    // Update cell animations
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const cell = this.board[r][c];
+  // =========================================================== input ====
 
-        // Reveal animation
-        if (cell.revealed && cell.revealProgress < 1) {
-          cell.revealProgress = Math.min(1, cell.revealProgress + dt * 8);
-        }
-
-        // Flag animation
-        if (cell.flagged && cell.flagProgress < 1) {
-          cell.flagProgress = Math.min(1, cell.flagProgress + dt * 6);
-        } else if (!cell.flagged && cell.flagProgress > 0) {
-          cell.flagProgress = Math.max(0, cell.flagProgress - dt * 8);
-        }
-      }
+  private handleInput(dt: number): void {
+    const t = this.tracker;
+    if (t.anyJustPressed(CODES)) this.dismissReadyCard();
+    if (this.cursor.update(t, this.board.rows, this.board.cols, dt)) {
+      this.modality = 'keyboard';
     }
+    this.handlePointer();
+    this.handleKeys();
+  }
 
-    // Handle input
-    if (this.gameState === 'playing') {
-      this.handleInput();
-      this.handleKeyboardDifficulty();
+  private handleKeys(): void {
+    const t = this.tracker;
+    if (t.justPressed('Digit1')) this.chooseDifficulty('easy');
+    if (t.justPressed('Digit2')) this.chooseDifficulty('medium');
+    if (t.justPressed('Digit3')) this.chooseDifficulty('hard');
+
+    if (t.justPressed('Space') || t.justPressed('Enter')) {
+      this.modality = 'keyboard';
+      // The first press wakes the cursor where it sits; the next one acts.
+      if (!this.cursor.visible) this.cursor.show();
+      else this.primaryAt(this.cursor.row, this.cursor.col);
     }
-
-    // Victory confetti
-    if (this.gameState === 'won' && !this.victoryConfettiSpawned) {
-      this.particles.createConfetti(this.canvas.width);
-      this.victoryConfettiSpawned = true;
-    }
-
-    // Death animation timer
-    if (this.gameState === 'dying') {
-      this.deathTimer += dt;
-      if (this.deathTimer >= this.deathAnimationDuration) {
-        this.gameState = 'lost';
-        this.endGame();
+    if (t.justPressed('KeyF')) {
+      // F flags the tile you are pointing at (keyboard cursor, or the
+      // mouse over the field). Pointing at nothing, it throws flag mode.
+      if (this.cursor.visible) {
+        this.secondaryAt(this.cursor.row, this.cursor.col);
+      } else if (this.hover) {
+        this.secondaryAt(this.hover.row, this.hover.col);
+      } else {
+        this.toggleFlagMode();
       }
     }
   }
 
+  private handlePointer(): void {
+    const t = this.tracker;
+    const touch = t.isTouch();
+    const pos = this.tracker.pointerPosition();
+
+    if (!touch) {
+      const moved =
+        pos.x !== this.lastPointer.x || pos.y !== this.lastPointer.y;
+      if (moved && this.pointerSeen) {
+        this.cursor.hide();
+        this.modality = 'mouse';
+      }
+      this.pointerSeen = true;
+    }
+    this.lastPointer = pos;
+    this.hover = touch ? null : cellAt(this.layout, pos.x, pos.y);
+
+    if (t.pointerJustPressed()) {
+      this.dismissReadyCard();
+      this.cursor.hide();
+      this.modality = touch ? 'touch' : 'mouse';
+      const target = hitTest(this.layout, pos.x, pos.y);
+      this.press = { target, flagged: false };
+      if (target?.kind === 'key' && this.keysLocked()) this.keyNudge = 1;
+    }
+
+    this.longPressT = 0;
+    const press = this.press;
+    if (press && t.pointerDown() && !press.flagged) {
+      const target = press.target;
+      if (target?.kind === 'cell' && this.gameState === 'playing') {
+        const cell = this.board.at(target.row, target.col);
+        if (cell && !cell.revealed) {
+          const down = t.pointerDownPosition();
+          const drift = Math.hypot(pos.x - down.x, pos.y - down.y);
+          if (drift <= DRIFT) {
+            this.longPressT = Math.max(
+              0,
+              Math.min(
+                1,
+                (t.pointerHeldFor() - RING_DELAY) / (LONG_PRESS - RING_DELAY)
+              )
+            );
+          }
+          if (t.longPressed(LONG_PRESS, DRIFT)) {
+            press.flagged = true;
+            this.longPressT = 0;
+            this.secondaryAt(target.row, target.col);
+          }
+        }
+      }
+    }
+
+    if (t.pointerJustReleased()) {
+      const done = this.press;
+      this.press = null;
+      if (done && !done.flagged) {
+        this.release(done.target, hitTest(this.layout, pos.x, pos.y));
+      }
+    }
+
+    if (t.rightJustPressed()) {
+      this.dismissReadyCard();
+      this.cursor.hide();
+      this.modality = 'mouse';
+      const cell = cellAt(this.layout, pos.x, pos.y);
+      if (cell) this.secondaryAt(cell.row, cell.col);
+    }
+  }
+
+  /** A press acts on release, where it was released, like a real button. */
+  private release(start: HudTarget | null, end: HudTarget | null): void {
+    if (!start || !end) return;
+    if (start.kind === 'cell' && end.kind === 'cell') {
+      this.primaryAt(end.row, end.col);
+    } else if (start.kind === 'face' && end.kind === 'face') {
+      this.pressFace();
+    } else if (
+      start.kind === 'key' &&
+      end.kind === 'key' &&
+      start.id === end.id
+    ) {
+      this.chooseDifficulty(start.id);
+    } else if (start.kind === 'flagSwitch' && end.kind === 'flagSwitch') {
+      this.toggleFlagMode();
+    }
+  }
+
+  private dismissReadyCard(): void {
+    this.readyCardT = Math.min(this.readyCardT, CARD_FADE);
+  }
+
+  private keysLocked(): boolean {
+    return this.gameState !== 'ready';
+  }
+
+  // =========================================================== moves ====
+
+  /** Tap, click, Space: open a tile, chord a number, or flag in flag mode. */
+  private primaryAt(row: number, col: number): void {
+    const cell = this.board.at(row, col);
+    if (!cell) return;
+    if (this.gameState === 'ready') {
+      // The first tap always opens, even in flag mode: there is nothing to
+      // flag yet, and it is always safe.
+      this.firstReveal(row, col);
+      return;
+    }
+    if (this.gameState !== 'playing') return;
+    if (cell.revealed) {
+      this.requestChord(row, col);
+      return;
+    }
+    if (this.flagMode) {
+      this.secondaryAt(row, col);
+      return;
+    }
+    if (cell.flagged) return; // a flag protects its tile
+    this.lastMove = { row, col };
+    this.applyReveal(this.board.reveal(row, col), row, col);
+  }
+
+  private firstReveal(row: number, col: number): void {
+    this.board.placeMines(row, col);
+    this.gameState = 'playing';
+    this.elapsedSec = 0;
+    this.lastMove = { row, col };
+    this.applyReveal(this.board.reveal(row, col), row, col);
+  }
+
+  /** Right-click, long-press, F: plant or pull a flag. */
+  private secondaryAt(row: number, col: number): void {
+    if (this.gameState !== 'playing') return;
+    const on = this.board.toggleFlag(row, col);
+    if (on === null) return;
+    const fx = this.fx[row][col];
+    if (on) {
+      fx.flagT = this.clock;
+      fx.auto = false;
+      const c = cellCentre(this.layout, row, col);
+      this.particles.plant(c.x, c.y - this.layout.cell * 0.18);
+      // The stake seating in the ground.
+      this.sfx.play('land', { volume: 0.7 });
+    } else {
+      fx.unflagT = this.clock;
+      this.sfx.play('click', { volume: 0.4 });
+    }
+  }
+
+  private requestChord(row: number, col: number): void {
+    const state = this.board.chordState(row, col);
+    if (state.kind === 'peek') {
+      // Wrong flag count: show which tiles it would have opened, open none.
+      this.peek = { cells: state.cells, until: this.clock + PEEK_TIME };
+      this.sfx.play('bounce', { volume: 0.35, gap: 0.08 });
+    } else if (state.kind === 'ready') {
+      // The neighbours go down together, then open together.
+      this.pendingChord = { row, col, cells: state.cells, t: CHORD_DELAY };
+    }
+  }
+
+  private tickChord(dt: number): void {
+    if (!this.pendingChord) return;
+    this.pendingChord.t -= dt;
+    if (this.pendingChord.t > 0) return;
+    const { row, col } = this.pendingChord;
+    this.pendingChord = null;
+    if (this.gameState !== 'playing') return;
+    this.lastMove = { row, col };
+    this.applyReveal(this.board.chord(row, col), row, col);
+  }
+
+  /**
+   * Book a reveal: score it now, schedule each tile's pop by flood ring, and
+   * decide the run on the spot. The board has already opened; the cascade
+   * the player watches is animation over a settled field.
+   */
+  private applyReveal(result: RevealResult, row: number, col: number): void {
+    const opened = result.opened;
+    if (opened.length > 0) {
+      this.score += opened.length * 10;
+      for (const o of opened) {
+        const at = this.clock + o.depth * POP_STAGGER;
+        this.fx[o.row][o.col].revealT = at;
+        this.pops.push({ row: o.row, col: o.col, t: at });
+      }
+      if (opened.length >= BIG_CASCADE) {
+        const c = cellCentre(this.layout, row, col);
+        const depth = opened[opened.length - 1].depth;
+        const s = this.layout.cell;
+        this.particles.ring(
+          c.x,
+          c.y,
+          (depth + 1.5) * s,
+          s / POP_STAGGER,
+          FIELD.lit,
+          2
+        );
+        this.sfx.play('whoosh', { volume: 0.5, gap: 0.2 });
+      }
+    }
+    if (result.mine) {
+      this.startDeath(result.mine);
+      return;
+    }
+    if (this.board.isCleared()) this.startVictory({ row, col });
+  }
+
+  /** Tiles reaching their pop time this frame: a flake of enamel, a click. */
+  private flushPops(): void {
+    if (this.pops.length === 0) return;
+    let kept = 0;
+    for (const p of this.pops) {
+      if (p.t <= this.clock) {
+        const c = cellCentre(this.layout, p.row, p.col);
+        this.particles.flakes(c.x, c.y, this.layout.cell);
+        // One click per 40ms across the whole cascade, never a buzz.
+        this.sfx.play('click', { gap: 0.04, volume: 0.45 });
+      } else {
+        this.pops[kept++] = p;
+      }
+    }
+    this.pops.length = kept;
+  }
+
+  private pressFace(): void {
+    this.sfx.play('click', { volume: 0.6 });
+    if (this.gameState === 'ready' || this.gameState === 'playing') {
+      this.newField();
+    }
+  }
+
+  private chooseDifficulty(id: Difficulty): void {
+    if (this.keysLocked()) {
+      this.keyNudge = 1;
+      return;
+    }
+    this.sfx.play('click', { volume: 0.6 });
+    this.setDifficulty(id);
+  }
+
+  /** Switch fields. Only the READY board may change size. */
+  private setDifficulty(id: Difficulty): void {
+    if (this.gameState !== 'ready') return;
+    this.difficulty = id;
+    try {
+      localStorage.setItem(DIFFICULTY_KEY, id);
+    } catch {
+      /* storage unavailable: the choice lasts this session */
+    }
+    this.newField();
+  }
+
+  private toggleFlagMode(): void {
+    this.flagMode = !this.flagMode;
+    this.sfx.play('switch_click', { volume: 0.45 });
+  }
+
+  // ========================================================== beats ====
+
+  private startDeath(hit: CellRef): void {
+    this.gameState = 'dying';
+    this.outcome = 'lost';
+    this.hit = hit;
+    this.beatT = 0;
+    this.hitstop = HITSTOP;
+    this.impactPending = true;
+    this.pendingChord = null;
+    this.peek = null;
+    this.press = null;
+    this.longPressT = 0;
+    this.playerFlags = this.board.flags;
+    this.pickups = 0;
+
+    // The shockwave: every other hidden mine goes off in order of its
+    // distance from the one that was hit, and each wrong flag is crossed
+    // out as the wave passes it. Correct flags stand.
+    const entries: WaveEntry[] = [];
+    for (let r = 0; r < this.board.rows; r++) {
+      for (let c = 0; c < this.board.cols; c++) {
+        if (r === hit.row && c === hit.col) continue;
+        const cell = this.board.cells[r][c];
+        const distance = tileDistance(hit, { row: r, col: c });
+        if (cell.mine && !cell.flagged) {
+          entries.push({ row: r, col: c, distance, at: 0, kind: 'mine' });
+        } else if (!cell.mine && cell.flagged) {
+          entries.push({ row: r, col: c, distance, at: 0, kind: 'wrong' });
+        }
+      }
+    }
+    const reach = entries.reduce((m, e) => Math.max(m, e.distance), 1);
+    // The farthest mine goes off one second after the wave leaves.
+    this.waveSpeed = Math.max(4, reach / 1.0);
+    this.waveReach = reach;
+    for (const e of entries)
+      e.at = HITSTOP + 0.12 + e.distance / this.waveSpeed;
+    entries.sort((a, b) => a.at - b.at);
+    this.wave = entries;
+    this.waveNext = 0;
+  }
+
+  private tickDeath(dt: number): void {
+    this.beatT += dt;
+    const s = this.layout.cell;
+    if (this.impactPending && this.hitstop <= 0 && this.hit) {
+      this.impactPending = false;
+      const c = cellCentre(this.layout, this.hit.row, this.hit.col);
+      this.shake.shake(7, 0.45);
+      this.particles.burst(c.x, c.y, 1.6);
+      this.particles.ring(
+        c.x,
+        c.y,
+        (this.waveReach + 1) * s,
+        this.waveSpeed * s,
+        UI.bad,
+        3
+      );
+      this.sfx.play('explosion', {
+        budgetKey: 'boom',
+        budget: EXPLOSION_BUDGET,
+      });
+    }
+    while (
+      this.waveNext < this.wave.length &&
+      this.wave[this.waveNext].at <= this.beatT
+    ) {
+      const e = this.wave[this.waveNext++];
+      const fx = this.fx[e.row][e.col];
+      if (e.kind === 'mine') {
+        fx.detonateT = this.clock;
+        const c = cellCentre(this.layout, e.row, e.col);
+        this.particles.burst(c.x, c.y, 0.55);
+        this.shake.shake(2.5, 0.15);
+        this.sfx.play('explosion', {
+          budgetKey: 'boom',
+          budget: EXPLOSION_BUDGET,
+          gap: 0.09,
+          volume: 0.55,
+        });
+      } else {
+        fx.wrongT = this.clock;
+      }
+    }
+    if (this.beatT >= DEATH_BEAT) this.finish();
+  }
+
+  private startVictory(origin: CellRef | null): void {
+    if (this.gameState !== 'playing') return;
+    this.gameState = 'won';
+    this.outcome = 'won';
+    this.beatT = 0;
+    this.pendingChord = null;
+    this.peek = null;
+    this.press = null;
+    this.longPressT = 0;
+
+    const spec = DIFFICULTIES[this.difficulty];
+    // Every flag standing at a clear is on a mine: a flagged safe tile can
+    // not be opened, so a field with one cannot clear.
+    this.playerFlags = this.board.flags;
+    this.pickups = this.playerFlags;
+    // Cells are already scored; a clear adds a flat bonus and 10 per
+    // second under par.
+    this.score +=
+      spec.clearBonus +
+      Math.round(Math.max(0, spec.par - this.elapsedSec) * 10);
+    // A cleared field must not end on the losing sting or report a death.
+    this.endGameSound = 'win';
+    this.endGameOutcome = 'completed';
+    this.newBest =
+      this.bestTimeSec === null || this.elapsedSec < this.bestTimeSec;
+    if (this.newBest) this.saveBestTime(this.elapsedSec);
+    // The chord now; the full fanfare closes the beat (endGameSound).
+    this.sfx.play('success');
+
+    // Plant the rest, in a wave from the last move. Let the final cascade
+    // finish popping first.
+    const from = origin ?? {
+      row: Math.floor(this.board.rows / 2),
+      col: Math.floor(this.board.cols / 2),
+    };
+    const lastPop = this.pops.reduce((m, p) => Math.max(m, p.t), this.clock);
+    const settle = Math.min(0.4, lastPop - this.clock);
+    const entries: WaveEntry[] = [];
+    for (let r = 0; r < this.board.rows; r++) {
+      for (let c = 0; c < this.board.cols; c++) {
+        const cell = this.board.cells[r][c];
+        if (cell.mine && !cell.flagged) {
+          const distance = tileDistance(from, { row: r, col: c });
+          entries.push({ row: r, col: c, distance, at: 0, kind: 'plant' });
+        }
+      }
+    }
+    const reach = entries.reduce((m, e) => Math.max(m, e.distance), 1);
+    this.waveSpeed = Math.max(4, reach / 0.75);
+    for (const e of entries) e.at = settle + 0.1 + e.distance / this.waveSpeed;
+    entries.sort((a, b) => a.at - b.at);
+    this.wave = entries;
+    this.waveNext = 0;
+  }
+
+  private tickVictory(dt: number): void {
+    this.beatT += dt;
+    while (
+      this.waveNext < this.wave.length &&
+      this.wave[this.waveNext].at <= this.beatT
+    ) {
+      const e = this.wave[this.waveNext++];
+      this.board.setFlag(e.row, e.col, true);
+      const fx = this.fx[e.row][e.col];
+      fx.flagT = this.clock;
+      fx.auto = true;
+      const c = cellCentre(this.layout, e.row, e.col);
+      this.particles.plant(c.x, c.y - this.layout.cell * 0.18);
+      this.sfx.play('click', { gap: 0.04, volume: 0.5 });
+    }
+    if (!this.ribbonsDone && this.beatT >= 0.3) {
+      this.ribbonsDone = true;
+      const w = this.layout.well;
+      this.particles.ribbons(w.x, w.x + w.w, w.y + 4);
+    }
+    if (this.beatT >= VICTORY_BEAT) this.finish();
+  }
+
+  private finish(): void {
+    const won = this.outcome === 'won';
+    this.gameState = 'ended';
+    this.extendedGameData = {
+      cells_cleared: this.board.safeOpened,
+      games_won: won ? 1 : 0,
+      fast_win: won && this.elapsedSec <= 60 ? 60 : 0,
+      flags_used: this.playerFlags,
+      difficulty: this.difficulty,
+    };
+    this.endGame();
+  }
+
+  protected onGameEnd(finalScore: GameScore): void {
+    void finalScore;
+    this.services?.analytics?.trackGameSpecificStat?.(
+      'minesweeper',
+      'cells_cleared',
+      this.board.safeOpened
+    );
+    if (this.outcome === 'won') {
+      this.services?.analytics?.trackGameSpecificStat?.(
+        'minesweeper',
+        'games_won',
+        1
+      );
+    }
+  }
+
+  // ========================================================== render ====
+
   protected onRender(ctx: CanvasRenderingContext2D): void {
+    this.boardRenderer.renderDesk(ctx);
+    const o = this.shake.offset();
     ctx.save();
-    ctx.translate(this.cameraOffset.x, this.cameraOffset.y);
-
-    this.renderBackground(ctx);
-    this.renderBoard(ctx);
+    ctx.translate(o.x, o.y);
+    this.boardRenderer.renderHousing(ctx, this.layout);
+    this.boardRenderer.renderField(ctx, this.boardView());
+    // Effects stay inside the instrument: nothing crosses the readouts.
+    const w = this.layout.well;
+    ctx.beginPath();
+    ctx.rect(w.x, w.y, w.w, w.h);
+    ctx.clip();
     this.particles.render(ctx);
-
     ctx.restore();
   }
 
   protected onRenderUI(ctx: CanvasRenderingContext2D): void {
-    this.renderHeader(ctx);
-    this.renderDifficultyButtons(ctx);
-    this.renderInstructions(ctx);
-    this.renderGameStateOverlay(ctx);
+    const v = this.hudView();
+    const o = this.shake.offset();
+    ctx.save();
+    ctx.translate(o.x, o.y);
+    this.hud.renderHeader(ctx, v);
+    ctx.restore();
+    this.hud.renderFooter(ctx, v);
+    this.hud.renderTag(ctx, v);
+    this.hud.renderReadyCard(ctx, v);
   }
 
-  protected onGameEnd(finalScore: import('@/lib/types').GameScore): void {
-    const won = this.gameState === 'won';
-    const flagsUsed = this.board.flat().filter(c => c.flagged).length;
-
-    if (won) {
-      this.saveBestTime(this.elapsedSec);
-    }
-
-    this.extendedGameData = {
-      cells_cleared: this.cellsCleared,
-      games_won: won ? 1 : 0,
-      fast_win: won && this.elapsedSec <= 60 ? 60 : 0,
-      flags_used: flagsUsed,
-      difficulty: this.difficulty,
-    };
-
-    this.services?.analytics?.trackGameSpecificStat?.('minesweeper', 'cells_cleared', this.cellsCleared);
-    if (won) {
-      this.services?.analytics?.trackGameSpecificStat?.('minesweeper', 'games_won', 1);
-    }
-
-    super.onGameEnd?.(finalScore);
-  }
-
-  // ==========================================
-  // INPUT HANDLING
-  // ==========================================
-
-  private handleInput(): void {
-    const input = this.services.input;
-    const touches = input.getTouches();
-    const mousePos = input.getMousePosition();
-    const pointer = touches[0] ?? mousePos;
-
-    const left = input.isMousePressed(0) || touches.length > 0;
-    const right = input.isMousePressed(2) || input.isKeyPressed('KeyF');
-
-    // Update hover state
-    const { row, col } = this.pointToCell(pointer.x, pointer.y);
-    if (row >= 0 && col >= 0) {
-      // Clear previous hover
-      if (this.hoveredCell) {
-        const prevCell = this.board[this.hoveredCell.row]?.[this.hoveredCell.col];
-        if (prevCell) prevCell.isHovered = false;
-      }
-
-      this.hoveredCell = { row, col };
-      const cell = this.board[row][col];
-      if (cell && !cell.revealed) {
-        cell.isHovered = true;
-      }
-    } else {
-      if (this.hoveredCell) {
-        const prevCell = this.board[this.hoveredCell.row]?.[this.hoveredCell.col];
-        if (prevCell) prevCell.isHovered = false;
-      }
-      this.hoveredCell = null;
-    }
-
-    // Update smiley on mouse down
-    this.isMouseDown = left;
-    if (left && this.hoveredCell) {
-      this.smileyState = 'surprised';
-    } else if (this.gameState === 'playing') {
-      this.smileyState = 'happy';
-    }
-
-    // Handle clicks
-    if (left && !this.prevLeft) {
-      // Check smiley click (restart)
-      if (this.isSmileyClick(pointer.x, pointer.y)) {
-        this.restart();
-      } else if (!this.handleDifficultyTap(pointer.x, pointer.y)) {
-        this.revealAt(pointer.x, pointer.y);
-      }
-    } else if (right && !this.prevRight) {
-      this.toggleFlagAt(pointer.x, pointer.y);
-    }
-
-    this.prevLeft = left;
-    this.prevRight = right;
-  }
-
-  private handleKeyboardDifficulty(): void {
-    const easyKey = this.services.input.isKeyPressed('Digit1');
-    const mediumKey = this.services.input.isKeyPressed('Digit2');
-    const hardKey = this.services.input.isKeyPressed('Digit3');
-
-    if (easyKey && !this.prevEasyKey) this.setDifficulty('easy');
-    if (mediumKey && !this.prevMediumKey) this.setDifficulty('medium');
-    if (hardKey && !this.prevHardKey) this.setDifficulty('hard');
-
-    this.prevEasyKey = easyKey;
-    this.prevMediumKey = mediumKey;
-    this.prevHardKey = hardKey;
-  }
-
-  private isSmileyClick(x: number, y: number): boolean {
-    const smileyX = this.canvas.width / 2;
-    const smileyY = 35;
-    const radius = 18;
-    const dx = x - smileyX;
-    const dy = y - smileyY;
-    return dx * dx + dy * dy < radius * radius;
-  }
-
-  // ==========================================
-  // GAME LOGIC
-  // ==========================================
-
-  private revealAt(x: number, y: number): void {
-    const { row, col } = this.pointToCell(x, y);
-    if (row < 0 || col < 0) return;
-    const cell = this.board[row][col];
-    if (cell.revealed || cell.flagged) return;
-
-    if (!this.minesPlaced) {
-      this.placeMines(row, col);
-      this.minesPlaced = true;
-      this.isStarted = true;
-      this.elapsedSec = 0;
-    }
-
-    if (cell.mine) {
-      // Hit a mine - start death animation
-      cell.revealed = true;
-      cell.exploded = true;
-      cell.revealProgress = 1;
-      this.gameState = 'dying';
-      this.smileyState = 'dead';
-      this.deathTimer = 0;
-
-      // Explosion effects
-      const cellX = this.offsetX + col * this.cellSize + this.cellSize / 2;
-      const cellY = this.offsetY + row * this.cellSize + this.cellSize / 2;
-      this.particles.createExplosion(cellX, cellY);
-      this.screenShake.shake(15, 0.5);
-      this.services.audio.playSound('collision');
-
-      // Reveal all mines with staggered animation
-      this.revealAllMinesAnimated();
-      return;
-    }
-
-    // Start cascade reveal
-    this.startCascadeReveal(row, col);
-
-    if (this.checkWin()) {
-      this.gameState = 'won';
-      this.smileyState = 'cool';
-      this.services.audio.playSound('success');
-      this.endGame();
-    }
-  }
-
-  private revealCell(row: number, col: number, checkWin: boolean = true): void {
-    const cell = this.board[row][col];
-    if (cell.revealed || cell.flagged) return;
-
-    cell.revealed = true;
-    cell.revealProgress = 0;
-
-    if (!cell.mine) {
-      this.score += 10;
-      this.cellsCleared++;
-
-      // Particle effect
-      const cellX = this.offsetX + col * this.cellSize + this.cellSize / 2;
-      const cellY = this.offsetY + row * this.cellSize + this.cellSize / 2;
-      this.particles.createRevealDust(cellX, cellY, this.cellSize);
-    }
-
-    if (checkWin && this.checkWin()) {
-      this.gameState = 'won';
-      this.smileyState = 'cool';
-      this.services.audio.playSound('success');
-      this.endGame();
-    }
-  }
-
-  private startCascadeReveal(startRow: number, startCol: number): void {
-    this.revealQueue = [];
-    this.revealTimer = 0;
-
-    const visited = new Set<string>();
-    const queue: Array<{ row: number; col: number; distance: number }> = [
-      { row: startRow, col: startCol, distance: 0 }
-    ];
-
-    while (queue.length > 0) {
-      const { row, col, distance } = queue.shift()!;
-      const key = `${row},${col}`;
-      if (visited.has(key)) continue;
-      visited.add(key);
-
-      const cell = this.board[row]?.[col];
-      if (!cell || cell.revealed || cell.flagged) continue;
-
-      // Add to reveal queue with delay based on distance
-      this.revealQueue.push({ row, col, delay: distance * 0.03 });
-
-      // If no neighbors, expand
-      if (cell.neighbors === 0 && !cell.mine) {
-        for (let dr = -1; dr <= 1; dr++) {
-          for (let dc = -1; dc <= 1; dc++) {
-            if (dr === 0 && dc === 0) continue;
-            const nr = row + dr;
-            const nc = col + dc;
-            if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
-              queue.push({ row: nr, col: nc, distance: distance + 1 });
-            }
-          }
-        }
-      }
-    }
-
-    // Play sound for cascade
-    if (this.revealQueue.length > 3) {
-      this.services.audio.playSound('powerup');
-      this.particles.createCascadeWave(
-        this.offsetX + startCol * this.cellSize + this.cellSize / 2,
-        this.offsetY + startRow * this.cellSize + this.cellSize / 2
-      );
-    }
-  }
-
-  private toggleFlagAt(x: number, y: number): void {
-    const { row, col } = this.pointToCell(x, y);
-    if (row < 0 || col < 0) return;
-    const cell = this.board[row][col];
-    if (cell.revealed) return;
-
-    cell.flagged = !cell.flagged;
-
-    if (cell.flagged) {
-      const cellX = this.offsetX + col * this.cellSize + this.cellSize / 2;
-      const cellY = this.offsetY + row * this.cellSize + this.cellSize / 2;
-      this.particles.createFlagSparkle(cellX, cellY);
-      this.services.audio.playSound('coin');
-    }
-  }
-
-  private revealAllMines(): void {
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const cell = this.board[r][c];
-        if (cell.mine && !cell.revealed) {
-          cell.revealed = true;
-          cell.revealProgress = 1;
-        }
-      }
-    }
-  }
-
-  private revealAllMinesAnimated(): void {
-    // Collect all mines
-    const mines: Array<{ row: number; col: number }> = [];
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const cell = this.board[r][c];
-        if (cell.mine && !cell.revealed) {
-          mines.push({ row: r, col: c });
-        }
-      }
-    }
-
-    // Reveal mines with staggered timing
-    mines.forEach((mine, index) => {
-      setTimeout(() => {
-        const cell = this.board[mine.row]?.[mine.col];
-        if (cell && !cell.revealed) {
-          cell.revealed = true;
-          cell.revealProgress = 0; // Animate the reveal
-
-          // Small explosion for each mine
-          const cellX = this.offsetX + mine.col * this.cellSize + this.cellSize / 2;
-          const cellY = this.offsetY + mine.row * this.cellSize + this.cellSize / 2;
-          this.particles.createRevealDust(cellX, cellY, this.cellSize);
-
-          // Small shake for each mine
-          if (index % 3 === 0) {
-            this.screenShake.shake(3, 0.1);
-          }
-        }
-      }, index * 80); // 80ms between each mine reveal
+  /** The board as the run ended, dimmed under the shell's summary. */
+  protected onRenderEnded(ctx: CanvasRenderingContext2D): void {
+    this.boardRenderer.renderDesk(ctx);
+    this.boardRenderer.renderHousing(ctx, this.layout);
+    this.boardRenderer.renderField(ctx, {
+      ...this.boardView(),
+      // Far enough ahead that every animation reads as settled.
+      now: this.clock + 10,
+      hitFlash: false,
+      hover: null,
+      pressed: [],
+      ghostFlag: null,
+      longPress: null,
+      cursor: null,
+      sheen: null,
+      dim: 0.55,
     });
+    const v = { ...this.hudView(), readyCard: 0, facePressed: false };
+    this.hud.renderHeader(ctx, v);
+    this.hud.renderFooter(ctx, v);
+    this.hud.renderTag(ctx, v);
   }
 
-  private pointToCell(x: number, y: number): { row: number; col: number } {
-    const col = Math.floor((x - this.offsetX) / this.cellSize);
-    const row = Math.floor((y - this.offsetY) / this.cellSize);
-    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) {
-      return { row: -1, col: -1 };
-    }
-    return { row, col };
-  }
+  private boardView(): BoardView {
+    const live = this.gameState === 'ready' || this.gameState === 'playing';
+    const pressCell = this.pressCell();
+    const pressedCell =
+      pressCell && live ? this.board.at(pressCell.row, pressCell.col) : null;
 
-  private checkWin(): boolean {
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        const cell = this.board[r][c];
-        if (!cell.mine && !cell.revealed) return false;
-      }
-    }
-    return true;
-  }
-
-  // ==========================================
-  // BOARD GENERATION
-  // ==========================================
-
-  private generateBoard(): void {
-    this.applyDifficulty(this.difficulty);
-    this.updateLayout();
-    this.loadBestTime();
-
-    this.board = [];
-    for (let r = 0; r < this.rows; r++) {
-      const row: Cell[] = [];
-      for (let c = 0; c < this.cols; c++) {
-        row.push({
-          mine: false,
-          revealed: false,
-          flagged: false,
-          neighbors: 0,
-          revealProgress: 0,
-          flagProgress: 0,
-          isHovered: false,
-          exploded: false,
-        });
-      }
-      this.board.push(row);
-    }
-
-    this.gameState = 'playing';
-    this.smileyState = 'happy';
-    this.minesPlaced = false;
-    this.isStarted = false;
-    this.elapsedSec = 0;
-    this.cellsCleared = 0;
-    this.score = 0;
-    this.revealQueue = [];
-    this.victoryConfettiSpawned = false;
-
-    this.particles.clear();
-    this.screenShake.stop();
-  }
-
-  private placeMines(safeRow: number, safeCol: number): void {
-    const safe = new Set<string>();
-    for (let dr = -1; dr <= 1; dr++) {
-      for (let dc = -1; dc <= 1; dc++) {
-        const r = safeRow + dr;
-        const c = safeCol + dc;
-        if (r >= 0 && r < this.rows && c >= 0 && c < this.cols) {
-          safe.add(`${r},${c}`);
+    const pressed: CellRef[] = [];
+    let ghostFlag: CellRef | null = null;
+    if (pressCell && pressedCell) {
+      if (pressedCell.revealed) {
+        if (this.gameState === 'playing') {
+          const state = this.board.chordState(pressCell.row, pressCell.col);
+          if (state.kind !== 'none') pressed.push(...state.cells);
+        }
+      } else if (!pressedCell.flagged || this.flagMode) {
+        if (this.flagMode && this.gameState === 'playing') {
+          if (!pressedCell.flagged) ghostFlag = pressCell;
+        } else if (!pressedCell.flagged) {
+          pressed.push(pressCell);
         }
       }
     }
-
-    let placed = 0;
-    while (placed < this.mines) {
-      const r = Math.floor(Math.random() * this.rows);
-      const c = Math.floor(Math.random() * this.cols);
-      if (safe.has(`${r},${c}`) || this.board[r][c].mine) continue;
-      this.board[r][c].mine = true;
-      placed++;
-    }
-
-    // Calculate neighbor counts
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        let count = 0;
-        for (let dr = -1; dr <= 1; dr++) {
-          for (let dc = -1; dc <= 1; dc++) {
-            if (dr === 0 && dc === 0) continue;
-            const nr = r + dr;
-            const nc = c + dc;
-            if (nr >= 0 && nr < this.rows && nc >= 0 && nc < this.cols) {
-              if (this.board[nr][nc].mine) count++;
-            }
-          }
-        }
-        this.board[r][c].neighbors = count;
-      }
-    }
-  }
-
-  // ==========================================
-  // RENDERING
-  // ==========================================
-
-  private renderBackground(ctx: CanvasRenderingContext2D): void {
-    // Dark gradient background
-    const gradient = ctx.createLinearGradient(0, 0, 0, this.canvas.height);
-    gradient.addColorStop(0, COLORS.bgDark);
-    gradient.addColorStop(1, COLORS.bgLight);
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-    // Scanline effect
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-    for (let y = 0; y < this.canvas.height; y += 4) {
-      ctx.fillRect(0, y, this.canvas.width, 2);
-    }
-  }
-
-  private renderBoard(ctx: CanvasRenderingContext2D): void {
-    const boardW = this.cols * this.cellSize;
-    const boardH = this.rows * this.cellSize;
-
-    // Board border (3D bevel)
-    this.draw3DBorder(ctx, this.offsetX - 4, this.offsetY - 4, boardW + 8, boardH + 8, true);
-
-    // Render cells
-    for (let r = 0; r < this.rows; r++) {
-      for (let c = 0; c < this.cols; c++) {
-        this.renderCell(ctx, r, c);
-      }
-    }
-  }
-
-  private renderCell(ctx: CanvasRenderingContext2D, row: number, col: number): void {
-    const cell = this.board[row][col];
-    const x = this.offsetX + col * this.cellSize;
-    const y = this.offsetY + row * this.cellSize;
-    const size = this.cellSize;
-
-    if (cell.revealed) {
-      // Revealed cell (sunken)
-      const progress = cell.revealProgress;
-      const scale = 0.8 + 0.2 * progress;
-
-      ctx.save();
-      ctx.translate(x + size / 2, y + size / 2);
-      ctx.scale(scale, scale);
-      ctx.translate(-(x + size / 2), -(y + size / 2));
-
-      // Sunken background
-      ctx.fillStyle = COLORS.cellRevealed;
-      ctx.fillRect(x, y, size, size);
-
-      // Inner shadow (sunken effect)
-      ctx.strokeStyle = COLORS.borderDark;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, y + size);
-      ctx.lineTo(x, y);
-      ctx.lineTo(x + size, y);
-      ctx.stroke();
-
-      ctx.strokeStyle = COLORS.borderLight;
-      ctx.beginPath();
-      ctx.moveTo(x + size, y);
-      ctx.lineTo(x + size, y + size);
-      ctx.lineTo(x, y + size);
-      ctx.stroke();
-
-      // Content
-      if (cell.mine) {
-        this.renderMine(ctx, x, y, size, cell.exploded);
-      } else if (cell.neighbors > 0) {
-        this.renderNumber(ctx, x, y, size, cell.neighbors, progress);
-      }
-
-      ctx.restore();
-    } else {
-      // Unrevealed cell (raised 3D button)
-      const isHovered = cell.isHovered && this.gameState === 'playing';
-      const baseColor = isHovered ? COLORS.cellHover : COLORS.cellUnrevealed;
-
-      // Main fill
-      ctx.fillStyle = baseColor;
-      ctx.fillRect(x, y, size, size);
-
-      // 3D bevel effect
-      this.draw3DBevel(ctx, x, y, size, size, false);
-
-      // Flag
-      if (cell.flagged || cell.flagProgress > 0) {
-        this.renderFlag(ctx, x, y, size, cell.flagProgress);
-      }
-    }
-  }
-
-  private draw3DBevel(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, sunken: boolean): void {
-    const light = sunken ? COLORS.borderDark : COLORS.cellHighlight;
-    const dark = sunken ? COLORS.cellHighlight : COLORS.cellShadow;
-
-    ctx.strokeStyle = light;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x, y + h);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x + w, y);
-    ctx.stroke();
-
-    ctx.strokeStyle = dark;
-    ctx.beginPath();
-    ctx.moveTo(x + w, y);
-    ctx.lineTo(x + w, y + h);
-    ctx.lineTo(x, y + h);
-    ctx.stroke();
-  }
-
-  private draw3DBorder(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, sunken: boolean): void {
-    ctx.fillStyle = '#4B5563';
-    ctx.fillRect(x, y, w, h);
-
-    const light = sunken ? '#1F2937' : '#9CA3AF';
-    const dark = sunken ? '#9CA3AF' : '#1F2937';
-
-    ctx.strokeStyle = light;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x, y + h);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x + w, y);
-    ctx.stroke();
-
-    ctx.strokeStyle = dark;
-    ctx.beginPath();
-    ctx.moveTo(x + w, y);
-    ctx.lineTo(x + w, y + h);
-    ctx.lineTo(x, y + h);
-    ctx.stroke();
-  }
-
-  private renderMine(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, exploded: boolean): void {
-    const cx = x + size / 2;
-    const cy = y + size / 2;
-    const radius = size * 0.3;
-
-    // Background for exploded mine
-    if (exploded) {
-      ctx.fillStyle = COLORS.mineExploded;
-      ctx.fillRect(x, y, size, size);
-    }
-
-    // Mine body
-    ctx.fillStyle = COLORS.mine;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Spikes
-    ctx.strokeStyle = COLORS.mine;
-    ctx.lineWidth = 2;
-    for (let i = 0; i < 8; i++) {
-      const angle = (Math.PI * 2 * i) / 8;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(angle) * radius * 0.6, cy + Math.sin(angle) * radius * 0.6);
-      ctx.lineTo(cx + Math.cos(angle) * radius * 1.3, cy + Math.sin(angle) * radius * 1.3);
-      ctx.stroke();
-    }
-
-    // Highlight
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath();
-    ctx.arc(cx - radius * 0.3, cy - radius * 0.3, radius * 0.2, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  private renderNumber(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, num: number, alpha: number): void {
-    const colors = [
-      '', COLORS.num1, COLORS.num2, COLORS.num3,
-      COLORS.num4, COLORS.num5, COLORS.num6, COLORS.num7, COLORS.num8
-    ];
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    // Glow effect
-    ctx.shadowColor = colors[num];
-    ctx.shadowBlur = 8;
-
-    ctx.fillStyle = colors[num];
-    ctx.font = `bold ${size * 0.65}px Arial`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(`${num}`, x + size / 2, y + size / 2 + 1);
-
-    ctx.restore();
-  }
-
-  private renderFlag(ctx: CanvasRenderingContext2D, x: number, y: number, size: number, progress: number): void {
-    const cx = x + size / 2;
-    const baseY = y + size * 0.85;
-
-    // Animate flag rising
-    const flagY = baseY - (size * 0.6) * progress;
-
-    ctx.save();
-    ctx.globalAlpha = progress;
-
-    // Pole
-    ctx.fillStyle = COLORS.flagPole;
-    ctx.fillRect(cx - 1, flagY, 3, baseY - flagY);
-
-    // Flag triangle
-    ctx.fillStyle = COLORS.flag;
-    ctx.beginPath();
-    ctx.moveTo(cx + 2, flagY);
-    ctx.lineTo(cx + size * 0.35, flagY + size * 0.15);
-    ctx.lineTo(cx + 2, flagY + size * 0.3);
-    ctx.closePath();
-    ctx.fill();
-
-    // Base
-    ctx.fillStyle = COLORS.flagPole;
-    ctx.fillRect(cx - size * 0.15, baseY - 3, size * 0.3, 4);
-
-    ctx.restore();
-  }
-
-  private renderHeader(ctx: CanvasRenderingContext2D): void {
-    const headerY = 10;
-    const headerH = 50;
-
-    // Header background
-    ctx.fillStyle = '#374151';
-    ctx.fillRect(this.offsetX - 4, headerY, this.cols * this.cellSize + 8, headerH);
-    this.draw3DBorder(ctx, this.offsetX - 4, headerY, this.cols * this.cellSize + 8, headerH, true);
-
-    // Mines counter (LED style) - left
-    const minesRemaining = this.mines - this.board.flat().filter(c => c.flagged).length;
-    this.renderLEDDisplay(ctx, this.offsetX + 8, headerY + 10, Math.max(0, minesRemaining));
-
-    // Timer (LED style) - right
-    const time = Math.min(999, Math.floor(this.elapsedSec));
-    this.renderLEDDisplay(ctx, this.offsetX + this.cols * this.cellSize - 58, headerY + 10, time);
-
-    // Smiley button - center
-    this.renderSmiley(ctx, this.canvas.width / 2, headerY + headerH / 2 + 5);
-  }
-
-  private renderLEDDisplay(ctx: CanvasRenderingContext2D, x: number, y: number, value: number): void {
-    const w = 50;
-    const h = 28;
-
-    // Background
-    ctx.fillStyle = COLORS.ledBg;
-    ctx.fillRect(x, y, w, h);
-
-    // Border
-    ctx.strokeStyle = '#000000';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, w, h);
-
-    // LED digits
-    const str = String(value).padStart(3, '0');
-    ctx.fillStyle = COLORS.ledOn;
-    ctx.font = 'bold 20px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(str, x + w / 2, y + h / 2 + 1);
-  }
-
-  private renderSmiley(ctx: CanvasRenderingContext2D, x: number, y: number): void {
-    const radius = 16;
-
-    // Button background
-    ctx.fillStyle = '#C0C0C0';
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 3D bevel on button
-    ctx.strokeStyle = this.isMouseDown && this.isSmileyClick(x, y) ? '#808080' : '#FFFFFF';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 3, Math.PI, Math.PI * 1.5);
-    ctx.stroke();
-
-    ctx.strokeStyle = this.isMouseDown ? '#FFFFFF' : '#808080';
-    ctx.beginPath();
-    ctx.arc(x, y, radius + 3, 0, Math.PI * 0.5);
-    ctx.stroke();
-
-    // Face
-    ctx.fillStyle = COLORS.smileyYellow;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.strokeStyle = COLORS.smileyBorder;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Expression based on state
-    ctx.fillStyle = '#000000';
-
-    switch (this.smileyState) {
-      case 'happy':
-        // Eyes
-        ctx.beginPath();
-        ctx.arc(x - 5, y - 4, 2, 0, Math.PI * 2);
-        ctx.arc(x + 5, y - 4, 2, 0, Math.PI * 2);
-        ctx.fill();
-        // Smile
-        ctx.beginPath();
-        ctx.arc(x, y + 2, 7, 0.2, Math.PI - 0.2);
-        ctx.stroke();
-        break;
-
-      case 'surprised':
-        // Wide eyes
-        ctx.beginPath();
-        ctx.arc(x - 5, y - 4, 3, 0, Math.PI * 2);
-        ctx.arc(x + 5, y - 4, 3, 0, Math.PI * 2);
-        ctx.fill();
-        // O mouth
-        ctx.beginPath();
-        ctx.arc(x, y + 4, 4, 0, Math.PI * 2);
-        ctx.stroke();
-        break;
-
-      case 'cool':
-        // Sunglasses
-        ctx.fillRect(x - 10, y - 6, 8, 5);
-        ctx.fillRect(x + 2, y - 6, 8, 5);
-        ctx.fillRect(x - 2, y - 5, 4, 2);
-        // Smile
-        ctx.beginPath();
-        ctx.arc(x, y + 2, 7, 0.2, Math.PI - 0.2);
-        ctx.stroke();
-        break;
-
-      case 'dead':
-        // X eyes
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x - 7, y - 6);
-        ctx.lineTo(x - 3, y - 2);
-        ctx.moveTo(x - 3, y - 6);
-        ctx.lineTo(x - 7, y - 2);
-        ctx.moveTo(x + 3, y - 6);
-        ctx.lineTo(x + 7, y - 2);
-        ctx.moveTo(x + 7, y - 6);
-        ctx.lineTo(x + 3, y - 2);
-        ctx.stroke();
-        // Frown
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.arc(x, y + 8, 6, Math.PI + 0.3, -0.3);
-        ctx.stroke();
-        break;
-    }
-  }
-
-  private renderDifficultyButtons(ctx: CanvasRenderingContext2D): void {
-    const buttons = this.getDifficultyButtons();
-
-    for (const b of buttons) {
-      const selected = b.id === this.difficulty;
-      const disabled = this.isStarted && this.gameState === 'playing';
-
-      ctx.save();
-      ctx.globalAlpha = disabled ? 0.5 : 1;
-
-      // Button background
-      ctx.fillStyle = selected ? '#1D4ED8' : '#374151';
-      ctx.fillRect(b.x, b.y, b.w, b.h);
-
-      // Border
-      ctx.strokeStyle = selected ? '#93C5FD' : '#6B7280';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(b.x, b.y, b.w, b.h);
-
-      // Text
-      ctx.fillStyle = '#FFFFFF';
-      ctx.font = 'bold 11px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(b.label, b.x + b.w / 2, b.y + b.h / 2);
-
-      ctx.restore();
-    }
-  }
-
-  private renderInstructions(ctx: CanvasRenderingContext2D): void {
-    if (!this.isStarted && this.gameState === 'playing') {
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#9CA3AF';
-      ctx.font = '12px Arial';
-      ctx.fillText(
-        'Click to reveal • Right-click/F to flag • First click is safe',
-        this.canvas.width / 2,
-        this.canvas.height - 12
-      );
-    }
-
-    // Best time
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#6B7280';
-    ctx.font = '11px Arial';
-    const bestLabel = this.bestTimeSec !== null ? `${this.bestTimeSec.toFixed(1)}s` : '--';
-    ctx.fillText(`Best: ${bestLabel}`, 12, this.canvas.height - 12);
-  }
-
-  private renderGameStateOverlay(ctx: CanvasRenderingContext2D): void {
+    if (this.pendingChord) pressed.push(...this.pendingChord.cells);
+    if (this.peek) pressed.push(...this.peek.cells);
+
+    let sheen: number | null = null;
+    let dim = 0;
     if (this.gameState === 'won') {
-      ctx.save();
-      ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-      ctx.fillStyle = '#10B981';
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('🎉 CLEARED! 🎉', this.canvas.width / 2, 80);
-
-      ctx.font = '16px Arial';
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillText(`Time: ${this.elapsedSec.toFixed(1)}s`, this.canvas.width / 2, 110);
-      ctx.restore();
-    } else if (this.gameState === 'lost') {
-      ctx.save();
-      ctx.fillStyle = 'rgba(220, 38, 38, 0.15)';
-      ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-      ctx.fillStyle = '#EF4444';
-      ctx.font = 'bold 28px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('💥 BOOM! 💥', this.canvas.width / 2, 80);
-      ctx.restore();
+      const k = (this.beatT - 0.2) / 0.9;
+      sheen = k >= 0 && k <= 1 ? k : null;
+    } else if (this.gameState === 'dying') {
+      dim = smooth((this.beatT - 1.2) / 0.35) * 0.5;
     }
+
+    return {
+      board: this.board,
+      fx: this.fx,
+      layout: this.layout,
+      now: this.clock,
+      hit: this.hit,
+      hitFlash: this.gameState === 'dying' && this.hitstop > 0,
+      hover: live && !this.cursor.visible && !this.press ? this.hover : null,
+      pressed,
+      ghostFlag,
+      longPress:
+        this.longPressT > 0 && pressCell
+          ? { cell: pressCell, t: this.longPressT }
+          : null,
+      cursor:
+        live && this.cursor.visible
+          ? { row: this.cursor.row, col: this.cursor.col }
+          : null,
+      sheen,
+      dim,
+    };
   }
 
-  // ==========================================
-  // DIFFICULTY & STORAGE
-  // ==========================================
-
-  private getDifficultyButtons(): Array<{
-    id: MinesweeperDifficulty;
-    label: string;
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  }> {
-    const w = 70;
-    const h = 24;
-    const gap = 6;
-    const y = this.canvas.height - 36;
-    const totalW = w * 3 + gap * 2;
-    const startX = this.canvas.width - totalW - 12;
-
-    return [
-      { id: 'easy', label: 'Easy (1)', x: startX, y, w, h },
-      { id: 'medium', label: 'Med (2)', x: startX + w + gap, y, w, h },
-      { id: 'hard', label: 'Hard (3)', x: startX + (w + gap) * 2, y, w, h },
-    ];
+  /** The tile a held pointer is pushing down: it follows the pointer. */
+  private pressCell(): CellRef | null {
+    if (!this.press || this.press.flagged) return null;
+    if (this.press.target?.kind !== 'cell') return null;
+    if (!this.tracker.pointerDown()) return null;
+    const pos = this.tracker.pointerPosition();
+    return cellAt(this.layout, pos.x, pos.y);
   }
 
-  private handleDifficultyTap(x: number, y: number): boolean {
-    if (this.isStarted && this.gameState === 'playing') return false;
-    const button = this.getDifficultyButtons().find(
-      b => x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h
-    );
-    if (!button) return false;
-    this.setDifficulty(button.id);
-    return true;
+  private pressTargetUnderPointer(kind: HudTarget['kind']): HudTarget | null {
+    if (!this.press || this.press.target?.kind !== kind) return null;
+    if (!this.tracker.pointerDown()) return null;
+    const pos = this.tracker.pointerPosition();
+    const under = hitTest(this.layout, pos.x, pos.y);
+    return under?.kind === kind ? under : null;
   }
 
-  private applyDifficulty(difficulty: MinesweeperDifficulty): void {
-    const config = DIFFICULTY_CONFIG[difficulty];
-    this.cols = config.cols;
-    this.rows = config.rows;
-    this.mines = config.mines;
+  private mood(): Mood {
+    if (this.outcome === 'lost') return 'dead';
+    if (this.outcome === 'won') return 'cool';
+    if (this.pressCell()) return 'tense';
+    return 'idle';
   }
 
-  private setDifficulty(difficulty: MinesweeperDifficulty): void {
-    this.difficulty = difficulty;
-    try {
-      localStorage.setItem('minesweeper_difficulty', difficulty);
-    } catch { /* ignore */ }
-    this.generateBoard();
+  private hudView(): HudView {
+    const key = this.pressTargetUnderPointer('key');
+    return {
+      layout: this.layout,
+      now: this.clock,
+      difficulty: this.difficulty,
+      minesLeft: this.board.minesLeft,
+      minesPulse:
+        this.gameState === 'playing' &&
+        this.board.minesLeft === 0 &&
+        !this.board.isCleared()
+          ? 0.5 + 0.5 * Math.sin(this.clock * 6)
+          : 0,
+      time: this.elapsedSec,
+      mood: this.mood(),
+      facePressed: this.pressTargetUnderPointer('face') !== null,
+      keysLocked: this.keysLocked(),
+      keyPressed: key?.kind === 'key' ? key.id : null,
+      keyNudge: this.keyNudge,
+      flagMode: this.flagMode,
+      switchPressed: this.pressTargetUnderPointer('flagSwitch') !== null,
+      best: this.bestTimeSec,
+      hint: this.hintText(),
+      readyCard:
+        this.gameState === 'ready'
+          ? Math.min(1, this.readyCardT / CARD_FADE)
+          : 0,
+      banner: this.bannerView(),
+    };
   }
+
+  private bannerView(): BannerView | null {
+    const ended = this.gameState === 'ended';
+    if (this.outcome === 'lost') {
+      return {
+        kind: 'boom',
+        title: 'BOOM',
+        sub: [
+          {
+            text: `${this.board.safeOpened} of ${this.board.safeTotal} tiles cleared`,
+          },
+        ],
+        t: ended ? 1 : smooth((this.beatT - 1.2) / 0.3),
+      };
+    }
+    if (this.outcome === 'won') {
+      const best = this.bestTimeSec ?? this.elapsedSec;
+      return {
+        kind: 'clear',
+        title: 'CLEARED',
+        sub: [
+          { text: `${this.elapsedSec.toFixed(1)}s` },
+          { text: ' · ' },
+          this.newBest
+            ? { text: 'NEW BEST', color: FIELD.litDeep }
+            : { text: `best ${best.toFixed(1)}s` },
+        ],
+        t: ended ? 1 : smooth((this.beatT - 0.55) / 0.3),
+      };
+    }
+    return null;
+  }
+
+  private hintText(): string {
+    const verb = this.modality === 'mouse' ? 'click' : 'tap';
+    const Verb = verb === 'click' ? 'Click' : 'Tap';
+    if (this.gameState === 'ready') {
+      if (this.modality === 'keyboard') {
+        return 'Arrows move · Space opens · F flags · the first tile is always safe';
+      }
+      if (this.flagMode) {
+        return `Flag mode is on · your first ${verb} still opens, safely`;
+      }
+      if (this.modality === 'mouse') {
+        return 'Click to reveal · right-click or hold to flag · first click is always safe';
+      }
+      return 'Tap to reveal · hold to flag · first tap is always safe';
+    }
+    if (this.gameState === 'playing') {
+      if (this.modality === 'keyboard') {
+        const ref = gridRef(this.cursor.row, this.cursor.col);
+        return `${ref} · Space opens or chords · F flags · arrows move`;
+      }
+      if (this.flagMode) {
+        return `Flag mode · ${verb}s plant flags · ${verb} a number to chord`;
+      }
+      return `${Verb} a number to chord · it opens the rest once its flags are placed`;
+    }
+    return '';
+  }
+
+  // ========================================================= storage ====
 
   private loadDifficulty(): void {
     try {
-      const saved = localStorage.getItem('minesweeper_difficulty') as MinesweeperDifficulty | null;
-      if (saved && DIFFICULTY_CONFIG[saved]) {
-        this.difficulty = saved;
-      }
-    } catch { /* ignore */ }
-  }
-
-  private updateLayout(): void {
-    const maxW = this.canvas.width - this.margin * 2;
-    const maxH = this.canvas.height - this.margin * 2 - 80; // Account for header
-    const size = Math.floor(Math.min(maxW / this.cols, maxH / this.rows));
-    this.cellSize = Math.max(18, Math.min(36, size));
-  }
-
-  protected onResize(_width: number, _height: number): void {
-    void _width;
-    void _height;
-    this.updateLayout();
+      const saved = localStorage.getItem(DIFFICULTY_KEY);
+      if (isDifficulty(saved)) this.difficulty = saved;
+    } catch {
+      /* storage unavailable: keep the default */
+    }
   }
 
   private bestTimeKey(): string {
@@ -1169,19 +1050,19 @@ export class MinesweeperGame extends BaseGame {
   private loadBestTime(): void {
     try {
       const saved = localStorage.getItem(this.bestTimeKey());
-      this.bestTimeSec = saved ? parseFloat(saved) : null;
-      if (Number.isNaN(this.bestTimeSec)) this.bestTimeSec = null;
+      const value = saved ? parseFloat(saved) : NaN;
+      this.bestTimeSec = Number.isFinite(value) ? value : null;
     } catch {
       this.bestTimeSec = null;
     }
   }
 
   private saveBestTime(timeSec: number): void {
-    if (this.bestTimeSec === null || timeSec < this.bestTimeSec) {
-      this.bestTimeSec = timeSec;
-      try {
-        localStorage.setItem(this.bestTimeKey(), String(timeSec));
-      } catch { /* ignore */ }
+    this.bestTimeSec = timeSec;
+    try {
+      localStorage.setItem(this.bestTimeKey(), String(timeSec));
+    } catch {
+      /* storage unavailable: the best lasts this session */
     }
   }
 }
