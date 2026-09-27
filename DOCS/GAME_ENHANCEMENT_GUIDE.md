@@ -1,154 +1,142 @@
-# Game Visual Enhancement Handoff Guide
+# Game Polish Guide
 
-Quick reference for enhancing arcade games to match Snake and Minesweeper's visual quality.
+Last updated: September 27, 2026 (tier 0 polish round)
 
----
-
-## Architecture Pattern
-
-All enhanced games follow this structure:
-
-```
-src/games/{game-name}/
-├── systems/
-│   ├── ParticleSystem.ts    # Visual effects (bursts, sparkles, explosions)
-│   └── ScreenShake.ts       # Camera shake for impact feedback
-├── entities/                 # (Optional) Separate entity classes
-│   └── {Entity}.ts          # Animated game objects
-├── {GameName}Game.ts        # Main game class (extends BaseGame)
-└── index.ts                 # Export
-```
+How a game in this arcade gets taken from "works" to "ready for the public",
+and the tools that exist for it. The Endless Runner round
+(`src/games/runner/RECAP.md`) set the bar; the tier 0 round applied the
+same process to five games at once and produced the shared pieces below.
 
 ---
 
-## Required Systems (Copy & Adapt)
+## The one rule that comes before the others: identity
 
-### ParticleSystem.ts
+The arcade wants other developers to contribute games. So games must NOT
+come out looking like one house made them all. Each game is its own
+studio's work: its own palette, iconography, motion language, copy voice,
+sound vocabulary, HUD layout and way of showing lives, combos and timers.
+Two games side by side should look like two studios shipping on the same
+platform.
 
-Reference: [Snake ParticleSystem](file:///d:/JavaScript%20Games/HacktivateArcade/hacktivate-nations-arcade/src/games/snake/systems/ParticleSystem.ts)
+What is shared, like a console platform's system font:
 
-Key effects to implement:
+- **Type.** Orbitron for display numerals and titles, Inter for prose,
+  JetBrains Mono for values. On canvas these come from
+  `src/games/shared/hud/canvasUi.ts` (`displayFont`, `sansFont`,
+  `monoFont`). No `Arial`, no bare `monospace`.
+- **Two semantic colours.** Amber (`UI.coin`) always means currency and is
+  never decorative. Red means a problem.
 
-- `createBurst(x, y, color)` - Collection/pickup feedback
-- `createSparkle(x, y)` - Golden sparkle for coins/points
-- `createExplosion(x, y)` - Death/damage effect
-- `createConfetti(width)` - Victory celebration
-- `addScorePopup(x, y, text, color)` - Floating score text
+Everything else in the design system (`DOCS/UI-DESIGN-SYSTEM-HANDOFF.md`)
+describes the harness around the games, not the games. The helpers in
+`canvasUi.ts` (`panel`, `chip`, `bar`, `banner`, `lifePips`, `heart`,
+`edgeVignette`, `ease`) are a convenience, not a template; a game should
+draw its own chrome whenever the helpers do not fit its look.
 
-### ScreenShake.ts
+## Architecture pattern
 
-Reference: [Snake ScreenShake](file:///d:/JavaScript%20Games/HacktivateArcade/hacktivate-nations-arcade/src/games/snake/systems/ScreenShake.ts)
-
-```typescript
-shake(intensity: number, duration: number): void
-getOffset(): { x: number; y: number }
+```
+src/games/<id>/
+├── <Name>Game.ts          # extends BaseGame; orchestration + rules
+├── systems/               # HUD renderer, particles, shake, spawning, combo…
+├── entities/              # drawn, animated game objects
+├── __tests__/             # rules tests on gameTestHarness (see below)
+├── RECAP.md               # what the game is now, bugs fixed, open items
+└── index.ts
 ```
 
----
+Keep the main file under 1,500 logical lines (ESLint warns past that);
+split into systems and entities like the runner does.
 
-## Visual Enhancement Checklist
+## Shared pieces every game can use
 
-For each game, implement:
+| Module | What it gives you |
+| --- | --- |
+| `src/games/shared/BaseGame.ts` | Lifecycle. `renderBaseHud = false` and draw your own HUD in `onRenderUI`. Run your death/victory beat, THEN `endGame()`. Implement `onRenderEnded(ctx)` to keep the final frame on screen under the run shell's summary (games without it get the old black frame). |
+| `src/games/shared/hud/canvasUi.ts` | Platform type, the two semantic colours, optional drawing helpers. |
+| `src/games/shared/input/PressTracker.ts` | Turns InputManager's level state into edges: `justPressed`, `tapped`, `longPressed`, `swipe`, pointer down/up, mouse and touch folded into one pointer. Call `update()` once per frame. |
+| `src/games/shared/gameTestHarness.ts` | `initGame`, `step`, `makeCtx`, stub `Services` for jest. |
+| `src/dev/game-capture/GameCapture.tsx` | Dev-only screenshot harness for any registered game (`/dev/game?game=<id>`), driven by `tests/e2e/tier0-capture.spec.ts`. |
 
-- [ ] **Particle System** - Add visual feedback for key actions
-- [ ] **Screen Shake** - Impact feedback for collisions/explosions
-- [ ] **Gradient Backgrounds** - Replace flat colors with gradients
-- [ ] **Entity Animations** - Pulse, bob, scale, rotation effects
-- [ ] **Glow Effects** - `ctx.shadowColor` + `ctx.shadowBlur`
-- [ ] **Custom HUD** - Set `renderBaseHud = false`, implement `onRenderUI`
-- [ ] **Score Popups** - Floating text on point gain
-- [ ] **Death Animation** - Add 'dying' state with timer before game over
-- [ ] **Victory Effects** - Confetti, flash, sound
-- [ ] **Hover/Active States** - Visual feedback for interactive elements
-- [ ] **Prevent Context Menu** - `canvas.addEventListener('contextmenu', e => e.preventDefault())`
+## Rules the reviewer checks
 
----
+- **Deterministic and dt-driven.** No `Date.now()` / `performance.now()`
+  for gameplay or animation; use `gameTime` and `dt`. No `setTimeout` /
+  `setInterval` (they run through pause and after destroy). No `1/60`
+  constants; timers live in `onUpdate`, never in render. Never mutate
+  state while drawing. The loop clamps `dt` to 0.05s — physics must not
+  tunnel at that step (substep if it would).
+- **Input.** Edges through `PressTracker`. Keyboard AND touch must each be
+  able to do everything the game needs, per the manifest's `inputSchema`.
+  The run shell owns pause; games do not bind Escape/P.
+- **Run lifecycle.** After the shell's Start, a READY beat that names the
+  controls and does not punish immediately. A death or victory beat
+  (about 1.2–2s) before `endGame()`. `restart()` returns to READY with
+  everything reset.
+- **Chrome.** The HUD never overlaps the playfield. No emoji in HUD,
+  banners, popups or recaps — draw icons as shapes in the game's style.
+- **Audio.** The hub starts music; games do not. Use specific `SoundName`s
+  (`bounce`, `hit`, `explosion`, `win`, `whoosh`, `success`, `coin`,
+  `powerup`, `click`, `collision`, `error`) and rate-limit bursts.
+- **Economy.** Coins paid = `floor(score / 100) + pickups × 10`.
+  `pickups` means a literal collectible (or a match). Each RECAP states
+  the expected payout of a typical three-minute run so the tier can be
+  balanced as a set.
+- **Contracts.** Keep every `extendedGameData` key, every
+  `trackGameSpecificStat` key and every localStorage key the game already
+  used; achievements and saved bests depend on them. Adding keys is fine.
+- **Performance.** No per-frame `shadowBlur` on more than a handful of
+  draws; cache static layers in offscreen canvases; cap particles.
 
-## Code Patterns
+## Tests
 
-### Death Animation Delay
+Pin RULES, not tuning numbers, in `src/games/<id>/__tests__/` on
+`gameTestHarness.ts`, reaching private state through a typed
+`internals()` cast as `src/games/runner/__tests__/fairness.test.ts` does.
+Every bug fixed in a polish round gets a test that would have failed
+before the fix. For games with spawning, a reflex-bot playability test
+(see `src/games/runner/__tests__/playability.test.ts`) is the strongest
+fairness check there is: a dumb bot that only reacts must survive.
 
-```typescript
-type GameState = 'playing' | 'dying' | 'won' | 'lost';
-private deathTimer = 0;
-private readonly deathDuration = 2.0;
+Run a game's suite with `npm run test:dev -- --runInBand src/games/<id>`.
+These are development-era tests; the CI gate stays lean on purpose
+(`DOCS/START-HERE.md`).
 
-// In onUpdate:
-if (this.gameState === 'dying') {
-  this.deathTimer += dt;
-  if (this.deathTimer >= this.deathDuration) {
-    this.gameState = 'lost';
-    this.endGame();
-  }
-}
+## Looking at a game
+
+Unit tests record draw calls, never pixels. To judge how a game looks,
+capture it:
+
+```bash
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium \   # only on runners whose Chromium differs
+CAPTURE_GAMES=snake npx playwright test tier0-capture --project=chromium
 ```
 
-### Spawn Animation (prevent negative radius)
+Frames land in `.captures/tier0/<id>/`. Each game's scene list lives in
+`tests/e2e/tier0-capture.spec.ts`; scenes reach into the game's private
+fields to jump to a moment, so they change when the game does. Several
+runs can share a machine by setting `PLAYWRIGHT_PORT`. The harness page
+is `src/app/dev/game/page.tsx`, generated by `scripts/sync-dev-routes.js`
+and deleted before type-check, lint and build; it never ships.
 
-```typescript
-const scale = Math.max(0.01, this.easeOutBack(this.progress));
+## The deploy gate, unchanged
+
+```bash
+npm run type-check
+npm run lint
+npm test -- --runInBand
+npm run build
 ```
 
-### 3D Beveled Button
+## Per-game status
 
-```typescript
-// Light edge (top-left)
-ctx.strokeStyle = '#FFFFFF';
-ctx.beginPath();
-ctx.moveTo(x, y + h);
-ctx.lineTo(x, y);
-ctx.lineTo(x + w, y);
-ctx.stroke();
-
-// Shadow edge (bottom-right)
-ctx.strokeStyle = '#808080';
-ctx.beginPath();
-ctx.moveTo(x + w, y);
-ctx.lineTo(x + w, y + h);
-ctx.lineTo(x, y + h);
-ctx.stroke();
-```
-
----
-
-## Games Already Enhanced
-
-| Game | Status | Lines |
-|------|--------|-------|
-| Snake | ✅ Complete | ~1200 |
-| Minesweeper | ✅ Complete | ~1180 |
-
-## Games Needing Enhancement
-
-Review current implementation complexity before enhancing:
-
-| Game | Current Lines | Priority |
-|------|---------------|----------|
-| Breakout | Check | High |
-| Memory | Check | Medium |
-| Block (Tetris) | Check | High |
-| Tower Builder | Check | Medium |
-| Mini Golf | Check | Low |
-
----
-
-## Audio Integration
-
-Use existing sound names from AudioManager:
-
-```typescript
-this.services.audio.playSound('success');   // Win/collect
-this.services.audio.playSound('collision'); // Hit/damage
-this.services.audio.playSound('coin');      // Pickup
-this.services.audio.playSound('powerup');   // Power-up
-this.services.audio.playSound('game_over'); // Death (called by BaseGame)
-```
-
----
-
-## Key Files to Reference
-
-- [Snake/SnakeGame.ts](file:///d:/JavaScript%20Games/HacktivateArcade/hacktivate-nations-arcade/src/games/snake/SnakeGame.ts) - Full example with all systems
-- [Minesweeper/MinesweeperGame.ts](file:///d:/JavaScript%20Games/HacktivateArcade/hacktivate-nations-arcade/src/games/minesweeper/MinesweeperGame.ts) - Retro 3D style example
-- [BaseGame.ts](file:///d:/JavaScript%20Games/HacktivateArcade/hacktivate-nations-arcade/src/games/shared/BaseGame.ts) - Base class methods
-- [CLAUDE.md](file:///d:/JavaScript%20Games/HacktivateArcade/Archived/CLAUDE.md) - Project architecture
+| Game | Tier | Polish round | Notes |
+| --- | --- | --- | --- |
+| Endless Runner | 0 | September 19, 2026 | `src/games/runner/RECAP.md` |
+| Snake | 0 | September 27, 2026 | `src/games/snake/RECAP.md` |
+| Minesweeper | 0 | September 27, 2026 | `src/games/minesweeper/RECAP.md` |
+| Mini Breakout | 0 | September 27, 2026 | `src/games/breakout/RECAP.md` |
+| Memory Match | 0 | September 27, 2026 | `src/games/memory/RECAP.md` |
+| Tap Dodge | 0 | September 27, 2026 | `src/games/tapdodge/RECAP.md` |
+| Block Puzzle, Color Drop, Tower Builder, Mini Golf, Bubble Pop | 1 | next | |
+| Retro Strike, Space Shooter, Asteroids, Frog Hop, Crystal Caverns, Speed Racer | 2 | after tier 1, one or two per session | |
