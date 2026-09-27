@@ -106,6 +106,7 @@ interface GameEndData {
   matches_made?: number;
   perfect_levels?: number;
   fast_completion?: number;
+  fast_tables?: number;
   levels_completed?: number;
   cells_cleared?: number;
   games_won?: number;
@@ -1057,6 +1058,7 @@ export function ArcadeHub() {
             ...achievementService.checkAchievement('matches_made', gameData.matches_made || 0, selectedGameId),
             ...achievementService.checkAchievement('perfect_levels', gameData.perfect_levels || 0, selectedGameId),
             ...(gameData.fast_completion ? achievementService.checkAchievement('fast_completion', gameData.fast_completion, selectedGameId) : []),
+            ...achievementService.checkAchievement('fast_tables', gameData.fast_tables || 0, selectedGameId),
             ...achievementService.checkAchievement('levels_completed', gameData.levels_completed || 0, selectedGameId),
           ]
         : []),

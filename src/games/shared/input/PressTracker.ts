@@ -58,12 +58,19 @@ export class PressTracker {
     if (touchDown) {
       this.usingTouch = true;
       this.pointerPos = { x: touches[0].x, y: touches[0].y };
-    } else if (mouseDown || !this.usingTouch) {
-      // A finger lifted leaves no position behind; keep the last one so a
-      // release still knows where it happened.
+    } else if (mouseDown) {
+      // A mouse press always carries its own position, including on the
+      // first mouse frame after a touch session (otherwise that press would
+      // start at the last finger position).
+      this.usingTouch = false;
       const m = input.getMousePosition();
-      if (!this.usingTouch) this.pointerPos = { x: m.x, y: m.y };
-      if (mouseDown) this.usingTouch = false;
+      this.pointerPos = { x: m.x, y: m.y };
+    } else if (!this.usingTouch) {
+      // Hover: follow the mouse. A finger lifted leaves no position behind,
+      // so in touch mode keep the last one and a release still knows where
+      // it happened.
+      const m = input.getMousePosition();
+      this.pointerPos = { x: m.x, y: m.y };
     }
 
     if (this.currPointer && !this.prevPointer) {

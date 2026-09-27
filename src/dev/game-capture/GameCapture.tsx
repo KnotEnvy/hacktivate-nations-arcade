@@ -334,6 +334,8 @@ export default function GameCapture() {
 
   return (
     <main style={{ background: '#0a0a0c', minHeight: '100vh', padding: 16 }}>
+      {/* The Next.js dev indicator would sit on top of the loupe. */}
+      <style>{`nextjs-portal { display: none; }`}</style>
       <p
         style={{ color: '#8a8a94', font: '12px monospace', margin: '0 0 8px' }}
       >

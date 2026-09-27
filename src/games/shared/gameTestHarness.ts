@@ -39,14 +39,29 @@ export function makeCtx(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
 
   ensure('strokeRect', jest.fn());
   ensure('strokeText', jest.fn());
-  ensure('createLinearGradient', jest.fn(() => gradient));
-  ensure('createRadialGradient', jest.fn(() => gradient));
-  ensure('createConicGradient', jest.fn(() => gradient));
-  ensure('createPattern', jest.fn(() => null));
+  ensure(
+    'createLinearGradient',
+    jest.fn(() => gradient)
+  );
+  ensure(
+    'createRadialGradient',
+    jest.fn(() => gradient)
+  );
+  ensure(
+    'createConicGradient',
+    jest.fn(() => gradient)
+  );
+  ensure(
+    'createPattern',
+    jest.fn(() => null)
+  );
   ensure('ellipse', jest.fn());
   ensure('roundRect', jest.fn());
   ensure('setLineDash', jest.fn());
-  ensure('getLineDash', jest.fn(() => []));
+  ensure(
+    'getLineDash',
+    jest.fn(() => [])
+  );
   ensure('quadraticCurveTo', jest.fn());
   ensure('bezierCurveTo', jest.fn());
   ensure('arcTo', jest.fn());
@@ -95,8 +110,10 @@ export function makeStubServices(): Services {
     currency: {
       // Deterministic, stable reward math so getScore() is reproducible.
       getBonusMultiplier: jest.fn(() => 1),
+      // Mirrors CurrencyService: floor(score / 100) + pickups * 10.
       calculateGameReward: jest.fn(
-        (score: number, pickups: number) => Math.floor(score / 100) + pickups,
+        (score: number, pickups: number) =>
+          Math.floor(score / 100) + pickups * 10
       ),
       addCoins: jest.fn(),
       spendCoins: jest.fn(() => true),

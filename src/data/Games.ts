@@ -26,7 +26,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Arcade',
     tagline: 'Grow long, stay alive',
-    description: 'Classic snake action. Coming soon!'
+    description: 'Eat, grow, and never bite yourself. Five pace tiers, seed-pod power-ups, and a second chance when you slip.'
   },
   {
     id: 'minesweeper',
@@ -37,7 +37,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Puzzle',
     tagline: 'Read the board, dodge the boom',
-    description: 'Clear the board without hitting mines!'
+    description: 'Read the numbers, plant the flags, clear the field. Three board sizes, chording, and a first click that is always safe.'
   },
   {
     id: 'breakout',
@@ -48,18 +48,18 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Arcade',
     tagline: 'One paddle, one wall',
-    description: 'Break bricks with a paddle.'
+    description: 'Serve, rally, and clear the court. Five set layouts, six power-ups, and a streak multiplier for hitting brick after brick without a return.'
   },
   {
     id: 'memory',
     title: 'Memory Match',
     thumbnail: '/games/memory/memory-thumb.svg',
-    inputSchema: ['touch'],
+    inputSchema: ['touch', 'keyboard'],
     assetBudgetKB: 60,
     tier: 0,
     category: 'Puzzle',
     tagline: 'Find every pair',
-    description: 'Flip cards to find pairs!'
+    description: 'Five tables, each bigger than the last. Find every pair for the fewest moves, or against the clock.'
   },
   {
     id: 'tapdodge',

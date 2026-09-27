@@ -79,3 +79,40 @@ describe('BaseGame.render once the run has ended', () => {
     expect(game.renders).toBe(1);
   });
 });
+
+describe('BaseGame.endGame sound and outcome', () => {
+  class WinnableGame extends PlainGame {
+    win(): void {
+      this.endGameSound = 'win';
+      this.endGameOutcome = 'completed';
+      this.endGame();
+    }
+  }
+
+  it('ends on game_over as a death by default', () => {
+    const game = new PlainGame();
+    const h = initGame(game);
+    game.finish();
+    expect(h.services.audio.playSound).toHaveBeenCalledWith('game_over');
+    expect(h.services.analytics.trackGameEnd).toHaveBeenCalledWith(
+      'plain',
+      expect.any(Number),
+      expect.any(Number),
+      'died'
+    );
+  });
+
+  it('lets a game end on its own sound and outcome', () => {
+    const game = new WinnableGame();
+    const h = initGame(game);
+    game.win();
+    expect(h.services.audio.playSound).toHaveBeenCalledWith('win');
+    expect(h.services.audio.playSound).not.toHaveBeenCalledWith('game_over');
+    expect(h.services.analytics.trackGameEnd).toHaveBeenCalledWith(
+      'plain',
+      expect.any(Number),
+      expect.any(Number),
+      'completed'
+    );
+  });
+});

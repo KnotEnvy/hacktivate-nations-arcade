@@ -406,22 +406,24 @@ export const ACHIEVEMENTS: Achievement[] = [
       {
         id: 'memory_speed_demon',
         title: 'Memory Speed Demon',
-        description: 'Complete a level in under 30 seconds',
+        description: 'Clear a table in under 30 seconds',
         icon: '⚡',
         gameId: 'memory',
         category: 'skill',
-        requirement: { type: 'fast_completion', value: 30 },
+        // fast_tables counts tables cleared under 30s; the old check compared
+        // a time UNDER 30 against >= 30 and could never unlock.
+        requirement: { type: 'fast_tables', value: 1 },
         reward: 200,
         unlocked: false
       },
       {
         id: 'memory_master',
         title: 'Memory Master',
-        description: 'Complete 10 levels in Memory Match',
+        description: 'Clear all five tables in one Memory Match run',
         icon: '🏆',
         gameId: 'memory',
         category: 'progression',
-        requirement: { type: 'levels_completed', value: 10 },
+        requirement: { type: 'levels_completed', value: 5 },
         reward: 300,
         unlocked: false
       },

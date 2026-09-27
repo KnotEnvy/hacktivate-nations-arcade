@@ -79,7 +79,10 @@ export class InputManager {
     document.addEventListener('keyup', onKeyUp);
     this.canvas.addEventListener('mousemove', onMouseMove);
     this.canvas.addEventListener('mousedown', onMouseDown);
-    this.canvas.addEventListener('mouseup', onMouseUp);
+    // mouseup on the document, not the canvas: a button released after the
+    // pointer has left the canvas must still count as released, or the game
+    // sees a press that never ends.
+    document.addEventListener('mouseup', onMouseUp);
     this.canvas.addEventListener('touchstart', onTouchStart);
     this.canvas.addEventListener('touchmove', onTouchMove);
     this.canvas.addEventListener('touchend', onTouchEnd);
@@ -90,7 +93,7 @@ export class InputManager {
       () => document.removeEventListener('keyup', onKeyUp),
       () => this.canvas?.removeEventListener('mousemove', onMouseMove),
       () => this.canvas?.removeEventListener('mousedown', onMouseDown),
-      () => this.canvas?.removeEventListener('mouseup', onMouseUp),
+      () => document.removeEventListener('mouseup', onMouseUp),
       () => this.canvas?.removeEventListener('touchstart', onTouchStart),
       () => this.canvas?.removeEventListener('touchmove', onTouchMove),
       () => this.canvas?.removeEventListener('touchend', onTouchEnd),

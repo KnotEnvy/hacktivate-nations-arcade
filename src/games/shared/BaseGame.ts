@@ -1,26 +1,37 @@
 // ===== src/games/shared/BaseGame.ts =====
 import { GameModule, GameManifest, Services, GameScore } from '@/lib/types';
+import type { SoundName } from '@/services/AudioManager';
+import type { SessionOutcome } from '@/services/Analytics';
 import { GAME_CONFIG } from '@/lib/constants';
 
 export abstract class BaseGame implements GameModule {
   protected canvas!: HTMLCanvasElement;
   protected ctx!: CanvasRenderingContext2D;
   protected services!: Services;
-  
+
   protected isRunning: boolean = false;
   protected isPaused: boolean = false;
   protected gameTime: number = 0;
-  
+
   protected score: number = 0;
   protected pickups: number = 0;
   protected startTime: number = 0;
-  
+
   // Extended game data for achievements
   protected extendedGameData: Record<string, unknown> | null = null;
-  
+
   // HUD controls and helpers
   protected renderBaseHud: boolean = true; // allow games to disable base HUD if desired
-  protected getHudStartY(): number { return 100; } // where game-specific HUD should start drawing
+
+  // What endGame() plays and reports. Defaults match the historical
+  // behaviour (every run ended on the losing sound as a death); a game that
+  // can be WON sets these before calling endGame() so a victory does not
+  // end on 'game_over'.
+  protected endGameSound: SoundName | null = 'game_over';
+  protected endGameOutcome: SessionOutcome = 'died';
+  protected getHudStartY(): number {
+    return 100;
+  } // where game-specific HUD should start drawing
 
   abstract manifest: GameManifest;
 
@@ -28,22 +39,22 @@ export abstract class BaseGame implements GameModule {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.services = services;
-    
+
     // Set canvas size
     this.resize(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT);
-    
+
     // Track game start
     this.services?.analytics?.trackGameStart?.(this.manifest.id);
     this.startTime = Date.now();
     this.isRunning = true;
-    
+
     // Initialize game-specific logic
     this.onInit();
   }
 
   update(dt: number): void {
     if (!this.isRunning || this.isPaused) return;
-    
+
     this.gameTime += dt;
     this.onUpdate(dt);
   }
@@ -52,7 +63,7 @@ export abstract class BaseGame implements GameModule {
     // Clear canvas
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    
+
     if (!this.isRunning) {
       // A finished run used to leave a black canvas under the run shell's
       // summary. A game may opt in to drawing its final frame instead; games
@@ -60,9 +71,9 @@ export abstract class BaseGame implements GameModule {
       this.onRenderEnded?.(ctx);
       return;
     }
-    
+
     this.onRender(ctx);
-    
+
     // Render UI overlay
     this.renderUI(ctx);
   }
@@ -99,11 +110,12 @@ export abstract class BaseGame implements GameModule {
     // count hidden-tab/idle hours and overflow the trusted-progression time cap.
     const timePlayedMs = Math.round(this.gameTime * 1000);
     const multiplier = this.services?.currency?.getBonusMultiplier?.() ?? 1;
-    const coinsEarned = this.services?.currency?.calculateGameReward?.(
-      this.score,
-      this.pickups,
-      multiplier
-    ) ?? 0;
+    const coinsEarned =
+      this.services?.currency?.calculateGameReward?.(
+        this.score,
+        this.pickups,
+        multiplier
+      ) ?? 0;
 
     const baseScore = {
       score: this.score,
@@ -113,7 +125,9 @@ export abstract class BaseGame implements GameModule {
     };
 
     // Return extended data if available (for achievements), otherwise base score
-    return this.extendedGameData ? { ...baseScore, ...this.extendedGameData } : baseScore;
+    return this.extendedGameData
+      ? { ...baseScore, ...this.extendedGameData }
+      : baseScore;
   }
 
   restart(): void {
@@ -123,32 +137,32 @@ export abstract class BaseGame implements GameModule {
     this.startTime = Date.now();
     this.isRunning = true;
     this.isPaused = false;
-    
+
     this.services.analytics.trackGameStart(this.manifest.id);
     this.onRestart?.();
   }
 
   protected endGame(): void {
     if (!this.isRunning) return;
-    
+
     this.isRunning = false;
     const finalScore = this.getScore();
-    
-    //play game over sound
-    this.services?.audio?.playSound?.('game_over');
+
+    // The end-of-run sound (see endGameSound).
+    if (this.endGameSound) this.services?.audio?.playSound?.(this.endGameSound);
 
     // Award coins
     this.services?.currency?.addCoins?.(
-      finalScore.coinsEarned, 
+      finalScore.coinsEarned,
       `game_${this.manifest.id}`
     );
-        
+
     // Track analytics
     this.services?.analytics?.trackGameEnd?.(
       this.manifest.id,
       finalScore.score,
       finalScore.coinsEarned,
-      'died'
+      this.endGameOutcome
     );
 
     this.services?.analytics?.trackCurrencyTransaction?.(
@@ -170,7 +184,7 @@ export abstract class BaseGame implements GameModule {
       // Pickups display
       ctx.fillText(`Coins: ${this.pickups}`, 20, 70);
     }
-    
+
     // Game-specific UI
     this.onRenderUI?.(ctx);
   }
