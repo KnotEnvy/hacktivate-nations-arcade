@@ -45,6 +45,8 @@ tmp-next-dev*
 src/app/dev/level-editor/page.tsx
 src/app/dev/dungeon-crawl/page.tsx
 src/app/dev/hub-preview/page.tsx
+src/app/dev/runner/page.tsx
+src/app/dev/game/page.tsx
 
 # THE TUNING FINALE — visual capture output (regenerate with `npm run capture`)
 .captures/
