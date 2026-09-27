@@ -1,6 +1,6 @@
 # Start Here
 
-Last updated: September 16, 2026
+Last updated: September 27, 2026
 
 This is the minimal handoff set for the next team. The production-hardening pass, Speed Racer implementation, procedural audio pass, startup-performance pass, and the harness UI/menu-flow pass are all complete. The remaining work before public launch is per-game polish, signed-in browser QA, and final production operations.
 
@@ -165,14 +165,66 @@ Verified on September 19, 2026: `npm run type-check`, `npm run lint`,
 `npm test -- --runInBand` (10-test release approval suite), `npm run build`, and
 `npm run test:dev -- --runInBand` (767 tests) all pass.
 
+## September 27, 2026 — Tier 0 polish round
+
+All five remaining tier-0 games had their polish round in one session, in
+parallel, each as the work of its own imagined studio so the tier does not
+read as one house style (the arcade wants other developers to contribute, so
+the games must look like they could have come from different ones). Only
+the platform's type and its two semantic colours are shared. Each game's
+`src/games/<id>/RECAP.md` is the account; `DOCS/GAME_ENHANCEMENT_GUIDE.md`
+is the process; `DOCS/TIER0-PLAYTEST.md` is the human playtest script that
+gates promotion of the tier.
+
+| Game | Studio | Headline fixes |
+| --- | --- | --- |
+| Snake | Mosslight | Gliding body, two-deep turn queue, a real respawn instead of freezing into the wall, capped pace ladder |
+| Minesweeper | Fieldmark | **The game could not be won** (win never checked after a cascade); chording, long-press and flag-mode flags for touch, boards that fit |
+| Mini Breakout | Floodlight | HUD off the bricks, substepped physics (no tunnelling), aimed serves, visible damage, mouse control, six power-ups |
+| Memory Match | Lamplit Parlour | Five-table ladder with two modes, drawn card faces, release-triggered input, no more `setTimeout` races; two unreachable achievements fixed |
+| Tap Dodge | highway signage | Touch could not dodge lasers; pattern-based spawning with a guaranteed path (reflex-bot test), restraint over pile-on effects |
+
+Shared pieces that came out of it: `src/games/shared/hud/canvasUi.ts`
+(platform type on canvas, optional helpers), `src/games/shared/input/
+PressTracker.ts` (edge-triggered input, tap / long-press / swipe),
+`BaseGame.onRenderEnded` and `endGameSound` / `endGameOutcome` (additive;
+games without them behave as before), a generic screenshot harness
+(`src/dev/game-capture`, driven by `tests/e2e/tier0-capture.spec.ts`, not in
+the CI gate), and two service fixes (a mouse button released off the canvas
+now releases; the press tracker's first mouse frame after touch).
+
+Economy note for the owner: coins paid are `floor(score/100) + pickups × 10`.
+Estimated payout for an average three-minute run, per the RECAPs — Snake
+~140, Minesweeper ~80–125 (a hard win ~540), Breakout ~250, Memory ~310
+(a full five-table run ~640), Tap Dodge ~600. Tap Dodge and Memory pay the
+most; the knobs are named in each RECAP if the tier should be flattened.
+
+Achievement data changed in `src/data/Achievements.ts`: `memory_speed_demon`
+now checks `fast_tables >= 1` (the old check compared a time under 30s
+against `>= 30` and could never unlock) and `memory_master` is the five-table
+run instead of ten levels.
+
+Next: the tier 1 round (Block Puzzle, Color Drop, Tower Builder, Mini Golf,
+Bubble Pop) on the same process, after the tier 0 playtest.
+
+Verified on September 27, 2026 on the integrated tree: `npm run type-check`,
+`npm run lint` (the same three pre-existing `max-lines` warnings),
+`npm test -- --runInBand` (10-test release approval suite),
+`npm run test:dev -- --runInBand` (1,010 tests, up from 767) and
+`npm run build` (`/` still 105 kB first-load JS) all pass. The tier 0
+capture spec renders every scene of all five games.
+
+
 ## What To Work On Next
 
 Highest-value remaining work:
 
-1. **Per-game polish rounds.** The harness pass is done and Endless Runner has
-   had its round; the other games are the remaining rough edges. `DOCS/GAME_ENHANCEMENT_GUIDE.md` is the
-   reference, and `DOCS/UI-DESIGN-SYSTEM-HANDOFF.md` defines the shell they sit
-   inside. Each game owns its own internal art direction.
+1. **Per-game polish rounds.** The harness pass is done; Endless Runner and
+   the rest of tier 0 have had their rounds. Next is the tier 0 human
+   playtest (`DOCS/TIER0-PLAYTEST.md`), then tier 1 on the same process
+   (`DOCS/GAME_ENHANCEMENT_GUIDE.md`), then tier 2 one or two games per
+   session. Each game owns its own art direction; only the platform's type
+   and its two semantic colours are shared.
 2. **Signed-in browser QA** against the deployed preview and production
    candidates. Verify auth, wallet updates, leaderboard writes, achievements,
    daily challenges, analytics ownership, queued sync retry, audio
