@@ -68,13 +68,22 @@ interface GC {
   hold(code: string): void;
   release(code: string): void;
   mouseMove(x: number, y: number): void;
+  mouseDown(x: number, y: number, button?: number): void;
+  mouseUp(button?: number): void;
   click(x: number, y: number, button?: number, frames?: number): void;
+  touchStart(x: number, y: number): void;
+  touchMove(x: number, y: number): void;
+  touchEnd(): void;
   tap(x: number, y: number, frames?: number): void;
   longPress(x: number, y: number, frames?: number): void;
   swipe(x: number, y: number, dx: number, dy: number, frames?: number): void;
   game(): any;
   state(): string;
+  score(): number;
+  isOver(): boolean;
   restart(): void;
+  setAuto(on: boolean): void;
+  loupe(x: number, y: number, w: number, h: number): void;
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 

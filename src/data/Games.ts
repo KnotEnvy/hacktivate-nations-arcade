@@ -15,7 +15,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Action',
     tagline: 'Run, jump, never stop',
-    description: 'Jump and collect coins in this fast-paced endless runner!'
+    description: 'Jump and collect coins in this fast-paced endless runner!',
   },
   {
     id: 'snake',
@@ -26,7 +26,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Arcade',
     tagline: 'Grow long, stay alive',
-    description: 'Eat, grow, and never bite yourself. Five pace tiers, seed-pod power-ups, and a second chance when you slip.'
+    description:
+      'Eat, grow, and never bite yourself. Five pace tiers, seed-pod power-ups, and a second chance when you slip.',
   },
   {
     id: 'minesweeper',
@@ -37,7 +38,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Puzzle',
     tagline: 'Read the board, dodge the boom',
-    description: 'Read the numbers, plant the flags, clear the field. Three board sizes, chording, and a first click that is always safe.'
+    description:
+      'Read the numbers, plant the flags, clear the field. Three board sizes, chording, and a first click that is always safe.',
   },
   {
     id: 'breakout',
@@ -48,7 +50,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Arcade',
     tagline: 'One paddle, one wall',
-    description: 'Serve, rally, and clear the court. Five set layouts, six power-ups, and a streak multiplier for hitting brick after brick without a return.'
+    description:
+      'Serve, rally, and clear the court. Five set layouts, six power-ups, and a streak multiplier for hitting brick after brick without a return.',
   },
   {
     id: 'memory',
@@ -59,18 +62,20 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 0,
     category: 'Puzzle',
     tagline: 'Find every pair',
-    description: 'Five tables, each bigger than the last. Find every pair for the fewest moves, or against the clock.'
+    description:
+      'Five tables, each bigger than the last. Find every pair for the fewest moves, or against the clock.',
   },
   {
     id: 'tapdodge',
     title: 'Tap Dodge',
     thumbnail: '/games/tapdodge/tapdodge-thumb.svg',
-    inputSchema: ['touch'],
+    inputSchema: ['touch', 'keyboard'],
     assetBudgetKB: 60,
     tier: 0,
     category: 'Action',
     tagline: 'Pure reflex, one thumb',
-    description: 'Tap to dodge obstacles.'
+    description:
+      'Five lanes down, read the gaps. Hop lanes, jump the low beams, duck the high ones, and ride the fever for a bigger score.',
   },
 
   // Tier 1
@@ -83,7 +88,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 1,
     category: 'Puzzle',
     tagline: 'Stack, clear, repeat',
-    description: 'Match blocks to clear lines.'
+    description: 'Match blocks to clear lines.',
   },
   {
     id: 'color-drop',
@@ -94,7 +99,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 1,
     category: 'Puzzle',
     tagline: 'Chain gems into combos',
-    description: 'Match colorful gems in this addictive puzzle game! Build combos and create special gems!'
+    description:
+      'Match colorful gems in this addictive puzzle game! Build combos and create special gems!',
   },
   {
     id: 'tower-builder',
@@ -105,7 +111,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 1,
     category: 'Arcade',
     tagline: 'Timing is the whole game',
-    description: 'Stack blocks with precision timing! Build the tallest tower you can!'
+    description:
+      'Stack blocks with precision timing! Build the tallest tower you can!',
   },
   {
     id: 'mini-golf',
@@ -116,7 +123,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 1,
     category: 'Sports',
     tagline: 'Nine holes, one perfect line',
-    description: 'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!'
+    description:
+      'Master 9 holes of challenging mini golf! Avoid hazards, beat par, and sink that hole-in-one!',
   },
   {
     id: 'bubble',
@@ -127,7 +135,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 1,
     category: 'Puzzle',
     tagline: 'Match three, clear the board',
-    description: 'Pop bubbles by matching 3 or more! Chain combos and use power-ups to clear the board!'
+    description:
+      'Pop bubbles by matching 3 or more! Chain combos and use power-ups to clear the board!',
   },
 
   // Tier 2
@@ -140,7 +149,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Sports',
     tagline: 'Ten frames of pin physics',
-    description: 'Master the lanes with physics-based bowling! Features realistic pin action, oil patterns, and classic 10-frame scoring.'
+    description:
+      'Master the lanes with physics-based bowling! Features realistic pin action, oil patterns, and classic 10-frame scoring.',
   },
   {
     id: 'space',
@@ -151,7 +161,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Shooter',
     tagline: 'Hold the line against the waves',
-    description: "Defend Earth from waves of alien ships in this fast-paced shooter!"
+    description:
+      'Defend Earth from waves of alien ships in this fast-paced shooter!',
   },
   {
     id: 'asteroids',
@@ -162,7 +173,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Shooter',
     tagline: 'Drift, turn, blast rocks',
-    description: 'Blast space rocks in this retro shooter!'
+    description: 'Blast space rocks in this retro shooter!',
   },
   {
     id: 'frog-hop',
@@ -173,7 +184,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Arcade',
     tagline: 'Traffic, rivers, hungry crocs',
-    description: 'Guide your frog across busy roads and treacherous rivers! Dodge traffic, ride logs, avoid hungry crocs, and reach the lily pads!'
+    description:
+      'Guide your frog across busy roads and treacherous rivers! Dodge traffic, ride logs, avoid hungry crocs, and reach the lily pads!',
   },
   {
     id: 'platform-adventure',
@@ -184,7 +196,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Adventure',
     tagline: 'Swordplay, traps, a golden owl',
-    description: 'A Prince of Persia-style adventure! Master sword combat, dodge deadly traps, and race against time to find the legendary Golden Owl!'
+    description:
+      'A Prince of Persia-style adventure! Master sword combat, dodge deadly traps, and race against time to find the legendary Golden Owl!',
   },
   {
     id: 'speed-racer',
@@ -195,7 +208,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 2,
     category: 'Racing',
     tagline: 'Vehicular combat at speed',
-    description: 'Spy-Hunter style vehicular combat racer. Dodge enemies, collect weapons, survive the highway.'
+    description:
+      'Spy-Hunter style vehicular combat racer. Dodge enemies, collect weapons, survive the highway.',
   },
 
   // Tier 3
@@ -208,7 +222,8 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 3,
     category: 'RPG',
     tagline: 'Descend the Ember Depths',
-    description: 'Descend the Ember Depths! Torchlit procedural dungeons, sword-and-dagger combat, relic drafts, and the Ember Guardian waiting below.'
+    description:
+      'Descend the Ember Depths! Torchlit procedural dungeons, sword-and-dagger combat, relic drafts, and the Ember Guardian waiting below.',
   },
   {
     id: 'target-shooter',
@@ -219,7 +234,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 3,
     category: 'Shooter',
     tagline: 'Aim drills against the clock',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'puzzle-quest',
@@ -230,7 +245,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 3,
     category: 'Puzzle',
     tagline: 'Match tiles, win battles',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'ice-hockey',
@@ -241,7 +256,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 3,
     category: 'Sports',
     tagline: 'Fast breaks on thin ice',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'block-defense',
@@ -252,7 +267,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 3,
     category: 'Strategy',
     tagline: 'Build the line, hold the line',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
 
   // Tier 4
@@ -265,7 +280,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 4,
     category: 'Action',
     tagline: 'Run-and-gun, left to right',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'sim-farm',
@@ -276,7 +291,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 4,
     category: 'Strategy',
     tagline: 'Plant, tend, turn a profit',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'battle-arena',
@@ -287,7 +302,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 4,
     category: 'Action',
     tagline: 'Last fighter standing',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'puzzle-rpg',
@@ -298,7 +313,7 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 4,
     category: 'RPG',
     tagline: 'Solve puzzles, level a party',
-    description: 'Coming soon!'
+    description: 'Coming soon!',
   },
   {
     id: 'rhythm-challenge',
@@ -309,6 +324,6 @@ export const AVAILABLE_GAMES: GameManifest[] = [
     tier: 4,
     category: 'Arcade',
     tagline: 'Hit every beat on time',
-    description: 'Coming soon!'
-  }
+    description: 'Coming soon!',
+  },
 ];
